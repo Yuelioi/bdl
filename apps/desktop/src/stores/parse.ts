@@ -143,6 +143,19 @@ export const useParseStore = defineStore('parse', {
       })
       this.selectionBySource[sourceId] = [...current]
     },
+    selectAllLoaded(sourceId: string) {
+      const tree = this.sources[sourceId]
+      if (!tree) {
+        return
+      }
+
+      this.selectionBySource[sourceId] = collectPartIds(tree)
+    },
+    clearSelection(sourceId: string) {
+      if (this.sources[sourceId]) {
+        this.selectionBySource[sourceId] = []
+      }
+    },
     async createTasksForSelection(sourceId: string) {
       const ui = useUiStore()
       const settings = useSettingsStore()

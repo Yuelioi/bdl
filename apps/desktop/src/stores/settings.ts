@@ -5,9 +5,40 @@ import type { SettingsSnapshot } from '../api/dto'
 import { settingsGet, settingsUpdate } from '../api/tauri'
 import { useUiStore } from './ui'
 
+export const defaultNamingTemplate = '{title}/P{part_index} - {part_title}.{ext}'
+const legacyNamingTemplate = '{title}/{title} - P{part_index} - {part_title}.{ext}'
+
+export const namingTemplatePresets = [
+  { label: '分P视频', value: defaultNamingTemplate },
+  { label: '单文件', value: '{title}.{ext}' },
+  { label: '合集/列表', value: '{collection_title}/{index} - {title}.{ext}' },
+  { label: '番剧/课程', value: '{series_title}/S{season_index}E{episode_index} - {episode_title}.{ext}' },
+]
+
+export const namingVariables = [
+  { name: 'title', desc: '视频或条目标题' },
+  { name: 'part_title', desc: '分P标题' },
+  { name: 'part_index', desc: '分P序号' },
+  { name: 'bvid', desc: 'BV号' },
+  { name: 'aid', desc: 'AV号' },
+  { name: 'cid', desc: 'CID' },
+  { name: 'owner_name', desc: 'UP主名称' },
+  { name: 'owner_mid', desc: 'UP主MID' },
+  { name: 'series_title', desc: '番剧/课程/系列名' },
+  { name: 'season_index', desc: '季序号' },
+  { name: 'episode_index', desc: '集序号' },
+  { name: 'episode_title', desc: '集标题' },
+  { name: 'collection_title', desc: '合集名' },
+  { name: 'index', desc: '列表序号' },
+  { name: 'quality', desc: '清晰度' },
+  { name: 'codec', desc: '编码' },
+  { name: 'date', desc: '日期' },
+  { name: 'ext', desc: '扩展名' },
+]
+
 const defaultSettings = (): SettingsSnapshot => ({
   download_dir: null,
-  naming_template: '{title}/{title} - P{part_index} - {part_title}.{ext}',
+  naming_template: defaultNamingTemplate,
   quality: 'best',
   archive_mode: 'fast',
   output_extension: 'mp4',
@@ -140,7 +171,7 @@ export const useSettingsStore = defineStore('settings', {
 
 const normalizeSettings = (settings: SettingsSnapshot): SettingsSnapshot => ({
   download_dir: settings.download_dir?.trim() || null,
-  naming_template: settings.naming_template?.trim() || defaultSettings().naming_template,
+  naming_template: normalizeNamingTemplate(settings.naming_template),
   quality: settings.quality || 'best',
   archive_mode: archiveModes.has(settings.archive_mode) ? settings.archive_mode : 'fast',
   output_extension: outputExtensions.has(settings.output_extension) ? settings.output_extension : 'mp4',
@@ -148,6 +179,15 @@ const normalizeSettings = (settings: SettingsSnapshot): SettingsSnapshot => ({
   retry_count: retryCounts.has(settings.retry_count) ? settings.retry_count : 3,
   auto_refresh_expired_urls: settings.auto_refresh_expired_urls !== false,
 })
+
+const normalizeNamingTemplate = (template: string | null | undefined): string => {
+  const trimmed = template?.trim()
+  if (!trimmed || trimmed === legacyNamingTemplate) {
+    return defaultNamingTemplate
+  }
+
+  return trimmed
+}
 
 const previewTemplate = (template: string, ext: string): string => {
   const values: Record<string, string> = {
@@ -162,6 +202,7 @@ const previewTemplate = (template: string, ext: string): string => {
     series_title: '示例系列',
     season_index: '1',
     episode_index: '1',
+    episode_title: '第一集',
     collection_title: '示例合集',
     index: '1',
     quality: '80',

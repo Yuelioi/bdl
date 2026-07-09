@@ -2,6 +2,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::naming::DEFAULT_NAMING_TEMPLATE;
 
+const LEGACY_DUPLICATE_TITLE_TEMPLATE: &str =
+    "{title}/{title} - P{part_index} - {part_title}.{ext}";
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AppSettings {
@@ -27,5 +30,17 @@ impl Default for AppSettings {
             retry_count: 3,
             auto_refresh_expired_urls: true,
         }
+    }
+}
+
+impl AppSettings {
+    pub fn normalized(mut self) -> Self {
+        if self.naming_template.trim().is_empty()
+            || self.naming_template.trim() == LEGACY_DUPLICATE_TITLE_TEMPLATE
+        {
+            self.naming_template = DEFAULT_NAMING_TEMPLATE.to_owned();
+        }
+
+        self
     }
 }

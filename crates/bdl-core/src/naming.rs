@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use crate::error::{BdlError, BdlResult};
 
-pub const DEFAULT_NAMING_TEMPLATE: &str = "{title}/{title} - P{part_index} - {part_title}.{ext}";
+pub const DEFAULT_NAMING_TEMPLATE: &str = "{title}/P{part_index} - {part_title}.{ext}";
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct NamingContext<'a> {
@@ -125,6 +125,7 @@ fn variable_value(name: &str, context: &NamingContext<'_>) -> BdlResult<String> 
         "series_title" => context.series_title.unwrap_or_default().to_owned(),
         "season_index" => optional_usize(context.season_index),
         "episode_index" => optional_usize(context.episode_index),
+        "episode_title" => context.part_title.to_owned(),
         "collection_title" => context.collection_title.unwrap_or_default().to_owned(),
         "index" => optional_usize(context.index),
         "quality" => context.quality.unwrap_or_default().to_owned(),

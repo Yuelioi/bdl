@@ -6,12 +6,13 @@ Task 14 is code-complete on branch `bdl-downloader-app`. The workspace has a Rus
 
 ## Next
 
-Continue Task 15 derived assets, naming, and history/settings cleanup. Transfer manual Tauri-window visual QA remains a product-polish follow-up if the Transfer page is revisited.
+Continue from `flightdeck/work/bdl-downloader-app/open-task-list.md`. Immediate focus is Parse selection IA, Settings clarity, unfinished archive assets, completed records inside Transfer, and Transfer manual QA. Do not use the older History-page wording in `plan.md` as current product direction.
 
 ## Read now
 
 - flightdeck/knowledge/bdl-downloader/product-flow.md
 - flightdeck/knowledge/bdl-downloader/architecture.md
+- flightdeck/work/bdl-downloader-app/open-task-list.md
 - flightdeck/work/bdl-downloader-app/transfer-product-refactor-plan.md
 - flightdeck/work/bdl-downloader-app/plan.md
 

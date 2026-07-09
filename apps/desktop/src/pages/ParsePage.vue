@@ -13,6 +13,7 @@ interface PageTreeNode {
   id: string
   label: string
   meta?: string
+  partIds: string[]
   children?: PageTreeNode[]
 }
 
@@ -76,6 +77,18 @@ const parseAll = () => {
   }
 }
 
+const selectAllLoaded = () => {
+  if (activeSource.value) {
+    parse.selectAllLoaded(activeSource.value.source.id)
+  }
+}
+
+const clearSelection = () => {
+  if (activeSource.value) {
+    parse.clearSelection(activeSource.value.source.id)
+  }
+}
+
 const closeSource = (sourceId: string) => {
   void parse.closeSource(sourceId)
 }
@@ -87,21 +100,76 @@ const toggleNode = (nodeId: string) => {
 }
 
 const toTreeNodes = (tree: NormalizedSourceTree): PageTreeNode[] =>
-  tree.groups.map((group) => ({
-    id: group.id,
-    label: group.title,
-    meta: `${group.items.length} 项`,
-    children: group.items.map((item) => ({
+  tree.groups.flatMap((group) => {
+    const itemNodes = group.items.map((item) => itemNode(item, tree.source.kind)).flat()
+
+    if (tree.source.kind === 'video' && group.items.length === 1) {
+      return videoItemNodes(group.items[0])
+    }
+
+    if (tree.groups.length === 1 || sameTitle(group.title, tree.source.title)) {
+      return itemNodes
+    }
+
+    return [
+      {
+        id: group.id,
+        label: group.title,
+        meta: `${group.items.length} 项`,
+        partIds: group.items.flatMap((item) => item.parts.map((part) => part.id)),
+        children: itemNodes,
+      },
+    ]
+  })
+
+const itemNode = (item: NormalizedSourceTree['groups'][number]['items'][number], sourceKind: SourceKind): PageTreeNode[] => {
+  if (item.parts.length === 1) {
+    const part = item.parts[0]
+    return [
+      {
+        id: item.id,
+        label: item.title || part.title,
+        meta: item.owner_name ?? partMeta(item, part),
+        partIds: [part.id],
+      },
+    ]
+  }
+
+  if (sourceKind === 'video') {
+    return videoItemNodes(item)
+  }
+
+  return [
+    {
       id: item.id,
       label: item.title,
-      meta: item.owner_name ?? undefined,
-      children: item.parts.map((part, index) => ({
-        id: part.id,
-        label: part.title || `P${index + 1}`,
-        meta: item.duration_seconds ? formatDuration(item.duration_seconds) : streamSummary(part.streams.length),
-      })),
-    })),
-  }))
+      meta: `${item.parts.length} P`,
+      partIds: item.parts.map((part) => part.id),
+      children: item.parts.map((part, index) => partNode(item, part, index)),
+    },
+  ]
+}
+
+const videoItemNodes = (item: NormalizedSourceTree['groups'][number]['items'][number]): PageTreeNode[] =>
+  item.parts.map((part, index) => partNode(item, part, index))
+
+const partNode = (
+  item: NormalizedSourceTree['groups'][number]['items'][number],
+  part: NormalizedSourceTree['groups'][number]['items'][number]['parts'][number],
+  index: number,
+): PageTreeNode => ({
+  id: part.id,
+  label: part.title || item.title || `P${index + 1}`,
+  meta: partMeta(item, part),
+  partIds: [part.id],
+})
+
+const partMeta = (
+  item: NormalizedSourceTree['groups'][number]['items'][number],
+  part: NormalizedSourceTree['groups'][number]['items'][number]['parts'][number],
+): string => item.duration_seconds ? formatDuration(item.duration_seconds) : streamSummary(part.streams.length)
+
+const sameTitle = (left: string, right: string): boolean => left.trim() !== '' && left.trim() === right.trim()
 
 const formatDuration = (seconds: number): string => {
   const minutes = Math.floor(seconds / 60)
@@ -110,6 +178,11 @@ const formatDuration = (seconds: number): string => {
 }
 
 const streamSummary = (count: number): string => (count > 0 ? `${count} 条流` : '未拉流')
+
+const sourceLoadedLabel = (tree: NormalizedSourceTree): string =>
+  `${tree.source.loaded_count} / ${tree.source.total_count ?? tree.source.loaded_count}`
+
+const sourceSelectedCount = (sourceId: string): number => parse.selectionBySource[sourceId]?.length ?? 0
 </script>
 
 <template>
@@ -143,7 +216,7 @@ const streamSummary = (count: number): string => (count > 0 ? `${count} 条流` 
           @click="parse.setActiveSource(tree.source.id)"
         >
           <span>{{ tree.source.title }}</span>
-          <small>{{ tree.source.loaded_count }} / {{ tree.source.total_count ?? tree.source.loaded_count }}</small>
+          <small>{{ sourceLoadedLabel(tree) }} · 已选 {{ sourceSelectedCount(tree.source.id) }}</small>
         </button>
       </div>
       <div v-else class="empty-state">暂无来源</div>
@@ -199,6 +272,13 @@ const streamSummary = (count: number): string => (count > 0 ? `${count} 条流` 
 
         <div class="selection-actions">
           <UiButton :disabled="!canCreateTasks" @click="createTasks">{{ createTaskLabel }}</UiButton>
+        </div>
+
+        <div class="selection-tools">
+          <UiButton variant="secondary" :disabled="!activeSource || activeLoading" @click="selectAllLoaded">全选已加载</UiButton>
+          <UiButton variant="secondary" :disabled="!activeSource || activeLoading || selectedCount === 0" @click="clearSelection">
+            清空选择
+          </UiButton>
         </div>
 
         <div class="parse-more-actions">
@@ -350,6 +430,16 @@ const streamSummary = (count: number): string => (count > 0 ? `${count} 条流` 
 }
 
 .selection-actions :deep(.ui-button) {
+  width: 100%;
+}
+
+.selection-tools {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-8);
+}
+
+.selection-tools :deep(.ui-button) {
   width: 100%;
 }
 

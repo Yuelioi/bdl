@@ -2,7 +2,10 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 
 use bdl_core::error::BdlError;
-use bdl_core::naming::{NamingContext, render_output_path, sanitize_path_component, unique_path};
+use bdl_core::naming::{
+    DEFAULT_NAMING_TEMPLATE, NamingContext, render_output_path, sanitize_path_component,
+    unique_path,
+};
 
 #[test]
 fn render_output_path_replaces_known_variables() -> Result<(), BdlError> {
@@ -25,6 +28,38 @@ fn render_output_path_replaces_known_variables() -> Result<(), BdlError> {
         path,
         PathBuf::from("Fixture").join("P2-Opening-BV1xx411c7mD-9001.mp4")
     );
+    Ok(())
+}
+
+#[test]
+fn default_template_does_not_repeat_title_in_file_name() -> Result<(), BdlError> {
+    let context = NamingContext {
+        title: "Fixture",
+        part_title: "Opening",
+        part_index: 2,
+        ext: "mp4",
+        ..NamingContext::default()
+    };
+
+    let path = render_output_path(DEFAULT_NAMING_TEMPLATE, &context)?;
+
+    assert_eq!(path, PathBuf::from("Fixture").join("P2 - Opening.mp4"));
+    Ok(())
+}
+
+#[test]
+fn render_output_path_supports_episode_title_alias() -> Result<(), BdlError> {
+    let context = NamingContext {
+        title: "Season",
+        part_title: "First Episode",
+        episode_index: Some(1),
+        ext: "mp4",
+        ..NamingContext::default()
+    };
+
+    let path = render_output_path("{title}/E{episode_index} - {episode_title}.{ext}", &context)?;
+
+    assert_eq!(path, PathBuf::from("Season").join("E1 - First Episode.mp4"));
     Ok(())
 }
 

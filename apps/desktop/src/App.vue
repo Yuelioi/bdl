@@ -4,7 +4,12 @@ import { computed, onMounted, ref, watch } from 'vue'
 import ParsePage from './pages/ParsePage.vue'
 import TransferPage from './pages/TransferPage.vue'
 import { useAccountStore } from './stores/account'
-import { useSettingsStore } from './stores/settings'
+import {
+  defaultNamingTemplate,
+  namingTemplatePresets,
+  namingVariables,
+  useSettingsStore,
+} from './stores/settings'
 import { useUiStore, type AppTab } from './stores/ui'
 import UiButton from './ui/Button.vue'
 import UiCheckbox from './ui/Checkbox.vue'
@@ -72,6 +77,16 @@ const settingsAutoRefreshExpiredUrls = computed({
   get: () => settings.draft.auto_refresh_expired_urls,
   set: (value: boolean) => settings.setAutoRefreshExpiredUrls(value),
 })
+const settingsArchiveDescription = computed(() =>
+  settings.draft.archive_mode === 'complete_archive'
+    ? '保存最终视频，并额外生成 NFO；有封面地址时会下载封面。字幕和弹幕抓取还在任务清单中，暂不承诺完整。'
+    : '只下载视频轨道和音频轨道，合并为最终可播放文件；不抓取封面、字幕、弹幕或 NFO。',
+)
+const resetNamingTemplate = () => {
+  settings.setNamingTemplate(defaultNamingTemplate)
+}
+
+const formatNamingVariable = (name: string): string => `{${name}}`
 
 const openLoginDialog = () => {
   accountMenuOpen.value = false
@@ -190,7 +205,7 @@ watch(
       <section v-else class="page-grid settings-grid">
         <section class="panel settings-panel">
           <div class="panel-heading">
-            <h2>下载</h2>
+            <h2>设置</h2>
             <div class="settings-actions">
               <UiButton variant="ghost" :disabled="settings.loading || settings.saving || !settings.changed" @click="settings.resetDraft">
                 撤销
@@ -200,62 +215,109 @@ watch(
               </UiButton>
             </div>
           </div>
-          <div class="directory-row">
-            <UiTextField v-model="settingsDownloadDir" label="保存目录" placeholder="未设置时使用 downloads" />
-            <UiButton variant="secondary" :disabled="settings.loading || settings.saving" @click="settings.chooseDownloadDir">
-              选择
-            </UiButton>
-          </div>
-          <UiSelect
-            v-model="settingsOutputFormat"
-            label="封装格式"
-            :options="[
-              { label: 'MP4', value: 'mp4' },
-              { label: 'MKV', value: 'mkv' },
-            ]"
-          />
-          <UiTextField
-            v-model="settingsNamingTemplate"
-            label="命名模板"
-            placeholder="{title}/{title} - P{part_index} - {part_title}.{ext}"
-          />
-          <div class="settings-preview">
-            <span>预览</span>
-            <code>{{ settings.namingPreview }}</code>
-          </div>
-          <UiSelect
-            v-model="settingsArchiveMode"
-            label="归档方式"
-            :options="[
-              { label: '快速', value: 'fast' },
-              { label: '完整归档', value: 'complete_archive' },
-            ]"
-          />
-          <UiSelect
-            v-model="settingsConcurrentTasks"
-            label="同时下载任务数"
-            :options="[
-              { label: '1', value: '1' },
-              { label: '2', value: '2' },
-              { label: '3', value: '3' },
-              { label: '5', value: '5' },
-            ]"
-          />
-          <UiSelect
-            v-model="settingsRetryCount"
-            label="失败自动重试次数"
-            :options="[
-              { label: '0', value: '0' },
-              { label: '1', value: '1' },
-              { label: '3', value: '3' },
-              { label: '5', value: '5' },
-            ]"
-          />
-          <UiCheckbox
-            v-model="settingsAutoRefreshExpiredUrls"
-            label="链接过期时自动刷新"
-            :disabled="settings.loading || settings.saving"
-          />
+
+          <section class="settings-block">
+            <div class="settings-block-heading">
+              <h3>下载</h3>
+              <span>默认保存位置和传输行为</span>
+            </div>
+            <div class="directory-row">
+              <UiTextField v-model="settingsDownloadDir" label="保存目录" placeholder="未设置时使用 downloads" />
+              <UiButton variant="secondary" :disabled="settings.loading || settings.saving" @click="settings.chooseDownloadDir">
+                选择
+              </UiButton>
+            </div>
+            <div class="settings-inline-grid">
+              <UiSelect
+                v-model="settingsConcurrentTasks"
+                label="同时下载任务数"
+                :options="[
+                  { label: '1', value: '1' },
+                  { label: '2', value: '2' },
+                  { label: '3', value: '3' },
+                  { label: '5', value: '5' },
+                ]"
+              />
+              <UiSelect
+                v-model="settingsRetryCount"
+                label="失败自动重试次数"
+                :options="[
+                  { label: '0', value: '0' },
+                  { label: '1', value: '1' },
+                  { label: '3', value: '3' },
+                  { label: '5', value: '5' },
+                ]"
+              />
+            </div>
+            <UiCheckbox
+              v-model="settingsAutoRefreshExpiredUrls"
+              label="链接过期时自动刷新"
+              :disabled="settings.loading || settings.saving"
+            />
+          </section>
+
+          <section class="settings-block">
+            <div class="settings-block-heading">
+              <h3>媒体</h3>
+              <span>当前先支持封装格式，清晰度、音频和编码策略在任务清单中继续补齐</span>
+            </div>
+            <UiSelect
+              v-model="settingsOutputFormat"
+              label="封装格式"
+              :options="[
+                { label: 'MP4', value: 'mp4' },
+                { label: 'MKV', value: 'mkv' },
+              ]"
+            />
+          </section>
+
+          <section class="settings-block">
+            <div class="settings-block-heading">
+              <h3>命名</h3>
+              <span>模板会先渲染预览，保存后用于新建任务</span>
+            </div>
+            <UiTextField v-model="settingsNamingTemplate" label="命名模板" :placeholder="defaultNamingTemplate" />
+            <div class="template-presets" aria-label="命名模板预设">
+              <button
+                v-for="preset in namingTemplatePresets"
+                :key="preset.label"
+                type="button"
+                @click="settings.setNamingTemplate(preset.value)"
+              >
+                {{ preset.label }}
+              </button>
+              <button type="button" @click="resetNamingTemplate">恢复默认</button>
+            </div>
+            <div class="settings-preview">
+              <span>预览</span>
+              <code>{{ settings.namingPreview }}</code>
+            </div>
+            <details class="template-help">
+              <summary>可用变量</summary>
+              <div>
+                <span v-for="variable in namingVariables" :key="variable.name" :title="variable.desc">
+                  <code>{{ formatNamingVariable(variable.name) }}</code>
+                  <small>{{ variable.desc }}</small>
+                </span>
+              </div>
+            </details>
+          </section>
+
+          <section class="settings-block">
+            <div class="settings-block-heading">
+              <h3>归档</h3>
+              <span>决定任务会保存哪些文件</span>
+            </div>
+            <UiSelect
+              v-model="settingsArchiveMode"
+              label="保存内容"
+              :options="[
+                { label: '快速下载：仅最终视频', value: 'fast' },
+                { label: '完整归档：视频 + 可用素材', value: 'complete_archive' },
+              ]"
+            />
+            <p class="settings-note">{{ settingsArchiveDescription }}</p>
+          </section>
           <p v-if="settings.error" class="settings-error">{{ settings.error }}</p>
         </section>
       </section>

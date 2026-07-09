@@ -1717,7 +1717,7 @@ git commit -m "feat: parse paged and episodic sources"
 Defaults:
 
 ```text
-{title}/{title} - P{part_index} - {part_title}.{ext}
+{title}/P{part_index} - {part_title}.{ext}
 {series_title}/S{season_index}E{episode_index} - {episode_title}.{ext}
 {collection_title}/{index} - {title}.{ext}
 ```

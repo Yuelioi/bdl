@@ -434,6 +434,7 @@ impl AppState {
     }
 
     pub fn update_settings(&self, settings: SettingsSnapshot) -> BdlResult<SettingsSnapshot> {
+        let settings = settings.normalized();
         save_settings(&self.settings_path, &settings)?;
         *self
             .settings
@@ -694,9 +695,9 @@ fn default_settings_path() -> BdlResult<PathBuf> {
 
 fn load_settings(path: &PathBuf) -> BdlResult<SettingsSnapshot> {
     match fs::read_to_string(path) {
-        Ok(raw) => Ok(serde_json::from_str(&raw)?),
+        Ok(raw) => Ok(serde_json::from_str::<SettingsSnapshot>(&raw)?.normalized()),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            Ok(SettingsSnapshot::default())
+            Ok(SettingsSnapshot::default().normalized())
         }
         Err(error) => Err(error.into()),
     }

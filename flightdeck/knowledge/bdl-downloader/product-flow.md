@@ -319,7 +319,7 @@ Naming templates are supported in the first version, but no script engine is inc
 Defaults:
 
 ```text
-{title}/{title} - P{part_index} - {part_title}.{ext}
+{title}/P{part_index} - {part_title}.{ext}
 {series_title}/S{season_index}E{episode_index} - {episode_title}.{ext}
 {collection_title}/{index} - {title}.{ext}
 ```
