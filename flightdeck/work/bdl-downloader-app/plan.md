@@ -1,6 +1,6 @@
 # BDL Downloader App Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** Use this plan as historical implementation context. Current execution should follow `open-task-list.md`; do not use subagents unless the user explicitly asks for them. Steps use checkbox syntax for tracking completed work.
 
 **Goal:** Build a Tauri desktop Bilibili downloader that parses Bilibili inputs through `bpi-rs`, normalizes them into one source tree model, creates reliable download tasks, downloads video/audio resources, and post-processes them with ffmpeg.
 
@@ -33,7 +33,7 @@ Apply that focused plan for Transfer work before continuing unresolved resolver 
 - Phase 6 is done when the queue supports pause, resume, retry, cancellation, and resource-level resume.
 - Phase 7 is done when favorites, uploader videos, collections, series, bangumi, and courses parse into the same tree model.
 - Phase 8 is done when account persistence, cookie import, QR login, and login verification work.
-- Phase 9 is done when history, settings, naming templates, derived assets, logs, and cleanup are usable.
+- Phase 9 is done when Transfer completed records, settings, naming templates, derived assets, logs, and cleanup are usable.
 - Phase 10 is done when packaging and cross-platform checks pass.
 
 ## File Structure
@@ -152,7 +152,7 @@ The root `docs/` directory should stay absent unless we later decide to publish 
 - Create: `apps/desktop/src-tauri/Cargo.toml`
 - Create: `apps/desktop/src-tauri/src/main.rs`
 
-- [ ] **Step 1: Write the root Cargo workspace**
+- [x] **Step 1: Write the root Cargo workspace**
 
 `Cargo.toml`:
 
@@ -188,7 +188,7 @@ tracing = "0.1"
 uuid = { version = "1", features = ["v4", "serde"] }
 ```
 
-- [ ] **Step 2: Add minimal Rust crates**
+- [x] **Step 2: Add minimal Rust crates**
 
 `crates/bdl-core/Cargo.toml`:
 
@@ -302,7 +302,7 @@ async fn main() -> anyhow::Result<()> {
 }
 ```
 
-- [ ] **Step 3: Add the desktop scaffold**
+- [x] **Step 3: Add the desktop scaffold**
 
 Use Tauri 2 compatible scaffolding. If generated files differ, keep the package under `apps/desktop/` and the Rust app under `apps/desktop/src-tauri/`.
 
@@ -365,7 +365,7 @@ fn main() {
 }
 ```
 
-- [ ] **Step 4: Verify the scaffold**
+- [x] **Step 4: Verify the scaffold**
 
 Run:
 
@@ -384,7 +384,7 @@ pnpm --dir apps/desktop build
 
 Expected: frontend build succeeds after minimal Vue files are present.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add Cargo.toml crates apps .gitignore flightdeck
@@ -402,7 +402,7 @@ git commit -m "chore: scaffold bdl workspace"
 - Modify: `crates/bdl-core/src/lib.rs`
 - Test: `crates/bdl-core/tests/normalization.rs`
 
-- [ ] **Step 1: Write DTO serialization tests**
+- [x] **Step 1: Write DTO serialization tests**
 
 `crates/bdl-core/tests/normalization.rs`:
 
@@ -461,7 +461,7 @@ fn stream_quality_and_codec_are_frontend_safe_strings() {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run:
 
@@ -471,7 +471,7 @@ cargo test -p bdl-core --test normalization
 
 Expected: FAIL because `model` and DTO types do not exist.
 
-- [ ] **Step 3: Add DTO modules**
+- [x] **Step 3: Add DTO modules**
 
 `crates/bdl-core/src/lib.rs`:
 
@@ -650,7 +650,7 @@ pub enum FetchPolicy {
 }
 ```
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run:
 
@@ -660,7 +660,7 @@ cargo test -p bdl-core --test normalization
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add crates/bdl-core
@@ -677,7 +677,7 @@ git commit -m "feat: define normalized downloader DTOs"
 - Modify: `crates/bdl-core/src/lib.rs`
 - Test: `crates/bdl-core/tests/input_classifier.rs`
 
-- [ ] **Step 1: Write classifier tests**
+- [x] **Step 1: Write classifier tests**
 
 `crates/bdl-core/tests/input_classifier.rs`:
 
@@ -734,7 +734,7 @@ fn rejects_unknown_input_with_actionable_message() {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run:
 
@@ -744,7 +744,7 @@ cargo test -p bdl-core --test input_classifier
 
 Expected: FAIL because `input` module does not exist.
 
-- [ ] **Step 3: Implement classifier**
+- [x] **Step 3: Implement classifier**
 
 Use `url = "2"` and `regex = "1"` in `crates/bdl-core/Cargo.toml`, then implement:
 
@@ -854,7 +854,7 @@ fn unrecognized() -> BdlError {
 }
 ```
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run:
 
@@ -864,7 +864,7 @@ cargo test -p bdl-core --test input_classifier
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add crates/bdl-core
@@ -1699,109 +1699,66 @@ git commit -m "feat: parse paged and episodic sources"
 
 ### Task 15: Derived Assets, Naming, Completed Records, and Settings
 
+**Current product decision:** there is no separate completed-record navigation item and no standalone completed-record page. Completed records live in Transfer under the `已完成` filter, with search and actions there. Account remains in the top-right account menu, not Settings.
+
 **Files:**
 
 - Modify: `crates/bdl-core/src/planner.rs`
 - Modify: `crates/bdl-core/src/muxer.rs`
 - Modify: `crates/bdl-core/src/settings.rs`
 - Create: `crates/bdl-core/src/naming.rs`
-- Create: `crates/bdl-core/src/history.rs`
+- Modify: `crates/bdl-core/src/storage.rs`
+- Modify: `crates/bdl-tauri/src/commands.rs`
+- Modify: `crates/bdl-tauri/src/state.rs`
+- Modify: `apps/desktop/src/App.vue`
 - Modify: `apps/desktop/src/pages/TransferPage.vue`
-- Create: `apps/desktop/src/pages/SettingsPage.vue`
-- Create: `apps/desktop/src/stores/settings.ts`
+- Modify: `apps/desktop/src/stores/settings.ts`
+- Modify: `apps/desktop/src/stores/queue.ts`
 
 - [x] **Step 1: Implement naming templates**
 
-Defaults:
+Implemented:
 
-```text
-{title}/P{part_index} - {part_title}.{ext}
-{series_title}/S{season_index}E{episode_index} - {episode_title}.{ext}
-{collection_title}/{index} - {title}.{ext}
-```
+- `bdl-core::naming` renders sanitized relative output paths.
+- Default template is non-duplicating: `{title}/P{part_index} - {part_title}.{ext}`.
+- Settings exposes all supported variables, presets, inline validation, and preview.
+- Planner applies duplicate-path strategy and selected media metadata.
 
-Variables:
-
-```text
-title, part_title, part_index, bvid, aid, cid, owner_name, owner_mid,
-series_title, season_index, episode_index, collection_title, index,
-quality, codec, date, ext
-```
-
-Rules:
-
-- Sanitize invalid path characters.
-- Trim trailing dots and spaces on Windows.
-- Append `(1)`, `(2)`, etc. on conflict.
-- Provide preview in settings.
+- [x] **Step 2: Implement archive assets**
 
 Implemented:
 
-- `bdl-core::naming` renders templates to sanitized relative paths and applies duplicate suffixes.
-- `bdl-core::planner` uses the configured template for final output, video/audio temp resources, and archive asset sibling paths.
-- Settings persist `naming_template`; the settings UI exposes a template input with a sample preview.
+- `快速下载` means final merged video only.
+- `完整归档` saves final video plus available cover, subtitles, danmaku, and generated NFO.
+- `自定义归档` lets the user select cover, subtitles, danmaku, NFO, and raw stream retention.
+- Subtitle and danmaku URLs are resolved through `bpi-rs` when available.
+- Cover/subtitle embedding is optional and only attempted for supported container/sidecar combinations.
+- Unavailable archive assets become warning logs and Transfer warning state instead of pretending full success.
 
-- [ ] **Step 2: Implement archive assets**
+- [x] **Step 3: Implement completed records in Transfer**
 
-Presets:
+Implemented:
 
-- `快速下载`: final merged video only.
-- `完整归档`: video, cover, subtitles, danmaku, NFO.
-- `自定义`: user-selected assets.
+- Transfer `已完成` searches by title, source id/link, and output path.
+- Completed actions include open file, open folder, re-download, copy source, remove, and clear completed.
+- Re-download resets completed resources so cleaned raw streams can be fetched again.
+- SQLite persists selected quality, audio, codec, container, final path, source id, completion time, and redacted warning/error summary.
 
-Do not fetch subtitles/danmaku during fast parse.
+- [x] **Step 4: Implement settings page**
 
-Current partial implementation:
+Implemented in the app shell's Settings view:
 
-- Complete archive mode downloads cover assets when a cover URL is present.
-- Normal video resolving reads subtitles from `video.player_info_v2` through `bpi-rs` when stream hydration is requested.
-- Normal video resolving creates danmaku XML archive assets through `bpi-rs` `DanmakuXmlListParams`.
-- Settings expose `自定义归档`; planner filters cover/subtitle/danmaku/NFO resources through `ArchiveAssetSelection`, while raw stream retention uses the existing `retain_raw_streams` setting.
-- Settings expose optional cover/subtitle embedding. The muxer embeds supported cover images for MP4-like outputs and supported subtitle sidecars for MP4/MKV outputs; unsupported formats such as current Bilibili JSON subtitles remain sidecar files with warning logs.
-- NFO resources are generated locally after muxing.
-- Cover/subtitle/danmaku resources with no available URL are marked complete with a warning log instead of leaving completed tasks with pending resources.
-- Completed tasks with warning logs surface as `已完成 · 有警告` in Transfer and show warning detail in the diagnosis panel.
+- `下载`: save directory chooser, concurrency, retry count, segment count, startup recovery, expired URL refresh.
+- `媒体`: video/audio quality, codec, missing-quality policy, output format, FFmpeg path, raw stream retention, embedding.
+- `命名`: template input, presets, preview, variables, duplicate naming strategy.
+- `归档`: fast, complete archive, and custom archive controls.
+- `高级`: proxy, log level, data directory chooser, cache/temp cleanup, diagnostics export.
 
-- [ ] **Step 3: Implement completed records in Transfer**
+Account settings are intentionally absent from Settings.
 
-Search fields:
+- [x] **Step 5: Commit**
 
-- title.
-- source URL/input.
-- save path.
-
-Actions:
-
-- open file.
-- open directory.
-- re-download.
-- copy source link.
-- remove completed record.
-
-Current partial implementation:
-
-- Transfer `已完成` has a search box filtering by title, source id/link, and output path.
-- Completed task menus include open folder, re-download, copy source, and remove; the bulk bar already clears completed records.
-- Completed retry resets all resources to pending so cleaned raw streams are downloaded again.
-- Durable completed-record metadata beyond the queue snapshot remains pending.
-
-- [ ] **Step 4: Implement settings page**
-
-Sections:
-
-- `下载`.
-- `媒体`.
-- `归档`.
-- `高级`.
-
-Do not place account settings here.
-
-- [ ] **Step 5: Commit**
-
-```powershell
-git add crates/bdl-core crates/bdl-tauri apps/desktop/src
-git commit -m "feat: add archive options history and settings"
-```
+Landed across the Task 15/P1 continuation commits recorded in `index.md`, including naming, archive assets, completed records, settings, reliability, logs, diagnostics, account hardening, and Transfer QA.
 
 ---
 
@@ -1809,53 +1766,32 @@ git commit -m "feat: add archive options history and settings"
 
 **Files:**
 
-- Modify: `apps/desktop/src-tauri/tauri.conf.json`
 - Create: `scripts/check.ps1`
 - Create: `scripts/package.ps1`
-- Update: `.gitignore`
+- Create: `flightdeck/work/bdl-downloader-app/release-qa.md`
+- Update: `flightdeck/work/bdl-downloader-app/open-task-list.md`
 
-- [ ] **Step 1: Add a single check script**
+- [x] **Step 1: Add a single check script**
 
-`scripts/check.ps1` runs:
+`scripts/check.ps1` runs formatting, clippy with warnings as errors, full workspace tests, the desktop frontend build, and `git diff --check`. It explicitly checks native command exit codes under PowerShell.
 
-```powershell
-cargo fmt --check
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
-pnpm --dir apps/desktop build
-```
+- [x] **Step 2: Add package script**
 
-- [ ] **Step 2: Add package script**
+`scripts/package.ps1` runs `pnpm --dir apps/desktop tauri build` and prints release artifacts under `target/release`, including the executable and Windows installer bundles.
 
-`scripts/package.ps1` runs:
+- [x] **Step 3: Manual QA checklist**
 
-```powershell
-pnpm --dir apps/desktop tauri build
-```
+Release QA is captured in `flightdeck/work/bdl-downloader-app/release-qa.md`. Minimum-window browser QA covered Parse, Transfer, and Settings at `1100x720`; Transfer follow-up QA covered `1365x768` and `1100x720` with real components and mocked Tauri responses.
 
-It must print where artifacts were written.
+- [x] **Step 4: Commit**
 
-- [ ] **Step 3: Manual QA checklist**
+Landed as:
 
-Verify:
-
-- App starts at minimum 1100x720.
-- Parse page accepts BV and URL.
-- `下载已选择` stays on parse page and shows toast.
-- Transfer badge increments.
-- Transfer page shows running/completed task.
-- Pause/resume/cancel/retry actions do not corrupt state.
-- Restart shows incomplete tasks but does not auto-resume by default.
-- Cookie import persists across restart.
-- Logs redact cookies and signed URL details.
-- ffmpeg missing message is actionable.
-
-- [ ] **Step 4: Commit**
-
-```powershell
-git add scripts apps/desktop/src-tauri .gitignore flightdeck
-git commit -m "chore: add release checks and packaging scripts"
-```
+- `f3c9475 chore: add workspace check script`
+- `57d619e chore: add packaging script`
+- `23b2434 docs: record minimum window QA`
+- `e8e1f21 docs: add release QA checklist`
+- `c6d02e9 test: verify transfer persisted workflows`
 
 ---
 

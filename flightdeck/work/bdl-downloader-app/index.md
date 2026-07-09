@@ -170,6 +170,7 @@ Current:
 - Transfer visual QA follow-up is complete. Chrome/Playwright rendered real Transfer components with mocked Tauri startup, settings, account, queue, logs, and command responses at `1365x768` and `1100x720`. Both viewports reported `documentElement.scrollWidth == clientWidth`, no visible horizontal scrollers, and inspector raw logs/track lists stayed inside their panels. The narrow `1100x720` layout now gives the task list usable height and lays the inspector summary/tabs side-by-side so the summary actions are not clipped.
 - Persisted Transfer workflow verification is covered by `state::tests::persisted_queue_management_workflows_survive_reload`. The test uses a temporary real SQLite `TaskStorage`, exercises pause/resume, retry, refresh-link URL replacement plus retry, remove, and clear-completed behavior through `AppState`, then reopens storage and verifies the results persisted.
 - Transfer QA verification passed: `cargo fmt --all --check`, `cargo test -p bdl-tauri state`, `pnpm --dir apps/desktop build`, and `git diff --check`.
+- Plan maintenance is complete. `plan.md` now treats Task 15 as completed under current product decisions, explicitly keeps completed records inside Transfer instead of a separate History page, marks the older completed Task 1-3 checkboxes, and removes the stale instruction that agent workers should use subagents by default.
 
 Decisions:
 - Main navigation: `解析`, `传输`, `设置`; account lives in the top-right account button. Completed records live under Transfer's `已完成` filter, not a separate History page.

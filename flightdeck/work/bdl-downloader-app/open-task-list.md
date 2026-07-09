@@ -102,6 +102,6 @@ Audited on 2026-07-09 from:
 
 ## Plan Maintenance
 
-- [ ] Rewrite Task 15 around current product decisions: no separate History page, completed records live in Transfer.
-- [ ] Mark older completed Task 1-3 plan checkboxes consistently or replace them with an audit summary to avoid false "unfinished" signals.
+- [x] Rewrite Task 15 around current product decisions: no separate History page, completed records live in Transfer.
+- [x] Mark older completed Task 1-3 plan checkboxes consistently or replace them with an audit summary to avoid false "unfinished" signals.
 - [x] Update `index.md` after each completed slice with commit IDs and verification commands.
