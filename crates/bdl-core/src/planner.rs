@@ -25,6 +25,52 @@ use crate::queue::{
 pub enum ArchiveMode {
     Fast,
     CompleteArchive,
+    Custom,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ArchiveAssetSelection {
+    pub cover: bool,
+    pub subtitles: bool,
+    pub danmaku: bool,
+    pub nfo: bool,
+}
+
+impl ArchiveAssetSelection {
+    pub const fn all() -> Self {
+        Self {
+            cover: true,
+            subtitles: true,
+            danmaku: true,
+            nfo: true,
+        }
+    }
+
+    pub const fn none() -> Self {
+        Self {
+            cover: false,
+            subtitles: false,
+            danmaku: false,
+            nfo: false,
+        }
+    }
+
+    fn includes(self, intent: DownloadResourceIntent) -> bool {
+        match intent {
+            DownloadResourceIntent::Cover => self.cover,
+            DownloadResourceIntent::Subtitle => self.subtitles,
+            DownloadResourceIntent::Danmaku => self.danmaku,
+            DownloadResourceIntent::Nfo => self.nfo,
+            DownloadResourceIntent::Video | DownloadResourceIntent::Audio => false,
+        }
+    }
+}
+
+impl Default for ArchiveAssetSelection {
+    fn default() -> Self {
+        Self::all()
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -99,6 +145,7 @@ pub struct DownloadOptions {
     pub audio_quality: StreamPreference,
     pub video_codec: StreamCodec,
     pub missing_quality_policy: MissingQualityPolicy,
+    pub archive_assets: ArchiveAssetSelection,
 }
 
 impl DownloadOptions {
@@ -113,6 +160,7 @@ impl DownloadOptions {
             audio_quality: StreamPreference::default(),
             video_codec: StreamCodec::Auto,
             missing_quality_policy: MissingQualityPolicy::default(),
+            archive_assets: ArchiveAssetSelection::all(),
         }
     }
 
@@ -200,12 +248,18 @@ fn plan_part(
         )?,
     ];
 
-    if options.archive_mode == ArchiveMode::CompleteArchive {
+    let archive_assets = match options.archive_mode {
+        ArchiveMode::Fast => ArchiveAssetSelection::none(),
+        ArchiveMode::CompleteArchive => ArchiveAssetSelection::all(),
+        ArchiveMode::Custom => options.archive_assets,
+    };
+    if archive_assets != ArchiveAssetSelection::none() {
         resources.extend(complete_archive_resources(
             &task_id,
             &output_path,
             item,
             part,
+            archive_assets,
         ));
     }
 
@@ -372,6 +426,7 @@ fn complete_archive_resources(
     output_path: &Path,
     item: &NormalizedItem,
     part: &NormalizedPart,
+    selection: ArchiveAssetSelection,
 ) -> Vec<DownloadResource> {
     [
         DownloadResourceIntent::Cover,
@@ -380,6 +435,7 @@ fn complete_archive_resources(
         DownloadResourceIntent::Nfo,
     ]
     .into_iter()
+    .filter(|intent| selection.includes(*intent))
     .map(|intent| asset_resource(task_id, output_path, item, part, intent))
     .collect()
 }

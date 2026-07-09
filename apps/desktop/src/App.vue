@@ -62,6 +62,22 @@ const settingsArchiveMode = computed({
   get: () => settings.draft.archive_mode,
   set: (value: string) => settings.setArchiveMode(value),
 })
+const settingsArchiveCover = computed({
+  get: () => settings.draft.archive_assets.cover,
+  set: (value: boolean) => settings.setArchiveAsset('cover', value),
+})
+const settingsArchiveSubtitles = computed({
+  get: () => settings.draft.archive_assets.subtitles,
+  set: (value: boolean) => settings.setArchiveAsset('subtitles', value),
+})
+const settingsArchiveDanmaku = computed({
+  get: () => settings.draft.archive_assets.danmaku,
+  set: (value: boolean) => settings.setArchiveAsset('danmaku', value),
+})
+const settingsArchiveNfo = computed({
+  get: () => settings.draft.archive_assets.nfo,
+  set: (value: boolean) => settings.setArchiveAsset('nfo', value),
+})
 const settingsOutputFormat = computed({
   get: () => settings.draft.output_extension,
   set: (value: string) => settings.setOutputExtension(value),
@@ -122,11 +138,27 @@ const settingsDataDir = computed({
   get: () => settings.draft.data_dir ?? '',
   set: (value: string) => settings.setDataDir(value),
 })
-const settingsArchiveDescription = computed(() =>
-  settings.draft.archive_mode === 'complete_archive'
-    ? '保存最终视频，并额外生成 NFO；解析到封面、字幕或弹幕地址时会一并下载，不可用的素材会在任务日志中记录。'
-    : '只下载视频轨道和音频轨道，合并为最终可播放文件；不抓取封面、字幕、弹幕或 NFO。',
-)
+const selectedArchiveAssetLabels = computed(() => {
+  const labels: string[] = []
+  if (settings.draft.archive_assets.cover) labels.push('封面')
+  if (settings.draft.archive_assets.subtitles) labels.push('字幕')
+  if (settings.draft.archive_assets.danmaku) labels.push('弹幕')
+  if (settings.draft.archive_assets.nfo) labels.push('NFO')
+  return labels
+})
+const rawStreamCopy = computed(() => (settings.draft.retain_raw_streams ? '；保留原始视频/音频轨道' : ''))
+const settingsArchiveDescription = computed(() => {
+  if (settings.draft.archive_mode === 'complete_archive') {
+    return `保存最终视频，并额外保存可用的封面、字幕、弹幕和 NFO${rawStreamCopy.value}。不可用的素材会在任务日志中记录。`
+  }
+
+  if (settings.draft.archive_mode === 'custom') {
+    const selected = selectedArchiveAssetLabels.value.length > 0 ? selectedArchiveAssetLabels.value.join('、') : '不额外保存素材'
+    return `保存最终视频，并按自定义选择保存：${selected}${rawStreamCopy.value}。`
+  }
+
+  return `保存最终视频${rawStreamCopy.value}；不抓取封面、字幕、弹幕或 NFO。`
+})
 const settingsDuplicateDescription = computed(() =>
   settings.draft.duplicate_naming_strategy === 'overwrite_existing'
     ? '新任务会使用模板渲染出的原始路径；如果磁盘上已有同名文件，下载完成后会覆盖它。批量任务内部路径冲突仍会自动加后缀。'
@@ -381,11 +413,6 @@ watch(
                 使用系统 FFmpeg
               </UiButton>
             </div>
-            <UiCheckbox
-              v-model="settingsRetainRawStreams"
-              label="保留原始视频/音频轨道"
-              :disabled="settings.loading || settings.saving"
-            />
             <p class="settings-note">
               编码是偏好而非硬性过滤；目标清晰度不存在时，默认会选择最接近的可用轨道。选择“提示后再处理”时，当前版本会阻止创建任务并显示原因。
             </p>
@@ -444,7 +471,35 @@ watch(
               :options="[
                 { label: '快速下载：仅最终视频', value: 'fast' },
                 { label: '完整归档：视频 + 可用素材', value: 'complete_archive' },
+                { label: '自定义归档', value: 'custom' },
               ]"
+            />
+            <div v-if="settings.draft.archive_mode === 'custom'" class="archive-option-grid">
+              <UiCheckbox
+                v-model="settingsArchiveCover"
+                label="保存封面"
+                :disabled="settings.loading || settings.saving"
+              />
+              <UiCheckbox
+                v-model="settingsArchiveSubtitles"
+                label="保存字幕"
+                :disabled="settings.loading || settings.saving"
+              />
+              <UiCheckbox
+                v-model="settingsArchiveDanmaku"
+                label="保存弹幕"
+                :disabled="settings.loading || settings.saving"
+              />
+              <UiCheckbox
+                v-model="settingsArchiveNfo"
+                label="生成 NFO"
+                :disabled="settings.loading || settings.saving"
+              />
+            </div>
+            <UiCheckbox
+              v-model="settingsRetainRawStreams"
+              label="保留原始视频/音频轨道"
+              :disabled="settings.loading || settings.saving"
             />
             <p class="settings-note">{{ settingsArchiveDescription }}</p>
           </section>

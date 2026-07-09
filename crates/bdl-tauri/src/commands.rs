@@ -230,6 +230,7 @@ pub async fn selection_create_tasks(
     options.audio_quality = StreamPreference::parse(&settings.audio_quality, "音频质量")?;
     options.video_codec = parse_stream_codec(&settings.codec)?;
     options.missing_quality_policy = MissingQualityPolicy::parse(&settings.missing_quality_policy)?;
+    options.archive_assets = settings.archive_assets;
 
     let prepared = state
         .prepare_selection(&source_id, &selected_part_ids)
@@ -1189,6 +1190,7 @@ fn parse_archive_mode(value: &str) -> CommandResult<ArchiveMode> {
     match value {
         "fast" => Ok(ArchiveMode::Fast),
         "complete_archive" => Ok(ArchiveMode::CompleteArchive),
+        "custom" => Ok(ArchiveMode::Custom),
         other => Err(CommandError {
             code: "invalid_archive_mode".to_owned(),
             message: format!("unknown archive mode `{other}`"),

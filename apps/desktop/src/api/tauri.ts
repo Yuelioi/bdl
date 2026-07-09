@@ -11,6 +11,7 @@ import type {
   QrLoginSession,
   QueueLogEntry,
   QueueRemoveResponse,
+  ArchiveMode,
   SettingsSnapshot,
 } from './dto'
 
@@ -51,7 +52,7 @@ export interface SelectionCreateTasksRequest {
   source_id: string
   part_ids: string[]
   output_dir?: string
-  archive_mode?: 'fast' | 'complete_archive'
+  archive_mode?: ArchiveMode
   output_extension?: string
 }
 

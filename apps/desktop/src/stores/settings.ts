@@ -47,6 +47,12 @@ const defaultSettings = (): SettingsSnapshot => ({
   naming_template: defaultNamingTemplate,
   quality: 'best',
   archive_mode: 'fast',
+  archive_assets: {
+    cover: true,
+    subtitles: true,
+    danmaku: true,
+    nfo: true,
+  },
   output_extension: 'mp4',
   duplicate_naming_strategy: 'append_suffix',
   audio_quality: 'best',
@@ -64,7 +70,7 @@ const defaultSettings = (): SettingsSnapshot => ({
 
 const videoQualities = new Set(['best', '127', '120', '116', '112', '80', '64', '32', '16'])
 const audioQualities = new Set(['best', '30280', '30232', '30216'])
-const archiveModes = new Set<SettingsSnapshot['archive_mode']>(['fast', 'complete_archive'])
+const archiveModes = new Set<SettingsSnapshot['archive_mode']>(['fast', 'complete_archive', 'custom'])
 const outputExtensions = new Set<SettingsSnapshot['output_extension']>(['mp4', 'mkv'])
 const duplicateNamingStrategies = new Set<SettingsSnapshot['duplicate_naming_strategy']>([
   'append_suffix',
@@ -228,7 +234,7 @@ export const useSettingsStore = defineStore('settings', {
       }
     },
     resetDraft() {
-      this.draft = { ...this.saved }
+      this.draft = cloneSettings(this.saved)
     },
     setDownloadDir(value: string) {
       const trimmed = value.trim()
@@ -259,6 +265,12 @@ export const useSettingsStore = defineStore('settings', {
       this.draft.archive_mode = archiveModes.has(value as SettingsSnapshot['archive_mode'])
         ? (value as SettingsSnapshot['archive_mode'])
         : 'fast'
+    },
+    setArchiveAsset(kind: keyof SettingsSnapshot['archive_assets'], value: boolean) {
+      this.draft.archive_assets = {
+        ...this.draft.archive_assets,
+        [kind]: value,
+      }
     },
     setOutputExtension(value: string) {
       this.draft.output_extension = outputExtensions.has(value as SettingsSnapshot['output_extension'])
@@ -311,8 +323,8 @@ export const useSettingsStore = defineStore('settings', {
     },
     apply(settings: SettingsSnapshot) {
       const normalized = normalizeSettings(settings)
-      this.saved = normalized
-      this.draft = { ...normalized }
+      this.saved = cloneSettings(normalized)
+      this.draft = cloneSettings(normalized)
       this.loaded = true
     },
   },
@@ -323,6 +335,7 @@ const normalizeSettings = (settings: SettingsSnapshot): SettingsSnapshot => ({
   naming_template: normalizeNamingTemplate(settings.naming_template),
   quality: videoQualities.has(settings.quality) ? settings.quality : 'best',
   archive_mode: archiveModes.has(settings.archive_mode) ? settings.archive_mode : 'fast',
+  archive_assets: normalizeArchiveAssets(settings.archive_assets),
   output_extension: outputExtensions.has(settings.output_extension) ? settings.output_extension : 'mp4',
   duplicate_naming_strategy: duplicateNamingStrategies.has(settings.duplicate_naming_strategy)
     ? settings.duplicate_naming_strategy
@@ -340,6 +353,20 @@ const normalizeSettings = (settings: SettingsSnapshot): SettingsSnapshot => ({
   concurrent_tasks: concurrentTaskCounts.has(settings.concurrent_tasks) ? settings.concurrent_tasks : 1,
   retry_count: retryCounts.has(settings.retry_count) ? settings.retry_count : 3,
   auto_refresh_expired_urls: settings.auto_refresh_expired_urls !== false,
+})
+
+const cloneSettings = (settings: SettingsSnapshot): SettingsSnapshot => ({
+  ...settings,
+  archive_assets: { ...settings.archive_assets },
+})
+
+const normalizeArchiveAssets = (
+  value: SettingsSnapshot['archive_assets'] | null | undefined,
+): SettingsSnapshot['archive_assets'] => ({
+  cover: value?.cover !== false,
+  subtitles: value?.subtitles !== false,
+  danmaku: value?.danmaku !== false,
+  nfo: value?.nfo !== false,
 })
 
 const normalizeNamingTemplate = (template: string | null | undefined): string => {

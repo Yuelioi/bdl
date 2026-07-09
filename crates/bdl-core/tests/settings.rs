@@ -1,4 +1,5 @@
 use bdl_core::naming::{DEFAULT_NAMING_TEMPLATE, DuplicateNamingStrategy};
+use bdl_core::planner::ArchiveAssetSelection;
 use bdl_core::settings::AppSettings;
 
 #[test]
@@ -50,11 +51,30 @@ fn settings_deserialize_old_config_defaults_duplicate_naming_strategy() {
     assert_eq!(settings.audio_quality, "best");
     assert_eq!(settings.codec, "auto");
     assert_eq!(settings.missing_quality_policy, "lower");
+    assert_eq!(settings.archive_assets, ArchiveAssetSelection::all());
     assert_eq!(settings.ffmpeg_path, None);
     assert!(!settings.retain_raw_streams);
     assert_eq!(settings.proxy_url, None);
     assert_eq!(settings.log_level, "info");
     assert_eq!(settings.data_dir, None);
+}
+
+#[test]
+fn settings_validate_accepts_custom_archive_mode() {
+    let settings = AppSettings {
+        archive_mode: "custom".to_owned(),
+        archive_assets: ArchiveAssetSelection {
+            cover: true,
+            subtitles: false,
+            danmaku: true,
+            nfo: false,
+        },
+        ..AppSettings::default()
+    };
+
+    settings
+        .validate()
+        .expect("custom archive mode should be valid");
 }
 
 #[test]

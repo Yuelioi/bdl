@@ -1756,9 +1756,10 @@ Current partial implementation:
 - Complete archive mode downloads cover assets when a cover URL is present.
 - Normal video resolving reads subtitles from `video.player_info_v2` through `bpi-rs` when stream hydration is requested.
 - Normal video resolving creates danmaku XML archive assets through `bpi-rs` `DanmakuXmlListParams`.
+- Settings expose `自定义归档`; planner filters cover/subtitle/danmaku/NFO resources through `ArchiveAssetSelection`, while raw stream retention uses the existing `retain_raw_streams` setting.
 - NFO resources are generated locally after muxing.
 - Cover/subtitle/danmaku resources with no available URL are marked complete with a warning log instead of leaving completed tasks with pending resources.
-- Custom asset selection remains pending.
+- Optional cover/subtitle embedding and richer archive warning state remain pending.
 
 - [ ] **Step 3: Implement completed records in Transfer**
 

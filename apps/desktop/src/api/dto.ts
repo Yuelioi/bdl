@@ -88,6 +88,8 @@ export interface DerivedAsset {
   kind: AssetKind
   format: string | null
   fetch_policy: FetchPolicy
+  urls: string[]
+  headers: HeaderPair[]
 }
 
 export type TaskStatus =
@@ -152,12 +154,21 @@ export type DuplicateNamingStrategy = 'append_suffix' | 'overwrite_existing'
 export type VideoCodecPreference = 'auto' | 'avc' | 'hevc' | 'av1'
 export type MissingQualityPolicy = 'lower' | 'skip' | 'ask'
 export type LogLevel = 'debug' | 'info' | 'warning' | 'error'
+export type ArchiveMode = 'fast' | 'complete_archive' | 'custom'
+
+export interface ArchiveAssetSelection {
+  cover: boolean
+  subtitles: boolean
+  danmaku: boolean
+  nfo: boolean
+}
 
 export interface SettingsSnapshot {
   download_dir: string | null
   naming_template: string
   quality: string
-  archive_mode: 'fast' | 'complete_archive'
+  archive_mode: ArchiveMode
+  archive_assets: ArchiveAssetSelection
   output_extension: 'mp4' | 'mkv'
   duplicate_naming_strategy: DuplicateNamingStrategy
   audio_quality: string

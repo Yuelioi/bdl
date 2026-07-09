@@ -60,7 +60,7 @@ Audited on 2026-07-09 from:
 
 - [x] Fetch subtitles through `bpi-rs` when available.
 - [x] Fetch danmaku through `bpi-rs` when available.
-- [ ] Add custom archive selection for cover, subtitles, danmaku, NFO, and raw stream retention.
+- [x] Add custom archive selection for cover, subtitles, danmaku, NFO, and raw stream retention.
 - [ ] Add optional cover/subtitle embedding in ffmpeg post-processing when the container supports it.
 - [ ] Record unavailable archive assets as user-facing warnings without claiming full archive success.
 

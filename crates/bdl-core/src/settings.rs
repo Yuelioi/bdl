@@ -2,7 +2,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::BdlResult;
 use crate::naming::{DEFAULT_NAMING_TEMPLATE, DuplicateNamingStrategy, validate_template};
-use crate::planner::{MissingQualityPolicy, StreamPreference, parse_stream_codec};
+use crate::planner::{
+    ArchiveAssetSelection, MissingQualityPolicy, StreamPreference, parse_stream_codec,
+};
 
 const LEGACY_DUPLICATE_TITLE_TEMPLATE: &str =
     "{title}/{title} - P{part_index} - {part_title}.{ext}";
@@ -14,6 +16,7 @@ pub struct AppSettings {
     pub naming_template: String,
     pub quality: String,
     pub archive_mode: String,
+    pub archive_assets: ArchiveAssetSelection,
     pub output_extension: String,
     pub duplicate_naming_strategy: DuplicateNamingStrategy,
     pub audio_quality: String,
@@ -36,6 +39,7 @@ impl Default for AppSettings {
             naming_template: DEFAULT_NAMING_TEMPLATE.to_owned(),
             quality: "best".to_owned(),
             archive_mode: "fast".to_owned(),
+            archive_assets: ArchiveAssetSelection::all(),
             output_extension: "mp4".to_owned(),
             duplicate_naming_strategy: DuplicateNamingStrategy::default(),
             audio_quality: "best".to_owned(),
@@ -84,6 +88,8 @@ impl AppSettings {
 
     pub fn validate(&self) -> BdlResult<()> {
         validate_template(&self.naming_template)?;
+        validate_archive_mode(&self.archive_mode)?;
+        validate_output_extension(&self.output_extension)?;
         StreamPreference::parse(&self.quality, "视频清晰度")?;
         StreamPreference::parse(&self.audio_quality, "音频质量")?;
         parse_stream_codec(&self.codec)?;
@@ -91,6 +97,24 @@ impl AppSettings {
         validate_log_level(&self.log_level)?;
         validate_proxy_url(self.proxy_url.as_deref())?;
         Ok(())
+    }
+}
+
+fn validate_archive_mode(value: &str) -> BdlResult<()> {
+    match value {
+        "fast" | "complete_archive" | "custom" => Ok(()),
+        other => Err(crate::error::BdlError::Planning {
+            message: format!("归档模式设置无效：`{other}`。"),
+        }),
+    }
+}
+
+fn validate_output_extension(value: &str) -> BdlResult<()> {
+    match value {
+        "mp4" | "mkv" => Ok(()),
+        other => Err(crate::error::BdlError::Planning {
+            message: format!("封装格式设置无效：`{other}`。"),
+        }),
     }
 }
 

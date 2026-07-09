@@ -12,7 +12,8 @@ use bdl_core::model::{
 };
 use bdl_core::naming::DuplicateNamingStrategy;
 use bdl_core::planner::{
-    ArchiveMode, DownloadOptions, MissingQualityPolicy, StreamPreference, plan_selected_parts,
+    ArchiveAssetSelection, ArchiveMode, DownloadOptions, MissingQualityPolicy, StreamPreference,
+    plan_selected_parts,
 };
 use bdl_core::queue::{DownloadResourceIntent, DownloadResourceKind, ResourceStatus, TaskStatus};
 
@@ -124,6 +125,37 @@ fn plan_selected_parts_complete_archive_uses_asset_urls_and_formats() {
         danmaku
             .target_path
             .ends_with("Fixture Video/P1 - P1.danmaku.xml")
+    );
+}
+
+#[test]
+fn plan_selected_parts_custom_archive_uses_selected_asset_intents_only() {
+    let tree = fixture_tree(true);
+    let mut options =
+        DownloadOptions::new(PathBuf::from("downloads")).with_archive_mode(ArchiveMode::Custom);
+    options.archive_assets = ArchiveAssetSelection {
+        cover: false,
+        subtitles: true,
+        danmaku: false,
+        nfo: true,
+    };
+
+    let tasks = plan_selected_parts(&tree, &[PartId("part:BV1:100".to_owned())], &options)
+        .expect("custom archive should plan selected asset resources");
+
+    let intents = tasks[0]
+        .resources
+        .iter()
+        .map(|resource| resource.intent)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        intents,
+        vec![
+            DownloadResourceIntent::Video,
+            DownloadResourceIntent::Audio,
+            DownloadResourceIntent::Subtitle,
+            DownloadResourceIntent::Nfo,
+        ]
     );
 }
 
