@@ -68,6 +68,8 @@ async fn fetcher_resumes_existing_bdlpart_with_range_request() {
         &FetchState {
             total_bytes: Some(10),
             downloaded_bytes: 4,
+            etag: None,
+            last_modified: None,
         },
     )
     .await
@@ -150,6 +152,8 @@ async fn fetcher_restarts_when_content_length_changes_between_attempts() {
         &FetchState {
             total_bytes: Some(10),
             downloaded_bytes: 4,
+            etag: None,
+            last_modified: None,
         },
     )
     .await
@@ -168,6 +172,44 @@ async fn fetcher_restarts_when_content_length_changes_between_attempts() {
     assert_eq!(
         tokio::fs::read(&resource.target_path).await.unwrap(),
         b"abcdefghijkl"
+    );
+    assert_eq!(server.ranges().await, vec![None]);
+}
+
+#[tokio::test]
+async fn fetcher_restarts_when_saved_etag_differs_from_remote_etag() {
+    let server =
+        TestServer::spawn_with_validators(b"abcdefghij".to_vec(), 0, Some("\"new\""), None).await;
+    let dir = temp_case_dir("changed-etag").await;
+    let resource = resource(server.url(), &dir, "changed-etag.bin");
+    tokio::fs::write(&resource.temp_path, b"abcd")
+        .await
+        .unwrap();
+    write_fetch_state(
+        &resource.temp_path,
+        &FetchState {
+            total_bytes: Some(10),
+            downloaded_bytes: 4,
+            etag: Some("\"old\"".to_owned()),
+            last_modified: None,
+        },
+    )
+    .await
+    .unwrap();
+    let fetcher = ReqwestFetcher::with_config(FetchConfig {
+        max_retries: 0,
+        proxy_url: None,
+    })
+    .expect("fetcher should be created");
+
+    fetcher
+        .fetch(&resource, None)
+        .await
+        .expect("resource should restart when etag changes");
+
+    assert_eq!(
+        tokio::fs::read(&resource.target_path).await.unwrap(),
+        b"abcdefghij"
     );
     assert_eq!(server.ranges().await, vec![None]);
 }
@@ -212,10 +254,21 @@ struct TestServerState {
     get_count: AtomicUsize,
     ranges: Mutex<Vec<Option<String>>>,
     headers: Mutex<Vec<HashMap<String, String>>>,
+    etag: Option<String>,
+    last_modified: Option<String>,
 }
 
 impl TestServer {
     async fn spawn(data: Vec<u8>, fail_gets: usize) -> Self {
+        Self::spawn_with_validators(data, fail_gets, None, None).await
+    }
+
+    async fn spawn_with_validators(
+        data: Vec<u8>,
+        fail_gets: usize,
+        etag: Option<&str>,
+        last_modified: Option<&str>,
+    ) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         let state = Arc::new(TestServerState {
@@ -224,6 +277,8 @@ impl TestServer {
             get_count: AtomicUsize::new(0),
             ranges: Mutex::new(Vec::new()),
             headers: Mutex::new(Vec::new()),
+            etag: etag.map(str::to_owned),
+            last_modified: last_modified.map(str::to_owned),
         });
         let server_state = state.clone();
 
@@ -288,7 +343,7 @@ async fn handle_connection(mut stream: TcpStream, state: Arc<TestServerState>) {
                 &mut stream,
                 200,
                 "OK",
-                &[("Content-Length", state.data.len())],
+                &response_headers(&state, state.data.len()),
                 b"",
             )
             .await;
@@ -304,7 +359,7 @@ async fn handle_connection(mut stream: TcpStream, state: Arc<TestServerState>) {
 
             if state.fail_gets.load(Ordering::SeqCst) > 0 {
                 state.fail_gets.fetch_sub(1, Ordering::SeqCst);
-                write_response(&mut stream, 500, "FAIL", &[("Content-Length", 0)], b"").await;
+                write_response(&mut stream, 500, "FAIL", &response_headers(&state, 0), b"").await;
                 return;
             }
 
@@ -320,7 +375,7 @@ async fn handle_connection(mut stream: TcpStream, state: Arc<TestServerState>) {
                     &mut stream,
                     206,
                     "PARTIAL",
-                    &[("Content-Length", body.len())],
+                    &response_headers(&state, body.len()),
                     body,
                 )
                 .await;
@@ -329,16 +384,35 @@ async fn handle_connection(mut stream: TcpStream, state: Arc<TestServerState>) {
                     &mut stream,
                     200,
                     "OK",
-                    &[("Content-Length", state.data.len())],
+                    &response_headers(&state, state.data.len()),
                     &state.data,
                 )
                 .await;
             }
         }
         _ => {
-            write_response(&mut stream, 405, "METHOD", &[("Content-Length", 0)], b"").await;
+            write_response(
+                &mut stream,
+                405,
+                "METHOD",
+                &response_headers(&state, 0),
+                b"",
+            )
+            .await;
         }
     }
+}
+
+fn response_headers(state: &TestServerState, content_length: usize) -> Vec<(&'static str, String)> {
+    let mut headers = vec![("Content-Length", content_length.to_string())];
+    if let Some(etag) = &state.etag {
+        headers.push(("ETag", etag.clone()));
+    }
+    if let Some(last_modified) = &state.last_modified {
+        headers.push(("Last-Modified", last_modified.clone()));
+    }
+
+    headers
 }
 
 fn parse_headers<'a>(lines: impl Iterator<Item = &'a str>) -> HashMap<String, String> {
@@ -353,7 +427,7 @@ async fn write_response(
     stream: &mut TcpStream,
     status: u16,
     reason: &str,
-    headers: &[(&str, usize)],
+    headers: &[(&str, String)],
     body: &[u8],
 ) {
     let mut response = format!("HTTP/1.1 {status} {reason}\r\nConnection: close\r\n");

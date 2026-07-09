@@ -3,7 +3,9 @@ use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
 use futures::StreamExt;
-use reqwest::header::{CONTENT_LENGTH, HeaderMap, HeaderName, HeaderValue, RANGE};
+use reqwest::header::{
+    CONTENT_LENGTH, ETAG, HeaderMap, HeaderName, HeaderValue, LAST_MODIFIED, RANGE,
+};
 use reqwest::{Client, Proxy, StatusCode};
 use serde::{Deserialize, Serialize};
 use tokio::fs::{self, OpenOptions};
@@ -32,6 +34,10 @@ impl Default for FetchConfig {
 pub struct FetchState {
     pub total_bytes: Option<u64>,
     pub downloaded_bytes: u64,
+    #[serde(default)]
+    pub etag: Option<String>,
+    #[serde(default)]
+    pub last_modified: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -48,6 +54,13 @@ pub struct FetchOutcome {
 }
 
 pub type ProgressSender = UnboundedSender<FetchProgress>;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RemoteResourceMetadata {
+    total_bytes: Option<u64>,
+    etag: Option<String>,
+    last_modified: Option<String>,
+}
 
 #[async_trait]
 pub trait Fetcher {
@@ -141,8 +154,8 @@ impl ReqwestFetcher {
         ensure_parent_dir(&resource.temp_path).await?;
 
         let headers = request_headers(resource)?;
-        let total_bytes = self.content_length(url, headers.clone()).await?;
-        let resume_from = resume_offset(&resource.temp_path, total_bytes).await?;
+        let metadata = self.resource_metadata(url, headers.clone()).await?;
+        let resume_from = resume_offset(&resource.temp_path, &metadata).await?;
 
         let mut request = self.client.get(url).headers(headers);
         if resume_from > 0 {
@@ -171,18 +184,18 @@ impl ReqwestFetcher {
             file.write_all(&chunk).await?;
             downloaded_bytes += chunk.len() as u64;
 
-            persist_fetch_progress(&resource.temp_path, total_bytes, downloaded_bytes).await?;
-            send_progress(&progress, resource, total_bytes, downloaded_bytes);
+            persist_fetch_progress(&resource.temp_path, &metadata, downloaded_bytes).await?;
+            send_progress(&progress, resource, metadata.total_bytes, downloaded_bytes);
         }
 
         if downloaded_bytes == resume_from {
-            persist_fetch_progress(&resource.temp_path, total_bytes, downloaded_bytes).await?;
-            send_progress(&progress, resource, total_bytes, downloaded_bytes);
+            persist_fetch_progress(&resource.temp_path, &metadata, downloaded_bytes).await?;
+            send_progress(&progress, resource, metadata.total_bytes, downloaded_bytes);
         }
         file.flush().await?;
         drop(file);
 
-        if let Some(total_bytes) = total_bytes {
+        if let Some(total_bytes) = metadata.total_bytes {
             if downloaded_bytes != total_bytes {
                 return Err(fetch_error(format!(
                     "下载长度不完整: expected {total_bytes}, got {downloaded_bytes}"
@@ -202,7 +215,11 @@ impl ReqwestFetcher {
         })
     }
 
-    async fn content_length(&self, url: &str, headers: HeaderMap) -> BdlResult<Option<u64>> {
+    async fn resource_metadata(
+        &self,
+        url: &str,
+        headers: HeaderMap,
+    ) -> BdlResult<RemoteResourceMetadata> {
         let response = self
             .client
             .head(url)
@@ -218,8 +235,8 @@ impl ReqwestFetcher {
             )));
         }
 
-        response
-            .headers()
+        let headers = response.headers();
+        let total_bytes = headers
             .get(CONTENT_LENGTH)
             .map(|value| {
                 value
@@ -228,7 +245,13 @@ impl ReqwestFetcher {
                     .parse::<u64>()
                     .map_err(|error| fetch_error(format!("无效 Content-Length: {error}")))
             })
-            .transpose()
+            .transpose()?;
+
+        Ok(RemoteResourceMetadata {
+            total_bytes,
+            etag: header_to_string(headers, ETAG)?,
+            last_modified: header_to_string(headers, LAST_MODIFIED)?,
+        })
     }
 }
 
@@ -243,14 +266,16 @@ pub async fn write_fetch_state(temp_path: &Path, state: &FetchState) -> BdlResul
 
 async fn persist_fetch_progress(
     temp_path: &Path,
-    total_bytes: Option<u64>,
+    metadata: &RemoteResourceMetadata,
     downloaded_bytes: u64,
 ) -> BdlResult<()> {
     write_fetch_state(
         temp_path,
         &FetchState {
-            total_bytes,
+            total_bytes: metadata.total_bytes,
             downloaded_bytes,
+            etag: metadata.etag.clone(),
+            last_modified: metadata.last_modified.clone(),
         },
     )
     .await
@@ -277,7 +302,7 @@ pub fn state_path_for(temp_path: &Path) -> PathBuf {
     PathBuf::from(value)
 }
 
-async fn resume_offset(temp_path: &Path, total_bytes: Option<u64>) -> BdlResult<u64> {
+async fn resume_offset(temp_path: &Path, metadata: &RemoteResourceMetadata) -> BdlResult<u64> {
     let state_path = state_path_for(temp_path);
     if !temp_path.exists() || !state_path.exists() {
         return Ok(0);
@@ -285,13 +310,25 @@ async fn resume_offset(temp_path: &Path, total_bytes: Option<u64>) -> BdlResult<
 
     let temp_len = fs::metadata(temp_path).await?.len();
     let state = read_fetch_state(&state_path).await?;
-    if state.total_bytes == total_bytes && state.downloaded_bytes == temp_len && temp_len > 0 {
+    if state.total_bytes == metadata.total_bytes
+        && state.downloaded_bytes == temp_len
+        && temp_len > 0
+        && validator_matches(&state.etag, &metadata.etag)
+        && validator_matches(&state.last_modified, &metadata.last_modified)
+    {
         return Ok(temp_len);
     }
 
     remove_if_exists(temp_path).await?;
     remove_if_exists(&state_path).await?;
     Ok(0)
+}
+
+fn validator_matches(previous: &Option<String>, current: &Option<String>) -> bool {
+    match (previous, current) {
+        (Some(previous), Some(current)) => previous == current,
+        _ => true,
+    }
 }
 
 async fn read_fetch_state(path: &Path) -> BdlResult<FetchState> {
@@ -310,6 +347,18 @@ fn request_headers(resource: &DownloadResource) -> BdlResult<HeaderMap> {
         headers.insert(name, value);
     }
     Ok(headers)
+}
+
+fn header_to_string(headers: &HeaderMap, name: HeaderName) -> BdlResult<Option<String>> {
+    headers
+        .get(name)
+        .map(|value| {
+            value
+                .to_str()
+                .map(str::to_owned)
+                .map_err(|error| fetch_error(format!("无效响应头: {error}")))
+        })
+        .transpose()
 }
 
 fn validate_get_status(status: StatusCode, resume_from: u64) -> BdlResult<()> {
