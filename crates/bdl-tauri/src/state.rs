@@ -28,6 +28,7 @@ use bdl_core::resolver::{ResolveOptions, Resolver};
 use bdl_core::settings::AppSettings;
 use bdl_core::storage::TaskStorage;
 use bdl_core::{BdlError, BdlResult};
+use serde::Serialize;
 
 use crate::secure_store::SecureStore;
 
@@ -44,6 +45,7 @@ pub struct AppState {
     account: Mutex<AccountSnapshot>,
     account_cookie: Mutex<Option<String>>,
     queue_worker_active: AtomicBool,
+    startup_recovery: Mutex<StartupRecoverySnapshot>,
     secure_store: SecureStore,
 }
 
@@ -52,6 +54,12 @@ pub struct PreparedSelection {
     pub tree: NormalizedSourceTree,
     pub part_ids: Vec<PartId>,
     pub tree_updated: bool,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub struct StartupRecoverySnapshot {
+    pub task_ids: Vec<String>,
+    pub auto_recovery_enabled: bool,
 }
 
 impl AppState {
@@ -63,8 +71,12 @@ impl AppState {
             .as_deref()
             .map(PathBuf::from)
             .unwrap_or(default_data_dir()?);
-        let storage = TaskStorage::open(data_dir.join("tasks.sqlite"))?;
-        let queue = storage.load_tasks()?;
+        let mut storage = TaskStorage::open(data_dir.join("tasks.sqlite"))?;
+        let mut queue = storage.load_tasks()?;
+        let startup_recovery = prepare_startup_recovery(&mut queue, settings.startup_auto_recovery);
+        if !startup_recovery.task_ids.is_empty() {
+            storage.replace_tasks(&queue)?;
+        }
         let secure_store = SecureStore::new(data_dir.join("account.cookie"));
         let persisted_cookie = secure_store.load_cookie()?;
         let (account, account_cookie) = load_account_snapshot(&secure_store, persisted_cookie)?;
@@ -79,6 +91,7 @@ impl AppState {
             account: Mutex::new(account),
             account_cookie: Mutex::new(account_cookie),
             queue_worker_active: AtomicBool::new(false),
+            startup_recovery: Mutex::new(startup_recovery),
             secure_store,
         })
     }
@@ -458,6 +471,23 @@ impl AppState {
 
     pub fn data_dir(&self) -> PathBuf {
         self.data_dir.clone()
+    }
+
+    pub fn startup_recovery(&self) -> BdlResult<StartupRecoverySnapshot> {
+        Ok(self
+            .startup_recovery
+            .lock()
+            .map_err(|_| state_poisoned("startup_recovery"))?
+            .clone())
+    }
+
+    pub fn clear_startup_recovery(&self) -> BdlResult<StartupRecoverySnapshot> {
+        let mut startup_recovery = self
+            .startup_recovery
+            .lock()
+            .map_err(|_| state_poisoned("startup_recovery"))?;
+        startup_recovery.task_ids.clear();
+        Ok(startup_recovery.clone())
     }
 
     pub fn update_settings(&self, settings: SettingsSnapshot) -> BdlResult<SettingsSnapshot> {
@@ -1280,12 +1310,55 @@ fn append_new_tasks(queue: &mut Vec<DownloadTask>, tasks: Vec<DownloadTask>) -> 
     inserted
 }
 
+fn prepare_startup_recovery(
+    queue: &mut [DownloadTask],
+    auto_recovery_enabled: bool,
+) -> StartupRecoverySnapshot {
+    let mut task_ids = Vec::new();
+    for task in queue {
+        if !needs_startup_recovery(task.status) {
+            continue;
+        }
+
+        task_ids.push(task.id.clone());
+        task.status = if auto_recovery_enabled {
+            TaskStatus::Waiting
+        } else {
+            TaskStatus::Paused
+        };
+        reset_interrupted_resources(&mut task.resources);
+    }
+
+    StartupRecoverySnapshot {
+        task_ids,
+        auto_recovery_enabled,
+    }
+}
+
+fn needs_startup_recovery(status: TaskStatus) -> bool {
+    matches!(
+        status,
+        TaskStatus::Waiting | TaskStatus::Parsing | TaskStatus::Downloading | TaskStatus::Muxing
+    )
+}
+
+fn reset_interrupted_resources(resources: &mut [bdl_core::queue::DownloadResource]) {
+    for resource in resources {
+        if matches!(
+            resource.status,
+            ResourceStatus::Downloading | ResourceStatus::Paused
+        ) {
+            resource.status = ResourceStatus::Pending;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         PartHydrationRequest, append_new_tasks, append_source_page, dedupe_tasks_by_id,
-        hydrate_placeholder_part, next_page_request, remap_selected_part_ids,
-        selected_hydration_requests, task_media_refresh_ids,
+        hydrate_placeholder_part, next_page_request, prepare_startup_recovery,
+        remap_selected_part_ids, selected_hydration_requests, task_media_refresh_ids,
     };
     use std::path::PathBuf;
 
@@ -1296,8 +1369,9 @@ mod tests {
         SourceKind, SourceSummary,
     };
     use bdl_core::queue::{
-        DownloadTask, DownloadTaskMediaSelection, DownloadTaskRefreshInput,
-        DownloadTaskRefreshIntent, TaskStatus,
+        DownloadResource, DownloadResourceIntent, DownloadResourceKind, DownloadTask,
+        DownloadTaskMediaSelection, DownloadTaskRefreshInput, DownloadTaskRefreshIntent,
+        ResourceStatus, TaskStatus,
     };
     use bdl_core::resolver::paged::PageRequest;
 
@@ -1324,6 +1398,40 @@ mod tests {
             ["task:video:fixture:part:one", "task:video:fixture:part:two"]
         );
         assert_eq!(queue_ids(&inserted), ["task:video:fixture:part:two"]);
+    }
+
+    #[test]
+    fn prepare_startup_recovery_pauses_interrupted_tasks_by_default() {
+        let mut interrupted = task_with_id("task:interrupted");
+        interrupted.status = TaskStatus::Downloading;
+        interrupted.resources = vec![resource_with_status(ResourceStatus::Downloading)];
+        let mut completed = task_with_id("task:completed");
+        completed.status = TaskStatus::Completed;
+        let mut queue = vec![interrupted, completed];
+
+        let snapshot = prepare_startup_recovery(&mut queue, false);
+
+        assert_eq!(snapshot.task_ids, ["task:interrupted"]);
+        assert!(!snapshot.auto_recovery_enabled);
+        assert_eq!(queue[0].status, TaskStatus::Paused);
+        assert_eq!(queue[0].resources[0].status, ResourceStatus::Pending);
+        assert_eq!(queue[1].status, TaskStatus::Completed);
+    }
+
+    #[test]
+    fn prepare_startup_recovery_queues_interrupted_tasks_when_auto_enabled() {
+        let mut waiting = task_with_id("task:waiting");
+        waiting.status = TaskStatus::Waiting;
+        let mut paused = task_with_id("task:paused");
+        paused.status = TaskStatus::Paused;
+        let mut queue = vec![waiting, paused];
+
+        let snapshot = prepare_startup_recovery(&mut queue, true);
+
+        assert_eq!(snapshot.task_ids, ["task:waiting"]);
+        assert!(snapshot.auto_recovery_enabled);
+        assert_eq!(queue[0].status, TaskStatus::Waiting);
+        assert_eq!(queue[1].status, TaskStatus::Paused);
     }
 
     #[test]
@@ -1572,6 +1680,19 @@ mod tests {
             output_path: PathBuf::from("downloads/fixture.mp4"),
             refresh_intent: None,
             media_selection: DownloadTaskMediaSelection::default(),
+        }
+    }
+
+    fn resource_with_status(status: ResourceStatus) -> DownloadResource {
+        DownloadResource {
+            id: "resource:video".to_owned(),
+            kind: DownloadResourceKind::Video,
+            intent: DownloadResourceIntent::Video,
+            current_urls: vec!["https://example.invalid/video.m4s".to_owned()],
+            headers: Vec::new(),
+            target_path: PathBuf::from("downloads/video.m4s"),
+            temp_path: PathBuf::from("downloads/video.m4s.bdlpart"),
+            status,
         }
     }
 

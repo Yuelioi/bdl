@@ -32,6 +32,7 @@ pub struct AppSettings {
     pub concurrent_tasks: usize,
     pub retry_count: usize,
     pub segment_count: usize,
+    pub startup_auto_recovery: bool,
     pub auto_refresh_expired_urls: bool,
 }
 
@@ -58,6 +59,7 @@ impl Default for AppSettings {
             concurrent_tasks: 1,
             retry_count: 3,
             segment_count: 1,
+            startup_auto_recovery: false,
             auto_refresh_expired_urls: true,
         }
     }

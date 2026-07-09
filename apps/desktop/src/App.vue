@@ -30,6 +30,7 @@ const queue = useQueueStore()
 const accountMenuOpen = ref(false)
 const loginDialogOpen = ref(false)
 const helpDrawerOpen = ref(false)
+const startupRecoveryDialogOpen = ref(false)
 const loginMode = ref<'qr' | 'cookie'>('qr')
 const cookieText = ref('')
 
@@ -122,6 +123,10 @@ const settingsAutoRefreshExpiredUrls = computed({
   get: () => settings.draft.auto_refresh_expired_urls,
   set: (value: boolean) => settings.setAutoRefreshExpiredUrls(value),
 })
+const settingsStartupAutoRecovery = computed({
+  get: () => settings.draft.startup_auto_recovery,
+  set: (value: boolean) => settings.setStartupAutoRecovery(value),
+})
 const settingsFfmpegPath = computed({
   get: () => settings.draft.ffmpeg_path ?? '',
   set: (value: string) => settings.setFfmpegPath(value),
@@ -185,6 +190,7 @@ const settingsDuplicateDescription = computed(() =>
     ? '新任务会使用模板渲染出的原始路径；如果磁盘上已有同名文件，下载完成后会覆盖它。批量任务内部路径冲突仍会自动加后缀。'
     : '新任务遇到同名文件时自动生成“文件名 (1)”这类路径，不覆盖已有文件。',
 )
+const startupRecoveryCount = computed(() => queue.startupRecovery?.task_ids.length ?? 0)
 const resetNamingTemplate = () => {
   settings.setNamingTemplate(defaultNamingTemplate)
 }
@@ -214,15 +220,52 @@ const signOut = async () => {
   await account.logout()
 }
 
-onMounted(() => {
+const initializeApp = async () => {
   void account.load()
   void settings.load()
   void account.startEventListeners()
+  await queue.startEventListeners()
+  await queue.list()
+  const recovery = await queue.loadStartupRecovery()
+  if (!recovery || recovery.task_ids.length === 0 || queue.startupRecoveryDismissed) {
+    return
+  }
+
+  if (recovery.auto_recovery_enabled) {
+    await queue.resumeStartupRecovery()
+    ui.pushToast(`已自动恢复 ${recovery.task_ids.length} 个任务`, 'success', {
+      label: '查看传输',
+      tab: 'transfer',
+    })
+    return
+  }
+
+  startupRecoveryDialogOpen.value = true
+}
+
+const resumeStartupRecovery = async () => {
+  await queue.resumeStartupRecovery()
+  startupRecoveryDialogOpen.value = false
+}
+
+const dismissStartupRecovery = async () => {
+  await queue.dismissStartupRecovery()
+  startupRecoveryDialogOpen.value = false
+}
+
+onMounted(() => {
+  void initializeApp()
 })
 
 watch(loginDialogOpen, (open) => {
   if (!open) {
     account.resetQrLogin()
+  }
+})
+
+watch(startupRecoveryDialogOpen, (open, previous) => {
+  if (!open && previous && startupRecoveryCount.value > 0 && !queue.startupRecoveryDismissed) {
+    void queue.dismissStartupRecovery(false)
   }
 })
 
@@ -368,6 +411,11 @@ watch(
             <UiCheckbox
               v-model="settingsAutoRefreshExpiredUrls"
               label="链接过期时自动刷新"
+              :disabled="settings.loading || settings.saving"
+            />
+            <UiCheckbox
+              v-model="settingsStartupAutoRecovery"
+              label="启动时自动继续未完成任务"
               :disabled="settings.loading || settings.saving"
             />
           </section>
@@ -611,6 +659,20 @@ watch(
       <template #footer>
         <UiButton variant="secondary" @click="loginDialogOpen = false">取消</UiButton>
         <UiButton :disabled="cookieSaveDisabled" @click="saveLogin">{{ loginActionLabel }}</UiButton>
+      </template>
+    </UiDialog>
+
+    <UiDialog v-model="startupRecoveryDialogOpen" title="恢复未完成任务">
+      <p class="dialog-copy">
+        检测到 {{ startupRecoveryCount }} 个上次未完成的任务。继续后会从保留的任务状态和临时文件恢复下载。
+      </p>
+      <template #footer>
+        <UiButton variant="secondary" :disabled="queue.startupRecoveryLoading" @click="dismissStartupRecovery">
+          保持暂停
+        </UiButton>
+        <UiButton :disabled="queue.startupRecoveryLoading" @click="resumeStartupRecovery">
+          继续任务
+        </UiButton>
       </template>
     </UiDialog>
 

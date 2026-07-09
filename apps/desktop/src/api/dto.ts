@@ -178,6 +178,11 @@ export interface QueueProgressEntry {
   created_at: string
 }
 
+export interface StartupRecoverySnapshot {
+  task_ids: string[]
+  auto_recovery_enabled: boolean
+}
+
 export type DuplicateNamingStrategy = 'append_suffix' | 'overwrite_existing'
 export type VideoCodecPreference = 'auto' | 'avc' | 'hevc' | 'av1'
 export type MissingQualityPolicy = 'lower' | 'skip' | 'ask'
@@ -212,6 +217,7 @@ export interface SettingsSnapshot {
   concurrent_tasks: number
   retry_count: number
   segment_count: number
+  startup_auto_recovery: boolean
   auto_refresh_expired_urls: boolean
 }
 

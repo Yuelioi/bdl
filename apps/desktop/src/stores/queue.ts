@@ -1,7 +1,13 @@
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { defineStore } from 'pinia'
 
-import type { BulkQueueResult, DownloadTask, QueueLogEntry, QueueProgressEntry } from '../api/dto'
+import type {
+  BulkQueueResult,
+  DownloadTask,
+  QueueLogEntry,
+  QueueProgressEntry,
+  StartupRecoverySnapshot,
+} from '../api/dto'
 import {
   queueBulkPause,
   queueBulkRefreshUrlsAndRetry,
@@ -10,6 +16,7 @@ import {
   queueBulkRetry,
   queueCancel,
   queueClearCompleted,
+  queueDismissStartupRecovery,
   queueList,
   queueLogs,
   queueOpenDir,
@@ -19,6 +26,7 @@ import {
   queueRemove,
   queueResume,
   queueRetry,
+  queueStartupRecovery,
 } from '../api/tauri'
 import { useUiStore } from './ui'
 import {
@@ -39,6 +47,9 @@ interface QueueState {
   logsByTask: Record<string, QueueLogEntry[]>
   logsLoadingByTask: Record<string, boolean>
   progressByTask: Record<string, QueueTaskProgressState>
+  startupRecovery: StartupRecoverySnapshot | null
+  startupRecoveryLoading: boolean
+  startupRecoveryDismissed: boolean
   loading: boolean
   listening: boolean
   unlisten: UnlistenFn[]
@@ -63,6 +74,9 @@ export const useQueueStore = defineStore('queue', {
     logsByTask: {},
     logsLoadingByTask: {},
     progressByTask: {},
+    startupRecovery: null,
+    startupRecoveryLoading: false,
+    startupRecoveryDismissed: false,
     loading: false,
     listening: false,
     unlisten: [],
@@ -243,6 +257,40 @@ export const useQueueStore = defineStore('queue', {
         totalBytes,
         speedBytesPerSecond,
         updatedAt,
+      }
+    },
+    async loadStartupRecovery(): Promise<StartupRecoverySnapshot | null> {
+      const ui = useUiStore()
+      this.startupRecoveryLoading = true
+      try {
+        const recovery = await queueStartupRecovery()
+        this.startupRecovery = recovery
+        return recovery
+      } catch (error) {
+        ui.pushToast(errorMessage(error), 'danger')
+        return null
+      } finally {
+        this.startupRecoveryLoading = false
+      }
+    },
+    async resumeStartupRecovery() {
+      const taskIds = this.startupRecovery?.task_ids ?? []
+      if (taskIds.length === 0) {
+        return
+      }
+
+      await this.bulkResume(taskIds)
+      await this.dismissStartupRecovery(false)
+    },
+    async dismissStartupRecovery(showError = true) {
+      const ui = useUiStore()
+      this.startupRecoveryDismissed = true
+      try {
+        this.startupRecovery = await queueDismissStartupRecovery()
+      } catch (error) {
+        if (showError) {
+          ui.pushToast(errorMessage(error), 'danger')
+        }
       }
     },
     async pause(taskId: string) {

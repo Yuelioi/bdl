@@ -60,6 +60,7 @@ fn settings_deserialize_old_config_defaults_duplicate_naming_strategy() {
     assert_eq!(settings.log_level, "info");
     assert_eq!(settings.data_dir, None);
     assert_eq!(settings.segment_count, 1);
+    assert!(!settings.startup_auto_recovery);
 }
 
 #[test]

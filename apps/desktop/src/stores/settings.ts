@@ -68,6 +68,7 @@ const defaultSettings = (): SettingsSnapshot => ({
   concurrent_tasks: 1,
   retry_count: 3,
   segment_count: 1,
+  startup_auto_recovery: false,
   auto_refresh_expired_urls: true,
 })
 
@@ -300,6 +301,9 @@ export const useSettingsStore = defineStore('settings', {
       const count = Number(value)
       this.draft.segment_count = segmentCounts.has(count) ? count : 1
     },
+    setStartupAutoRecovery(value: boolean) {
+      this.draft.startup_auto_recovery = value
+    },
     setAutoRefreshExpiredUrls(value: boolean) {
       this.draft.auto_refresh_expired_urls = value
     },
@@ -369,6 +373,7 @@ const normalizeSettings = (settings: SettingsSnapshot): SettingsSnapshot => ({
   concurrent_tasks: concurrentTaskCounts.has(settings.concurrent_tasks) ? settings.concurrent_tasks : 1,
   retry_count: retryCounts.has(settings.retry_count) ? settings.retry_count : 3,
   segment_count: segmentCounts.has(settings.segment_count) ? settings.segment_count : 1,
+  startup_auto_recovery: settings.startup_auto_recovery === true,
   auto_refresh_expired_urls: settings.auto_refresh_expired_urls !== false,
 })
 

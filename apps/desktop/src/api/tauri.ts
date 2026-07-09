@@ -13,6 +13,7 @@ import type {
   QueueRemoveResponse,
   ArchiveMode,
   SettingsSnapshot,
+  StartupRecoverySnapshot,
 } from './dto'
 
 export interface CommandErrorShape {
@@ -87,6 +88,11 @@ export const selectionCreateTasks = (request: SelectionCreateTasksRequest) =>
   invokeCommand<DownloadTask[]>('selection_create_tasks', { request })
 
 export const queueList = () => invokeCommand<DownloadTask[]>('queue_list')
+
+export const queueStartupRecovery = () => invokeCommand<StartupRecoverySnapshot>('queue_startup_recovery')
+
+export const queueDismissStartupRecovery = () =>
+  invokeCommand<StartupRecoverySnapshot>('queue_dismiss_startup_recovery')
 
 export const queueLogs = (taskId: string, limit = 200) =>
   invokeCommand<QueueLogEntry[]>('queue_logs', { taskId, limit })

@@ -9,6 +9,8 @@ fn main() {
             bdl_tauri::commands::parse_refresh_source,
             bdl_tauri::commands::selection_create_tasks,
             bdl_tauri::commands::queue_list,
+            bdl_tauri::commands::queue_startup_recovery,
+            bdl_tauri::commands::queue_dismiss_startup_recovery,
             bdl_tauri::commands::queue_logs,
             bdl_tauri::commands::queue_pause,
             bdl_tauri::commands::queue_resume,

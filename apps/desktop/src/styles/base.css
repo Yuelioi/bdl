@@ -191,6 +191,7 @@ button:disabled {
 
 .top-bar p,
 .empty-panel p,
+.dialog-copy,
 .muted-text {
   margin: var(--space-4) 0 0;
   color: var(--color-muted);

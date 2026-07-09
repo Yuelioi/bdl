@@ -28,7 +28,7 @@ use tokio::fs;
 use tokio::sync::mpsc::unbounded_channel;
 
 use crate::events;
-use crate::state::{AccountSnapshot, AppState, SettingsSnapshot};
+use crate::state::{AccountSnapshot, AppState, SettingsSnapshot, StartupRecoverySnapshot};
 
 pub type CommandResult<T> = Result<T, CommandError>;
 
@@ -271,10 +271,22 @@ pub async fn selection_create_tasks(
 }
 
 #[tauri::command]
-pub fn queue_list(app: AppHandle, state: State<'_, AppState>) -> CommandResult<Vec<DownloadTask>> {
-    let tasks = state.queue_snapshot()?;
-    start_queue_worker(&app);
-    Ok(tasks)
+pub fn queue_list(state: State<'_, AppState>) -> CommandResult<Vec<DownloadTask>> {
+    Ok(state.queue_snapshot()?)
+}
+
+#[tauri::command]
+pub fn queue_startup_recovery(
+    state: State<'_, AppState>,
+) -> CommandResult<StartupRecoverySnapshot> {
+    Ok(state.startup_recovery()?)
+}
+
+#[tauri::command]
+pub fn queue_dismiss_startup_recovery(
+    state: State<'_, AppState>,
+) -> CommandResult<StartupRecoverySnapshot> {
+    Ok(state.clear_startup_recovery()?)
 }
 
 #[tauri::command]
