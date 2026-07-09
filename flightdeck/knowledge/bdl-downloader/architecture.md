@@ -1,428 +1,116 @@
 # BDL Architecture
 
-SUMMARY: BDL backend owns Bilibili resolution, normalization, task queue, resource-level downloading, ffmpeg post-processing, storage, and Tauri event boundaries.
-READ WHEN: implementing or changing BDL crates, normalized models, task engine, download resume, Tauri commands/events, storage, or account persistence.
+SUMMARY: BDL is a Rust/Tauri/Vue downloader where Rust owns Bilibili resolution, task state, downloading, persistence, and OS integration; Vue owns presentation and selection interaction.
+READ WHEN: changing crates, normalized DTOs, queue/download behavior, Tauri commands/events, storage, account persistence, or frontend/backend boundaries.
 
 ---
 
-BDL is built around a strict pipeline:
+## Core Boundary
+
+BDL follows one pipeline:
 
 ```text
-Input -> Resolver -> NormalizedDownloadPlan -> TaskQueue -> Downloader -> PostProcess -> History
+Input -> Resolver -> Normalized Tree -> Planner -> Queue -> Fetcher -> PostProcess -> Completed Record
 ```
-
-The backend owns business state and downloading. The frontend owns presentation, selection state, and user interaction.
-
-## Workspace Shape
-
-Recommended structure:
-
-```text
-crates/
-  bdl-core/        parsing normalization, planning, task engine, downloader, post-processing
-  bdl-tauri/       Tauri commands, events, secure storage, OS integration
-  bdl-cli/         thin developer CLI for testing core behavior
-apps/
-  desktop/         Tauri frontend
-```
-
-If the repo starts with a simpler Tauri layout, keep the same boundary: downloader logic belongs in `bdl-core`, not inside command handlers.
-
-## Core Modules
-
-`bdl-core` modules:
-
-```text
-input           input classification and source identity extraction
-resolver        bpi-rs integration and content-specific resolvers
-normalize       conversion into source tree and download plan DTOs
-planner         selected nodes + options -> task/resource plan
-queue           task lifecycle, concurrency, cancellation, event emission
-fetcher         HTTP download, range segments, retries, CDN fallback
-muxer           ffmpeg checks, merge, cover/subtitle embedding
-storage         SQLite, settings snapshot, task/resource persistence
-history         long-term download records
-logging         task logs and redaction
-account         cookie/session abstraction consumed by bpi-rs
-```
-
-`bdl-tauri` should be glue only:
-
-- Command registration.
-- Event forwarding.
-- App data paths.
-- Secure storage access.
-- File opening and directory opening.
-- Window and tray integration if needed.
-
-## bpi-rs Boundary
-
-`bpi-rs` is the API binding and session-aware Bilibili client. BDL should not duplicate API signing or response models unless it needs a stable app DTO.
-
-Use `bpi-rs` for:
-
-- `video.view`, `video.play_url`, and video detail APIs.
-- Bangumi and course play URL APIs.
-- Favorite, collection, series, and uploader list APIs.
-- Login QR generation and polling.
-- Cookie import and account verification.
-
-BDL owns:
-
-- Input classification.
-- Result normalization.
-- Quality selection policy.
-- Task/resource state.
-- Downloading and resume.
-- URL refresh policy.
-- ffmpeg post-processing.
-- UI-facing DTOs.
-
-## Normalized Models
-
-The frontend consumes normalized DTOs, not raw `bpi-rs` responses.
-
-Core tree:
-
-```text
-NormalizedSourceTree
-  source: SourceSummary
-  groups: Vec<NormalizedGroup>
-
-NormalizedGroup
-  id
-  kind
-  title
-  items
-  paging
-
-NormalizedItem
-  id
-  title
-  owner
-  cover
-  duration
-  parts
-
-NormalizedPart
-  id
-  title
-  aid
-  bvid
-  cid
-  streams
-  assets
-```
-
-Stream model:
-
-```text
-MediaStream
-  id
-  kind: video | audio
-  quality
-  codec
-  container
-  bandwidth
-  urls
-  headers
-  acquired_at
-```
-
-Asset model:
-
-```text
-DerivedAsset
-  kind: cover | subtitle | danmaku | nfo
-  format
-  availability
-  fetch_policy
-```
-
-The DTO must preserve enough resource identity to refresh expired URLs later.
-
-## Resource Intent and URL Refresh
-
-Do not treat play URLs as durable facts. Every downloadable resource stores intent separately from current URLs.
-
-```text
-DownloadResourceIntent
-  source_id
-  item_id
-  part_id
-  aid
-  bvid
-  cid
-  media_kind
-  quality_preference
-  codec_preference
-```
-
-```text
-ResolvedResourceUrl
-  primary_url
-  backup_urls
-  headers
-  acquired_at
-  expires_hint
-```
-
-Refresh policy:
-
-1. Try current URL.
-2. Try backup CDN URLs from the same playurl payload.
-3. If all URLs fail or a clear signature/permission failure occurs, refresh via `bpi-rs` using the resource intent.
-4. If refresh fails, mark the resource failed and expose retry/reparse actions.
-
-When switching CDN during range downloads, verify resource consistency using content length, ETag, last-modified, or equivalent response metadata when available. If consistency cannot be trusted, restart the resource download instead of mixing segments.
-
-## Download Engine
-
-The engine is custom because BDL downloads structured media plans, not plain URLs.
-
-Use mature primitives:
-
-- `reqwest` and `tokio` for async HTTP.
-- `tokio::fs` for file writes.
-- `futures` streams for concurrent segment scheduling.
-- `serde` for state snapshots.
-- `ffmpeg` command execution for muxing and embedding.
-
-Keep the fetcher behind a trait:
-
-```rust
-trait Fetcher {
-    async fn fetch(
-        &self,
-        resource: DownloadResource,
-        target: std::path::PathBuf,
-    ) -> Result<FetchReport, FetchError>;
-}
-```
-
-First implementation:
-
-```text
-ReqwestFetcher
-```
-
-Possible future implementation:
-
-```text
-Aria2Fetcher
-```
-
-Do not bind the first version to an external download manager.
-
-## Concurrency Defaults
-
-Default transfer settings:
-
-```text
-global concurrent tasks: 2
-segments per resource: 4
-failure retries: 3
-```
-
-These are settings, not constants.
-
-The queue controls task concurrency. The fetcher controls segment concurrency inside one resource.
-
-## Resume Granularity
-
-Resume at resource level, not only task level.
-
-A video task may contain:
-
-```text
-video.m4s
-audio.m4s
-cover.jpg
-subtitle.srt
-danmaku.xml
-movie.nfo
-final.mp4
-```
-
-Each resource has its own state:
-
-```text
-pending
-downloading
-completed
-failed
-paused
-cancelled
-```
-
-Resource state stores:
-
-- URL intent.
-- Current URL and backup URLs.
-- Headers.
-- Target path.
-- Temporary path.
-- Content length.
-- ETag or last-modified when present.
-- Segment ranges and downloaded bytes.
-
-Completed resources are skipped on retry. Incomplete resources resume from `.bdlpart` state when possible. Expired URLs are refreshed before continuing.
-
-## Integrity Checks
-
-First version checks size, not hash.
 
 Rules:
 
-- Read content length before download when available.
-- Track each segment's downloaded byte count.
-- After segment merge, verify total size equals content length.
-- If content length is unavailable, allow the download but mark it as `unverified_size`.
-- Before muxing, verify video/audio files exist and are non-empty.
-- After muxing, verify final file exists and is non-empty.
+- `bdl-core` owns domain logic: input classification, resolvers, normalized models, planning, fetching, muxing, naming, settings, storage DTOs, diagnostics, and account/session helpers.
+- `bdl-tauri` owns app glue: command registration, event emission, app data paths, queue orchestration, secure cookie storage, OS file opening, and startup recovery.
+- `apps/desktop` owns UI state and interaction: parse input, visible selection state, task presentation, dialogs, filters, and settings forms.
+- Frontend never infers durable task state. It displays backend tasks/events and sends commands.
 
-Hash verification is out of scope unless the source provides a stable hash.
-
-## Post-Processing
-
-`MediaMuxer` owns ffmpeg integration.
-
-Responsibilities:
-
-- Detect configured or system `ffmpeg`.
-- Merge video and audio.
-- Output mp4 or mkv.
-- Optionally embed cover and subtitles.
-- Optionally retain raw video/audio streams.
-- Capture exit code and stderr summary.
-
-The app should support a custom ffmpeg path. It should not require bundled ffmpeg at the code level, although platform releases may choose to bundle it.
-
-## Tauri Commands
-
-Command names:
+## Workspace
 
 ```text
-parse_create_source(input)
-parse_load_more(source_id)
-parse_load_all(source_id, limit?)
-parse_close_source(source_id)
-parse_refresh_source(source_id)
-
-selection_create_tasks(source_id, selected_ids, options)
-
-queue_list()
-queue_pause(task_id)
-queue_resume(task_id)
-queue_cancel(task_id)
-queue_retry(task_id)
-queue_remove(task_id)
-queue_open_file(task_id)
-queue_open_dir(task_id)
-
-settings_get()
-settings_update(patch)
-
-account_get()
-account_login_qr_start()
-account_login_qr_poll(session_id)
-account_import_cookie(cookie)
-account_logout()
-account_verify()
+crates/bdl-core      domain model, resolver, planner, fetcher, muxer, settings, storage
+crates/bdl-tauri     Tauri commands, queue worker, secure store, OS integration
+crates/bdl-cli       developer CLI using bdl-core
+apps/desktop         Vue 3 + Tauri frontend
 ```
 
-Commands should return DTOs or accepted operation IDs. Long-running work emits events.
+## Backend Model
 
-## Tauri Events
-
-Event names:
+The frontend consumes stable normalized DTOs, not raw API responses:
 
 ```text
-parse://source-updated
-parse://items-appended
-queue://task-updated
-queue://resource-updated
-queue://log-appended
-settings://updated
-account://updated
+NormalizedSourceTree
+  SourceSummary
+  NormalizedGroup[]
+    NormalizedItem[]
+      NormalizedPart[]
+        MediaStream[]
+        DerivedAsset[]
 ```
 
-Task state is backend-authoritative. The frontend must not infer completion, failure, or paused state independently.
+Important invariants:
 
-## Frontend Stores
+- All source types normalize into this tree: video, favorites, uploader lists, collections, series, bangumi, and courses.
+- `SourceSummary.loaded_count`, `total_count`, and `has_more` drive progressive paging.
+- A part must preserve enough identity to refresh media URLs later: source id, item/part id, aid/bvid/cid, quality, codec, and media kind.
+- Settings defaults are applied by the planner and can be overridden per task creation request.
 
-Pinia store split:
+## Download Tasks
 
-```text
-useParseStore      parse sessions, active source, result tree, selection state
-useQueueStore      task queue, task events, filters
-useSettingsStore   defaults, paths, ffmpeg, naming templates
-useAccountStore    login status, account summary
-useUiStore         drawers, dialogs, toasts, theme
-```
+`DownloadTask` is backend-owned and persisted. It contains:
 
-Selection state is frontend-owned until `selection_create_tasks` is called. Transfer state is backend-owned.
+- stable task id and source id
+- title and output path
+- task status
+- resource list
+- media selection snapshot
+- refresh intent for expiring media URLs
 
-## UI Kit
+`DownloadResource` tracks each downloadable unit:
 
-Because no component library is used, build a small internal UI kit before business pages spread.
+- intent: video, audio, cover, subtitle, danmaku, or NFO
+- current URLs and request headers
+- target path and temporary path
+- status: pending, downloading, completed, failed, paused, cancelled
 
-Initial components:
+Retry skips completed resources and resumes incomplete resources from `.bdlpart` state when possible.
 
-```text
-AppShell
-Sidebar
-Toolbar
-Button
-IconButton
-TextField
-Textarea
-Select
-SegmentedControl
-Checkbox
-Switch
-Tabs
-Dialog
-Drawer
-Toast
-ProgressBar
-StatusBadge
-Tree
-TaskList
-TaskRow
-EmptyState
-```
+## Fetching And Cancellation
 
-Initial tokens:
+`ReqwestFetcher` is the current fetcher. It supports:
 
-```text
-colors: background, surface, panel, border, text, muted, accent, danger, warning, success
-spacing: 4, 8, 12, 16, 24, 32
-radius: 4, 6, 8
-font sizes: 12, 13, 14, 16, 18, 22
-fixed heights: button 32, input 34, toolbar 40, task row 64
-```
+- range resume for existing `.bdlpart` files
+- segmented downloads for fresh resources when `segment_count` is 2/4/8
+- CDN fallback through current URL lists
+- size/metadata checks with ETag or last-modified when available
+- cooperative cancellation through `FetchCancelToken`
 
-Business pages should use UI kit components instead of one-off controls.
+Pause and cancel are not just queue-state changes. They must cancel the running fetch stream, persist resource status, and allow resume/retry to rebuild pending resource state.
 
-## Responsive Layout
+## URL Refresh
 
-Desktop minimum:
+Media URLs expire. Current URLs are cache, not identity.
 
-```text
-min-width: 1100
-min-height: 720
-```
+Policy:
 
-Breakpoints:
+1. Try current URLs.
+2. Try backup URLs from the same resolved payload.
+3. On 404, signature expiry, or clear permission failure, refresh URLs using the task refresh intent.
+4. If refresh fails, keep a short classified failure on the task and expose retry or refresh-and-retry.
 
-- `>= 1280px`: main nav, source list, result tree, and details panel can be visible.
-- `960-1279px`: main nav, source list, and result tree; details opens as a drawer.
-- `< 960px`: narrow nav; source list and result tree switch views; details use a full-screen drawer.
+Do not mix byte ranges from different URLs unless resource consistency is verified.
+
+## Post Processing
+
+`MediaMuxer` owns ffmpeg integration:
+
+- detect configured or system ffmpeg
+- merge video/audio
+- output mp4 or mkv
+- optionally embed cover/subtitles
+- optionally retain raw streams
+- capture exit code and stderr summary
+
+Final output must exist and be non-empty before the task is marked completed.
 
 ## Persistence
 
-Use SQLite for structured task data and history. Use JSON for settings.
+SQLite persists tasks, resources, completed transfer records, task logs, and account summaries. Settings are JSON. Cookies are stored in the OS credential store, not SQLite or settings JSON.
 
 Files:
 
@@ -433,117 +121,110 @@ tasks.sqlite
 logs/
 ```
 
-SQLite tables:
+Task logs are retained for 30 days or the latest 1000 entries per task. Logs and diagnostics must redact cookies, auth headers, and signed URLs.
+
+## Queue And Recovery
+
+The queue worker:
+
+- honors `concurrent_tasks`
+- uses configured retry count
+- emits task, log, and progress events
+- records completed metadata
+- can auto-refresh expired URLs once per task when enabled
+
+Startup recovery:
+
+- persisted waiting/parsing/downloading/muxing tasks are normalized on app start
+- default behavior pauses incomplete tasks and prompts the user
+- `startup_auto_recovery` can resume them automatically
+
+## Commands And Events
+
+Keep command names stable because the frontend wraps them in `apps/desktop/src/api/tauri.ts`.
+
+Core commands:
 
 ```text
-tasks
-resources
-segments
-history
-task_logs
+parse_create_source
+parse_load_more
+parse_load_all
+parse_close_source
+parse_refresh_source
+selection_create_tasks
+
+queue_list
+queue_startup_recovery
+queue_dismiss_startup_recovery
+queue_logs
+queue_pause
+queue_resume
+queue_cancel
+queue_retry
+queue_refresh_urls_and_retry
+queue_remove
+queue_open_file
+queue_open_dir
+queue_bulk_pause
+queue_bulk_cancel
+queue_bulk_resume
+queue_bulk_retry
+queue_bulk_refresh_urls_and_retry
+queue_bulk_remove
+queue_clear_completed
+
+settings_get
+settings_update
+settings_cleanup_cache
+settings_cleanup_temp_files
+diagnostics_export
+
+account_get
+account_login_qr_start
+account_login_qr_poll
+account_import_cookie
+account_logout
+account_verify
 ```
 
-Settings JSON stores user preferences only. Cookie/session data must not be stored in JSON or SQLite in plaintext.
-
-## Account Storage
-
-Cookie persistence:
+Events:
 
 ```text
-system secure storage
+parse://source-updated
+parse://items-appended
+queue://task-updated
+queue://progress-updated
+queue://log-appended
+settings://updated
+account://updated
 ```
 
-SQLite account summary:
+## Frontend Architecture
+
+Stores:
 
 ```text
-display_name
-mid
-avatar_url
-vip_status
-last_checked_at
-login_method
-cookie_valid
+useParseStore      parse sources, active source, frontend selection, create task requests
+useQueueStore      persisted task queue, logs, progress, filters, bulk actions
+useSettingsStore   settings defaults and draft/save behavior
+useAccountStore    account state and login flows
+useUiStore         active tab, dialogs, toasts
 ```
 
-Startup flow:
+UI rules:
 
-1. Read cookie from secure storage.
-2. Inject it into the `bpi-rs` client.
-3. Verify account state through account APIs.
-4. Update SQLite account summary.
-5. Emit `account://updated`.
+- Use Nuxt UI components through local wrappers where wrappers exist.
+- Use Tabler icons through icon names, not ad hoc SVG.
+- Keep `解析`, `传输`, and `设置` as the only primary navigation pages.
+- Account belongs in the top-right account button, not settings.
+- Completed records live under Transfer's `已完成` filter, not a separate page.
 
-Redact these values everywhere:
+## Developer Checks
 
-- `SESSDATA`
-- `bili_jct`
-- `DedeUserID`
-- `Cookie`
-- Authorization-like headers.
-
-## Logs
-
-Default retention:
+Before claiming backend-affecting work complete, run the narrow relevant Rust tests plus:
 
 ```text
-30 days or latest 1000 task summaries
+cargo fmt
+cargo clippy -p bdl-core -p bdl-tauri --all-targets -- -D warnings -A clippy::too_many_arguments
+pnpm -C apps/desktop run build
 ```
-
-Save:
-
-- Stage changes.
-- Parse summary.
-- Resource selection summary.
-- Download start and completion.
-- Retry records.
-- ffmpeg command summary and exit code.
-- Error summaries.
-
-Do not save:
-
-- Raw cookies.
-- Full sensitive headers.
-- Long signed URL history.
-- Large response bodies.
-
-Detailed logs are opt-in through task details or debug mode.
-
-## Startup Recovery
-
-On startup, load persisted tasks and classify them:
-
-- Incomplete.
-- Completed.
-- Failed.
-
-Do not automatically resume downloads unless the user enabled startup auto-recovery. Incomplete tasks should be visible and resumable from the transfer page.
-
-## Developer CLI
-
-`bdl-cli` is a developer tool, not the primary product.
-
-Commands:
-
-```text
-parse <input> --json
-download <input> --output <dir> --quality best
-verify-cookie
-ffmpeg-check
-```
-
-The CLI should call `bdl-core` directly, making parser, planner, downloader, and account validation testable without clicking through the Tauri UI.
-
-## Implementation Order
-
-Recommended sequence:
-
-1. Workspace skeleton: Tauri 2, Vue 3, TypeScript, `bdl-core`, `bdl-cli`.
-2. Single-video vertical slice: input, `bpi-rs` view/playurl, normalization, task creation, video/audio download, ffmpeg merge.
-3. UI kit, parse page, transfer page basics.
-4. Task engine: concurrency, pause/resume, retry, resource-level resume.
-5. Multiple parse sources and paged parsing for favorites, uploader videos, collections, and series.
-6. Bangumi and course support.
-7. Derived resources: cover, subtitles, danmaku, NFO, naming templates.
-8. Account: cookie import first, QR login second, secure storage, verification.
-9. History, settings, logs, cleanup.
-10. Packaging and polish.
