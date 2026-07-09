@@ -115,6 +115,9 @@ Current:
 - P1 archive warning display landed in commit `8a28baa`.
 - Completed tasks with warning logs now surface as `已完成 · 有警告` in Transfer and show warning details in the diagnosis panel instead of looking like a fully clean archive.
 - Archive warning display verification passed: `pnpm --dir apps/desktop build`.
+- P1 completed-record search/actions landed in commit `8aa13a9`.
+- Transfer `已完成` now has search by title, source id/link, and output path. Completed task actions include open file, open folder, re-download, copy source, remove record, and existing clear-completed bulk cleanup. Re-download of completed tasks resets all resources to pending so cleaned raw streams are fetched again.
+- Completed-record search/actions verification passed: `pnpm --dir apps/desktop build`, `cargo test -p bdl-tauri state`, `cargo check -p bdl-desktop`, and `cargo fmt --all --check`.
 
 Decisions:
 - Main navigation: `解析`, `传输`, `设置`; account lives in the top-right account button. Completed records live under Transfer's `已完成` filter, not a separate History page.
