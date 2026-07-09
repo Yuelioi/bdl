@@ -2,11 +2,11 @@
 
 ## State
 
-Task 3 input classification is complete on branch `bdl-downloader-app`. The workspace has a Rust/Tauri/Vue scaffold, frontend-safe normalized DTOs, and a pure Bilibili input classifier; resolver logic has not started.
+Task 4 single-video resolving is complete on branch `bdl-downloader-app`. The workspace has a Rust/Tauri/Vue scaffold, frontend-safe normalized DTOs, a pure Bilibili input classifier, and a `bpi-rs` backed video resolver that emits the normalized source tree.
 
 ## Next
 
-Execute Task 4 in `plan.md`: add the single-video resolver through `bpi-rs`, with non-live fixture tests first.
+Execute Task 5 in `plan.md`: add the planner and task model that turns selected parts into download tasks.
 
 ## Read now
 
@@ -37,6 +37,10 @@ Current:
 - Task 3 verification passed: `cargo test -p bdl-core --test input_classifier`, `cargo fmt --all --check`, and `cargo check --workspace`.
 - Classifier quality review required short URLs to remain `Unknown`, exact BVID parsing, AV URL parsing, host/path-aware URL handling, plain uploader space support, and broader edge tests; all are done.
 - Non-blocking hardening noted for later: add more host spoofing regression tests such as `bilibili.com.evil.test` and `b23.tv.evil.test`.
+- Completed Task 4 single-video resolver in commit `f2ab9cc`.
+- Task 4 verification passed: `cargo fmt --all --check`, `cargo test -p bdl-core`, and `cargo check --workspace`.
+- The resolver uses portable `bpi-rs = 0.2.3` with only the `video` feature enabled, keeps `bpi-rs` usage inside `crates/bdl-core/src/resolver/video.rs`, and uses a fake `VideoApi` adapter for non-live tests.
+- Execution note from the user: continue locally without subagents unless explicitly requested again.
 
 Decisions:
 - Main navigation: `解析`, `传输`, `历史`, `设置`; account lives in the top-right account button.

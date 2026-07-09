@@ -871,7 +871,7 @@ git commit -m "feat: classify bilibili inputs"
 - Modify: `crates/bdl-core/src/lib.rs`
 - Test: `crates/bdl-core/tests/video_resolver.rs`
 
-- [ ] **Step 1: Define resolver contract with a fixture test**
+- [x] **Step 1: Define resolver contract with a fixture test**
 
 The test should not hit the network. Use a fake adapter that returns one view and one playurl shape, then assert normalization. Keep live network tests behind `BDL_LIVE_TEST=1`.
 
@@ -888,7 +888,7 @@ pub trait Resolver {
 }
 ```
 
-- [ ] **Step 2: Implement `VideoResolver`**
+- [x] **Step 2: Implement `VideoResolver`**
 
 Use `bpi-rs` only in `resolver/video.rs`. Convert raw API results into `NormalizedSourceTree`. For a normal video:
 
@@ -899,7 +899,7 @@ Use `bpi-rs` only in `resolver/video.rs`. Convert raw API results into `Normaliz
 - Streams: video/audio streams from `video.play_url` if `fetch_streams` is true.
 - Assets: cover on demand; subtitles/danmaku not fetched in fast mode.
 
-- [ ] **Step 3: Add an opt-in live test**
+- [x] **Step 3: Add an opt-in live test**
 
 `crates/bdl-core/tests/video_resolver.rs` should include:
 
@@ -915,7 +915,7 @@ async fn live_video_resolver_resolves_bv_when_enabled() {
 }
 ```
 
-- [ ] **Step 4: Run non-live tests**
+- [x] **Step 4: Run non-live tests**
 
 Run:
 
@@ -925,7 +925,7 @@ cargo test -p bdl-core video_resolver
 
 Expected: PASS without network.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add crates/bdl-core
