@@ -150,6 +150,7 @@ export interface QueueLogEntry {
 
 export interface SettingsSnapshot {
   download_dir: string | null
+  naming_template: string
   quality: string
   archive_mode: 'fast' | 'complete_archive'
   output_extension: 'mp4' | 'mkv'

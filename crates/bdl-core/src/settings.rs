@@ -1,9 +1,12 @@
 use serde::{Deserialize, Serialize};
 
+use crate::naming::DEFAULT_NAMING_TEMPLATE;
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AppSettings {
     pub download_dir: Option<String>,
+    pub naming_template: String,
     pub quality: String,
     pub archive_mode: String,
     pub output_extension: String,
@@ -16,6 +19,7 @@ impl Default for AppSettings {
     fn default() -> Self {
         Self {
             download_dir: None,
+            naming_template: DEFAULT_NAMING_TEMPLATE.to_owned(),
             quality: "best".to_owned(),
             archive_mode: "fast".to_owned(),
             output_extension: "mp4".to_owned(),

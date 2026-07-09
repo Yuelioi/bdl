@@ -56,6 +56,10 @@ const settingsOutputFormat = computed({
   get: () => settings.draft.output_extension,
   set: (value: string) => settings.setOutputExtension(value),
 })
+const settingsNamingTemplate = computed({
+  get: () => settings.draft.naming_template,
+  set: (value: string) => settings.setNamingTemplate(value),
+})
 const settingsConcurrentTasks = computed({
   get: () => String(settings.draft.concurrent_tasks),
   set: (value: string) => settings.setConcurrentTasks(value),
@@ -210,6 +214,15 @@ watch(
               { label: 'MKV', value: 'mkv' },
             ]"
           />
+          <UiTextField
+            v-model="settingsNamingTemplate"
+            label="命名模板"
+            placeholder="{title}/{title} - P{part_index} - {part_title}.{ext}"
+          />
+          <div class="settings-preview">
+            <span>预览</span>
+            <code>{{ settings.namingPreview }}</code>
+          </div>
           <UiSelect
             v-model="settingsArchiveMode"
             label="归档方式"

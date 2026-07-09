@@ -7,6 +7,7 @@ import { useUiStore } from './ui'
 
 const defaultSettings = (): SettingsSnapshot => ({
   download_dir: null,
+  naming_template: '{title}/{title} - P{part_index} - {part_title}.{ext}',
   quality: 'best',
   archive_mode: 'fast',
   output_extension: 'mp4',
@@ -41,6 +42,9 @@ export const useSettingsStore = defineStore('settings', {
   getters: {
     changed(state): boolean {
       return JSON.stringify(state.saved) !== JSON.stringify(state.draft)
+    },
+    namingPreview(state): string {
+      return previewTemplate(state.draft.naming_template, state.draft.output_extension)
     },
   },
   actions: {
@@ -101,6 +105,9 @@ export const useSettingsStore = defineStore('settings', {
       const trimmed = value.trim()
       this.draft.download_dir = trimmed ? trimmed : null
     },
+    setNamingTemplate(value: string) {
+      this.draft.naming_template = value
+    },
     setArchiveMode(value: string) {
       this.draft.archive_mode = archiveModes.has(value as SettingsSnapshot['archive_mode'])
         ? (value as SettingsSnapshot['archive_mode'])
@@ -133,6 +140,7 @@ export const useSettingsStore = defineStore('settings', {
 
 const normalizeSettings = (settings: SettingsSnapshot): SettingsSnapshot => ({
   download_dir: settings.download_dir?.trim() || null,
+  naming_template: settings.naming_template?.trim() || defaultSettings().naming_template,
   quality: settings.quality || 'best',
   archive_mode: archiveModes.has(settings.archive_mode) ? settings.archive_mode : 'fast',
   output_extension: outputExtensions.has(settings.output_extension) ? settings.output_extension : 'mp4',
@@ -140,6 +148,30 @@ const normalizeSettings = (settings: SettingsSnapshot): SettingsSnapshot => ({
   retry_count: retryCounts.has(settings.retry_count) ? settings.retry_count : 3,
   auto_refresh_expired_urls: settings.auto_refresh_expired_urls !== false,
 })
+
+const previewTemplate = (template: string, ext: string): string => {
+  const values: Record<string, string> = {
+    title: '示例视频',
+    part_title: '开场',
+    part_index: '1',
+    bvid: 'BV1xx411c7mD',
+    aid: '170001',
+    cid: '9001',
+    owner_name: '示例UP',
+    owner_mid: '1001',
+    series_title: '示例系列',
+    season_index: '1',
+    episode_index: '1',
+    collection_title: '示例合集',
+    index: '1',
+    quality: '80',
+    codec: 'avc',
+    date: new Date().toISOString().slice(0, 10),
+    ext,
+  }
+
+  return (template || defaultSettings().naming_template).replace(/\{([^{}]+)\}/g, (_, key: string) => values[key.trim()] ?? '')
+}
 
 const errorMessage = (error: unknown): string => {
   if (error instanceof Error) {

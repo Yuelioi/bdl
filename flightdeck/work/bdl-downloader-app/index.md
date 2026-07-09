@@ -94,6 +94,8 @@ Current:
 - Task 14 bangumi and course parsing is implemented through dedicated `bangumi` and `cheese` resolvers. Bangumi `ss`/`ep` links normalize to season episode items and hydrate streams through `bangumi.playurl`; course `ss`/`ep` links normalize to paged course episode items and hydrate streams through `cheese.playurl`.
 - Tauri selection hydration and task URL refresh now dispatch by source type instead of assuming every empty stream can be refreshed as a normal BV video.
 - Task 14 resolver verification passed: `cargo fmt --all --check`, `cargo test -p bdl-core --test bangumi_resolver --test cheese_resolver --test paged_resolvers`, `cargo test -p bdl-tauri state`, and `cargo check -p bdl-desktop`.
+- Task 15 naming template slice is implemented: `bdl-core::naming` renders sanitized template paths, planner reserves duplicate output paths with `(1)` suffixes, settings persist `naming_template`, and the settings UI shows a sample preview.
+- Task 15 naming verification passed: `cargo fmt --all --check`, `cargo test -p bdl-core --test naming --test planner`, `cargo test -p bdl-tauri state`, `cargo check -p bdl-desktop`, and `pnpm --dir apps/desktop build`.
 
 Decisions:
 - Main navigation: `解析`, `传输`, `设置`; account lives in the top-right account button. Completed records live under Transfer's `已完成` filter, not a separate History page.

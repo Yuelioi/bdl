@@ -326,6 +326,24 @@ button:disabled {
   overflow-wrap: anywhere;
 }
 
+.settings-preview {
+  display: grid;
+  gap: 6px;
+  color: var(--color-muted);
+  font-size: var(--font-12);
+}
+
+.settings-preview code {
+  display: block;
+  min-width: 0;
+  padding: var(--space-8) var(--space-12);
+  overflow-wrap: anywhere;
+  color: var(--color-text);
+  background: var(--color-panel);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-6);
+}
+
 .panel {
   min-width: 0;
   min-height: 0;

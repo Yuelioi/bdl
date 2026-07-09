@@ -1,11 +1,14 @@
+use std::collections::HashSet;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
 use crate::error::{BdlError, BdlResult};
 use crate::ids::PartId;
 use crate::model::{MediaKind, MediaStream, NormalizedItem, NormalizedPart, NormalizedSourceTree};
+use crate::naming::{DEFAULT_NAMING_TEMPLATE, NamingContext, render_output_path, unique_path};
 use crate::queue::{
     DownloadResource, DownloadResourceIntent, DownloadResourceKind, DownloadTask, ResourceStatus,
     TaskStatus,
@@ -23,6 +26,7 @@ pub struct DownloadOptions {
     pub output_dir: PathBuf,
     pub archive_mode: ArchiveMode,
     pub output_extension: String,
+    pub naming_template: String,
 }
 
 impl DownloadOptions {
@@ -31,6 +35,7 @@ impl DownloadOptions {
             output_dir,
             archive_mode: ArchiveMode::Fast,
             output_extension: "mp4".to_owned(),
+            naming_template: DEFAULT_NAMING_TEMPLATE.to_owned(),
         }
     }
 
@@ -45,70 +50,77 @@ pub fn plan_selected_parts(
     selected_part_ids: &[PartId],
     options: &DownloadOptions,
 ) -> BdlResult<Vec<DownloadTask>> {
-    selected_part_ids
-        .iter()
-        .map(|part_id| {
-            let selected = find_part(tree, part_id).ok_or_else(|| BdlError::Planning {
-                message: format!(
-                    "选中的分 P `{}` 未加载，请重新解析后再创建下载任务。",
-                    part_id.0
-                ),
-            })?;
-            plan_part(tree, selected.item, selected.part, options)
-        })
-        .collect()
+    let mut reserved_paths = HashSet::new();
+    let mut tasks = Vec::with_capacity(selected_part_ids.len());
+
+    for part_id in selected_part_ids {
+        let selected = find_part(tree, part_id).ok_or_else(|| BdlError::Planning {
+            message: format!(
+                "选中的分 P `{}` 未加载，请重新解析后再创建下载任务。",
+                part_id.0
+            ),
+        })?;
+        tasks.push(plan_part(tree, selected, options, &mut reserved_paths)?);
+    }
+
+    Ok(tasks)
 }
 
 struct SelectedPart<'a> {
     item: &'a NormalizedItem,
     part: &'a NormalizedPart,
+    item_index: usize,
+    part_index: usize,
 }
 
 fn find_part<'a>(tree: &'a NormalizedSourceTree, part_id: &PartId) -> Option<SelectedPart<'a>> {
     tree.groups
         .iter()
         .flat_map(|group| &group.items)
-        .find_map(|item| {
+        .enumerate()
+        .find_map(|(item_index, item)| {
             item.parts
                 .iter()
-                .find(|part| &part.id == part_id)
-                .map(|part| SelectedPart { item, part })
+                .enumerate()
+                .find(|(_, part)| &part.id == part_id)
+                .map(|(part_index, part)| SelectedPart {
+                    item,
+                    part,
+                    item_index,
+                    part_index,
+                })
         })
 }
 
 fn plan_part(
     tree: &NormalizedSourceTree,
-    item: &NormalizedItem,
-    part: &NormalizedPart,
+    selected: SelectedPart<'_>,
     options: &DownloadOptions,
+    reserved_paths: &mut HashSet<PathBuf>,
 ) -> BdlResult<DownloadTask> {
+    let item = selected.item;
+    let part = selected.part;
     let task_id = format!("task:{}:{}", tree.source.id.0, part.id.0);
     let title = task_title(item, part);
-    let safe_base = sanitize_path_segment(&title);
-    let output_path = options
-        .output_dir
-        .join(format!("{safe_base}.{}", options.output_extension));
-
     let video = select_stream(part, MediaKind::Video).ok_or_else(|| BdlError::Planning {
         message: format!("`{}` 缺少视频流，请重新解析后再试。", part.title),
     })?;
     let audio = select_stream(part, MediaKind::Audio).ok_or_else(|| BdlError::Planning {
         message: format!("`{}` 缺少音频流，请重新解析后再试。", part.title),
     })?;
+    let output_path = output_path_for(tree, item, part, selected, video, options, reserved_paths)?;
 
     let mut resources = vec![
         media_resource(
             &task_id,
-            &options.output_dir,
-            &safe_base,
+            &output_path,
             DownloadResourceIntent::Video,
             DownloadResourceKind::Video,
             video,
         )?,
         media_resource(
             &task_id,
-            &options.output_dir,
-            &safe_base,
+            &output_path,
             DownloadResourceIntent::Audio,
             DownloadResourceKind::Audio,
             audio,
@@ -116,12 +128,7 @@ fn plan_part(
     ];
 
     if options.archive_mode == ArchiveMode::CompleteArchive {
-        resources.extend(complete_archive_resources(
-            &task_id,
-            &options.output_dir,
-            &safe_base,
-            item,
-        ));
+        resources.extend(complete_archive_resources(&task_id, &output_path, item));
     }
 
     Ok(DownloadTask {
@@ -143,8 +150,7 @@ fn select_stream(part: &NormalizedPart, kind: MediaKind) -> Option<&MediaStream>
 
 fn media_resource(
     task_id: &str,
-    output_dir: &Path,
-    safe_base: &str,
+    output_path: &Path,
     intent: DownloadResourceIntent,
     kind: DownloadResourceKind,
     stream: &MediaStream,
@@ -156,7 +162,7 @@ fn media_resource(
     }
 
     let suffix = resource_suffix(intent);
-    let target_path = output_dir.join(format!("{safe_base}.{suffix}.m4s"));
+    let target_path = sibling_resource_path(output_path, suffix, Some("m4s"));
     Ok(DownloadResource {
         id: format!("{task_id}:resource:{suffix}"),
         kind,
@@ -171,8 +177,7 @@ fn media_resource(
 
 fn complete_archive_resources(
     task_id: &str,
-    output_dir: &Path,
-    safe_base: &str,
+    output_path: &Path,
     item: &NormalizedItem,
 ) -> Vec<DownloadResource> {
     [
@@ -182,19 +187,18 @@ fn complete_archive_resources(
         DownloadResourceIntent::Nfo,
     ]
     .into_iter()
-    .map(|intent| asset_resource(task_id, output_dir, safe_base, item, intent))
+    .map(|intent| asset_resource(task_id, output_path, item, intent))
     .collect()
 }
 
 fn asset_resource(
     task_id: &str,
-    output_dir: &Path,
-    safe_base: &str,
+    output_path: &Path,
     item: &NormalizedItem,
     intent: DownloadResourceIntent,
 ) -> DownloadResource {
     let suffix = resource_suffix(intent);
-    let target_path = output_dir.join(format!("{safe_base}.{suffix}"));
+    let target_path = sibling_resource_path(output_path, suffix, None);
     DownloadResource {
         id: format!("{task_id}:resource:{suffix}"),
         kind: DownloadResourceKind::Asset,
@@ -205,6 +209,57 @@ fn asset_resource(
         target_path,
         status: ResourceStatus::Pending,
     }
+}
+
+fn output_path_for(
+    tree: &NormalizedSourceTree,
+    item: &NormalizedItem,
+    part: &NormalizedPart,
+    selected: SelectedPart<'_>,
+    video: &MediaStream,
+    options: &DownloadOptions,
+    reserved_paths: &mut HashSet<PathBuf>,
+) -> BdlResult<PathBuf> {
+    let today = Utc::now().date_naive().to_string();
+    let quality_label = stream_quality_label(video);
+    let context = NamingContext {
+        title: &item.title,
+        part_title: &part.title,
+        part_index: selected.part_index + 1,
+        bvid: part.bvid.as_deref(),
+        aid: part.aid,
+        cid: part.cid,
+        owner_name: item.owner_name.as_deref(),
+        owner_mid: None,
+        series_title: Some(&tree.source.title),
+        season_index: None,
+        episode_index: Some(selected.item_index + 1),
+        collection_title: Some(&tree.source.title),
+        index: Some(selected.item_index + 1),
+        quality: Some(&quality_label),
+        codec: Some(stream_codec_label(video)),
+        date: Some(&today),
+        ext: &options.output_extension,
+    };
+    let relative_path = render_output_path(&options.naming_template, &context)?;
+
+    Ok(unique_path(
+        options.output_dir.join(relative_path),
+        reserved_paths,
+    ))
+}
+
+fn sibling_resource_path(output_path: &Path, suffix: &str, extension: Option<&str>) -> PathBuf {
+    let stem = output_path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("untitled");
+    let file_name = match extension {
+        Some(extension) => format!("{stem}.{suffix}.{extension}"),
+        None => format!("{stem}.{suffix}"),
+    };
+
+    output_path.with_file_name(file_name)
 }
 
 fn asset_urls(item: &NormalizedItem, intent: DownloadResourceIntent) -> Vec<String> {
@@ -250,23 +305,19 @@ fn stream_quality_rank(quality: crate::model::StreamQuality) -> u32 {
     }
 }
 
-fn sanitize_path_segment(value: &str) -> String {
-    let sanitized: String = value
-        .chars()
-        .map(|ch| {
-            if ch.is_control() || matches!(ch, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*')
-            {
-                '_'
-            } else {
-                ch
-            }
-        })
-        .collect();
+fn stream_quality_label(stream: &MediaStream) -> String {
+    match stream.quality {
+        crate::model::StreamQuality::Best => "best".to_owned(),
+        crate::model::StreamQuality::Quality(value) => value.to_string(),
+    }
+}
 
-    let trimmed = sanitized.trim().trim_matches('.').to_owned();
-    if trimmed.is_empty() {
-        "untitled".to_owned()
-    } else {
-        trimmed
+fn stream_codec_label(stream: &MediaStream) -> &'static str {
+    match stream.codec {
+        crate::model::StreamCodec::Auto => "auto",
+        crate::model::StreamCodec::Avc => "avc",
+        crate::model::StreamCodec::Hevc => "hevc",
+        crate::model::StreamCodec::Av1 => "av1",
+        crate::model::StreamCodec::Unknown => "unknown",
     }
 }

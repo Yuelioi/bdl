@@ -187,6 +187,7 @@ pub async fn selection_create_tasks(
     options.output_extension = request
         .output_extension
         .unwrap_or(settings.output_extension);
+    options.naming_template = settings.naming_template;
 
     let prepared = state
         .prepare_selection(&source_id, &selected_part_ids)

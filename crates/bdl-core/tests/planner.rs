@@ -22,7 +22,11 @@ fn plan_selected_parts_creates_one_task_for_one_selected_part() {
     assert_eq!(tasks[0].id, "task:source:BV1:part:BV1:100");
     assert_eq!(tasks[0].source_id, "source:BV1");
     assert_eq!(tasks[0].status, TaskStatus::Waiting);
-    assert!(tasks[0].output_path.ends_with("Fixture Video - P1.mp4"));
+    assert!(
+        tasks[0]
+            .output_path
+            .ends_with("Fixture Video/Fixture Video - P1 - P1.mp4")
+    );
 }
 
 #[test]
@@ -108,6 +112,38 @@ fn plan_selected_parts_generates_stable_resource_ids_for_resume() {
     assert_eq!(first[0].id, second[0].id);
     assert_eq!(first[0].resources[0].id, second[0].resources[0].id);
     assert_eq!(first[0].resources[1].id, second[0].resources[1].id);
+}
+
+#[test]
+fn plan_selected_parts_adds_suffix_for_duplicate_output_paths() {
+    let tree = fixture_tree(true);
+    let options = DownloadOptions::new(PathBuf::from("downloads"));
+
+    let tasks = plan_selected_parts(
+        &tree,
+        &[
+            PartId("part:BV1:100".to_owned()),
+            PartId("part:BV1:100".to_owned()),
+        ],
+        &options,
+    )
+    .expect("duplicate selection should still plan unique paths");
+
+    assert!(
+        tasks[0]
+            .output_path
+            .ends_with("Fixture Video/Fixture Video - P1 - P1.mp4")
+    );
+    assert!(
+        tasks[1]
+            .output_path
+            .ends_with("Fixture Video/Fixture Video - P1 - P1 (1).mp4")
+    );
+    assert!(
+        tasks[1].resources[0]
+            .target_path
+            .ends_with("Fixture Video/Fixture Video - P1 - P1 (1).video.m4s")
+    );
 }
 
 fn fixture_tree(include_audio: bool) -> NormalizedSourceTree {

@@ -1712,7 +1712,7 @@ git commit -m "feat: parse paged and episodic sources"
 - Create: `apps/desktop/src/pages/SettingsPage.vue`
 - Create: `apps/desktop/src/stores/settings.ts`
 
-- [ ] **Step 1: Implement naming templates**
+- [x] **Step 1: Implement naming templates**
 
 Defaults:
 
@@ -1736,6 +1736,12 @@ Rules:
 - Trim trailing dots and spaces on Windows.
 - Append `(1)`, `(2)`, etc. on conflict.
 - Provide preview in settings.
+
+Implemented:
+
+- `bdl-core::naming` renders templates to sanitized relative paths and applies duplicate suffixes.
+- `bdl-core::planner` uses the configured template for final output, video/audio temp resources, and archive asset sibling paths.
+- Settings persist `naming_template`; the settings UI exposes a template input with a sample preview.
 
 - [ ] **Step 2: Implement archive assets**
 

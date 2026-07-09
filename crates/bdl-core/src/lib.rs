@@ -6,6 +6,7 @@ pub mod ids;
 pub mod input;
 pub mod model;
 pub mod muxer;
+pub mod naming;
 pub mod planner;
 pub mod queue;
 pub mod resolver;
