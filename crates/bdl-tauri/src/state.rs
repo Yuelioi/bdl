@@ -1,0 +1,119 @@
+use std::collections::HashMap;
+use std::sync::Mutex;
+
+use bdl_core::ids::SourceId;
+use bdl_core::input::classify_input;
+use bdl_core::model::NormalizedSourceTree;
+use bdl_core::queue::DownloadTask;
+use bdl_core::resolver::video::VideoResolver;
+use bdl_core::resolver::{ResolveOptions, Resolver};
+use bdl_core::{BdlError, BdlResult};
+use serde::{Deserialize, Serialize};
+
+pub struct AppState {
+    resolver: VideoResolver,
+    parse_sources: Mutex<HashMap<SourceId, NormalizedSourceTree>>,
+    queue: Mutex<Vec<DownloadTask>>,
+    settings: Mutex<SettingsSnapshot>,
+    account: Mutex<AccountSnapshot>,
+}
+
+impl AppState {
+    pub fn new() -> BdlResult<Self> {
+        Ok(Self {
+            resolver: VideoResolver::new()?,
+            parse_sources: Mutex::new(HashMap::new()),
+            queue: Mutex::new(Vec::new()),
+            settings: Mutex::new(SettingsSnapshot::default()),
+            account: Mutex::new(AccountSnapshot::default()),
+        })
+    }
+
+    pub async fn parse_source(
+        &self,
+        input: &str,
+        fetch_streams: bool,
+    ) -> BdlResult<NormalizedSourceTree> {
+        let classified = classify_input(input)?;
+        let tree = self
+            .resolver
+            .resolve(classified, ResolveOptions { fetch_streams })
+            .await?;
+        self.parse_sources
+            .lock()
+            .map_err(|_| state_poisoned("parse_sources"))?
+            .insert(tree.source.id.clone(), tree.clone());
+        Ok(tree)
+    }
+
+    pub fn close_source(&self, source_id: &SourceId) -> BdlResult<bool> {
+        Ok(self
+            .parse_sources
+            .lock()
+            .map_err(|_| state_poisoned("parse_sources"))?
+            .remove(source_id)
+            .is_some())
+    }
+
+    pub fn queue_snapshot(&self) -> BdlResult<Vec<DownloadTask>> {
+        Ok(self
+            .queue
+            .lock()
+            .map_err(|_| state_poisoned("queue"))?
+            .clone())
+    }
+
+    pub fn settings(&self) -> BdlResult<SettingsSnapshot> {
+        Ok(self
+            .settings
+            .lock()
+            .map_err(|_| state_poisoned("settings"))?
+            .clone())
+    }
+
+    pub fn update_settings(&self, settings: SettingsSnapshot) -> BdlResult<SettingsSnapshot> {
+        *self
+            .settings
+            .lock()
+            .map_err(|_| state_poisoned("settings"))? = settings;
+        self.settings()
+    }
+
+    pub fn account(&self) -> BdlResult<AccountSnapshot> {
+        Ok(self
+            .account
+            .lock()
+            .map_err(|_| state_poisoned("account"))?
+            .clone())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SettingsSnapshot {
+    pub download_dir: Option<String>,
+    pub quality: String,
+    pub archive_mode: String,
+}
+
+impl Default for SettingsSnapshot {
+    fn default() -> Self {
+        Self {
+            download_dir: None,
+            quality: "best".to_owned(),
+            archive_mode: "fast".to_owned(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct AccountSnapshot {
+    pub logged_in: bool,
+    pub name: Option<String>,
+    pub avatar_url: Option<String>,
+}
+
+fn state_poisoned(name: &'static str) -> BdlError {
+    BdlError::Planning {
+        message: format!("state lock `{name}` is poisoned"),
+    }
+}
