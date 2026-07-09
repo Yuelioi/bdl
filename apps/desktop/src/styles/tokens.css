@@ -1,0 +1,33 @@
+:root {
+  --color-background: #f4f6f5;
+  --color-surface: #ffffff;
+  --color-panel: #f9faf9;
+  --color-border: #d9dfdc;
+  --color-text: #17211d;
+  --color-muted: #63716b;
+  --color-accent: #087f5b;
+  --color-accent-strong: #066146;
+  --color-danger: #c92a2a;
+  --color-warning: #e67700;
+  --color-success: #2b8a3e;
+  --space-4: 4px;
+  --space-8: 8px;
+  --space-12: 12px;
+  --space-16: 16px;
+  --space-24: 24px;
+  --space-32: 32px;
+  --radius-4: 4px;
+  --radius-6: 6px;
+  --radius-8: 8px;
+  --font-12: 12px;
+  --font-13: 13px;
+  --font-14: 14px;
+  --font-16: 16px;
+  --font-18: 18px;
+  --font-22: 22px;
+  --height-button: 32px;
+  --height-input: 34px;
+  --height-toolbar: 40px;
+  --height-task-row: 64px;
+  --shadow-panel: 0 1px 2px rgb(23 33 29 / 8%);
+}
