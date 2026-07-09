@@ -6,6 +6,7 @@ import type {
   NormalizedSourceTree,
   QrLoginPollResponse,
   QrLoginSession,
+  QueueLogEntry,
   QueueRemoveResponse,
 } from './dto'
 
@@ -76,6 +77,9 @@ export const selectionCreateTasks = (request: SelectionCreateTasksRequest) =>
   invokeCommand<DownloadTask[]>('selection_create_tasks', { request })
 
 export const queueList = () => invokeCommand<DownloadTask[]>('queue_list')
+
+export const queueLogs = (taskId: string, limit = 200) =>
+  invokeCommand<QueueLogEntry[]>('queue_logs', { taskId, limit })
 
 export const queuePause = (taskId: string) => invokeCommand<DownloadTask>('queue_pause', { taskId })
 

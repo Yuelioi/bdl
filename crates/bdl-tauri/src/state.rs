@@ -9,7 +9,7 @@ use bdl_core::input::{ClassifiedInput, classify_input};
 use bdl_core::model::{
     NormalizedItem, NormalizedPart, NormalizedSourceTree, PageState, SourceKind,
 };
-use bdl_core::queue::{DownloadTask, ResourceStatus, TaskStatus};
+use bdl_core::queue::{DownloadTask, QueueLogEntry, ResourceStatus, TaskStatus};
 use bdl_core::resolver::collection::{
     CollectionInputIds, CollectionResolver, SeriesInputIds, SeriesResolver,
 };
@@ -304,6 +304,21 @@ impl AppState {
             .lock()
             .map_err(|_| state_poisoned("queue"))?
             .clone())
+    }
+
+    pub fn append_task_log(&self, entry: QueueLogEntry) -> BdlResult<QueueLogEntry> {
+        self.storage
+            .lock()
+            .map_err(|_| state_poisoned("storage"))?
+            .append_task_log(&entry)?;
+        Ok(entry)
+    }
+
+    pub fn task_logs(&self, task_id: &str, limit: usize) -> BdlResult<Vec<QueueLogEntry>> {
+        self.storage
+            .lock()
+            .map_err(|_| state_poisoned("storage"))?
+            .load_task_logs(task_id, limit)
     }
 
     pub fn settings(&self) -> BdlResult<SettingsSnapshot> {

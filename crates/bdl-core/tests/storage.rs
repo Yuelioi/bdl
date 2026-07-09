@@ -3,8 +3,8 @@ use std::path::PathBuf;
 use bdl_core::BdlResult;
 use bdl_core::model::HeaderPair;
 use bdl_core::queue::{
-    DownloadResource, DownloadResourceIntent, DownloadResourceKind, DownloadTask, ResourceStatus,
-    TaskStatus,
+    DownloadResource, DownloadResourceIntent, DownloadResourceKind, DownloadTask, QueueLogEntry,
+    QueueLogLevel, ResourceStatus, TaskStatus,
 };
 use bdl_core::storage::TaskStorage;
 use uuid::Uuid;
@@ -38,6 +38,63 @@ fn task_storage_reloads_task_with_resources_after_reopen() -> BdlResult<()> {
     let tasks = storage.load_tasks()?;
 
     assert_eq!(tasks, vec![task]);
+    Ok(())
+}
+
+#[test]
+fn task_storage_reloads_task_logs_after_reopen() -> BdlResult<()> {
+    let fixture = StorageFixture::new()?;
+    let task = sample_task();
+    let first = sample_log(
+        &task.id,
+        QueueLogLevel::Info,
+        "开始下载任务",
+        "2026-07-09T01:00:00Z",
+    );
+    let second = sample_log(
+        &task.id,
+        QueueLogLevel::Error,
+        "fetch error: HTTP 403",
+        "2026-07-09T01:00:01Z",
+    );
+
+    {
+        let mut storage = TaskStorage::open(&fixture.db_path)?;
+        storage.save_task(&task)?;
+        storage.append_task_log(&first)?;
+        storage.append_task_log(&second)?;
+    }
+
+    let storage = TaskStorage::open(&fixture.db_path)?;
+    let logs = storage.load_task_logs(&task.id, 10)?;
+
+    assert_eq!(logs, vec![second, first]);
+    Ok(())
+}
+
+#[test]
+fn task_storage_keeps_task_logs_when_replacing_existing_task() -> BdlResult<()> {
+    let fixture = StorageFixture::new()?;
+    let mut task = sample_task();
+    let log = sample_log(
+        &task.id,
+        QueueLogLevel::Info,
+        "下载资源 视频",
+        "2026-07-09T01:00:00Z",
+    );
+
+    {
+        let mut storage = TaskStorage::open(&fixture.db_path)?;
+        storage.save_task(&task)?;
+        storage.append_task_log(&log)?;
+        task.status = TaskStatus::Downloading;
+        storage.replace_tasks(&[task])?;
+    }
+
+    let storage = TaskStorage::open(&fixture.db_path)?;
+    let logs = storage.load_task_logs("task:source:part", 10)?;
+
+    assert_eq!(logs, vec![log]);
     Ok(())
 }
 
@@ -84,6 +141,20 @@ fn sample_task() -> DownloadTask {
             ),
         ],
         output_path: PathBuf::from("downloads/Example - P1.mp4"),
+    }
+}
+
+fn sample_log(
+    task_id: &str,
+    level: QueueLogLevel,
+    message: &str,
+    created_at: &str,
+) -> QueueLogEntry {
+    QueueLogEntry {
+        task_id: task_id.to_owned(),
+        level,
+        message: message.to_owned(),
+        created_at: created_at.to_owned(),
     }
 }
 

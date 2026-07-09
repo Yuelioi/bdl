@@ -8,7 +8,8 @@ use bdl_core::model::NormalizedSourceTree;
 use bdl_core::muxer::{MediaMuxer, MediaMuxerConfig, MuxRequest};
 use bdl_core::planner::{ArchiveMode, DownloadOptions, plan_selected_parts};
 use bdl_core::queue::{
-    DownloadResource, DownloadResourceIntent, DownloadTask, ResourceStatus, TaskStatus,
+    DownloadResource, DownloadResourceIntent, DownloadTask, QueueLogEntry, QueueLogLevel,
+    ResourceStatus, TaskStatus,
 };
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
@@ -49,14 +50,6 @@ pub struct ParseCloseSourceResponse {
 #[derive(Debug, Clone, Serialize)]
 pub struct QueueRemoveResponse {
     pub removed: bool,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct QueueLogEntry {
-    pub task_id: String,
-    pub level: String,
-    pub message: String,
-    pub created_at: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -198,6 +191,16 @@ pub fn queue_list(app: AppHandle, state: State<'_, AppState>) -> CommandResult<V
     let tasks = state.queue_snapshot()?;
     start_queue_worker(&app);
     Ok(tasks)
+}
+
+#[tauri::command]
+pub fn queue_logs(
+    state: State<'_, AppState>,
+    task_id: String,
+    limit: Option<usize>,
+) -> CommandResult<Vec<QueueLogEntry>> {
+    let limit = limit.unwrap_or(200).clamp(1, 500);
+    Ok(state.task_logs(&task_id, limit)?)
 }
 
 #[tauri::command]
@@ -387,17 +390,17 @@ async fn run_queue_worker(app: &AppHandle, state: &AppState) -> CommandResult<()
         };
 
         events::emit(app, events::QUEUE_TASK_UPDATED, &task)?;
-        emit_queue_log(app, &task.id, "info", "开始下载任务")?;
+        emit_queue_log(app, state, &task.id, QueueLogLevel::Info, "开始下载任务")?;
 
         if let Err(error) = run_download_task(app, state, &fetcher, task.clone()).await {
             match state.task_status(&task.id) {
                 Ok(TaskStatus::Paused | TaskStatus::Cancelled) => {
-                    emit_queue_log(app, &task.id, "warning", "任务已停止")?;
+                    emit_queue_log(app, state, &task.id, QueueLogLevel::Warning, "任务已停止")?;
                 }
                 _ => {
                     let failed = state.update_task_status(&task.id, TaskStatus::Failed)?;
                     events::emit(app, events::QUEUE_TASK_UPDATED, &failed)?;
-                    emit_queue_log(app, &task.id, "error", &error.message)?;
+                    emit_queue_log(app, state, &task.id, QueueLogLevel::Error, &error.message)?;
                 }
             }
         }
@@ -418,7 +421,13 @@ async fn run_download_task(
         .filter(|resource| should_fetch(resource))
     {
         if !task_should_continue(state, &task.id)? {
-            emit_queue_log(app, &task.id, "warning", "任务已暂停或取消")?;
+            emit_queue_log(
+                app,
+                state,
+                &task.id,
+                QueueLogLevel::Warning,
+                "任务已暂停或取消",
+            )?;
             return Ok(());
         }
         if !resource.status.can_start() {
@@ -430,8 +439,9 @@ async fn run_download_task(
         events::emit(app, events::QUEUE_TASK_UPDATED, &updated)?;
         emit_queue_log(
             app,
+            state,
             &task.id,
-            "info",
+            QueueLogLevel::Info,
             &format!("下载资源 {}", resource_label(resource)),
         )?;
 
@@ -448,13 +458,19 @@ async fn run_download_task(
     }
 
     if !task_should_continue(state, &task.id)? {
-        emit_queue_log(app, &task.id, "warning", "任务已暂停或取消")?;
+        emit_queue_log(
+            app,
+            state,
+            &task.id,
+            QueueLogLevel::Warning,
+            "任务已暂停或取消",
+        )?;
         return Ok(());
     }
 
     let muxing = state.update_task_status(&task.id, TaskStatus::Muxing)?;
     events::emit(app, events::QUEUE_TASK_UPDATED, &muxing)?;
-    emit_queue_log(app, &task.id, "info", "合并音视频")?;
+    emit_queue_log(app, state, &task.id, QueueLogLevel::Info, "合并音视频")?;
 
     let video = resource_by_intent(&task, DownloadResourceIntent::Video)?;
     let audio = resource_by_intent(&task, DownloadResourceIntent::Audio)?;
@@ -469,13 +485,19 @@ async fn run_download_task(
         .map_err(BdlError::from)?;
 
     if !task_should_continue(state, &task.id)? {
-        emit_queue_log(app, &task.id, "warning", "任务已暂停或取消")?;
+        emit_queue_log(
+            app,
+            state,
+            &task.id,
+            QueueLogLevel::Warning,
+            "任务已暂停或取消",
+        )?;
         return Ok(());
     }
 
     let completed = state.update_task_status(&task.id, TaskStatus::Completed)?;
     events::emit(app, events::QUEUE_TASK_UPDATED, &completed)?;
-    emit_queue_log(app, &task.id, "info", "下载完成")?;
+    emit_queue_log(app, state, &task.id, QueueLogLevel::Info, "下载完成")?;
 
     Ok(())
 }
@@ -520,13 +542,19 @@ fn resource_label(resource: &DownloadResource) -> &'static str {
     }
 }
 
-fn emit_queue_log(app: &AppHandle, task_id: &str, level: &str, message: &str) -> CommandResult<()> {
-    let entry = QueueLogEntry {
+fn emit_queue_log(
+    app: &AppHandle,
+    state: &AppState,
+    task_id: &str,
+    level: QueueLogLevel,
+    message: &str,
+) -> CommandResult<()> {
+    let entry = state.append_task_log(QueueLogEntry {
         task_id: task_id.to_owned(),
-        level: level.to_owned(),
+        level,
         message: message.to_owned(),
         created_at: Utc::now().to_rfc3339(),
-    };
+    })?;
     events::emit(app, events::QUEUE_LOG_APPENDED, &entry)
 }
 

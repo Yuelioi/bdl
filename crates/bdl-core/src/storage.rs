@@ -5,7 +5,7 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 
 use crate::error::BdlResult;
-use crate::queue::{DownloadResource, DownloadTask};
+use crate::queue::{DownloadResource, DownloadTask, QueueLogEntry};
 
 pub struct TaskStorage {
     conn: Connection,
@@ -53,7 +53,24 @@ impl TaskStorage {
 
     pub fn replace_tasks(&mut self, tasks: &[DownloadTask]) -> BdlResult<()> {
         let tx = self.conn.transaction()?;
-        tx.execute("DELETE FROM tasks", [])?;
+        tx.execute(
+            "CREATE TEMP TABLE IF NOT EXISTS task_storage_keep_tasks (id TEXT PRIMARY KEY)",
+            [],
+        )?;
+        tx.execute("DELETE FROM task_storage_keep_tasks", [])?;
+        for task in tasks {
+            tx.execute(
+                "INSERT INTO task_storage_keep_tasks (id) VALUES (?1)",
+                [task.id.as_str()],
+            )?;
+        }
+
+        tx.execute(
+            "DELETE FROM tasks WHERE id NOT IN (SELECT id FROM task_storage_keep_tasks)",
+            [],
+        )?;
+        tx.execute("DELETE FROM task_storage_keep_tasks", [])?;
+
         for (index, task) in tasks.iter().enumerate() {
             save_task_in_tx(&tx, task, index)?;
         }
@@ -90,6 +107,54 @@ impl TaskStorage {
         }
 
         Ok(tasks)
+    }
+
+    pub fn append_task_log(&mut self, entry: &QueueLogEntry) -> BdlResult<()> {
+        self.conn.execute(
+            r#"
+            INSERT INTO task_logs (task_id, level, message, created_at)
+            VALUES (?1, ?2, ?3, ?4)
+            "#,
+            params![
+                entry.task_id.as_str(),
+                serialize_json(&entry.level)?,
+                entry.message.as_str(),
+                entry.created_at.as_str(),
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn load_task_logs(&self, task_id: &str, limit: usize) -> BdlResult<Vec<QueueLogEntry>> {
+        let limit = i64::try_from(limit).unwrap_or(i64::MAX);
+        let mut stmt = self.conn.prepare(
+            "SELECT task_id, level, message, created_at
+             FROM task_logs
+             WHERE task_id = ?1
+             ORDER BY id DESC
+             LIMIT ?2",
+        )?;
+        let log_rows = stmt.query_map(params![task_id, limit], |row| {
+            Ok(TaskLogRow {
+                task_id: row.get(0)?,
+                level_json: row.get(1)?,
+                message: row.get(2)?,
+                created_at: row.get(3)?,
+            })
+        })?;
+
+        let mut logs = Vec::new();
+        for log_row in log_rows {
+            let log_row = log_row?;
+            logs.push(QueueLogEntry {
+                task_id: log_row.task_id,
+                level: deserialize_json(&log_row.level_json)?,
+                message: log_row.message,
+                created_at: log_row.created_at,
+            });
+        }
+
+        Ok(logs)
     }
 
     fn load_resources(&self, task_id: &str) -> BdlResult<Vec<DownloadResource>> {
@@ -148,6 +213,13 @@ struct ResourceRow {
     target_path: String,
     temp_path: String,
     status_json: String,
+}
+
+struct TaskLogRow {
+    task_id: String,
+    level_json: String,
+    message: String,
+    created_at: String,
 }
 
 fn run_migrations(conn: &Connection) -> BdlResult<()> {

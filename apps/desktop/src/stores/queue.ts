@@ -5,6 +5,7 @@ import type { DownloadTask, QueueLogEntry, TaskStatus } from '../api/dto'
 import {
   queueCancel,
   queueList,
+  queueLogs,
   queueOpenDir,
   queueOpenFile,
   queuePause,
@@ -51,6 +52,9 @@ export const useQueueStore = defineStore('queue', {
       try {
         this.tasks = await queueList()
         this.selectedTaskId = this.selectedTaskId ?? this.tasks[0]?.id ?? null
+        if (this.selectedTaskId) {
+          await this.loadLogs(this.selectedTaskId)
+        }
       } catch (error) {
         ui.pushToast(errorMessage(error), 'danger')
       } finally {
@@ -71,7 +75,7 @@ export const useQueueStore = defineStore('queue', {
       this.unlisten.push(
         await listen<QueueLogEntry>('queue://log-appended', (event) => {
           const list = this.logsByTask[event.payload.task_id] ?? []
-          this.logsByTask[event.payload.task_id] = [event.payload, ...list].slice(0, 200)
+          this.logsByTask[event.payload.task_id] = mergeLogs([event.payload], list)
         }),
       )
     },
@@ -80,6 +84,7 @@ export const useQueueStore = defineStore('queue', {
     },
     selectTask(taskId: string) {
       this.selectedTaskId = taskId
+      void this.loadLogs(taskId)
     },
     upsertTask(task: DownloadTask) {
       const index = this.tasks.findIndex((candidate) => candidate.id === task.id)
@@ -119,7 +124,11 @@ export const useQueueStore = defineStore('queue', {
       try {
         await queueRemove(taskId)
         this.tasks = this.tasks.filter((task) => task.id !== taskId)
+        delete this.logsByTask[taskId]
         this.selectedTaskId = this.tasks[0]?.id ?? null
+        if (this.selectedTaskId) {
+          void this.loadLogs(this.selectedTaskId)
+        }
         ui.pushToast('已移除任务', 'info')
       } catch (error) {
         ui.pushToast(errorMessage(error), 'danger')
@@ -130,6 +139,15 @@ export const useQueueStore = defineStore('queue', {
     },
     async openDir(taskId: string) {
       await this.runVoidCommand(() => queueOpenDir(taskId))
+    },
+    async loadLogs(taskId: string) {
+      const ui = useUiStore()
+      try {
+        const logs = await queueLogs(taskId, LOG_LIMIT)
+        this.logsByTask[taskId] = mergeLogs(logs, this.logsByTask[taskId] ?? [])
+      } catch (error) {
+        ui.pushToast(errorMessage(error), 'danger')
+      }
     },
     async runTaskCommand(command: () => Promise<DownloadTask>, successMessage: string) {
       const ui = useUiStore()
@@ -168,6 +186,30 @@ const filterTask = (status: TaskStatus, filter: QueueFilter): boolean => {
       return true
   }
 }
+
+const LOG_LIMIT = 200
+
+const mergeLogs = (...sources: QueueLogEntry[][]): QueueLogEntry[] => {
+  const seen = new Set<string>()
+  const merged: QueueLogEntry[] = []
+
+  for (const logs of sources) {
+    for (const log of logs) {
+      const key = logKey(log)
+      if (seen.has(key)) {
+        continue
+      }
+
+      seen.add(key)
+      merged.push(log)
+    }
+  }
+
+  return merged.sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, LOG_LIMIT)
+}
+
+const logKey = (log: QueueLogEntry): string =>
+  `${log.task_id}\n${log.created_at}\n${log.level}\n${log.message}`
 
 const errorMessage = (error: unknown): string => {
   if (error instanceof Error) {
