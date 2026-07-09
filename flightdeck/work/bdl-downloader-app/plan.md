@@ -1090,7 +1090,7 @@ git commit -m "feat: add resumable reqwest fetcher"
 - Modify: `crates/bdl-cli/src/main.rs`
 - Test: `crates/bdl-core/tests/muxer.rs`
 
-- [ ] **Step 1: Write muxer tests**
+- [x] **Step 1: Write muxer tests**
 
 Tests:
 
@@ -1098,7 +1098,7 @@ Tests:
 - A configured ffmpeg path is preferred over system lookup.
 - A non-zero ffmpeg exit code returns the exit code and stderr summary.
 
-- [ ] **Step 2: Implement `MediaMuxer`**
+- [x] **Step 2: Implement `MediaMuxer`**
 
 Required command shape:
 
@@ -1112,7 +1112,7 @@ For mkv:
 ffmpeg -y -i video.m4s -i audio.m4s -c copy output.mkv
 ```
 
-- [ ] **Step 3: Implement CLI commands**
+- [x] **Step 3: Implement CLI commands**
 
 `bdl-cli` supports:
 
@@ -1125,7 +1125,7 @@ bdl-cli ffmpeg-check
 
 The initial `download` command may support only single normal video. It must use the same resolver, planner, fetcher, and muxer as the future Tauri app.
 
-- [ ] **Step 4: Run CLI checks**
+- [x] **Step 4: Run CLI checks**
 
 Run:
 
@@ -1136,7 +1136,7 @@ cargo run -p bdl-cli -- parse BV1xx411c7mD --json
 
 Expected: `ffmpeg-check` reports found or missing without panicking; parse command returns normalized JSON or a clean API error.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add crates/bdl-core crates/bdl-cli

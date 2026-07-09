@@ -2,11 +2,11 @@
 
 ## State
 
-Task 6 fetching is complete on branch `bdl-downloader-app`. The workspace has a Rust/Tauri/Vue scaffold, frontend-safe normalized DTOs, a pure Bilibili input classifier, a `bpi-rs` backed video resolver, a planner that turns selected normalized parts into backend-owned download tasks/resources, and a resumable `reqwest` fetcher.
+Task 7 CLI vertical slice is complete on branch `bdl-downloader-app`. The workspace has a Rust/Tauri/Vue scaffold, frontend-safe normalized DTOs, a pure Bilibili input classifier, a `bpi-rs` backed video resolver, a planner that turns selected normalized parts into backend-owned download tasks/resources, a resumable `reqwest` fetcher, an ffmpeg muxer, and a CLI parse/download path.
 
 ## Next
 
-Execute Task 7 in `plan.md`: add the ffmpeg muxer and CLI vertical slice.
+Execute Task 8 in `plan.md`: add the Tauri command and event bridge.
 
 ## Read now
 
@@ -48,6 +48,10 @@ Current:
 - Completed Task 6 resumable fetcher in commit `cb85078`.
 - Task 6 verification passed: `cargo test -p bdl-core --test fetcher_resume`, `cargo test -p bdl-core`, `cargo fmt --all --check`, and `cargo check --workspace`.
 - Fetcher writes to temp `.bdlpart` files first, stores progress in `<temp>.state`, resumes with `Range`, restarts when content length changes, forwards resource headers, retries failed GETs up to the configured limit, and emits progress through a channel.
+- Completed Task 7 ffmpeg muxer and CLI vertical slice in commit `f6656cf`.
+- Task 7 verification passed: `cargo test -p bdl-core --test muxer`, `cargo test --workspace`, `cargo check --workspace`, `cargo fmt --all --check`, `cargo run -p bdl-cli -- ffmpeg-check`, and `cargo run -p bdl-cli -- parse BV1xx411c7mD --json`.
+- `ffmpeg-check` found `D:\scoop\shims\ffmpeg.exe` on this machine; CLI live parse returned normalized JSON for `BV1xx411c7mD`.
+- CLI commands now include `parse`, `download`, `verify-cookie`, and `ffmpeg-check`; the initial `download` command supports the single-video pipeline using resolver, planner, fetcher, and muxer.
 
 Decisions:
 - Main navigation: `解析`, `传输`, `历史`, `设置`; account lives in the top-right account button.
