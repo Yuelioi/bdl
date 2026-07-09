@@ -164,6 +164,12 @@ export const useParseStore = defineStore('parse', {
           archive_mode: settings.saved.archive_mode,
           output_extension: settings.saved.output_extension,
         })
+        this.errorsBySource[sourceId] = null
+        if (tasks.length === 0) {
+          ui.pushToast('所选内容已在传输中', 'info', { label: '查看传输', tab: 'transfer' })
+          return
+        }
+
         ui.pushToast(`已创建 ${tasks.length} 个任务`, 'success', { label: '查看传输', tab: 'transfer' })
       } catch (error) {
         this.errorsBySource[sourceId] = errorMessage(error)

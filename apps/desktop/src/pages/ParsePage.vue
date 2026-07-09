@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-import type { NormalizedSourceTree } from '../api/dto'
+import type { NormalizedSourceTree, SourceKind } from '../api/dto'
 import UiButton from '../ui/Button.vue'
 import UiIconButton from '../ui/IconButton.vue'
 import UiStatusBadge from '../ui/StatusBadge.vue'
@@ -16,6 +16,17 @@ interface PageTreeNode {
   children?: PageTreeNode[]
 }
 
+const sourceKindLabels: Record<SourceKind, string> = {
+  video: '视频',
+  bangumi: '番剧',
+  cheese: '课程',
+  favorite: '收藏夹',
+  collection: '合集',
+  series: '系列',
+  uploader: 'UP 主',
+  unknown: '未知',
+}
+
 const parse = useParseStore()
 
 const activeSource = computed(() => parse.activeSource)
@@ -25,6 +36,23 @@ const treeNodes = computed(() => (activeSource.value ? toTreeNodes(activeSource.
 const createLoading = computed(() => Boolean(parse.loadingBySource.__create__))
 const activeLoading = computed(() => Boolean(activeSource.value && parse.loadingBySource[activeSource.value.source.id]))
 const activeError = computed(() => (activeSource.value ? parse.errorsBySource[activeSource.value.source.id] : null))
+const canCreateTasks = computed(() => Boolean(activeSource.value && selectedCount.value > 0 && !activeLoading.value))
+const canLoadMore = computed(() => Boolean(activeSource.value?.source.has_more && !activeLoading.value))
+const createTaskLabel = computed(() => {
+  if (activeLoading.value) {
+    return '处理中'
+  }
+  return selectedCount.value > 0 ? `下载已选择 (${selectedCount.value})` : '先选择分集'
+})
+const loadedLabel = computed(() => {
+  if (!activeSource.value) {
+    return '--'
+  }
+
+  const total = activeSource.value.source.total_count ?? activeSource.value.source.loaded_count
+  return `${activeSource.value.source.loaded_count} / ${total}`
+})
+const activeSourceKindLabel = computed(() => (activeSource.value ? sourceKindLabels[activeSource.value.source.kind] : '--'))
 
 const submitInput = () => {
   void parse.createSource()
@@ -133,29 +161,54 @@ const streamSummary = (count: number): string => (count > 0 ? `${count} 条流` 
 
     <aside class="panel selection-panel">
       <div class="panel-heading">
-        <h2>选择</h2>
-        <span class="muted-text">{{ selectedCount }} 项</span>
+        <div>
+          <h2>准备下载</h2>
+          <span class="muted-text">{{ activeSourceKindLabel }}</span>
+        </div>
+        <UiIconButton
+          v-if="activeSource"
+          icon="x"
+          label="关闭来源"
+          variant="ghost"
+          @click="closeSource(activeSource.source.id)"
+        />
       </div>
 
-      <div v-if="activeSource" class="source-detail">
-        <strong>{{ activeSource.source.title }}</strong>
-        <span>{{ activeSource.source.input }}</span>
-        <span>已加载 {{ activeSource.source.loaded_count }} 项</span>
+      <div v-if="activeSource" class="selection-body">
+        <section class="selection-summary" aria-label="当前下载选择">
+          <div>
+            <span>已选</span>
+            <strong>{{ selectedCount }}</strong>
+            <small>个分集</small>
+          </div>
+          <dl>
+            <div>
+              <dt>来源</dt>
+              <dd>{{ activeSource.source.title }}</dd>
+            </div>
+            <div>
+              <dt>解析</dt>
+              <dd>{{ loadedLabel }}</dd>
+            </div>
+            <div>
+              <dt>输入</dt>
+              <dd>{{ activeSource.source.input }}</dd>
+            </div>
+          </dl>
+        </section>
+
+        <div class="selection-actions">
+          <UiButton :disabled="!canCreateTasks" @click="createTasks">{{ createTaskLabel }}</UiButton>
+        </div>
+
+        <div class="parse-more-actions">
+          <UiButton variant="secondary" :disabled="!canLoadMore" @click="loadMore">解析更多</UiButton>
+          <UiButton variant="secondary" :disabled="!canLoadMore" @click="parseAll">解析全部</UiButton>
+        </div>
+
+        <p v-if="activeError" class="inline-alert">{{ activeError }}</p>
       </div>
-
-      <p v-if="activeError" class="error-text">{{ activeError }}</p>
-
-      <div class="selection-actions">
-        <UiButton :disabled="!activeSource || activeLoading" @click="createTasks">下载已选择</UiButton>
-        <UiButton variant="secondary" :disabled="!activeSource || !activeSource.source.has_more || activeLoading" @click="loadMore">
-          解析更多
-        </UiButton>
-        <UiButton variant="secondary" :disabled="!activeSource || !activeSource.source.has_more || activeLoading" @click="parseAll">
-          解析全部
-        </UiButton>
-      </div>
-
-      <UiIconButton v-if="activeSource" icon="x" label="关闭来源" variant="ghost" @click="closeSource(activeSource.source.id)" />
+      <div v-else class="empty-state">选择一个来源后创建下载任务</div>
     </aside>
   </section>
 </template>
@@ -208,8 +261,7 @@ const streamSummary = (count: number): string => (count > 0 ? `${count} 条流` 
   background: #e8f3ee;
 }
 
-.source-row span,
-.source-detail strong {
+.source-row span {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -218,24 +270,96 @@ const streamSummary = (count: number): string => (count > 0 ? `${count} 条流` 
 }
 
 .source-row small,
-.source-detail span,
-.empty-state,
-.error-text {
+.empty-state {
   color: var(--color-muted);
   font-size: var(--font-12);
 }
 
-.source-detail {
+.selection-body {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  overflow: auto;
+}
+
+.selection-summary {
   display: grid;
-  gap: var(--space-6, 6px);
+  gap: var(--space-16);
+}
+
+.selection-summary > div {
+  min-height: 82px;
+  display: grid;
+  grid-template-columns: auto minmax(56px, auto) minmax(0, 1fr);
+  align-items: baseline;
+  column-gap: var(--space-8);
+  padding: var(--space-16);
+  border: 1px solid rgb(8 127 91 / 20%);
+  border-radius: var(--radius-8);
+  background: #eef8f3;
+}
+
+.selection-summary > div span,
+.selection-summary > div small {
+  color: var(--color-muted);
+  font-size: var(--font-13);
+  font-weight: 650;
+}
+
+.selection-summary > div strong {
+  color: var(--color-accent-strong);
+  font-size: 38px;
+  line-height: 1;
+}
+
+.selection-summary dl {
+  display: grid;
+  gap: var(--space-10, 10px);
+  margin: 0;
+}
+
+.selection-summary dl div {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: var(--space-8);
+  align-items: start;
+}
+
+.selection-summary dt,
+.selection-summary dd {
+  margin: 0;
+  font-size: var(--font-12);
+  line-height: 1.5;
+}
+
+.selection-summary dt {
+  color: var(--color-muted);
+  font-weight: 700;
+}
+
+.selection-summary dd {
+  min-width: 0;
+  color: var(--color-text);
+  overflow-wrap: anywhere;
 }
 
 .selection-actions {
   display: grid;
-  gap: var(--space-8);
 }
 
 .selection-actions :deep(.ui-button) {
+  width: 100%;
+}
+
+.parse-more-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-8);
+}
+
+.parse-more-actions :deep(.ui-button) {
   width: 100%;
 }
 
@@ -248,10 +372,16 @@ const streamSummary = (count: number): string => (count > 0 ? `${count} 条流` 
   background: var(--color-panel);
 }
 
-.error-text {
+.inline-alert {
   margin: 0;
+  padding: var(--space-8) var(--space-12);
+  border: 1px solid rgb(201 42 42 / 20%);
+  border-radius: var(--radius-6);
+  background: #fffafa;
   color: var(--color-danger);
+  font-size: var(--font-12);
   line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
 @media (max-width: 1040px) {

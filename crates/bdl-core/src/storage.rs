@@ -60,7 +60,7 @@ impl TaskStorage {
         tx.execute("DELETE FROM task_storage_keep_tasks", [])?;
         for task in tasks {
             tx.execute(
-                "INSERT INTO task_storage_keep_tasks (id) VALUES (?1)",
+                "INSERT OR IGNORE INTO task_storage_keep_tasks (id) VALUES (?1)",
                 [task.id.as_str()],
             )?;
         }

@@ -80,6 +80,8 @@ const diagnosticText = computed(() => {
   return lines.join('\n')
 })
 
+const defaultTab = (): string => (task?.status === 'failed' || task?.status === 'cancelled' ? 'diagnosis' : 'overview')
+
 watch(
   () => task?.id,
   () => {
@@ -182,8 +184,6 @@ const outputDir = (path: string | null): string => {
   const separatorIndex = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'))
   return separatorIndex >= 0 ? path.slice(0, separatorIndex) : '.'
 }
-
-const defaultTab = (): string => (task?.status === 'failed' || task?.status === 'cancelled' ? 'diagnosis' : 'overview')
 </script>
 
 <template>

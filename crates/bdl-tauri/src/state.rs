@@ -207,11 +207,14 @@ impl AppState {
         })
     }
 
-    pub fn enqueue_tasks(&self, tasks: Vec<DownloadTask>) -> BdlResult<()> {
+    pub fn enqueue_tasks(&self, tasks: Vec<DownloadTask>) -> BdlResult<Vec<DownloadTask>> {
         let mut queue = self.queue.lock().map_err(|_| state_poisoned("queue"))?;
-        queue.extend(tasks);
-        self.persist_queue(&queue)?;
-        Ok(())
+        let removed_existing_duplicates = dedupe_tasks_by_id(&mut queue);
+        let inserted = append_new_tasks(&mut queue, tasks);
+        if removed_existing_duplicates || !inserted.is_empty() {
+            self.persist_queue(&queue)?;
+        }
+        Ok(inserted)
     }
 
     pub fn try_start_queue_worker(&self) -> bool {
@@ -1200,11 +1203,36 @@ fn source_kind_name(kind: SourceKind) -> &'static str {
     }
 }
 
+fn dedupe_tasks_by_id(queue: &mut Vec<DownloadTask>) -> bool {
+    let original_len = queue.len();
+    let mut seen = HashSet::new();
+    queue.retain(|task| seen.insert(task.id.clone()));
+    queue.len() != original_len
+}
+
+fn append_new_tasks(queue: &mut Vec<DownloadTask>, tasks: Vec<DownloadTask>) -> Vec<DownloadTask> {
+    let mut known_ids = queue
+        .iter()
+        .map(|task| task.id.clone())
+        .collect::<HashSet<_>>();
+    let mut inserted = Vec::new();
+
+    for task in tasks {
+        if known_ids.insert(task.id.clone()) {
+            inserted.push(task.clone());
+            queue.push(task);
+        }
+    }
+
+    inserted
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        PartHydrationRequest, append_source_page, hydrate_placeholder_part, next_page_request,
-        remap_selected_part_ids, selected_hydration_requests, task_media_refresh_ids,
+        PartHydrationRequest, append_new_tasks, append_source_page, dedupe_tasks_by_id,
+        hydrate_placeholder_part, next_page_request, remap_selected_part_ids,
+        selected_hydration_requests, task_media_refresh_ids,
     };
     use std::path::PathBuf;
 
@@ -1216,6 +1244,31 @@ mod tests {
     };
     use bdl_core::queue::{DownloadTask, TaskStatus};
     use bdl_core::resolver::paged::PageRequest;
+
+    #[test]
+    fn append_new_tasks_skips_existing_and_incoming_duplicate_ids() {
+        let mut queue = vec![
+            task_with_id("task:video:fixture:part:one"),
+            task_with_id("task:video:fixture:part:one"),
+        ];
+
+        let removed_duplicates = dedupe_tasks_by_id(&mut queue);
+        let inserted = append_new_tasks(
+            &mut queue,
+            vec![
+                task_with_id("task:video:fixture:part:one"),
+                task_with_id("task:video:fixture:part:two"),
+                task_with_id("task:video:fixture:part:two"),
+            ],
+        );
+
+        assert!(removed_duplicates);
+        assert_eq!(
+            queue_ids(&queue),
+            ["task:video:fixture:part:one", "task:video:fixture:part:two"]
+        );
+        assert_eq!(queue_ids(&inserted), ["task:video:fixture:part:two"]);
+    }
 
     #[test]
     fn selected_hydration_requests_returns_unique_selected_placeholders() {
@@ -1443,6 +1496,10 @@ mod tests {
             resources: Vec::new(),
             output_path: PathBuf::from("downloads/fixture.mp4"),
         }
+    }
+
+    fn queue_ids(tasks: &[DownloadTask]) -> Vec<&str> {
+        tasks.iter().map(|task| task.id.as_str()).collect()
     }
 
     fn uploader_tree() -> NormalizedSourceTree {

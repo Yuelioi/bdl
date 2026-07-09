@@ -193,8 +193,8 @@ pub async fn selection_create_tasks(
     let prepared = state
         .prepare_selection(&source_id, &selected_part_ids)
         .await?;
-    let tasks = plan_selected_parts(&prepared.tree, &prepared.part_ids, &options)?;
-    state.enqueue_tasks(tasks.clone())?;
+    let planned_tasks = plan_selected_parts(&prepared.tree, &prepared.part_ids, &options)?;
+    let tasks = state.enqueue_tasks(planned_tasks)?;
 
     if prepared.tree_updated {
         events::emit(&app, events::PARSE_SOURCE_UPDATED, &prepared.tree)?;
@@ -203,7 +203,9 @@ pub async fn selection_create_tasks(
     for task in &tasks {
         events::emit(&app, events::QUEUE_TASK_UPDATED, task)?;
     }
-    start_queue_worker(&app);
+    if !tasks.is_empty() {
+        start_queue_worker(&app);
+    }
 
     Ok(tasks)
 }

@@ -98,6 +98,25 @@ fn task_storage_keeps_task_logs_when_replacing_existing_task() -> BdlResult<()> 
     Ok(())
 }
 
+#[test]
+fn task_storage_replace_tasks_tolerates_duplicate_task_ids() -> BdlResult<()> {
+    let fixture = StorageFixture::new()?;
+    let task = sample_task();
+    let mut updated = sample_task();
+    updated.title = "Example - P1 updated".to_owned();
+
+    {
+        let mut storage = TaskStorage::open(&fixture.db_path)?;
+        storage.replace_tasks(&[task, updated.clone()])?;
+    }
+
+    let storage = TaskStorage::open(&fixture.db_path)?;
+    let tasks = storage.load_tasks()?;
+
+    assert_eq!(tasks, vec![updated]);
+    Ok(())
+}
+
 struct StorageFixture {
     dir: PathBuf,
     db_path: PathBuf,
