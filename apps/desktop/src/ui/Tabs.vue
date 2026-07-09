@@ -31,17 +31,21 @@ defineProps<{
 
 <style scoped>
 .ui-tabs {
-  height: var(--height-toolbar);
-  display: inline-flex;
+  width: 100%;
+  min-height: var(--height-toolbar);
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-4);
   padding: var(--space-4);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-8);
   background: var(--color-panel);
+  overflow: hidden;
 }
 
 .tab-button {
+  flex: 0 0 auto;
   height: 30px;
   display: inline-flex;
   align-items: center;

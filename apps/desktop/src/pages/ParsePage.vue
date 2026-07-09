@@ -162,7 +162,7 @@ const streamSummary = (count: number): string => (count > 0 ? `${count} 条流` 
 
 <style scoped>
 .parse-page {
-  grid-template-columns: 220px minmax(0, 1fr) 280px;
+  grid-template-columns: minmax(190px, 220px) minmax(0, 1fr) minmax(240px, 280px);
   grid-template-rows: auto minmax(0, 1fr);
 }
 
@@ -252,5 +252,16 @@ const streamSummary = (count: number): string => (count > 0 ? `${count} 条流` 
   margin: 0;
   color: var(--color-danger);
   line-height: 1.5;
+}
+
+@media (max-width: 1040px) {
+  .parse-page {
+    grid-template-columns: minmax(180px, 220px) minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr) auto;
+  }
+
+  .selection-panel {
+    grid-column: 1 / -1;
+  }
 }
 </style>

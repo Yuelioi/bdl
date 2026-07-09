@@ -134,12 +134,14 @@ const stageText = (status: TaskStatus): string => {
 
 <style scoped>
 .transfer-page {
-  grid-template-columns: minmax(0, 1fr) 320px;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 320px);
 }
 
 .transfer-main,
 .transfer-detail {
+  min-width: 0;
   min-height: 0;
+  overflow: hidden;
 }
 
 .transfer-main {
@@ -214,5 +216,12 @@ const stageText = (status: TaskStatus): string => {
 
 .empty-state.compact {
   min-height: 72px;
+}
+
+@media (max-width: 1040px) {
+  .transfer-page {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) minmax(180px, 32%);
+  }
 }
 </style>
