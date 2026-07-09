@@ -8,6 +8,7 @@ authors.workspace = true
 
 [dependencies]
 async-trait.workspace = true
+bpi-rs.workspace = true
 bytes.workspace = true
 chrono.workspace = true
 futures.workspace = true
