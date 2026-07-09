@@ -211,6 +211,7 @@ export interface SettingsSnapshot {
   data_dir: string | null
   concurrent_tasks: number
   retry_count: number
+  segment_count: number
   auto_refresh_expired_urls: boolean
 }
 

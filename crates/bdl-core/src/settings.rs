@@ -31,6 +31,7 @@ pub struct AppSettings {
     pub data_dir: Option<String>,
     pub concurrent_tasks: usize,
     pub retry_count: usize,
+    pub segment_count: usize,
     pub auto_refresh_expired_urls: bool,
 }
 
@@ -56,6 +57,7 @@ impl Default for AppSettings {
             data_dir: None,
             concurrent_tasks: 1,
             retry_count: 3,
+            segment_count: 1,
             auto_refresh_expired_urls: true,
         }
     }
@@ -86,6 +88,7 @@ impl AppSettings {
             .map(str::trim)
             .filter(|path| !path.is_empty())
             .map(ToOwned::to_owned);
+        self.segment_count = normalize_segment_count(self.segment_count);
 
         self
     }
@@ -100,6 +103,7 @@ impl AppSettings {
         MissingQualityPolicy::parse(&self.missing_quality_policy)?;
         validate_log_level(&self.log_level)?;
         validate_proxy_url(self.proxy_url.as_deref())?;
+        validate_segment_count(self.segment_count)?;
         Ok(())
     }
 }
@@ -142,6 +146,22 @@ fn validate_proxy_url(value: Option<&str>) -> BdlResult<()> {
         "http" | "https" | "socks5" | "socks5h" => Ok(()),
         scheme => Err(crate::error::BdlError::Planning {
             message: format!("代理地址协议不支持：`{scheme}`。"),
+        }),
+    }
+}
+
+fn normalize_segment_count(value: usize) -> usize {
+    match value {
+        1 | 2 | 4 | 8 => value,
+        _ => 1,
+    }
+}
+
+fn validate_segment_count(value: usize) -> BdlResult<()> {
+    match value {
+        1 | 2 | 4 | 8 => Ok(()),
+        other => Err(crate::error::BdlError::Planning {
+            message: format!("单任务分段数设置无效：`{other}`。"),
         }),
     }
 }

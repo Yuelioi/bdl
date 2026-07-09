@@ -22,7 +22,7 @@ async fn fetcher_downloads_full_resource_and_sends_headers() {
     let resource = resource(server.url(), &dir, "full.bin");
     let fetcher = ReqwestFetcher::with_config(FetchConfig {
         max_retries: 0,
-        proxy_url: None,
+        ..FetchConfig::default()
     })
     .expect("fetcher should be created");
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
@@ -76,7 +76,7 @@ async fn fetcher_resumes_existing_bdlpart_with_range_request() {
     .unwrap();
     let fetcher = ReqwestFetcher::with_config(FetchConfig {
         max_retries: 0,
-        proxy_url: None,
+        ..FetchConfig::default()
     })
     .expect("fetcher should be created");
 
@@ -99,7 +99,7 @@ async fn fetcher_stops_after_configured_retry_count() {
     let resource = resource(server.url(), &dir, "retry.bin");
     let fetcher = ReqwestFetcher::with_config(FetchConfig {
         max_retries: 2,
-        proxy_url: None,
+        ..FetchConfig::default()
     })
     .expect("fetcher should be created");
 
@@ -122,7 +122,7 @@ async fn fetcher_uses_backup_url_before_exhausting_resource() {
     resource.current_urls.push(backup.url());
     let fetcher = ReqwestFetcher::with_config(FetchConfig {
         max_retries: 0,
-        proxy_url: None,
+        ..FetchConfig::default()
     })
     .expect("fetcher should be created");
 
@@ -137,6 +137,38 @@ async fn fetcher_uses_backup_url_before_exhausting_resource() {
     );
     assert_eq!(primary.get_count(), 1);
     assert_eq!(backup.get_count(), 1);
+}
+
+#[tokio::test]
+async fn fetcher_downloads_segments_with_configured_segment_count() {
+    let server = TestServer::spawn(b"abcdefgh".to_vec(), 0).await;
+    let dir = temp_case_dir("segments").await;
+    let resource = resource(server.url(), &dir, "segments.bin");
+    let fetcher = ReqwestFetcher::with_config(FetchConfig {
+        max_retries: 0,
+        segment_count: 4,
+        ..FetchConfig::default()
+    })
+    .expect("fetcher should be created");
+
+    fetcher
+        .fetch(&resource, None)
+        .await
+        .expect("resource should download in segments");
+
+    assert_eq!(
+        tokio::fs::read(&resource.target_path).await.unwrap(),
+        b"abcdefgh"
+    );
+    assert_eq!(
+        sorted_range_headers(server.ranges().await),
+        vec![
+            "bytes=0-1".to_owned(),
+            "bytes=2-3".to_owned(),
+            "bytes=4-5".to_owned(),
+            "bytes=6-7".to_owned(),
+        ]
+    );
 }
 
 #[tokio::test]
@@ -160,7 +192,7 @@ async fn fetcher_restarts_when_content_length_changes_between_attempts() {
     .unwrap();
     let fetcher = ReqwestFetcher::with_config(FetchConfig {
         max_retries: 0,
-        proxy_url: None,
+        ..FetchConfig::default()
     })
     .expect("fetcher should be created");
 
@@ -198,7 +230,7 @@ async fn fetcher_restarts_when_saved_etag_differs_from_remote_etag() {
     .unwrap();
     let fetcher = ReqwestFetcher::with_config(FetchConfig {
         max_retries: 0,
-        proxy_url: None,
+        ..FetchConfig::default()
     })
     .expect("fetcher should be created");
 
@@ -235,6 +267,18 @@ fn resource(url: String, dir: &Path, file_name: &str) -> DownloadResource {
         target_path,
         status: ResourceStatus::Pending,
     }
+}
+
+fn sorted_range_headers(ranges: Vec<Option<String>>) -> Vec<String> {
+    let mut ranges = ranges.into_iter().flatten().collect::<Vec<_>>();
+    ranges.sort_by_key(|range| {
+        range
+            .strip_prefix("bytes=")
+            .and_then(|value| value.split_once('-'))
+            .and_then(|(start, _)| start.parse::<usize>().ok())
+            .unwrap_or(0)
+    });
+    ranges
 }
 
 async fn temp_case_dir(name: &str) -> PathBuf {
@@ -363,14 +407,11 @@ async fn handle_connection(mut stream: TcpStream, state: Arc<TestServerState>) {
                 return;
             }
 
-            let start = headers
+            if let Some((start, end)) = headers
                 .get("range")
-                .and_then(|range| range.strip_prefix("bytes="))
-                .and_then(|range| range.strip_suffix('-'))
-                .and_then(|start| start.parse::<usize>().ok())
-                .unwrap_or(0);
-            if start > 0 {
-                let body = &state.data[start..];
+                .and_then(|range| parse_byte_range(range, state.data.len()))
+            {
+                let body = &state.data[start..=end];
                 write_response(
                     &mut stream,
                     206,
@@ -401,6 +442,26 @@ async fn handle_connection(mut stream: TcpStream, state: Arc<TestServerState>) {
             .await;
         }
     }
+}
+
+fn parse_byte_range(value: &str, data_len: usize) -> Option<(usize, usize)> {
+    if data_len == 0 {
+        return None;
+    }
+
+    let value = value.strip_prefix("bytes=")?;
+    let (start, end) = value.split_once('-')?;
+    let start = start.parse::<usize>().ok()?;
+    if start >= data_len {
+        return None;
+    }
+
+    let end = if end.is_empty() {
+        data_len - 1
+    } else {
+        end.parse::<usize>().ok()?.min(data_len - 1)
+    };
+    (end >= start).then_some((start, end))
 }
 
 fn response_headers(state: &TestServerState, content_length: usize) -> Vec<(&'static str, String)> {

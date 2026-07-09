@@ -742,6 +742,7 @@ async fn run_queue_worker(app: &AppHandle, state: &AppState) -> CommandResult<()
         let fetcher = ReqwestFetcher::with_config(FetchConfig {
             max_retries: retry_count(&settings),
             proxy_url: settings.proxy_url.clone(),
+            segment_count: segment_count(&settings),
         })?;
         let concurrent_tasks = concurrent_tasks(&settings);
         let runtime_options = DownloadRuntimeOptions::from(&settings);
@@ -1307,6 +1308,13 @@ fn concurrent_tasks(settings: &SettingsSnapshot) -> usize {
 
 fn retry_count(settings: &SettingsSnapshot) -> usize {
     settings.retry_count.min(5)
+}
+
+fn segment_count(settings: &SettingsSnapshot) -> usize {
+    match settings.segment_count {
+        1 | 2 | 4 | 8 => settings.segment_count,
+        _ => 1,
+    }
 }
 
 fn is_expired_url_error(message: &str) -> bool {

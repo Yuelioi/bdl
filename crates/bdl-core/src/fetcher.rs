@@ -1,8 +1,9 @@
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use async_trait::async_trait;
-use futures::StreamExt;
+use futures::{StreamExt, future::try_join_all};
 use reqwest::header::{
     CONTENT_LENGTH, ETAG, HeaderMap, HeaderName, HeaderValue, LAST_MODIFIED, RANGE,
 };
@@ -10,6 +11,7 @@ use reqwest::{Client, Proxy, StatusCode};
 use serde::{Deserialize, Serialize};
 use tokio::fs::{self, OpenOptions};
 use tokio::io::AsyncWriteExt;
+use tokio::sync::Mutex;
 use tokio::sync::mpsc::UnboundedSender;
 
 use crate::error::{BdlError, BdlResult};
@@ -19,6 +21,7 @@ use crate::queue::DownloadResource;
 pub struct FetchConfig {
     pub max_retries: usize,
     pub proxy_url: Option<String>,
+    pub segment_count: usize,
 }
 
 impl Default for FetchConfig {
@@ -26,6 +29,7 @@ impl Default for FetchConfig {
         Self {
             max_retries: 3,
             proxy_url: None,
+            segment_count: 1,
         }
     }
 }
@@ -60,6 +64,13 @@ struct RemoteResourceMetadata {
     total_bytes: Option<u64>,
     etag: Option<String>,
     last_modified: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SegmentRequest {
+    index: usize,
+    start: u64,
+    end: u64,
 }
 
 #[async_trait]
@@ -156,6 +167,11 @@ impl ReqwestFetcher {
         let headers = request_headers(resource)?;
         let metadata = self.resource_metadata(url, headers.clone()).await?;
         let resume_from = resume_offset(&resource.temp_path, &metadata).await?;
+        if should_fetch_segmented(&metadata, resume_from, self.config.segment_count) {
+            return self
+                .fetch_segmented(resource, url, headers, metadata, progress)
+                .await;
+        }
 
         let mut request = self.client.get(url).headers(headers);
         if resume_from > 0 {
@@ -213,6 +229,129 @@ impl ReqwestFetcher {
             bytes_written: downloaded_bytes,
             target_path: resource.target_path.clone(),
         })
+    }
+
+    async fn fetch_segmented(
+        &self,
+        resource: &DownloadResource,
+        url: &str,
+        headers: HeaderMap,
+        metadata: RemoteResourceMetadata,
+        progress: Option<ProgressSender>,
+    ) -> BdlResult<FetchOutcome> {
+        let total_bytes = metadata
+            .total_bytes
+            .expect("segmented fetch requires content length");
+        let ranges = segment_ranges(total_bytes, self.config.segment_count);
+        let progress_by_segment = Arc::new(Mutex::new(vec![0_u64; ranges.len()]));
+
+        remove_if_exists(&resource.temp_path).await?;
+        remove_if_exists(&state_path_for(&resource.temp_path)).await?;
+        for index in 0..ranges.len() {
+            remove_if_exists(&segment_path_for(&resource.temp_path, index)).await?;
+        }
+
+        try_join_all(ranges.iter().enumerate().map(|(index, (start, end))| {
+            self.fetch_segment(
+                resource,
+                url,
+                headers.clone(),
+                &metadata,
+                progress.clone(),
+                progress_by_segment.clone(),
+                SegmentRequest {
+                    index,
+                    start: *start,
+                    end: *end,
+                },
+            )
+        }))
+        .await?;
+
+        let mut temp_file = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(&resource.temp_path)
+            .await?;
+        for index in 0..ranges.len() {
+            let segment_path = segment_path_for(&resource.temp_path, index);
+            let mut segment_file = fs::File::open(&segment_path).await?;
+            tokio::io::copy(&mut segment_file, &mut temp_file).await?;
+            remove_if_exists(&segment_path).await?;
+        }
+        temp_file.flush().await?;
+        drop(temp_file);
+
+        if resource.target_path.exists() {
+            fs::remove_file(&resource.target_path).await?;
+        }
+        fs::rename(&resource.temp_path, &resource.target_path).await?;
+        remove_if_exists(&state_path_for(&resource.temp_path)).await?;
+
+        Ok(FetchOutcome {
+            bytes_written: total_bytes,
+            target_path: resource.target_path.clone(),
+        })
+    }
+
+    async fn fetch_segment(
+        &self,
+        resource: &DownloadResource,
+        url: &str,
+        headers: HeaderMap,
+        metadata: &RemoteResourceMetadata,
+        progress: Option<ProgressSender>,
+        progress_by_segment: Arc<Mutex<Vec<u64>>>,
+        segment: SegmentRequest,
+    ) -> BdlResult<()> {
+        let segment_path = segment_path_for(&resource.temp_path, segment.index);
+        let expected_len = segment.end - segment.start + 1;
+        let response = self
+            .client
+            .get(url)
+            .headers(headers)
+            .header(RANGE, format!("bytes={}-{}", segment.start, segment.end))
+            .send()
+            .await
+            .map_err(|error| fetch_error(format!("请求分段下载地址失败: {error}")))?;
+
+        if response.status() != StatusCode::PARTIAL_CONTENT {
+            return Err(fetch_error(format!(
+                "分段下载请求失败: HTTP {}",
+                response.status()
+            )));
+        }
+
+        let mut file = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(&segment_path)
+            .await?;
+        let mut downloaded_bytes = 0_u64;
+        let mut stream = response.bytes_stream();
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.map_err(|error| fetch_error(format!("读取分段响应失败: {error}")))?;
+            file.write_all(&chunk).await?;
+            downloaded_bytes += chunk.len() as u64;
+            let total_downloaded = {
+                let mut progress_guard = progress_by_segment.lock().await;
+                progress_guard[segment.index] = downloaded_bytes;
+                progress_guard.iter().sum()
+            };
+
+            send_progress(&progress, resource, metadata.total_bytes, total_downloaded);
+        }
+        file.flush().await?;
+
+        if downloaded_bytes != expected_len {
+            return Err(fetch_error(format!(
+                "分段下载长度不完整: expected {expected_len}, got {downloaded_bytes}"
+            )));
+        }
+
+        Ok(())
     }
 
     async fn resource_metadata(
@@ -299,6 +438,47 @@ fn send_progress(
 pub fn state_path_for(temp_path: &Path) -> PathBuf {
     let mut value = OsString::from(temp_path.as_os_str());
     value.push(".state");
+    PathBuf::from(value)
+}
+
+fn should_fetch_segmented(
+    metadata: &RemoteResourceMetadata,
+    resume_from: u64,
+    segment_count: usize,
+) -> bool {
+    resume_from == 0
+        && segment_count > 1
+        && metadata
+            .total_bytes
+            .is_some_and(|total_bytes| total_bytes > 1)
+}
+
+fn segment_ranges(total_bytes: u64, segment_count: usize) -> Vec<(u64, u64)> {
+    if total_bytes == 0 {
+        return Vec::new();
+    }
+
+    let max_segments = usize::try_from(total_bytes).unwrap_or(usize::MAX);
+    let count = segment_count.clamp(1, 8).min(max_segments);
+    let count_u64 = count as u64;
+    let base_size = total_bytes / count_u64;
+    let remainder = total_bytes % count_u64;
+    let mut ranges = Vec::with_capacity(count);
+    let mut start = 0_u64;
+
+    for index in 0..count {
+        let size = base_size + if (index as u64) < remainder { 1 } else { 0 };
+        let end = start + size - 1;
+        ranges.push((start, end));
+        start = end + 1;
+    }
+
+    ranges
+}
+
+fn segment_path_for(temp_path: &Path, index: usize) -> PathBuf {
+    let mut value = OsString::from(temp_path.as_os_str());
+    value.push(format!(".seg{index}"));
     PathBuf::from(value)
 }
 

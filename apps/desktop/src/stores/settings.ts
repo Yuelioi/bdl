@@ -67,6 +67,7 @@ const defaultSettings = (): SettingsSnapshot => ({
   data_dir: null,
   concurrent_tasks: 1,
   retry_count: 3,
+  segment_count: 1,
   auto_refresh_expired_urls: true,
 })
 
@@ -83,6 +84,7 @@ const missingQualityPolicies = new Set<SettingsSnapshot['missing_quality_policy'
 const logLevels = new Set<SettingsSnapshot['log_level']>(['debug', 'info', 'warning', 'error'])
 const concurrentTaskCounts = new Set([1, 2, 3, 5])
 const retryCounts = new Set([0, 1, 3, 5])
+const segmentCounts = new Set([1, 2, 4, 8])
 const namingVariableNames = new Set(namingVariables.map((variable) => variable.name))
 
 interface SettingsState {
@@ -294,6 +296,10 @@ export const useSettingsStore = defineStore('settings', {
       const count = Number(value)
       this.draft.retry_count = retryCounts.has(count) ? count : 3
     },
+    setSegmentCount(value: string) {
+      const count = Number(value)
+      this.draft.segment_count = segmentCounts.has(count) ? count : 1
+    },
     setAutoRefreshExpiredUrls(value: boolean) {
       this.draft.auto_refresh_expired_urls = value
     },
@@ -362,6 +368,7 @@ const normalizeSettings = (settings: SettingsSnapshot): SettingsSnapshot => ({
   data_dir: settings.data_dir?.trim() || null,
   concurrent_tasks: concurrentTaskCounts.has(settings.concurrent_tasks) ? settings.concurrent_tasks : 1,
   retry_count: retryCounts.has(settings.retry_count) ? settings.retry_count : 3,
+  segment_count: segmentCounts.has(settings.segment_count) ? settings.segment_count : 1,
   auto_refresh_expired_urls: settings.auto_refresh_expired_urls !== false,
 })
 

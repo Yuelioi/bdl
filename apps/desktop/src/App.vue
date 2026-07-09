@@ -114,6 +114,10 @@ const settingsRetryCount = computed({
   get: () => String(settings.draft.retry_count),
   set: (value: string) => settings.setRetryCount(value),
 })
+const settingsSegmentCount = computed({
+  get: () => String(settings.draft.segment_count),
+  set: (value: string) => settings.setSegmentCount(value),
+})
 const settingsAutoRefreshExpiredUrls = computed({
   get: () => settings.draft.auto_refresh_expired_urls,
   set: (value: boolean) => settings.setAutoRefreshExpiredUrls(value),
@@ -348,6 +352,16 @@ watch(
                   { label: '1', value: '1' },
                   { label: '3', value: '3' },
                   { label: '5', value: '5' },
+                ]"
+              />
+              <UiSelect
+                v-model="settingsSegmentCount"
+                label="单任务分段数"
+                :options="[
+                  { label: '1 段', value: '1' },
+                  { label: '2 段', value: '2' },
+                  { label: '4 段', value: '4' },
+                  { label: '8 段', value: '8' },
                 ]"
               />
             </div>

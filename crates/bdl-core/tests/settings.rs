@@ -59,6 +59,7 @@ fn settings_deserialize_old_config_defaults_duplicate_naming_strategy() {
     assert_eq!(settings.proxy_url, None);
     assert_eq!(settings.log_level, "info");
     assert_eq!(settings.data_dir, None);
+    assert_eq!(settings.segment_count, 1);
 }
 
 #[test]
@@ -105,4 +106,18 @@ fn settings_validate_rejects_invalid_proxy_url() {
         .expect_err("unsupported proxy scheme should fail");
 
     assert!(error.to_string().contains("代理地址协议不支持"));
+}
+
+#[test]
+fn settings_validate_rejects_invalid_segment_count() {
+    let settings = AppSettings {
+        segment_count: 6,
+        ..AppSettings::default()
+    };
+
+    let error = settings
+        .validate()
+        .expect_err("unsupported segment count should fail");
+
+    assert!(error.to_string().contains("单任务分段数"));
 }
