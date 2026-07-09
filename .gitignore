@@ -32,6 +32,7 @@ pnpm-debug.log*
 # Tauri / build outputs
 src-tauri/target/
 apps/**/src-tauri/target/
+apps/**/src-tauri/gen/
 apps/**/dist/
 
 # Local app runtime data

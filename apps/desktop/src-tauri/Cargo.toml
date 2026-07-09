@@ -1,0 +1,15 @@
+[package]
+name = "bdl-desktop"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+bdl-tauri = { path = "../../../crates/bdl-tauri" }
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }

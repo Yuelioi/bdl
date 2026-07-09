@@ -1,0 +1,12 @@
+[package]
+name = "bdl-cli"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+bdl-core = { path = "../bdl-core" }
+tokio.workspace = true
