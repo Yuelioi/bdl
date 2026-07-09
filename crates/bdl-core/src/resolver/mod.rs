@@ -1,3 +1,4 @@
+pub mod paged;
 pub mod video;
 
 use async_trait::async_trait;
