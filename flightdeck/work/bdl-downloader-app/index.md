@@ -121,6 +121,9 @@ Current:
 - P1 completed-record metadata persistence landed in commit `38ead80`.
 - `DownloadTask` now carries a `media_selection` snapshot from the planner, including selected video quality, audio quality, codec, and output container. `TaskStorage` migrates existing SQLite databases, persists that task metadata, and writes durable `history` completed records with final output path, source id, completion time, and redacted warning/error summary when a task completes.
 - Completed-record metadata verification passed: `cargo fmt --all --check`, `cargo test -p bdl-core --test storage --test planner --test diagnostics`, `cargo test -p bdl-tauri state`, `cargo test -p bdl-tauri commands`, `cargo check -p bdl-desktop`, and `pnpm --dir apps/desktop build`.
+- P1 durable refresh intent landed in commit `bd46547`.
+- New tasks now persist `refresh_intent` separately from media URLs and task IDs. The planner writes stable refresh identity for normal video BV/AV + CID and for bangumi/course EP + CID; URL refresh uses this field first and only falls back to legacy task ID parsing for already-persisted tasks.
+- Durable refresh intent verification passed: `cargo fmt --all --check`, `cargo test -p bdl-core --test planner --test storage --test diagnostics`, `cargo test -p bdl-tauri state`, `cargo test -p bdl-tauri commands`, `cargo check -p bdl-desktop`, and `pnpm --dir apps/desktop build`.
 
 Decisions:
 - Main navigation: `解析`, `传输`, `设置`; account lives in the top-right account button. Completed records live under Transfer's `已完成` filter, not a separate History page.
