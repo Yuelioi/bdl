@@ -37,6 +37,11 @@ export interface ParseSourcePageRequest {
   source_id: string
 }
 
+export interface ParseLoadAllRequest {
+  source_id: string
+  limit?: number
+}
+
 export interface SelectionCreateTasksRequest {
   source_id: string
   part_ids: string[]
@@ -59,7 +64,8 @@ export const parseCreateSource = (request: ParseCreateSourceRequest) =>
 export const parseLoadMore = (request: ParseSourcePageRequest) =>
   invokeCommand<NormalizedSourceTree>('parse_load_more', { request })
 
-export const parseLoadAll = () => invokeCommand<void>('parse_load_all')
+export const parseLoadAll = (request: ParseLoadAllRequest) =>
+  invokeCommand<NormalizedSourceTree>('parse_load_all', { request })
 
 export const parseCloseSource = (sourceId: string) =>
   invokeCommand<ParseCloseSourceResponse>('parse_close_source', { sourceId })

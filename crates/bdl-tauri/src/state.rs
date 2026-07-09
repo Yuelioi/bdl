@@ -19,6 +19,9 @@ use bdl_core::{BdlError, BdlResult};
 
 use crate::secure_store::SecureStore;
 
+const DEFAULT_PARSE_ALL_LIMIT: usize = 100;
+const MAX_PARSE_ALL_LIMIT: usize = 100;
+
 pub struct AppState {
     parse_sources: Mutex<HashMap<SourceId, NormalizedSourceTree>>,
     queue: Mutex<Vec<DownloadTask>>,
@@ -99,25 +102,31 @@ impl AppState {
 
     pub async fn load_more(&self, source_id: &SourceId) -> BdlResult<NormalizedSourceTree> {
         let mut tree = self.source_snapshot(source_id)?;
+        self.append_next_page(&mut tree).await?;
+        self.store_source_tree(&tree)?;
 
-        match tree.source.kind {
-            SourceKind::Uploader => {
-                let mid = uploader_mid(&tree)?;
-                let request = next_page_request(&tree)?;
-                let next_page = self.uploader_resolver()?.resolve_page(mid, request).await?;
-                append_source_page(&mut tree, next_page)?;
-            }
-            kind => {
-                return Err(BdlError::UnsupportedSource {
-                    kind: source_kind_name(kind).to_owned(),
-                });
+        Ok(tree)
+    }
+
+    pub async fn load_all(
+        &self,
+        source_id: &SourceId,
+        limit: Option<usize>,
+    ) -> BdlResult<NormalizedSourceTree> {
+        let mut tree = self.source_snapshot(source_id)?;
+        let limit = limit
+            .unwrap_or(DEFAULT_PARSE_ALL_LIMIT)
+            .clamp(1, MAX_PARSE_ALL_LIMIT);
+
+        while tree.source.has_more && tree.source.loaded_count < limit {
+            let loaded_before = tree.source.loaded_count;
+            self.append_next_page(&mut tree).await?;
+            if tree.source.loaded_count == loaded_before {
+                break;
             }
         }
 
-        self.parse_sources
-            .lock()
-            .map_err(|_| state_poisoned("parse_sources"))?
-            .insert(tree.source.id.clone(), tree.clone());
+        self.store_source_tree(&tree)?;
 
         Ok(tree)
     }
@@ -283,6 +292,28 @@ impl AppState {
             .lock()
             .map_err(|_| state_poisoned("storage"))?
             .replace_tasks(queue)
+    }
+
+    fn store_source_tree(&self, tree: &NormalizedSourceTree) -> BdlResult<()> {
+        self.parse_sources
+            .lock()
+            .map_err(|_| state_poisoned("parse_sources"))?
+            .insert(tree.source.id.clone(), tree.clone());
+        Ok(())
+    }
+
+    async fn append_next_page(&self, tree: &mut NormalizedSourceTree) -> BdlResult<()> {
+        match tree.source.kind {
+            SourceKind::Uploader => {
+                let mid = uploader_mid(tree)?;
+                let request = next_page_request(tree)?;
+                let next_page = self.uploader_resolver()?.resolve_page(mid, request).await?;
+                append_source_page(tree, next_page)
+            }
+            kind => Err(BdlError::UnsupportedSource {
+                kind: source_kind_name(kind).to_owned(),
+            }),
+        }
     }
 
     fn video_resolver(&self) -> BdlResult<VideoResolver> {

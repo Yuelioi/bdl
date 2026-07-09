@@ -83,10 +83,19 @@ export const useParseStore = defineStore('parse', {
         this.loadingBySource[sourceId] = false
       }
     },
-    async parseAll(sourceId: string, _limit = 100) {
-      await this.runSourceAction(sourceId, async () => {
-        await parseLoadAll()
-      })
+    async parseAll(sourceId: string, limit = 100) {
+      const ui = useUiStore()
+      this.loadingBySource[sourceId] = true
+      try {
+        const tree = await parseLoadAll({ source_id: sourceId, limit })
+        this.upsertSource(tree)
+        ui.pushToast('已批量解析', 'success')
+      } catch (error) {
+        this.errorsBySource[sourceId] = errorMessage(error)
+        ui.pushToast(errorMessage(error), 'danger')
+      } finally {
+        this.loadingBySource[sourceId] = false
+      }
     },
     async closeSource(sourceId: string) {
       const ui = useUiStore()

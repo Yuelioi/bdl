@@ -52,6 +52,12 @@ pub struct ParseSourcePageRequest {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+pub struct ParseLoadAllRequest {
+    pub source_id: String,
+    pub limit: Option<usize>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct SelectionCreateTasksRequest {
     pub source_id: String,
     pub part_ids: Vec<String>,
@@ -102,8 +108,16 @@ pub async fn parse_load_more(
 }
 
 #[tauri::command]
-pub async fn parse_load_all() -> CommandResult<()> {
-    unsupported("parse_load_all")
+pub async fn parse_load_all(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    request: ParseLoadAllRequest,
+) -> CommandResult<NormalizedSourceTree> {
+    let tree = state
+        .load_all(&SourceId(request.source_id), request.limit)
+        .await?;
+    events::emit(&app, events::PARSE_SOURCE_UPDATED, &tree)?;
+    Ok(tree)
 }
 
 #[tauri::command]
