@@ -1,10 +1,8 @@
 use async_trait::async_trait;
+use bpi_rs::BpiClient;
 use bpi_rs::ids::{Aid, Bvid, Cid};
-use bpi_rs::video::videostream_url::{
-    DashStream as BpiDashStream, PlayUrlResponseData as BpiPlayUrlResponseData,
-};
-use bpi_rs::video::{VideoPlayUrlParams, VideoView as BpiVideoView, VideoViewParams};
-use bpi_rs::{BpiClient, BpiError};
+use bpi_rs::video::videostream_url::DashStream;
+use bpi_rs::video::{VideoPlayUrlParams, VideoViewParams};
 use chrono::{DateTime, Utc};
 
 use super::{ResolveOptions, Resolver};
@@ -16,43 +14,43 @@ use crate::model::{
     NormalizedPart, NormalizedSourceTree, SourceKind, SourceSummary, StreamCodec, StreamQuality,
 };
 
-const DEFAULT_STREAM_REFERER: &str = "https://www.bilibili.com/";
-const DEFAULT_STREAM_USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) \
+const DEFAULT_REFERER: &str = "https://www.bilibili.com/";
+const DEFAULT_USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) \
     AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum VideoLookup {
-    Bvid(String),
+pub enum VideoInputId {
     Aid(u64),
+    Bvid(String),
 }
 
-impl VideoLookup {
+impl VideoInputId {
     fn from_classified(input: ClassifiedInput) -> BdlResult<Self> {
         match input {
-            ClassifiedInput::VideoBvid(bvid) => Ok(Self::Bvid(bvid)),
             ClassifiedInput::VideoAid(aid) => Ok(Self::Aid(aid)),
+            ClassifiedInput::VideoBvid(bvid) => Ok(Self::Bvid(bvid)),
             other => Err(BdlError::UnsupportedSource {
                 kind: source_kind_name(other.source_kind()).to_owned(),
             }),
         }
     }
 
-    fn input_identifier(&self) -> String {
+    fn input_label(&self) -> String {
         match self {
-            Self::Bvid(bvid) => bvid.clone(),
             Self::Aid(aid) => format!("av{aid}"),
+            Self::Bvid(bvid) => bvid.clone(),
         }
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct ResolvedVideoView {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedVideo {
     pub aid: u64,
     pub bvid: String,
+    pub default_cid: u64,
     pub title: String,
     pub owner_name: Option<String>,
     pub cover_url: Option<String>,
-    pub duration_seconds: Option<u64>,
     pub pages: Vec<ResolvedVideoPage>,
 }
 
@@ -64,10 +62,8 @@ pub struct ResolvedVideoPage {
     pub duration_seconds: Option<u64>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct ResolvedVideoPlayUrl {
-    pub acquired_at: DateTime<Utc>,
-    pub headers: Vec<HeaderPair>,
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ResolvedPlayUrl {
     pub video: Vec<ResolvedDashStream>,
     pub audio: Vec<ResolvedDashStream>,
 }
@@ -82,142 +78,109 @@ pub struct ResolvedDashStream {
 }
 
 #[async_trait]
-pub trait VideoResolverAdapter: Send + Sync {
-    async fn view(&self, lookup: &VideoLookup) -> BdlResult<ResolvedVideoView>;
+pub trait VideoApi: Send + Sync {
+    async fn view(&self, id: &VideoInputId) -> BdlResult<ResolvedVideo>;
 
-    async fn play_url(&self, lookup: &VideoLookup, cid: u64) -> BdlResult<ResolvedVideoPlayUrl>;
+    async fn play_url(&self, id: &VideoInputId, cid: u64) -> BdlResult<ResolvedPlayUrl>;
 }
 
-pub struct VideoResolver<A = BpiVideoAdapter> {
-    adapter: A,
+#[derive(Debug)]
+pub struct VideoResolver<A = BpiVideoApi> {
+    api: A,
 }
 
-impl VideoResolver<BpiVideoAdapter> {
+impl VideoResolver<BpiVideoApi> {
     pub fn new() -> BdlResult<Self> {
-        Ok(Self {
-            adapter: BpiVideoAdapter::new()?,
-        })
+        Ok(Self::with_api(BpiVideoApi::new()?))
     }
 
     pub fn from_bpi_client(client: BpiClient) -> Self {
-        Self {
-            adapter: BpiVideoAdapter::from_client(client),
-        }
+        Self::with_api(BpiVideoApi::from_client(client))
     }
 }
 
 impl<A> VideoResolver<A> {
-    pub fn with_adapter(adapter: A) -> Self {
-        Self { adapter }
+    pub fn with_api(api: A) -> Self {
+        Self { api }
     }
 }
 
 #[async_trait]
 impl<A> Resolver for VideoResolver<A>
 where
-    A: VideoResolverAdapter,
+    A: VideoApi,
 {
     async fn resolve(
         &self,
         input: ClassifiedInput,
         options: ResolveOptions,
     ) -> BdlResult<NormalizedSourceTree> {
-        let lookup = VideoLookup::from_classified(input)?;
-        let input_identifier = lookup.input_identifier();
-        let tree_key = input_identifier.clone();
-        let source_id = SourceId(format!("video:{input_identifier}"));
-        let view = self.adapter.view(&lookup).await?;
+        let input_id = VideoInputId::from_classified(input)?;
+        let input_label = input_id.input_label();
+        let video = self.api.view(&input_id).await?;
+        let canonical_key = canonical_video_key(&video);
+        let pages = normalized_pages(&video);
 
-        self.normalize_video(source_id, input_identifier, tree_key, view, &lookup, options)
-            .await
-    }
-}
-
-impl<A> VideoResolver<A>
-where
-    A: VideoResolverAdapter,
-{
-    async fn normalize_video(
-        &self,
-        source_id: SourceId,
-        input_identifier: String,
-        tree_key: String,
-        view: ResolvedVideoView,
-        lookup: &VideoLookup,
-        options: ResolveOptions,
-    ) -> BdlResult<NormalizedSourceTree> {
-        let parts = self.normalize_parts(&tree_key, &view, lookup, options).await?;
-        let item = NormalizedItem {
-            id: ItemId(format!("item:video:{tree_key}")),
-            title: view.title.clone(),
-            owner_name: view.owner_name.clone(),
-            cover_url: view.cover_url.clone(),
-            duration_seconds: view.duration_seconds,
-            parts,
-        };
-
-        Ok(NormalizedSourceTree {
-            source: SourceSummary {
-                id: source_id,
-                kind: SourceKind::Video,
-                input: input_identifier,
-                title: view.title.clone(),
-                loaded_count: 1,
-                total_count: Some(1),
-                has_more: false,
-            },
-            groups: vec![NormalizedGroup {
-                id: GroupId(format!("group:video:{tree_key}")),
-                kind: "video".into(),
-                title: view.title,
-                items: vec![item],
-                page: None,
-            }],
-        })
-    }
-
-    async fn normalize_parts(
-        &self,
-        tree_key: &str,
-        view: &ResolvedVideoView,
-        lookup: &VideoLookup,
-        options: ResolveOptions,
-    ) -> BdlResult<Vec<NormalizedPart>> {
-        let pages = normalized_pages(view);
         let mut parts = Vec::with_capacity(pages.len());
-
-        for page in &pages {
+        for page in pages {
+            let part_key = format!("{canonical_key}:{}", page.cid);
             let streams = if options.fetch_streams {
-                let play_url = self.adapter.play_url(lookup, page.cid).await?;
-                media_streams_from_play_url(page.cid, &play_url)
+                let play_url = self.api.play_url(&input_id, page.cid).await?;
+                map_play_url(&part_key, play_url, Utc::now())
             } else {
                 Vec::new()
             };
 
             parts.push(NormalizedPart {
-                id: PartId(format!("part:video:{tree_key}:{}", page.cid)),
-                title: part_title(&page.title, &view.title),
-                aid: Some(view.aid),
-                bvid: Some(view.bvid.clone()),
+                id: PartId(format!("part:{part_key}")),
+                title: page_title(&video.title, &page),
+                aid: Some(video.aid),
+                bvid: Some(video.bvid.clone()),
                 cid: Some(page.cid),
                 streams,
                 assets: vec![AssetKind::Cover.with_policy(FetchPolicy::OnDemand)],
             });
         }
 
-        Ok(parts)
+        let item = NormalizedItem {
+            id: ItemId(format!("item:{canonical_key}")),
+            title: video.title.clone(),
+            owner_name: video.owner_name.clone(),
+            cover_url: video.cover_url.clone(),
+            duration_seconds: total_duration_seconds(&video.pages),
+            parts,
+        };
+
+        Ok(NormalizedSourceTree {
+            source: SourceSummary {
+                id: SourceId(format!("video:{input_label}")),
+                kind: SourceKind::Video,
+                input: input_label,
+                title: video.title.clone(),
+                loaded_count: 1,
+                total_count: Some(1),
+                has_more: false,
+            },
+            groups: vec![NormalizedGroup {
+                id: GroupId(format!("group:{canonical_key}")),
+                kind: "video".to_owned(),
+                title: video.title,
+                items: vec![item],
+                page: None,
+            }],
+        })
     }
 }
 
-pub struct BpiVideoAdapter {
+pub struct BpiVideoApi {
     client: BpiClient,
 }
 
-impl BpiVideoAdapter {
+impl BpiVideoApi {
     pub fn new() -> BdlResult<Self> {
-        Ok(Self {
-            client: BpiClient::new().map_err(map_bpi_error)?,
-        })
+        BpiClient::new()
+            .map(Self::from_client)
+            .map_err(|error| BdlError::Bpi(error.to_string()))
     }
 
     pub fn from_client(client: BpiClient) -> Self {
@@ -226,221 +189,235 @@ impl BpiVideoAdapter {
 }
 
 #[async_trait]
-impl VideoResolverAdapter for BpiVideoAdapter {
-    async fn view(&self, lookup: &VideoLookup) -> BdlResult<ResolvedVideoView> {
-        let params = match lookup {
-            VideoLookup::Bvid(bvid) => VideoViewParams::from_bvid(parse_bvid(bvid)?),
-            VideoLookup::Aid(aid) => VideoViewParams::from_aid(parse_aid(*aid)?),
-        };
-
+impl VideoApi for BpiVideoApi {
+    async fn view(&self, id: &VideoInputId) -> BdlResult<ResolvedVideo> {
         let view = self
             .client
             .video()
-            .view(params)
+            .view(view_params(id)?)
             .await
-            .map_err(map_bpi_error)?;
+            .map_err(|error| BdlError::Bpi(error.to_string()))?;
 
-        Ok(resolved_view_from_bpi(view))
+        Ok(ResolvedVideo {
+            aid: view.aid.get(),
+            bvid: view.bvid.as_str().to_owned(),
+            default_cid: view.cid.get(),
+            title: view.title,
+            owner_name: non_empty(view.owner.name),
+            cover_url: None,
+            pages: view
+                .pages
+                .into_iter()
+                .map(|page| ResolvedVideoPage {
+                    cid: page.cid.get(),
+                    index: page.page,
+                    title: page.part,
+                    duration_seconds: Some(page.duration),
+                })
+                .collect(),
+        })
     }
 
-    async fn play_url(&self, lookup: &VideoLookup, cid: u64) -> BdlResult<ResolvedVideoPlayUrl> {
-        let cid = parse_cid(cid)?;
-        let params = match lookup {
-            VideoLookup::Bvid(bvid) => VideoPlayUrlParams::from_bvid(parse_bvid(bvid)?, cid),
-            VideoLookup::Aid(aid) => VideoPlayUrlParams::from_aid(parse_aid(*aid)?, cid),
+    async fn play_url(&self, id: &VideoInputId, cid: u64) -> BdlResult<ResolvedPlayUrl> {
+        let data = self
+            .client
+            .video()
+            .play_url(play_url_params(id, cid)?)
+            .await
+            .map_err(|error| BdlError::Bpi(error.to_string()))?;
+
+        let Some(dash) = data.dash else {
+            return Ok(ResolvedPlayUrl::default());
+        };
+
+        Ok(ResolvedPlayUrl {
+            video: dash
+                .video
+                .into_iter()
+                .map(ResolvedDashStream::from)
+                .collect(),
+            audio: dash
+                .audio
+                .into_iter()
+                .map(ResolvedDashStream::from)
+                .collect(),
+        })
+    }
+}
+
+impl From<DashStream> for ResolvedDashStream {
+    fn from(stream: DashStream) -> Self {
+        Self {
+            id: stream.id,
+            base_url: stream.base_url,
+            backup_urls: stream.backup_url,
+            bandwidth: Some(stream.bandwidth),
+            codecs: stream.codecs,
         }
+    }
+}
+
+fn view_params(id: &VideoInputId) -> BdlResult<VideoViewParams> {
+    match id {
+        VideoInputId::Aid(aid) => Aid::new(*aid)
+            .map(VideoViewParams::from_aid)
+            .map_err(|error| BdlError::Bpi(error.to_string())),
+        VideoInputId::Bvid(bvid) => bvid
+            .parse::<Bvid>()
+            .map(VideoViewParams::from_bvid)
+            .map_err(|error| BdlError::Bpi(error.to_string())),
+    }
+}
+
+fn play_url_params(id: &VideoInputId, cid: u64) -> BdlResult<VideoPlayUrlParams> {
+    let cid = Cid::new(cid).map_err(|error| BdlError::Bpi(error.to_string()))?;
+    let params = match id {
+        VideoInputId::Aid(aid) => Aid::new(*aid)
+            .map(|aid| VideoPlayUrlParams::from_aid(aid, cid))
+            .map_err(|error| BdlError::Bpi(error.to_string()))?,
+        VideoInputId::Bvid(bvid) => bvid
+            .parse::<Bvid>()
+            .map(|bvid| VideoPlayUrlParams::from_bvid(bvid, cid))
+            .map_err(|error| BdlError::Bpi(error.to_string()))?,
+    };
+
+    Ok(params
         .format_flags(16)
         .format_version(0)
         .fourk(true)
-        .high_quality(true);
-
-        let play_url = self
-            .client
-            .video()
-            .play_url(params)
-            .await
-            .map_err(map_bpi_error)?;
-
-        Ok(resolved_play_url_from_bpi(play_url))
-    }
+        .high_quality(true))
 }
 
-fn resolved_view_from_bpi(view: BpiVideoView) -> ResolvedVideoView {
-    let pages: Vec<_> = view
-        .pages
-        .into_iter()
-        .map(|page| ResolvedVideoPage {
-            cid: page.cid.get(),
-            index: page.page,
-            title: page.part,
-            duration_seconds: Some(page.duration),
-        })
-        .collect();
-
-    let duration_seconds = sum_page_durations(&pages);
-
-    ResolvedVideoView {
-        aid: view.aid.get(),
-        bvid: view.bvid.as_str().to_owned(),
-        title: view.title,
-        owner_name: non_empty_string(view.owner.name),
-        cover_url: None,
-        duration_seconds,
-        pages: if pages.is_empty() {
-            vec![ResolvedVideoPage {
-                cid: view.cid.get(),
-                index: 1,
-                title: String::new(),
-                duration_seconds: None,
-            }]
-        } else {
-            pages
-        },
-    }
-}
-
-fn resolved_play_url_from_bpi(play_url: BpiPlayUrlResponseData) -> ResolvedVideoPlayUrl {
-    let (video, audio) = match play_url.dash {
-        Some(dash) => (
-            dash.video.into_iter().map(resolved_dash_stream).collect(),
-            dash.audio.into_iter().map(resolved_dash_stream).collect(),
-        ),
-        None => (Vec::new(), Vec::new()),
-    };
-
-    ResolvedVideoPlayUrl {
-        acquired_at: Utc::now(),
-        headers: default_stream_headers(),
-        video,
-        audio,
-    }
-}
-
-fn resolved_dash_stream(stream: BpiDashStream) -> ResolvedDashStream {
-    ResolvedDashStream {
-        id: stream.id,
-        base_url: stream.base_url,
-        backup_urls: stream.backup_url,
-        bandwidth: Some(stream.bandwidth),
-        codecs: stream.codecs,
-    }
-}
-
-fn normalized_pages(view: &ResolvedVideoView) -> Vec<ResolvedVideoPage> {
-    view.pages.clone()
-}
-
-fn media_streams_from_play_url(cid: u64, play_url: &ResolvedVideoPlayUrl) -> Vec<MediaStream> {
-    let mut streams = Vec::with_capacity(play_url.video.len() + play_url.audio.len());
-
-    streams.extend(play_url.video.iter().enumerate().map(|(index, stream)| {
-        media_stream_from_dash(cid, MediaKind::Video, "video", index, stream, play_url)
-    }));
-    streams.extend(play_url.audio.iter().enumerate().map(|(index, stream)| {
-        media_stream_from_dash(cid, MediaKind::Audio, "audio", index, stream, play_url)
-    }));
-
-    streams
-}
-
-fn media_stream_from_dash(
-    cid: u64,
-    kind: MediaKind,
-    kind_label: &str,
-    index: usize,
-    stream: &ResolvedDashStream,
-    play_url: &ResolvedVideoPlayUrl,
-) -> MediaStream {
-    MediaStream {
-        id: format!("stream:{cid}:{kind_label}:{}:{index}", stream.id),
-        kind,
-        quality: stream_quality(stream.id),
-        codec: stream_codec(kind, &stream.codecs),
-        bandwidth: stream.bandwidth,
-        urls: stream_urls(stream),
-        headers: play_url.headers.clone(),
-        acquired_at: play_url.acquired_at,
-    }
-}
-
-fn stream_quality(id: u64) -> StreamQuality {
-    u32::try_from(id)
-        .map(StreamQuality::Quality)
-        .unwrap_or(StreamQuality::Best)
-}
-
-fn stream_codec(kind: MediaKind, codecs: &str) -> StreamCodec {
-    if kind == MediaKind::Audio {
-        return StreamCodec::Auto;
+fn normalized_pages(video: &ResolvedVideo) -> Vec<ResolvedVideoPage> {
+    if video.pages.is_empty() {
+        return vec![ResolvedVideoPage {
+            cid: video.default_cid,
+            index: 1,
+            title: video.title.clone(),
+            duration_seconds: None,
+        }];
     }
 
-    let normalized = codecs.to_ascii_lowercase();
-    if normalized.starts_with("avc1") || normalized.contains("h264") {
-        StreamCodec::Avc
-    } else if normalized.starts_with("hev1")
-        || normalized.starts_with("hvc1")
-        || normalized.contains("h265")
-    {
-        StreamCodec::Hevc
-    } else if normalized.starts_with("av01") {
-        StreamCodec::Av1
+    video.pages.clone()
+}
+
+fn canonical_video_key(video: &ResolvedVideo) -> String {
+    if video.bvid.is_empty() {
+        format!("av{}", video.aid)
     } else {
-        StreamCodec::Unknown
+        video.bvid.clone()
     }
 }
 
-fn stream_urls(stream: &ResolvedDashStream) -> Vec<String> {
-    std::iter::once(&stream.base_url)
-        .chain(stream.backup_urls.iter())
-        .filter(|url| !url.is_empty())
-        .cloned()
-        .collect()
-}
-
-fn part_title(page_title: &str, video_title: &str) -> String {
-    if page_title.trim().is_empty() {
-        video_title.to_owned()
-    } else {
-        page_title.to_owned()
+fn page_title(video_title: &str, page: &ResolvedVideoPage) -> String {
+    if page.title.trim().is_empty() {
+        return video_title.to_owned();
     }
+
+    page.title.clone()
 }
 
-fn sum_page_durations(pages: &[ResolvedVideoPage]) -> Option<u64> {
+fn total_duration_seconds(pages: &[ResolvedVideoPage]) -> Option<u64> {
     pages
         .iter()
         .map(|page| page.duration_seconds)
-        .try_fold(0_u64, |total, duration| {
-            duration.map(|duration| total + duration)
+        .try_fold(0_u64, |sum, duration| {
+            duration.map(|duration| sum + duration)
         })
 }
 
-fn non_empty_string(value: String) -> Option<String> {
-    (!value.trim().is_empty()).then_some(value)
+fn map_play_url(
+    part_key: &str,
+    play_url: ResolvedPlayUrl,
+    acquired_at: DateTime<Utc>,
+) -> Vec<MediaStream> {
+    play_url
+        .video
+        .into_iter()
+        .enumerate()
+        .map(|(index, stream)| map_stream(part_key, MediaKind::Video, index, stream, acquired_at))
+        .chain(
+            play_url
+                .audio
+                .into_iter()
+                .enumerate()
+                .map(|(index, stream)| {
+                    map_stream(part_key, MediaKind::Audio, index, stream, acquired_at)
+                }),
+        )
+        .collect()
+}
+
+fn map_stream(
+    part_key: &str,
+    kind: MediaKind,
+    index: usize,
+    stream: ResolvedDashStream,
+    acquired_at: DateTime<Utc>,
+) -> MediaStream {
+    let mut urls = Vec::with_capacity(1 + stream.backup_urls.len());
+    push_unique_url(&mut urls, stream.base_url);
+    for url in stream.backup_urls {
+        push_unique_url(&mut urls, url);
+    }
+
+    MediaStream {
+        id: format!(
+            "stream:{part_key}:{}:{index}:{}",
+            media_kind_label(kind),
+            stream.id
+        ),
+        kind,
+        quality: u32::try_from(stream.id)
+            .map(StreamQuality::Quality)
+            .unwrap_or(StreamQuality::Best),
+        codec: stream_codec(&stream.codecs),
+        bandwidth: stream.bandwidth,
+        urls,
+        headers: default_stream_headers(),
+        acquired_at,
+    }
+}
+
+fn push_unique_url(urls: &mut Vec<String>, url: String) {
+    if !url.trim().is_empty() && !urls.iter().any(|existing| existing == &url) {
+        urls.push(url);
+    }
 }
 
 fn default_stream_headers() -> Vec<HeaderPair> {
     vec![
         HeaderPair {
-            name: "Referer".into(),
-            value: DEFAULT_STREAM_REFERER.into(),
+            name: "Referer".to_owned(),
+            value: DEFAULT_REFERER.to_owned(),
         },
         HeaderPair {
-            name: "User-Agent".into(),
-            value: DEFAULT_STREAM_USER_AGENT.into(),
+            name: "User-Agent".to_owned(),
+            value: DEFAULT_USER_AGENT.to_owned(),
         },
     ]
 }
 
-fn parse_bvid(value: &str) -> BdlResult<Bvid> {
-    value.parse().map_err(map_bpi_error)
+fn stream_codec(codecs: &str) -> StreamCodec {
+    let lower = codecs.to_ascii_lowercase();
+    if lower.trim().is_empty() {
+        StreamCodec::Auto
+    } else if lower.contains("av01") || lower.contains("av1") {
+        StreamCodec::Av1
+    } else if lower.contains("hev") || lower.contains("hvc") || lower.contains("h265") {
+        StreamCodec::Hevc
+    } else if lower.contains("avc") || lower.contains("h264") {
+        StreamCodec::Avc
+    } else {
+        StreamCodec::Unknown
+    }
 }
 
-fn parse_aid(value: u64) -> BdlResult<Aid> {
-    Aid::new(value).map_err(map_bpi_error)
-}
-
-fn parse_cid(value: u64) -> BdlResult<Cid> {
-    Cid::new(value).map_err(map_bpi_error)
+fn media_kind_label(kind: MediaKind) -> &'static str {
+    match kind {
+        MediaKind::Video => "video",
+        MediaKind::Audio => "audio",
+    }
 }
 
 fn source_kind_name(kind: SourceKind) -> &'static str {
@@ -456,6 +433,6 @@ fn source_kind_name(kind: SourceKind) -> &'static str {
     }
 }
 
-fn map_bpi_error(error: BpiError) -> BdlError {
-    BdlError::Bpi(error.to_string())
+fn non_empty(value: String) -> Option<String> {
+    (!value.trim().is_empty()).then_some(value)
 }
