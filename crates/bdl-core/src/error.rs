@@ -17,6 +17,12 @@ pub enum BdlError {
     #[error("fetch error: {message}")]
     Fetch { message: String },
 
+    #[error("storage error: {0}")]
+    Storage(#[from] rusqlite::Error),
+
+    #[error("serialization error: {0}")]
+    Serialization(#[from] serde_json::Error),
+
     #[error(transparent)]
     Mux(#[from] crate::muxer::MuxError),
 
