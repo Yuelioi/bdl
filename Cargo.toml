@@ -16,7 +16,6 @@ authors = ["YUELI <yuelioi1210@gmail.com>"]
 [workspace.dependencies]
 anyhow = "1"
 async-trait = "0.1"
-bpi-rs = { path = "E:/projects/tools/bpi-rs" }
 bytes = "1"
 chrono = { version = "0.4", features = ["clock", "serde"] }
 futures = "0.3"
