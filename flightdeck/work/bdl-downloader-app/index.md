@@ -124,6 +124,9 @@ Current:
 - P1 durable refresh intent landed in commit `bd46547`.
 - New tasks now persist `refresh_intent` separately from media URLs and task IDs. The planner writes stable refresh identity for normal video BV/AV + CID and for bangumi/course EP + CID; URL refresh uses this field first and only falls back to legacy task ID parsing for already-persisted tasks.
 - Durable refresh intent verification passed: `cargo fmt --all --check`, `cargo test -p bdl-core --test planner --test storage --test diagnostics`, `cargo test -p bdl-tauri state`, `cargo test -p bdl-tauri commands`, `cargo check -p bdl-desktop`, and `pnpm --dir apps/desktop build`.
+- P1 backup CDN fallback landed in commit `4ddaff2`.
+- `ReqwestFetcher` now attempts every non-empty URL in `DownloadResource.current_urls` before returning failure to the queue worker. Attempts are interleaved by retry round, so a failed primary CDN is followed by backup URLs before the automatic full URL refresh path runs.
+- Backup CDN fallback verification passed: `cargo fmt --all --check`, `cargo test -p bdl-core --test fetcher_resume`, `cargo test -p bdl-tauri commands`, `cargo check -p bdl-desktop`, and `pnpm --dir apps/desktop build`.
 
 Decisions:
 - Main navigation: `解析`, `传输`, `设置`; account lives in the top-right account button. Completed records live under Transfer's `已完成` filter, not a separate History page.

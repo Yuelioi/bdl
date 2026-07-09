@@ -74,7 +74,7 @@ Audited on 2026-07-09 from:
 ## P1 - Downloader Reliability
 
 - [x] Store durable resource intent separately from current URLs, not only recover identity from task IDs.
-- [ ] Use backup CDN URLs before full URL refresh.
+- [x] Use backup CDN URLs before full URL refresh.
 - [ ] Verify CDN consistency with length, ETag, or last-modified before continuing a ranged download.
 - [ ] Add real size and speed reporting instead of `--`.
 - [ ] Add segment count setting once the fetcher honors it.
