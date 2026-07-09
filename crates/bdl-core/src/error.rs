@@ -14,6 +14,9 @@ pub enum BdlError {
     #[error("planning error: {message}")]
     Planning { message: String },
 
+    #[error("fetch error: {message}")]
+    Fetch { message: String },
+
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
 }

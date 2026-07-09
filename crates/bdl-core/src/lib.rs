@@ -1,4 +1,5 @@
 pub mod error;
+pub mod fetcher;
 pub mod ids;
 pub mod input;
 pub mod model;
