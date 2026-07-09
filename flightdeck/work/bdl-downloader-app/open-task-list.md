@@ -49,11 +49,11 @@ Audited on 2026-07-09 from:
 
 ## P0 - Transfer Page
 
-- [ ] Finish manual visual QA from the transfer refactor plan at 1365x768 and 1100x720.
-- [ ] Verify there is no horizontal page scrollbar and inspector content does not force layout overflow.
+- [x] Finish manual visual QA from the transfer refactor plan at 1365x768 and 1100x720.
+- [x] Verify there is no horizontal page scrollbar and inspector content does not force layout overflow.
 - [x] Verify failed tasks default to `诊断` and raw logs stay behind `原始日志`.
 - [x] Verify completed tasks have primary open-file/open-folder actions.
-- [ ] Verify bulk retry, refresh-link retry, pause/resume, remove, and clear-completed workflows on real persisted tasks.
+- [x] Verify bulk retry, refresh-link retry, pause/resume, remove, and clear-completed workflows on real persisted tasks.
 - [x] Add a visible Transfer badge/count when parse creates tasks.
 
 ## P1 - Archive Assets

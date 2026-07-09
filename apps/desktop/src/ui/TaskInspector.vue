@@ -755,4 +755,35 @@ const errorMessage = (error: unknown): string => {
 .empty-state.compact {
   min-height: 72px;
 }
+
+@media (max-width: 1120px) {
+  .task-inspector {
+    grid-template-columns: minmax(260px, 0.8fr) minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    column-gap: var(--space-16);
+  }
+
+  .inspector-summary {
+    grid-row: 1 / span 2;
+    align-content: start;
+  }
+
+  .task-inspector > :deep(.ui-tabs),
+  .tab-panel {
+    grid-column: 2;
+  }
+
+  .summary-title-copy p {
+    display: -webkit-box;
+    overflow: hidden;
+    white-space: normal;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  .summary-progress > div {
+    display: grid;
+    gap: var(--space-4);
+  }
+}
 </style>

@@ -1405,20 +1405,25 @@ fn reset_interrupted_resources(resources: &mut [bdl_core::queue::DownloadResourc
 #[cfg(test)]
 mod tests {
     use super::{
-        PartHydrationRequest, append_new_tasks, append_source_page, dedupe_tasks_by_id,
-        hydrate_placeholder_part, load_account_snapshot, next_page_request,
-        prepare_startup_recovery, remap_selected_part_ids, selected_hydration_requests,
-        task_media_refresh_ids,
+        AppState, PartHydrationRequest, StartupRecoverySnapshot, append_new_tasks,
+        append_source_page, dedupe_tasks_by_id, hydrate_placeholder_part, load_account_snapshot,
+        next_page_request, prepare_startup_recovery, remap_selected_part_ids,
+        selected_hydration_requests, task_media_refresh_ids,
     };
     use crate::secure_store::SecureStore;
+    use chrono::Utc;
+    use std::collections::HashMap;
     use std::path::PathBuf;
+    use std::sync::Mutex;
+    use std::sync::atomic::AtomicBool;
     use std::time::{SystemTime, UNIX_EPOCH};
 
+    use bdl_core::account::AccountSummary;
     use bdl_core::ids::{GroupId, ItemId, PartId, SourceId};
     use bdl_core::input::ClassifiedInput;
     use bdl_core::model::{
-        NormalizedGroup, NormalizedItem, NormalizedPart, NormalizedSourceTree, PageState,
-        SourceKind, SourceSummary,
+        HeaderPair, MediaKind, MediaStream, NormalizedGroup, NormalizedItem, NormalizedPart,
+        NormalizedSourceTree, PageState, SourceKind, SourceSummary, StreamCodec, StreamQuality,
     };
     use bdl_core::queue::{
         DownloadResource, DownloadResourceIntent, DownloadResourceKind, DownloadTask,
@@ -1426,6 +1431,7 @@ mod tests {
         ResourceStatus, TaskStatus,
     };
     use bdl_core::resolver::paged::PageRequest;
+    use bdl_core::settings::AppSettings;
     use bdl_core::storage::TaskStorage;
 
     #[test]
@@ -1526,6 +1532,154 @@ mod tests {
             Some("42")
         );
         assert!(!legacy_cookie_path.exists());
+
+        let _ = std::fs::remove_dir_all(data_dir);
+    }
+
+    #[test]
+    fn persisted_queue_management_workflows_survive_reload() {
+        let data_dir = temp_state_dir();
+        let mut waiting = task_with_id("task:waiting");
+        waiting.status = TaskStatus::Waiting;
+        waiting.resources = vec![resource_with_intent_status(
+            "task:waiting",
+            DownloadResourceIntent::Video,
+            ResourceStatus::Pending,
+        )];
+
+        let mut paused = task_with_id("task:paused");
+        paused.status = TaskStatus::Paused;
+        paused.resources = vec![resource_with_intent_status(
+            "task:paused",
+            DownloadResourceIntent::Video,
+            ResourceStatus::Paused,
+        )];
+
+        let mut failed = task_with_id("task:failed");
+        failed.status = TaskStatus::Failed;
+        failed.resources = vec![
+            resource_with_intent_status(
+                "task:failed",
+                DownloadResourceIntent::Video,
+                ResourceStatus::Completed,
+            ),
+            resource_with_intent_status(
+                "task:failed",
+                DownloadResourceIntent::Audio,
+                ResourceStatus::Failed,
+            ),
+        ];
+
+        let mut refresh = task_with_id("task:refresh");
+        refresh.status = TaskStatus::Failed;
+        refresh.resources = vec![
+            resource_with_intent_status(
+                "task:refresh",
+                DownloadResourceIntent::Video,
+                ResourceStatus::Failed,
+            ),
+            resource_with_intent_status(
+                "task:refresh",
+                DownloadResourceIntent::Audio,
+                ResourceStatus::Failed,
+            ),
+        ];
+
+        let mut completed = task_with_id("task:completed");
+        completed.status = TaskStatus::Completed;
+        completed.resources = vec![resource_with_intent_status(
+            "task:completed",
+            DownloadResourceIntent::Video,
+            ResourceStatus::Completed,
+        )];
+
+        let mut remove = task_with_id("task:remove");
+        remove.status = TaskStatus::Paused;
+
+        let state = test_state_with_tasks(
+            &data_dir,
+            vec![waiting, paused, failed, refresh, completed, remove],
+        );
+
+        let paused_task = state
+            .update_task_status("task:waiting", TaskStatus::Paused)
+            .expect("waiting task should pause");
+        assert_eq!(paused_task.status, TaskStatus::Paused);
+
+        let resumed_task = state
+            .update_task_status("task:paused", TaskStatus::Waiting)
+            .expect("paused task should resume to waiting");
+        assert_eq!(resumed_task.status, TaskStatus::Waiting);
+
+        let retried_task = state
+            .retry_task("task:failed")
+            .expect("failed task should retry");
+        assert_eq!(retried_task.status, TaskStatus::Waiting);
+        assert_eq!(retried_task.resources[0].status, ResourceStatus::Completed);
+        assert_eq!(retried_task.resources[1].status, ResourceStatus::Pending);
+
+        let video = media_stream(MediaKind::Video, "https://cdn.example/new-video.m4s");
+        let audio = media_stream(MediaKind::Audio, "https://cdn.example/new-audio.m4s");
+        let refreshed_task = state
+            .replace_task_media_urls("task:refresh", &video, &audio)
+            .expect("refresh should replace media urls");
+        assert_eq!(
+            refreshed_task.resources[0].current_urls,
+            ["https://cdn.example/new-video.m4s"]
+        );
+        assert_eq!(
+            refreshed_task.resources[1].current_urls,
+            ["https://cdn.example/new-audio.m4s"]
+        );
+        let refreshed_retry = state
+            .retry_task("task:refresh")
+            .expect("refreshed task should retry");
+        assert_eq!(refreshed_retry.status, TaskStatus::Waiting);
+
+        assert!(
+            state
+                .remove_task("task:remove")
+                .expect("task should remove")
+        );
+        for task_id in state
+            .queue_snapshot()
+            .expect("queue snapshot should load")
+            .into_iter()
+            .filter(|task| task.status == TaskStatus::Completed)
+            .map(|task| task.id)
+            .collect::<Vec<_>>()
+        {
+            assert!(state.remove_task(&task_id).expect("completed task removed"));
+        }
+
+        drop(state);
+
+        let reloaded = TaskStorage::open(data_dir.join("tasks.sqlite"))
+            .expect("storage should reopen")
+            .load_tasks()
+            .expect("tasks should reload");
+        assert!(reloaded.iter().all(|task| task.id != "task:remove"));
+        assert!(
+            reloaded
+                .iter()
+                .all(|task| task.status != TaskStatus::Completed)
+        );
+
+        let failed = task_by_id(&reloaded, "task:failed");
+        assert_eq!(failed.status, TaskStatus::Waiting);
+        assert_eq!(failed.resources[0].status, ResourceStatus::Completed);
+        assert_eq!(failed.resources[1].status, ResourceStatus::Pending);
+
+        let refresh = task_by_id(&reloaded, "task:refresh");
+        assert_eq!(refresh.status, TaskStatus::Waiting);
+        assert_eq!(
+            refresh.resources[0].current_urls,
+            ["https://cdn.example/new-video.m4s"]
+        );
+        assert_eq!(
+            refresh.resources[1].current_urls,
+            ["https://cdn.example/new-audio.m4s"]
+        );
 
         let _ = std::fs::remove_dir_all(data_dir);
     }
@@ -1790,6 +1944,78 @@ mod tests {
             temp_path: PathBuf::from("downloads/video.m4s.bdlpart"),
             status,
         }
+    }
+
+    fn resource_with_intent_status(
+        task_id: &str,
+        intent: DownloadResourceIntent,
+        status: ResourceStatus,
+    ) -> DownloadResource {
+        let suffix = format!("{intent:?}").to_ascii_lowercase();
+        let task_slug = task_id.replace(':', "-");
+        DownloadResource {
+            id: format!("{task_id}:resource:{suffix}"),
+            kind: match intent {
+                DownloadResourceIntent::Video => DownloadResourceKind::Video,
+                DownloadResourceIntent::Audio => DownloadResourceKind::Audio,
+                DownloadResourceIntent::Cover
+                | DownloadResourceIntent::Subtitle
+                | DownloadResourceIntent::Danmaku
+                | DownloadResourceIntent::Nfo => DownloadResourceKind::Asset,
+            },
+            intent,
+            current_urls: vec![format!("https://cdn.example/old-{suffix}.m4s")],
+            headers: Vec::new(),
+            target_path: PathBuf::from(format!("downloads/{task_slug}-{suffix}.m4s")),
+            temp_path: PathBuf::from(format!("downloads/{task_slug}-{suffix}.m4s.bdlpart")),
+            status,
+        }
+    }
+
+    fn media_stream(kind: MediaKind, url: &str) -> MediaStream {
+        MediaStream {
+            id: format!("stream:{kind:?}").to_ascii_lowercase(),
+            kind,
+            quality: StreamQuality::Best,
+            codec: StreamCodec::Avc,
+            bandwidth: Some(1_000_000),
+            urls: vec![url.to_owned()],
+            headers: vec![HeaderPair {
+                name: "Referer".to_owned(),
+                value: "https://www.bilibili.com".to_owned(),
+            }],
+            acquired_at: Utc::now(),
+        }
+    }
+
+    fn test_state_with_tasks(data_dir: &std::path::Path, tasks: Vec<DownloadTask>) -> AppState {
+        std::fs::create_dir_all(data_dir).expect("temp data dir should be created");
+        let mut storage =
+            TaskStorage::open(data_dir.join("tasks.sqlite")).expect("storage should open");
+        storage
+            .replace_tasks(&tasks)
+            .expect("tasks should persist before state is created");
+
+        AppState {
+            parse_sources: Mutex::new(HashMap::new()),
+            queue: Mutex::new(tasks),
+            storage: Mutex::new(storage),
+            settings: Mutex::new(AppSettings::default()),
+            settings_path: data_dir.join("settings.json"),
+            data_dir: data_dir.to_path_buf(),
+            account: Mutex::new(AccountSummary::default()),
+            account_cookie: Mutex::new(None),
+            queue_worker_active: AtomicBool::new(false),
+            startup_recovery: Mutex::new(StartupRecoverySnapshot::default()),
+            secure_store: SecureStore::in_memory(),
+        }
+    }
+
+    fn task_by_id<'a>(tasks: &'a [DownloadTask], task_id: &str) -> &'a DownloadTask {
+        tasks
+            .iter()
+            .find(|task| task.id == task_id)
+            .expect("task should exist")
     }
 
     fn queue_ids(tasks: &[DownloadTask]) -> Vec<&str> {

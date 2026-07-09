@@ -355,7 +355,7 @@ const isRetryable = (status: TaskStatus): boolean => status === 'failed' || stat
 @media (max-width: 1120px) {
   .transfer-page {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: minmax(0, 1fr) minmax(320px, 42%);
+    grid-template-rows: minmax(354px, 1fr) minmax(248px, 38%);
   }
 }
 </style>
