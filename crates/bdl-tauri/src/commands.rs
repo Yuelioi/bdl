@@ -110,12 +110,12 @@ pub async fn parse_refresh_source() -> CommandResult<()> {
 }
 
 #[tauri::command]
-pub fn selection_create_tasks(
+pub async fn selection_create_tasks(
     app: AppHandle,
     state: State<'_, AppState>,
     request: SelectionCreateTasksRequest,
 ) -> CommandResult<Vec<DownloadTask>> {
-    let tree = state.source_snapshot(&SourceId(request.source_id))?;
+    let source_id = SourceId(request.source_id);
     let settings = state.settings()?;
     let selected_part_ids = request.part_ids.into_iter().map(PartId).collect::<Vec<_>>();
 
@@ -137,8 +137,15 @@ pub fn selection_create_tasks(
         options.output_extension = extension;
     }
 
-    let tasks = plan_selected_parts(&tree, &selected_part_ids, &options)?;
+    let prepared = state
+        .prepare_selection(&source_id, &selected_part_ids)
+        .await?;
+    let tasks = plan_selected_parts(&prepared.tree, &prepared.part_ids, &options)?;
     state.enqueue_tasks(tasks.clone())?;
+
+    if prepared.tree_updated {
+        events::emit(&app, events::PARSE_SOURCE_UPDATED, &prepared.tree)?;
+    }
 
     for task in &tasks {
         events::emit(&app, events::QUEUE_TASK_UPDATED, task)?;

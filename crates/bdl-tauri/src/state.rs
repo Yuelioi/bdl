@@ -1,11 +1,11 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Mutex;
 
 use bdl_core::account::{AccountSummary, ImportedCookie};
-use bdl_core::ids::SourceId;
-use bdl_core::input::classify_input;
-use bdl_core::model::{NormalizedSourceTree, SourceKind};
+use bdl_core::ids::{PartId, SourceId};
+use bdl_core::input::{ClassifiedInput, classify_input};
+use bdl_core::model::{NormalizedItem, NormalizedPart, NormalizedSourceTree, SourceKind};
 use bdl_core::queue::{DownloadTask, TaskStatus};
 use bdl_core::resolver::uploader::UploaderResolver;
 use bdl_core::resolver::video::VideoResolver;
@@ -24,6 +24,13 @@ pub struct AppState {
     account: Mutex<AccountSnapshot>,
     account_cookie: Mutex<Option<String>>,
     secure_store: SecureStore,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PreparedSelection {
+    pub tree: NormalizedSourceTree,
+    pub part_ids: Vec<PartId>,
+    pub tree_updated: bool,
 }
 
 impl AppState {
@@ -85,6 +92,54 @@ impl AppState {
             .ok_or_else(|| BdlError::Planning {
                 message: format!("解析源 `{}` 不存在，请重新解析。", source_id.0),
             })
+    }
+
+    pub async fn prepare_selection(
+        &self,
+        source_id: &SourceId,
+        selected_part_ids: &[PartId],
+    ) -> BdlResult<PreparedSelection> {
+        let mut tree = self.source_snapshot(source_id)?;
+        let requests = selected_hydration_requests(&tree, selected_part_ids)?;
+        if requests.is_empty() {
+            return Ok(PreparedSelection {
+                tree,
+                part_ids: selected_part_ids.to_vec(),
+                tree_updated: false,
+            });
+        }
+
+        let resolver = self.video_resolver()?;
+        let mut part_ids = selected_part_ids.to_vec();
+
+        for request in requests {
+            let hydrated = resolver
+                .resolve(
+                    ClassifiedInput::VideoBvid(request.bvid),
+                    ResolveOptions {
+                        fetch_streams: true,
+                    },
+                )
+                .await?;
+            let hydrated_part_ids = hydrate_placeholder_part(
+                &mut tree,
+                &request.part_id,
+                request.target_cid,
+                hydrated,
+            )?;
+            remap_selected_part_ids(&mut part_ids, &request.part_id, &hydrated_part_ids);
+        }
+
+        self.parse_sources
+            .lock()
+            .map_err(|_| state_poisoned("parse_sources"))?
+            .insert(tree.source.id.clone(), tree.clone());
+
+        Ok(PreparedSelection {
+            tree,
+            part_ids,
+            tree_updated: true,
+        })
     }
 
     pub fn enqueue_tasks(&self, tasks: Vec<DownloadTask>) -> BdlResult<()> {
@@ -227,6 +282,13 @@ impl AppState {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PartHydrationRequest {
+    part_id: PartId,
+    bvid: String,
+    target_cid: Option<u64>,
+}
+
 pub type SettingsSnapshot = AppSettings;
 pub type AccountSnapshot = AccountSummary;
 
@@ -260,6 +322,337 @@ fn load_account_snapshot(
         Err(_) => {
             secure_store.clear_cookie()?;
             Ok((AccountSnapshot::default(), None))
+        }
+    }
+}
+
+fn selected_hydration_requests(
+    tree: &NormalizedSourceTree,
+    selected_part_ids: &[PartId],
+) -> BdlResult<Vec<PartHydrationRequest>> {
+    let mut seen = HashSet::new();
+    let mut requests = Vec::new();
+
+    for part_id in selected_part_ids {
+        if !seen.insert(part_id.clone()) {
+            continue;
+        }
+
+        let Some(part) = find_part(tree, part_id) else {
+            continue;
+        };
+
+        if !part_needs_hydration(part) {
+            continue;
+        }
+
+        let bvid = part.bvid.clone().ok_or_else(|| BdlError::Planning {
+            message: format!("选中的分 P `{}` 缺少 BV ID，无法补齐下载流。", part_id.0),
+        })?;
+
+        requests.push(PartHydrationRequest {
+            part_id: part_id.clone(),
+            bvid,
+            target_cid: part.cid,
+        });
+    }
+
+    Ok(requests)
+}
+
+fn find_part<'a>(tree: &'a NormalizedSourceTree, part_id: &PartId) -> Option<&'a NormalizedPart> {
+    tree.groups
+        .iter()
+        .flat_map(|group| &group.items)
+        .flat_map(|item| &item.parts)
+        .find(|part| &part.id == part_id)
+}
+
+fn part_needs_hydration(part: &NormalizedPart) -> bool {
+    part.cid.is_none() || part.streams.is_empty()
+}
+
+fn hydrate_placeholder_part(
+    tree: &mut NormalizedSourceTree,
+    placeholder_id: &PartId,
+    target_cid: Option<u64>,
+    hydrated: NormalizedSourceTree,
+) -> BdlResult<Vec<PartId>> {
+    let mut hydrated_item = first_hydrated_item(hydrated)?;
+    let hydrated_part_ids = selected_hydrated_part_ids(&hydrated_item.parts, target_cid)?;
+
+    if hydrated_part_ids.is_empty() {
+        return Err(BdlError::Planning {
+            message: format!("选中的分 P `{}` 没有可下载分 P。", placeholder_id.0),
+        });
+    }
+
+    for group in &mut tree.groups {
+        let Some(item_index) = group
+            .items
+            .iter()
+            .position(|item| item.parts.iter().any(|part| &part.id == placeholder_id))
+        else {
+            continue;
+        };
+
+        let existing_item = &group.items[item_index];
+        hydrated_item.id = existing_item.id.clone();
+        merge_missing_item_metadata(&mut hydrated_item, existing_item);
+        group.items[item_index] = hydrated_item;
+        return Ok(hydrated_part_ids);
+    }
+
+    Err(BdlError::Planning {
+        message: format!(
+            "选中的分 P `{}` 未加载，请重新解析后再试。",
+            placeholder_id.0
+        ),
+    })
+}
+
+fn selected_hydrated_part_ids(
+    hydrated_parts: &[NormalizedPart],
+    target_cid: Option<u64>,
+) -> BdlResult<Vec<PartId>> {
+    if let Some(target_cid) = target_cid {
+        return hydrated_parts
+            .iter()
+            .find(|part| part.cid == Some(target_cid))
+            .map(|part| vec![part.id.clone()])
+            .ok_or_else(|| BdlError::Planning {
+                message: format!("视频解析结果缺少 CID `{target_cid}`，无法创建下载任务。"),
+            });
+    }
+
+    Ok(hydrated_parts
+        .iter()
+        .map(|part| part.id.clone())
+        .collect::<Vec<_>>())
+}
+
+fn first_hydrated_item(hydrated: NormalizedSourceTree) -> BdlResult<NormalizedItem> {
+    hydrated
+        .groups
+        .into_iter()
+        .flat_map(|group| group.items)
+        .next()
+        .ok_or_else(|| BdlError::Planning {
+            message: "视频解析结果为空，无法创建下载任务。".to_owned(),
+        })
+}
+
+fn merge_missing_item_metadata(target: &mut NormalizedItem, fallback: &NormalizedItem) {
+    if target.owner_name.is_none() {
+        target.owner_name.clone_from(&fallback.owner_name);
+    }
+    if target.cover_url.is_none() {
+        target.cover_url.clone_from(&fallback.cover_url);
+    }
+    if target.duration_seconds.is_none() {
+        target.duration_seconds = fallback.duration_seconds;
+    }
+}
+
+fn remap_selected_part_ids(
+    selected_part_ids: &mut Vec<PartId>,
+    placeholder_id: &PartId,
+    hydrated_part_ids: &[PartId],
+) {
+    let mut remapped = Vec::with_capacity(selected_part_ids.len() + hydrated_part_ids.len());
+    for part_id in selected_part_ids.drain(..) {
+        if &part_id == placeholder_id {
+            remapped.extend(hydrated_part_ids.iter().cloned());
+        } else {
+            remapped.push(part_id);
+        }
+    }
+    *selected_part_ids = remapped;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        PartHydrationRequest, hydrate_placeholder_part, remap_selected_part_ids,
+        selected_hydration_requests,
+    };
+    use bdl_core::ids::{GroupId, ItemId, PartId, SourceId};
+    use bdl_core::model::{
+        NormalizedGroup, NormalizedItem, NormalizedPart, NormalizedSourceTree, SourceKind,
+        SourceSummary,
+    };
+
+    #[test]
+    fn selected_hydration_requests_returns_unique_selected_placeholders() {
+        let tree = uploader_tree();
+        let placeholder = PartId("part:uploader:1001:BV1xx411c7mD".to_owned());
+        let requests = selected_hydration_requests(
+            &tree,
+            &[
+                placeholder.clone(),
+                placeholder.clone(),
+                PartId("part:missing".to_owned()),
+            ],
+        )
+        .expect("hydration requests should be valid");
+
+        assert_eq!(
+            requests,
+            vec![PartHydrationRequest {
+                part_id: placeholder,
+                bvid: "BV1xx411c7mD".to_owned(),
+                target_cid: None,
+            }]
+        );
+    }
+
+    #[test]
+    fn hydrate_placeholder_part_expands_video_parts_and_preserves_list_metadata() {
+        let mut tree = uploader_tree();
+        let placeholder = PartId("part:uploader:1001:BV1xx411c7mD".to_owned());
+
+        let hydrated_ids = hydrate_placeholder_part(&mut tree, &placeholder, None, video_tree())
+            .expect("placeholder should hydrate");
+
+        assert_eq!(
+            hydrated_ids,
+            vec![
+                PartId("part:BV1xx411c7mD:62131".to_owned()),
+                PartId("part:BV1xx411c7mD:62132".to_owned()),
+            ]
+        );
+
+        let item = &tree.groups[0].items[0];
+        assert_eq!(item.id.0, "item:uploader:1001:BV1xx411c7mD");
+        assert_eq!(item.owner_name.as_deref(), Some("fixture owner"));
+        assert_eq!(
+            item.cover_url.as_deref(),
+            Some("https://example.invalid/list-cover.jpg")
+        );
+        assert_eq!(item.parts.len(), 2);
+        assert_eq!(item.parts[0].cid, Some(62131));
+        assert_eq!(item.parts[1].cid, Some(62132));
+    }
+
+    #[test]
+    fn hydrate_known_part_keeps_selection_on_matching_cid() {
+        let mut tree = uploader_tree();
+        let placeholder = PartId("part:uploader:1001:BV1xx411c7mD".to_owned());
+
+        let hydrated_ids =
+            hydrate_placeholder_part(&mut tree, &placeholder, Some(62132), video_tree())
+                .expect("placeholder should hydrate to requested cid");
+
+        assert_eq!(
+            hydrated_ids,
+            vec![PartId("part:BV1xx411c7mD:62132".to_owned())]
+        );
+    }
+
+    #[test]
+    fn remap_selected_part_ids_expands_placeholder_to_hydrated_parts() {
+        let placeholder = PartId("part:uploader:1001:BV1xx411c7mD".to_owned());
+        let mut selected = vec![PartId("part:other".to_owned()), placeholder.clone()];
+
+        remap_selected_part_ids(
+            &mut selected,
+            &placeholder,
+            &[
+                PartId("part:BV1xx411c7mD:62131".to_owned()),
+                PartId("part:BV1xx411c7mD:62132".to_owned()),
+            ],
+        );
+
+        assert_eq!(
+            selected,
+            vec![
+                PartId("part:other".to_owned()),
+                PartId("part:BV1xx411c7mD:62131".to_owned()),
+                PartId("part:BV1xx411c7mD:62132".to_owned()),
+            ]
+        );
+    }
+
+    fn uploader_tree() -> NormalizedSourceTree {
+        NormalizedSourceTree {
+            source: SourceSummary {
+                id: SourceId("uploader:1001:videos".to_owned()),
+                kind: SourceKind::Uploader,
+                input: "https://space.bilibili.com/1001/video".to_owned(),
+                title: "fixture owner 的投稿".to_owned(),
+                loaded_count: 1,
+                total_count: Some(1),
+                has_more: false,
+            },
+            groups: vec![NormalizedGroup {
+                id: GroupId("group:uploader:1001:videos".to_owned()),
+                kind: "uploader_videos".to_owned(),
+                title: "fixture owner 的投稿".to_owned(),
+                items: vec![NormalizedItem {
+                    id: ItemId("item:uploader:1001:BV1xx411c7mD".to_owned()),
+                    title: "fixture upload".to_owned(),
+                    owner_name: Some("fixture owner".to_owned()),
+                    cover_url: Some("https://example.invalid/list-cover.jpg".to_owned()),
+                    duration_seconds: Some(62),
+                    parts: vec![NormalizedPart {
+                        id: PartId("part:uploader:1001:BV1xx411c7mD".to_owned()),
+                        title: "fixture upload".to_owned(),
+                        aid: Some(170001),
+                        bvid: Some("BV1xx411c7mD".to_owned()),
+                        cid: None,
+                        streams: Vec::new(),
+                        assets: Vec::new(),
+                    }],
+                }],
+                page: None,
+            }],
+        }
+    }
+
+    fn video_tree() -> NormalizedSourceTree {
+        NormalizedSourceTree {
+            source: SourceSummary {
+                id: SourceId("video:BV1xx411c7mD".to_owned()),
+                kind: SourceKind::Video,
+                input: "BV1xx411c7mD".to_owned(),
+                title: "fixture upload".to_owned(),
+                loaded_count: 1,
+                total_count: Some(1),
+                has_more: false,
+            },
+            groups: vec![NormalizedGroup {
+                id: GroupId("group:BV1xx411c7mD".to_owned()),
+                kind: "video".to_owned(),
+                title: "fixture upload".to_owned(),
+                items: vec![NormalizedItem {
+                    id: ItemId("item:BV1xx411c7mD".to_owned()),
+                    title: "fixture upload".to_owned(),
+                    owner_name: None,
+                    cover_url: None,
+                    duration_seconds: None,
+                    parts: vec![
+                        NormalizedPart {
+                            id: PartId("part:BV1xx411c7mD:62131".to_owned()),
+                            title: "P1".to_owned(),
+                            aid: Some(170001),
+                            bvid: Some("BV1xx411c7mD".to_owned()),
+                            cid: Some(62131),
+                            streams: Vec::new(),
+                            assets: Vec::new(),
+                        },
+                        NormalizedPart {
+                            id: PartId("part:BV1xx411c7mD:62132".to_owned()),
+                            title: "P2".to_owned(),
+                            aid: Some(170001),
+                            bvid: Some("BV1xx411c7mD".to_owned()),
+                            cid: Some(62132),
+                            streams: Vec::new(),
+                            assets: Vec::new(),
+                        },
+                    ],
+                }],
+                page: None,
+            }],
         }
     }
 }

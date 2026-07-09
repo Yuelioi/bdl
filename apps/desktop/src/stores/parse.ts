@@ -157,7 +157,7 @@ export const useParseStore = defineStore('parse', {
       }
       this.activeSourceId = sourceId
       this.errorsBySource[sourceId] = null
-      this.selectionBySource[sourceId] = this.selectionBySource[sourceId] ?? collectPartIds(tree)
+      this.selectionBySource[sourceId] = this.selectionBySource[sourceId] ?? defaultSelection(tree)
     },
     async runSourceAction(sourceId: string, action: () => Promise<void>) {
       const ui = useUiStore()
@@ -176,6 +176,8 @@ export const useParseStore = defineStore('parse', {
 
 const collectPartIds = (tree: NormalizedSourceTree): string[] =>
   tree.groups.flatMap((group) => group.items.flatMap((item) => item.parts.map((part) => part.id)))
+
+const defaultSelection = (tree: NormalizedSourceTree): string[] => (tree.source.kind === 'video' ? collectPartIds(tree) : [])
 
 const partIdsForNode = (tree: NormalizedSourceTree, nodeId: string): string[] => {
   for (const group of tree.groups) {
