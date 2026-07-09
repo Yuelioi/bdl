@@ -2,11 +2,11 @@
 
 ## State
 
-Task 4 single-video resolving is complete on branch `bdl-downloader-app`. The workspace has a Rust/Tauri/Vue scaffold, frontend-safe normalized DTOs, a pure Bilibili input classifier, and a `bpi-rs` backed video resolver that emits the normalized source tree.
+Task 5 planning is complete on branch `bdl-downloader-app`. The workspace has a Rust/Tauri/Vue scaffold, frontend-safe normalized DTOs, a pure Bilibili input classifier, a `bpi-rs` backed video resolver, and a planner that turns selected normalized parts into backend-owned download tasks/resources.
 
 ## Next
 
-Execute Task 5 in `plan.md`: add the planner and task model that turns selected parts into download tasks.
+Execute Task 6 in `plan.md`: add the resumable `reqwest` fetcher with resource-level segment state.
 
 ## Read now
 
@@ -41,6 +41,10 @@ Current:
 - Task 4 verification passed: `cargo fmt --all --check`, `cargo test -p bdl-core`, and `cargo check --workspace`.
 - The resolver uses portable `bpi-rs = 0.2.3` with only the `video` feature enabled, keeps `bpi-rs` usage inside `crates/bdl-core/src/resolver/video.rs`, and uses a fake `VideoApi` adapter for non-live tests.
 - Execution note from the user: continue locally without subagents unless explicitly requested again.
+- Fixed the Task 4 source/test mismatch in commit `8907a25`.
+- Completed Task 5 planner and task model in commit `61bbb0b`.
+- Task 5 verification passed: `cargo test -p bdl-core --test planner --test queue_state`, `cargo test -p bdl-core`, `cargo fmt --all --check`, and `cargo check --workspace`.
+- Planner creates stable task/resource IDs, plans only selected loaded parts, chooses video/audio media streams in fast mode, adds cover/subtitle/danmaku/NFO intents for complete archive mode, and returns actionable errors when required streams are missing.
 
 Decisions:
 - Main navigation: `解析`, `传输`, `历史`, `设置`; account lives in the top-right account button.

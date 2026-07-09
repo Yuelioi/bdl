@@ -944,7 +944,7 @@ git commit -m "feat: resolve single videos through bpi"
 - Test: `crates/bdl-core/tests/planner.rs`
 - Test: `crates/bdl-core/tests/queue_state.rs`
 
-- [ ] **Step 1: Write planner tests**
+- [x] **Step 1: Write planner tests**
 
 Cover these exact cases:
 
@@ -954,7 +954,7 @@ Cover these exact cases:
 - Missing audio stream returns an actionable planner error.
 - Task IDs and resource IDs are stable enough to resume by persisted task record.
 
-- [ ] **Step 2: Implement task models**
+- [x] **Step 2: Implement task models**
 
 Core types:
 
@@ -1000,7 +1000,7 @@ pub struct DownloadResource {
 }
 ```
 
-- [ ] **Step 3: Implement selection planner**
+- [x] **Step 3: Implement selection planner**
 
 The planner accepts:
 
@@ -1012,7 +1012,7 @@ It returns `Vec<DownloadTask>`.
 
 Do not let the frontend create resource paths or infer stream choices. Use default options from settings plus per-selection overrides.
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run:
 
@@ -1022,7 +1022,7 @@ cargo test -p bdl-core --test planner --test queue_state
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add crates/bdl-core
