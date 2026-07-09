@@ -142,6 +142,9 @@ Current:
 - P1 task log retention landed in commit `ff49c40`.
 - `TaskStorage::append_task_log` now prunes task logs after each insert, deleting entries older than 30 days and keeping only the latest 1000 logs for the affected task. Existing task logs are still preserved when queue snapshots are replaced.
 - Task log retention verification passed: `cargo fmt --all --check`, `cargo test -p bdl-core --test storage`, `cargo test -p bdl-tauri commands`, `cargo check -p bdl-desktop`, and `git diff --check`.
+- P1 Transfer inspector diagnostics export landed in commit `ac15dad`.
+- The task inspector now exposes `导出诊断` in both the diagnosis tab and raw-log toolbar, reusing the existing backend diagnostics export command and surfacing the export path through a toast. Settings still keeps its existing diagnostics export action.
+- Transfer inspector diagnostics export verification passed: `pnpm --dir apps/desktop build` and `git diff --check`.
 
 Decisions:
 - Main navigation: `解析`, `传输`, `设置`; account lives in the top-right account button. Completed records live under Transfer's `已完成` filter, not a separate History page.
