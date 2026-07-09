@@ -2,11 +2,11 @@
 
 ## State
 
-Task 8 Tauri command bridge is complete on branch `bdl-downloader-app`. The workspace has a Rust/Tauri/Vue scaffold, frontend-safe normalized DTOs, a pure Bilibili input classifier, a `bpi-rs` backed video resolver, a planner that turns selected normalized parts into backend-owned download tasks/resources, a resumable `reqwest` fetcher, an ffmpeg muxer, a CLI parse/download path, and registered Tauri commands/events.
+Task 9 desktop app shell is complete on branch `bdl-downloader-app`. The workspace has a Rust/Tauri/Vue scaffold, frontend-safe normalized DTOs, a pure Bilibili input classifier, a `bpi-rs` backed video resolver, a planner that turns selected normalized parts into backend-owned download tasks/resources, a resumable `reqwest` fetcher, an ffmpeg muxer, a CLI parse/download path, registered Tauri commands/events, and a custom Vue UI kit with the initial desktop shell.
 
 ## Next
 
-Execute Task 9 in `plan.md`: add the desktop UI kit and app shell.
+Execute Task 10 in `plan.md`: wire the parse page to Tauri commands through frontend DTOs and a parse store.
 
 ## Read now
 
@@ -56,6 +56,9 @@ Current:
 - Task 8 verification passed: `cargo check -p bdl-desktop`, `cargo test --workspace`, and `cargo fmt --all --check`.
 - Registered canonical Tauri commands in `apps/desktop/src-tauri/src/main.rs`. `parse_create_source`, `parse_close_source`, `queue_list`, `settings_get`, `settings_update`, and `account_get` have real state-backed behavior; not-yet-implemented commands return typed `unsupported` errors.
 - Defined canonical event names and emit paths for `parse://source-updated` and `settings://updated` in this phase.
+- Completed Task 9 UI kit and app shell in commit `58078ea`.
+- Task 9 verification passed: `pnpm --dir apps/desktop build`.
+- The desktop shell now has custom shared controls, nav tabs `解析` / `传输` / `历史` / `设置`, a top-right login/account split button with logout dropdown, QR/Cookie login dialog surface, help drawer, toast host, source tree, transfer tabs, task row, and settings download controls.
 
 Decisions:
 - Main navigation: `解析`, `传输`, `历史`, `设置`; account lives in the top-right account button.

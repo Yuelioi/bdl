@@ -1240,7 +1240,7 @@ git commit -m "feat: expose downloader commands to tauri"
 - Create: `apps/desktop/src/ui/*.vue`
 - Create: `apps/desktop/src/stores/ui.ts`
 
-- [ ] **Step 1: Add tokens before business UI**
+- [x] **Step 1: Add tokens before business UI**
 
 Use CSS custom properties for:
 
@@ -1252,7 +1252,7 @@ font sizes 12/13/14/16/18/22
 fixed heights button 32, input 34, toolbar 40, task row 64
 ```
 
-- [ ] **Step 2: Build reusable controls**
+- [x] **Step 2: Build reusable controls**
 
 Create:
 
@@ -1281,7 +1281,7 @@ Rules:
 - Cards use radius 8 px or less.
 - Text must fit within controls at 1100 px minimum window width.
 
-- [ ] **Step 3: Build app shell**
+- [x] **Step 3: Build app shell**
 
 Navigation labels:
 
@@ -1300,7 +1300,7 @@ Top-right account button:
 
 Logged-in state is added in account phase.
 
-- [ ] **Step 4: Run frontend build**
+- [x] **Step 4: Run frontend build**
 
 Run:
 
@@ -1310,7 +1310,7 @@ pnpm --dir apps/desktop build
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add apps/desktop/src

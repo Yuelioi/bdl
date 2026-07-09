@@ -1,10 +1,10 @@
 # Cockpit — bdl
 
-Focus: BDL downloader design is captured; next step is scaffold + single-video vertical slice.
+Focus: BDL downloader vertical slice is moving from backend bridge into the interactive desktop UI.
 
 ## In flight
 
-- [bdl-downloader-app](work/bdl-downloader-app/index.md) — product/architecture knowledge captured, implementation not scaffolded yet.
+- [bdl-downloader-app](work/bdl-downloader-app/index.md) — Task 9 app shell complete; next is Task 10 parse page wiring.
 
 ## Open questions
 
