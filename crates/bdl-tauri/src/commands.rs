@@ -5,7 +5,7 @@ use bdl_core::account::{
     QrLoginSession, QrLoginStatus, poll_qr_login, redact_sensitive, start_qr_login,
 };
 use bdl_core::fetcher::{
-    FetchConfig, FetchProgress, Fetcher, ProgressSender, ReqwestFetcher, state_path_for,
+    FetchCancelToken, FetchConfig, FetchProgress, ProgressSender, ReqwestFetcher, state_path_for,
 };
 use bdl_core::ids::{PartId, SourceId};
 use bdl_core::model::NormalizedSourceTree;
@@ -421,6 +421,20 @@ pub fn queue_bulk_pause(
 }
 
 #[tauri::command]
+pub fn queue_bulk_cancel(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    request: BulkQueueRequest,
+) -> CommandResult<BulkQueueResult> {
+    Ok(bulk_update_task_status(
+        &app,
+        state.inner(),
+        request.task_ids,
+        TaskStatus::Cancelled,
+    ))
+}
+
+#[tauri::command]
 pub fn queue_bulk_resume(
     app: AppHandle,
     state: State<'_, AppState>,
@@ -486,6 +500,7 @@ pub fn queue_bulk_remove(
     let mut result = BulkQueueResult::default();
 
     for task_id in request.task_ids {
+        let _ = state.cancel_running_task(&task_id);
         match state.remove_task(&task_id) {
             Ok(true) => result.removed.push(task_id),
             Ok(false) => result.failed.push(BulkQueueFailure {
@@ -554,6 +569,9 @@ fn bulk_update_task_status(
     for task_id in task_ids {
         match state.update_task_status(&task_id, status) {
             Ok(task) => {
+                if matches!(status, TaskStatus::Paused | TaskStatus::Cancelled) {
+                    let _ = state.cancel_running_task(&task_id);
+                }
                 if let Err(error) = events::emit(app, events::QUEUE_TASK_UPDATED, &task) {
                     result.failed.push(BulkQueueFailure {
                         task_id,
@@ -818,6 +836,9 @@ fn update_task_status(
     task_id: &str,
     status: TaskStatus,
 ) -> CommandResult<DownloadTask> {
+    if matches!(status, TaskStatus::Paused | TaskStatus::Cancelled) {
+        let _ = state.cancel_running_task(task_id)?;
+    }
     let task = state.update_task_status(task_id, status)?;
     events::emit(&app, events::QUEUE_TASK_UPDATED, &task)?;
     if status.can_start() {
@@ -935,6 +956,22 @@ async fn run_download_task(
     task: DownloadTask,
     runtime_options: DownloadRuntimeOptions,
 ) -> CommandResult<()> {
+    let task_id = task.id.clone();
+    let cancel_token = state.register_task_cancel_token(&task_id)?;
+    let outcome =
+        run_download_task_inner(app, state, fetcher, task, runtime_options, cancel_token).await;
+    state.clear_task_cancel_token(&task_id)?;
+    outcome
+}
+
+async fn run_download_task_inner(
+    app: &AppHandle,
+    state: &AppState,
+    fetcher: &ReqwestFetcher,
+    task: DownloadTask,
+    runtime_options: DownloadRuntimeOptions,
+    cancel_token: FetchCancelToken,
+) -> CommandResult<()> {
     for resource in task
         .resources
         .iter()
@@ -966,9 +1003,39 @@ async fn run_download_task(
         )?;
 
         let progress = progress_sender(app, &task.id);
-        if let Err(error) = fetcher.fetch(resource, Some(progress)).await {
-            let updated =
-                state.update_resource_status(&task.id, &resource.id, ResourceStatus::Failed)?;
+        if let Err(error) = fetcher
+            .fetch_cancelable(resource, Some(progress), cancel_token.clone())
+            .await
+        {
+            if cancel_token.is_cancelled() {
+                let Ok(status) = state.task_status(&task.id) else {
+                    return Ok(());
+                };
+                let resource_status = match status {
+                    TaskStatus::Paused => ResourceStatus::Paused,
+                    TaskStatus::Cancelled => ResourceStatus::Cancelled,
+                    TaskStatus::Waiting => ResourceStatus::Pending,
+                    _ => ResourceStatus::Failed,
+                };
+                let updated =
+                    state.update_resource_status(&task.id, &resource.id, resource_status)?;
+                events::emit(app, events::QUEUE_TASK_UPDATED, &updated)?;
+                emit_queue_log(
+                    app,
+                    state,
+                    &task.id,
+                    QueueLogLevel::Warning,
+                    "任务已暂停或取消",
+                )?;
+                return Ok(());
+            }
+
+            let resource_status = match state.task_status(&task.id) {
+                Ok(TaskStatus::Paused) => ResourceStatus::Paused,
+                Ok(TaskStatus::Cancelled) => ResourceStatus::Cancelled,
+                _ => ResourceStatus::Failed,
+            };
+            let updated = state.update_resource_status(&task.id, &resource.id, resource_status)?;
             events::emit(app, events::QUEUE_TASK_UPDATED, &updated)?;
             return Err(error.into());
         }

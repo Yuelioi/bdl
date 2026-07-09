@@ -61,6 +61,7 @@ const selectedTaskSet = computed(() => new Set(queue.selectedTaskIds))
 const selectedTasks = computed(() => queue.tasks.filter((task) => selectedTaskSet.value.has(task.id)))
 const bulkScopeTasks = computed(() => (selectedTasks.value.length > 0 ? selectedTasks.value : visibleTasks.value))
 const pausableTaskIds = computed(() => bulkScopeTasks.value.filter((task) => isPausable(task.status)).map((task) => task.id))
+const cancellableTaskIds = computed(() => bulkScopeTasks.value.filter((task) => isCancellable(task.status)).map((task) => task.id))
 const resumableTaskIds = computed(() => bulkScopeTasks.value.filter((task) => task.status === 'paused').map((task) => task.id))
 const retryableTaskIds = computed(() => bulkScopeTasks.value.filter((task) => isRetryable(task.status)).map((task) => task.id))
 const removableTaskIds = computed(() => selectedTasks.value.map((task) => task.id))
@@ -147,6 +148,10 @@ const runBulkPause = () => {
   void queue.bulkPause(pausableTaskIds.value)
 }
 
+const runBulkCancel = () => {
+  void queue.bulkCancel(cancellableTaskIds.value)
+}
+
 const runBulkResume = () => {
   void queue.bulkResume(resumableTaskIds.value)
 }
@@ -170,6 +175,9 @@ const runClearCompleted = () => {
 const isPausable = (status: TaskStatus): boolean =>
   status === 'waiting' || status === 'parsing' || status === 'downloading' || status === 'muxing'
 
+const isCancellable = (status: TaskStatus): boolean =>
+  status === 'waiting' || status === 'parsing' || status === 'downloading' || status === 'muxing' || status === 'paused'
+
 const isRetryable = (status: TaskStatus): boolean => status === 'failed' || status === 'cancelled' || status === 'completed'
 </script>
 
@@ -186,12 +194,14 @@ const isRetryable = (status: TaskStatus): boolean => status === 'failed' || stat
           :selected-count="queue.selectedTaskIds.length"
           :completed-count="completedTaskCount"
           :can-pause="pausableTaskIds.length > 0"
+          :can-cancel="cancellableTaskIds.length > 0"
           :can-resume="resumableTaskIds.length > 0"
           :can-retry="retryableTaskIds.length > 0"
           :can-refresh-retry="retryableTaskIds.length > 0"
           :can-remove="removableTaskIds.length > 0"
           :loading="queue.loading"
           @pause="runBulkPause"
+          @cancel="runBulkCancel"
           @resume="runBulkResume"
           @retry="runBulkRetry"
           @refresh-retry="runBulkRefreshRetry"

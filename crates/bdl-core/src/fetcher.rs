@@ -1,6 +1,9 @@
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 
 use async_trait::async_trait;
 use futures::{StreamExt, future::try_join_all};
@@ -59,6 +62,33 @@ pub struct FetchOutcome {
 
 pub type ProgressSender = UnboundedSender<FetchProgress>;
 
+#[derive(Debug, Clone)]
+pub struct FetchCancelToken {
+    cancelled: Arc<AtomicBool>,
+}
+
+impl FetchCancelToken {
+    pub fn new() -> Self {
+        Self {
+            cancelled: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    pub fn cancel(&self) {
+        self.cancelled.store(true, Ordering::SeqCst);
+    }
+
+    pub fn is_cancelled(&self) -> bool {
+        self.cancelled.load(Ordering::SeqCst)
+    }
+}
+
+impl Default for FetchCancelToken {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct RemoteResourceMetadata {
     total_bytes: Option<u64>,
@@ -81,6 +111,7 @@ struct SegmentFetchRequest<'a> {
     progress: Option<ProgressSender>,
     progress_by_segment: Arc<Mutex<Vec<u64>>>,
     segment: SegmentRequest,
+    cancel_token: FetchCancelToken,
 }
 
 #[async_trait]
@@ -130,6 +161,18 @@ impl Fetcher for ReqwestFetcher {
         resource: &DownloadResource,
         progress: Option<ProgressSender>,
     ) -> BdlResult<FetchOutcome> {
+        self.fetch_cancelable(resource, progress, FetchCancelToken::default())
+            .await
+    }
+}
+
+impl ReqwestFetcher {
+    pub async fn fetch_cancelable(
+        &self,
+        resource: &DownloadResource,
+        progress: Option<ProgressSender>,
+        cancel_token: FetchCancelToken,
+    ) -> BdlResult<FetchOutcome> {
         let urls = resource
             .current_urls
             .iter()
@@ -144,9 +187,14 @@ impl Fetcher for ReqwestFetcher {
         let attempts = self.config.max_retries + 1;
         let mut attempted = 0;
         for _ in 0..attempts {
+            ensure_not_cancelled(&cancel_token)?;
             for url in &urls {
+                ensure_not_cancelled(&cancel_token)?;
                 attempted += 1;
-                match self.fetch_once(resource, url, progress.clone()).await {
+                match self
+                    .fetch_once(resource, url, progress.clone(), cancel_token.clone())
+                    .await
+                {
                     Ok(outcome) => return Ok(outcome),
                     Err(error) => {
                         last_error = Some(error.to_string());
@@ -170,19 +218,23 @@ impl ReqwestFetcher {
         resource: &DownloadResource,
         url: &str,
         progress: Option<ProgressSender>,
+        cancel_token: FetchCancelToken,
     ) -> BdlResult<FetchOutcome> {
+        ensure_not_cancelled(&cancel_token)?;
         ensure_parent_dir(&resource.target_path).await?;
         ensure_parent_dir(&resource.temp_path).await?;
 
         let headers = request_headers(resource)?;
         let metadata = self.resource_metadata(url, headers.clone()).await?;
+        ensure_not_cancelled(&cancel_token)?;
         let resume_from = resume_offset(&resource.temp_path, &metadata).await?;
         if should_fetch_segmented(&metadata, resume_from, self.config.segment_count) {
             return self
-                .fetch_segmented(resource, url, headers, metadata, progress)
+                .fetch_segmented(resource, url, headers, metadata, progress, cancel_token)
                 .await;
         }
 
+        ensure_not_cancelled(&cancel_token)?;
         let mut request = self.client.get(url).headers(headers);
         if resume_from > 0 {
             request = request.header(RANGE, format!("bytes={resume_from}-"));
@@ -206,6 +258,7 @@ impl ReqwestFetcher {
         let mut downloaded_bytes = resume_from;
         let mut stream = response.bytes_stream();
         while let Some(chunk) = stream.next().await {
+            ensure_not_cancelled(&cancel_token)?;
             let chunk = chunk.map_err(|error| fetch_error(format!("读取响应失败: {error}")))?;
             file.write_all(&chunk).await?;
             downloaded_bytes += chunk.len() as u64;
@@ -248,7 +301,9 @@ impl ReqwestFetcher {
         headers: HeaderMap,
         metadata: RemoteResourceMetadata,
         progress: Option<ProgressSender>,
+        cancel_token: FetchCancelToken,
     ) -> BdlResult<FetchOutcome> {
+        ensure_not_cancelled(&cancel_token)?;
         let total_bytes = metadata
             .total_bytes
             .expect("segmented fetch requires content length");
@@ -274,10 +329,12 @@ impl ReqwestFetcher {
                     start: *start,
                     end: *end,
                 },
+                cancel_token: cancel_token.clone(),
             })
         }))
         .await?;
 
+        ensure_not_cancelled(&cancel_token)?;
         let mut temp_file = OpenOptions::new()
             .create(true)
             .write(true)
@@ -314,7 +371,9 @@ impl ReqwestFetcher {
             progress,
             progress_by_segment,
             segment,
+            cancel_token,
         } = request;
+        ensure_not_cancelled(&cancel_token)?;
         let segment_path = segment_path_for(&resource.temp_path, segment.index);
         let expected_len = segment.end - segment.start + 1;
         let response = self
@@ -342,6 +401,7 @@ impl ReqwestFetcher {
         let mut downloaded_bytes = 0_u64;
         let mut stream = response.bytes_stream();
         while let Some(chunk) = stream.next().await {
+            ensure_not_cancelled(&cancel_token)?;
             let chunk = chunk.map_err(|error| fetch_error(format!("读取分段响应失败: {error}")))?;
             file.write_all(&chunk).await?;
             downloaded_bytes += chunk.len() as u64;
@@ -443,6 +503,14 @@ fn send_progress(
             total_bytes,
         });
     }
+}
+
+fn ensure_not_cancelled(cancel_token: &FetchCancelToken) -> BdlResult<()> {
+    if cancel_token.is_cancelled() {
+        return Err(fetch_error("下载已暂停或取消。"));
+    }
+
+    Ok(())
 }
 
 pub fn state_path_for(temp_path: &Path) -> PathBuf {

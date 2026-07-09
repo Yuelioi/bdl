@@ -117,6 +117,9 @@ export const queueRefreshUrlsAndRetry = (taskId: string) =>
 export const queueBulkPause = (request: BulkQueueRequest) =>
   invokeCommand<BulkQueueResult>('queue_bulk_pause', { request })
 
+export const queueBulkCancel = (request: BulkQueueRequest) =>
+  invokeCommand<BulkQueueResult>('queue_bulk_cancel', { request })
+
 export const queueBulkResume = (request: BulkQueueRequest) =>
   invokeCommand<BulkQueueResult>('queue_bulk_resume', { request })
 

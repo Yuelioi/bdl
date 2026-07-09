@@ -3,6 +3,7 @@ const {
   selectedCount,
   completedCount,
   canPause,
+  canCancel,
   canResume,
   canRetry,
   canRefreshRetry,
@@ -12,6 +13,7 @@ const {
   selectedCount: number
   completedCount: number
   canPause: boolean
+  canCancel: boolean
   canResume: boolean
   canRetry: boolean
   canRefreshRetry: boolean
@@ -21,6 +23,7 @@ const {
 
 const emit = defineEmits<{
   pause: []
+  cancel: []
   resume: []
   retry: []
   refreshRetry: []
@@ -38,6 +41,7 @@ const emit = defineEmits<{
 
     <div v-if="selectedCount > 0" class="bulk-actions">
       <button type="button" :disabled="loading || !canPause" @click="emit('pause')">暂停</button>
+      <button type="button" :disabled="loading || !canCancel" @click="emit('cancel')">取消</button>
       <button type="button" :disabled="loading || !canResume" @click="emit('resume')">继续</button>
       <button type="button" :disabled="loading || !canRetry" @click="emit('retry')">重试</button>
       <button type="button" :disabled="loading || !canRefreshRetry" @click="emit('refreshRetry')">
@@ -55,6 +59,7 @@ const emit = defineEmits<{
         <summary>更多</summary>
         <div>
           <button type="button" :disabled="loading || !canPause" @click="emit('pause')">暂停全部</button>
+          <button type="button" :disabled="loading || !canCancel" @click="emit('cancel')">取消全部</button>
           <button type="button" :disabled="loading || !canResume" @click="emit('resume')">继续全部</button>
         </div>
       </details>

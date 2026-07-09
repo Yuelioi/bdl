@@ -5,6 +5,7 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use bdl_core::account::{AccountSummary, ImportedCookie, verify_cookie_session};
+use bdl_core::fetcher::FetchCancelToken;
 use bdl_core::ids::{PartId, SourceId};
 use bdl_core::input::{ClassifiedInput, classify_input};
 use bdl_core::model::{
@@ -45,6 +46,7 @@ pub struct AppState {
     account: Mutex<AccountSnapshot>,
     account_cookie: Mutex<Option<String>>,
     queue_worker_active: AtomicBool,
+    queue_cancellations: Mutex<HashMap<String, FetchCancelToken>>,
     startup_recovery: Mutex<StartupRecoverySnapshot>,
     secure_store: SecureStore,
 }
@@ -91,6 +93,7 @@ impl AppState {
             account: Mutex::new(account),
             account_cookie: Mutex::new(account_cookie),
             queue_worker_active: AtomicBool::new(false),
+            queue_cancellations: Mutex::new(HashMap::new()),
             startup_recovery: Mutex::new(startup_recovery),
             secure_store,
         })
@@ -282,9 +285,44 @@ impl AppState {
             })?;
 
         queue[task_index].status = status;
+        if status.can_start() {
+            reset_interrupted_resources(&mut queue[task_index].resources);
+        }
         let task = queue[task_index].clone();
         self.persist_queue(&queue)?;
         Ok(task)
+    }
+
+    pub fn register_task_cancel_token(&self, task_id: &str) -> BdlResult<FetchCancelToken> {
+        let token = FetchCancelToken::new();
+        self.queue_cancellations
+            .lock()
+            .map_err(|_| state_poisoned("queue_cancellations"))?
+            .insert(task_id.to_owned(), token.clone());
+        Ok(token)
+    }
+
+    pub fn cancel_running_task(&self, task_id: &str) -> BdlResult<bool> {
+        let token = self
+            .queue_cancellations
+            .lock()
+            .map_err(|_| state_poisoned("queue_cancellations"))?
+            .get(task_id)
+            .cloned();
+        if let Some(token) = token {
+            token.cancel();
+            return Ok(true);
+        }
+
+        Ok(false)
+    }
+
+    pub fn clear_task_cancel_token(&self, task_id: &str) -> BdlResult<()> {
+        self.queue_cancellations
+            .lock()
+            .map_err(|_| state_poisoned("queue_cancellations"))?
+            .remove(task_id);
+        Ok(())
     }
 
     pub fn update_resource_status(
@@ -404,6 +442,7 @@ impl AppState {
     }
 
     pub fn remove_task(&self, task_id: &str) -> BdlResult<bool> {
+        let _ = self.cancel_running_task(task_id)?;
         let mut queue = self.queue.lock().map_err(|_| state_poisoned("queue"))?;
         let original_len = queue.len();
         queue.retain(|task| task.id != task_id);
@@ -1703,6 +1742,18 @@ mod tests {
             .update_task_status("task:paused", TaskStatus::Waiting)
             .expect("paused task should resume to waiting");
         assert_eq!(resumed_task.status, TaskStatus::Waiting);
+        assert_eq!(resumed_task.resources[0].status, ResourceStatus::Pending);
+
+        let cancel_token = state
+            .register_task_cancel_token("task:waiting")
+            .expect("cancel token should register");
+        assert!(!cancel_token.is_cancelled());
+        assert!(
+            state
+                .cancel_running_task("task:waiting")
+                .expect("running task should cancel")
+        );
+        assert!(cancel_token.is_cancelled());
 
         let retried_task = state
             .retry_task("task:failed")
@@ -2142,6 +2193,7 @@ mod tests {
             account: Mutex::new(AccountSummary::default()),
             account_cookie: Mutex::new(None),
             queue_worker_active: AtomicBool::new(false),
+            queue_cancellations: Mutex::new(HashMap::new()),
             startup_recovery: Mutex::new(StartupRecoverySnapshot::default()),
             secure_store: SecureStore::in_memory(),
         }

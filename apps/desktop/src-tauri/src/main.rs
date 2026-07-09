@@ -22,6 +22,7 @@ fn main() {
             bdl_tauri::commands::queue_retry,
             bdl_tauri::commands::queue_refresh_urls_and_retry,
             bdl_tauri::commands::queue_bulk_pause,
+            bdl_tauri::commands::queue_bulk_cancel,
             bdl_tauri::commands::queue_bulk_resume,
             bdl_tauri::commands::queue_bulk_retry,
             bdl_tauri::commands::queue_bulk_refresh_urls_and_retry,

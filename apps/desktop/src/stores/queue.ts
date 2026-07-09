@@ -10,6 +10,7 @@ import type {
 } from '../api/dto'
 import {
   queueBulkPause,
+  queueBulkCancel,
   queueBulkRefreshUrlsAndRetry,
   queueBulkRemove,
   queueBulkResume,
@@ -339,6 +340,9 @@ export const useQueueStore = defineStore('queue', {
     },
     async bulkPause(taskIds: string[]) {
       await this.runBulkCommand(() => queueBulkPause({ task_ids: taskIds }), '暂停')
+    },
+    async bulkCancel(taskIds: string[]) {
+      await this.runBulkCommand(() => queueBulkCancel({ task_ids: taskIds }), '取消')
     },
     async bulkResume(taskIds: string[]) {
       await this.runBulkCommand(() => queueBulkResume({ task_ids: taskIds }), '继续')
