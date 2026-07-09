@@ -10,15 +10,17 @@ import {
   resourceIntentText,
   statusLabel,
   type TaskActionKind,
+  type TransferProgressSnapshot,
 } from '../stores/transferView'
 import UiButton from './Button.vue'
 import UiProgressBar from './ProgressBar.vue'
 import UiStatusBadge from './StatusBadge.vue'
 import UiTabs from './Tabs.vue'
 
-const { task, progress, logs, logsLoading = false } = defineProps<{
+const { task, progress, transferProgress = null, logs, logsLoading = false } = defineProps<{
   task: DownloadTask | null
   progress: number
+  transferProgress?: TransferProgressSnapshot | null
   logs: QueueLogEntry[]
   logsLoading?: boolean
 }>()
@@ -39,7 +41,7 @@ const tabs = computed(() => [
   { label: '事件', value: 'events', count: timeline.value.length },
   { label: '原始日志', value: 'raw_logs', count: logs.length },
 ])
-const view = computed(() => (task ? createTransferTaskView(task, progress, logs) : null))
+const view = computed(() => (task ? createTransferTaskView(task, progress, logs, transferProgress) : null))
 const diagnostic = computed(() => (task ? createTaskDiagnosticView(task, logs) : null))
 const timeline = computed(() => (task ? createTaskTimeline(task, logs) : []))
 const failedTrackCount = computed(

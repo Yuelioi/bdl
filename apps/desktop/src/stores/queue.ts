@@ -1,7 +1,7 @@
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { defineStore } from 'pinia'
 
-import type { BulkQueueResult, DownloadTask, QueueLogEntry } from '../api/dto'
+import type { BulkQueueResult, DownloadTask, QueueLogEntry, QueueProgressEntry } from '../api/dto'
 import {
   queueBulkPause,
   queueBulkRefreshUrlsAndRetry,
@@ -21,7 +21,12 @@ import {
   queueRetry,
 } from '../api/tauri'
 import { useUiStore } from './ui'
-import { defaultQueueFilter, filterTaskByWorkflow, type QueueFilter } from './transferView'
+import {
+  defaultQueueFilter,
+  filterTaskByWorkflow,
+  type QueueFilter,
+  type TransferProgressSnapshot,
+} from './transferView'
 
 export type { QueueFilter } from './transferView'
 
@@ -33,9 +38,19 @@ interface QueueState {
   selectedTaskIds: string[]
   logsByTask: Record<string, QueueLogEntry[]>
   logsLoadingByTask: Record<string, boolean>
+  progressByTask: Record<string, QueueTaskProgressState>
   loading: boolean
   listening: boolean
   unlisten: UnlistenFn[]
+}
+
+interface ResourceProgressState {
+  downloadedBytes: number
+  totalBytes: number | null
+}
+
+interface QueueTaskProgressState extends TransferProgressSnapshot {
+  resources: Record<string, ResourceProgressState>
 }
 
 export const useQueueStore = defineStore('queue', {
@@ -47,6 +62,7 @@ export const useQueueStore = defineStore('queue', {
     selectedTaskIds: [],
     logsByTask: {},
     logsLoadingByTask: {},
+    progressByTask: {},
     loading: false,
     listening: false,
     unlisten: [],
@@ -96,6 +112,11 @@ export const useQueueStore = defineStore('queue', {
           this.logsByTask[event.payload.task_id] = mergeLogs([event.payload], list)
         }),
       )
+      this.unlisten.push(
+        await listen<QueueProgressEntry>('queue://progress-updated', (event) => {
+          this.applyProgress(event.payload)
+        }),
+      )
     },
     setFilter(filter: QueueFilter) {
       this.activeFilter = filter
@@ -112,6 +133,9 @@ export const useQueueStore = defineStore('queue', {
         this.tasks.unshift(task)
       } else {
         this.tasks[index] = task
+      }
+      if (task.status === 'waiting' && task.resources.every((resource) => resource.status === 'pending')) {
+        delete this.progressByTask[task.id]
       }
       this.applyDefaultFilter()
       this.selectedTaskId = this.selectedTaskId ?? task.id
@@ -162,12 +186,64 @@ export const useQueueStore = defineStore('queue', {
         return 100
       }
 
+      const transferProgress = this.progressByTask[task.id]
+      if (transferProgress?.totalBytes && transferProgress.totalBytes > 0) {
+        return Math.min(99, Math.round((transferProgress.downloadedBytes / transferProgress.totalBytes) * 100))
+      }
+
       if (task.resources.length === 0) {
         return 0
       }
 
       const completed = task.resources.filter((resource) => resource.status === 'completed').length
       return Math.round((completed / task.resources.length) * 100)
+    },
+    taskTransferProgress(taskId: string): TransferProgressSnapshot | null {
+      return this.progressByTask[taskId] ?? null
+    },
+    totalSpeedBytesPerSecond(): number {
+      const activeTaskIds = new Set(
+        this.tasks
+          .filter((task) => task.status === 'downloading')
+          .map((task) => task.id),
+      )
+
+      return Object.entries(this.progressByTask).reduce((total, [taskId, progress]) => {
+        if (!activeTaskIds.has(taskId)) {
+          return total
+        }
+
+        return total + progress.speedBytesPerSecond
+      }, 0)
+    },
+    applyProgress(entry: QueueProgressEntry) {
+      const existing = this.progressByTask[entry.task_id]
+      const resources = {
+        ...(existing?.resources ?? {}),
+        [entry.resource_id]: {
+          downloadedBytes: entry.downloaded_bytes,
+          totalBytes: entry.total_bytes,
+        },
+      }
+      const downloadedBytes = sumDownloadedBytes(resources)
+      const totalBytes = sumKnownTotalBytes(resources)
+      const updatedAt = parseEventTime(entry.created_at)
+      const previousDownloaded = existing?.downloadedBytes ?? downloadedBytes
+      const previousAt = existing?.updatedAt ?? updatedAt
+      const elapsedSeconds = Math.max((updatedAt - previousAt) / 1000, 0)
+      const downloadedDelta = downloadedBytes - previousDownloaded
+      const speedBytesPerSecond =
+        elapsedSeconds > 0 && downloadedDelta >= 0
+          ? downloadedDelta / elapsedSeconds
+          : existing?.speedBytesPerSecond ?? 0
+
+      this.progressByTask[entry.task_id] = {
+        resources,
+        downloadedBytes,
+        totalBytes,
+        speedBytesPerSecond,
+        updatedAt,
+      }
     },
     async pause(taskId: string) {
       await this.runTaskCommand(() => queuePause(taskId), '已暂停')
@@ -212,6 +288,7 @@ export const useQueueStore = defineStore('queue', {
         this.selectedTaskIds = this.selectedTaskIds.filter((selectedTaskId) => selectedTaskId !== taskId)
         delete this.logsByTask[taskId]
         delete this.logsLoadingByTask[taskId]
+        delete this.progressByTask[taskId]
         this.ensureSelectedTask(true)
         if (this.selectedTaskId) {
           void this.loadLogs(this.selectedTaskId)
@@ -301,6 +378,7 @@ export const useQueueStore = defineStore('queue', {
         for (const taskId of removed) {
           delete this.logsByTask[taskId]
           delete this.logsLoadingByTask[taskId]
+          delete this.progressByTask[taskId]
         }
       }
 
@@ -341,6 +419,26 @@ const mergeLogs = (...sources: QueueLogEntry[][]): QueueLogEntry[] => {
 
 const logKey = (log: QueueLogEntry): string =>
   `${log.task_id}\n${log.created_at}\n${log.level}\n${log.message}`
+
+const sumDownloadedBytes = (resources: Record<string, ResourceProgressState>): number =>
+  Object.values(resources).reduce((total, resource) => total + resource.downloadedBytes, 0)
+
+const sumKnownTotalBytes = (resources: Record<string, ResourceProgressState>): number | null => {
+  const values = Object.values(resources)
+    .map((resource) => resource.totalBytes)
+    .filter((value): value is number => typeof value === 'number')
+
+  if (!values.length) {
+    return null
+  }
+
+  return values.reduce((total, value) => total + value, 0)
+}
+
+const parseEventTime = (value: string): number => {
+  const parsed = Date.parse(value)
+  return Number.isNaN(parsed) ? Date.now() : parsed
+}
 
 export const sourceReference = (sourceId: string): string => {
   if (sourceId.startsWith('video:')) {

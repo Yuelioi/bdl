@@ -4,7 +4,7 @@ import { computed, onMounted, ref } from 'vue'
 import type { TaskStatus } from '../api/dto'
 import { sourceReference, useQueueStore, type QueueFilter } from '../stores/queue'
 import { useSettingsStore } from '../stores/settings'
-import { createTransferTaskView, type TaskActionKind } from '../stores/transferView'
+import { createTransferTaskView, formatSpeedLabel, type TaskActionKind } from '../stores/transferView'
 import { useUiStore } from '../stores/ui'
 import UiButton from '../ui/Button.vue'
 import UiTabs from '../ui/Tabs.vue'
@@ -42,7 +42,12 @@ const visibleTasks = computed(() => {
 })
 const taskViews = computed(() =>
   visibleTasks.value.map((task) =>
-    createTransferTaskView(task, queue.taskProgress(task), queue.logsByTask[task.id] ?? []),
+    createTransferTaskView(
+      task,
+      queue.taskProgress(task),
+      queue.logsByTask[task.id] ?? [],
+      queue.taskTransferProgress(task.id),
+    ),
   ),
 )
 
@@ -51,6 +56,9 @@ const selectedLogsLoading = computed(() =>
   queue.selectedTaskId ? Boolean(queue.logsLoadingByTask[queue.selectedTaskId]) : false,
 )
 const selectedProgress = computed(() => (queue.selectedTask ? queue.taskProgress(queue.selectedTask) : 0))
+const selectedTransferProgress = computed(() =>
+  queue.selectedTaskId ? queue.taskTransferProgress(queue.selectedTaskId) : null,
+)
 const selectedTaskSet = computed(() => new Set(queue.selectedTaskIds))
 const selectedTasks = computed(() => queue.tasks.filter((task) => selectedTaskSet.value.has(task.id)))
 const bulkScopeTasks = computed(() => (selectedTasks.value.length > 0 ? selectedTasks.value : visibleTasks.value))
@@ -68,6 +76,7 @@ const queuedTaskCount = computed(
 const failedTaskCount = computed(
   () => queue.tasks.filter((task) => task.status === 'failed' || task.status === 'cancelled').length,
 )
+const totalSpeedLabel = computed(() => formatSpeedLabel(queue.totalSpeedBytesPerSecond()))
 const emptyTitle = computed(() => {
   if (queue.tasks.length === 0) {
     return '还没有传输任务'
@@ -191,7 +200,7 @@ const isRetryable = (status: TaskStatus): boolean => status === 'failed' || stat
         <span>下载 {{ downloadingTaskCount }}</span>
         <span>队列 {{ queuedTaskCount }}</span>
         <span :class="{ danger: failedTaskCount > 0 }">失败 {{ failedTaskCount }}</span>
-        <span>速度 --</span>
+        <span>速度 {{ totalSpeedLabel }}</span>
         <span>并发 {{ settings.saved.concurrent_tasks }}</span>
       </div>
 
@@ -250,6 +259,7 @@ const isRetryable = (status: TaskStatus): boolean => status === 'failed' || stat
       <TaskInspector
         :task="queue.selectedTask"
         :progress="selectedProgress"
+        :transfer-progress="selectedTransferProgress"
         :logs="selectedLogs"
         :logs-loading="selectedLogsLoading"
         @task-action="handleSelectedTaskAction"

@@ -40,6 +40,13 @@ export interface TaskTimelineEvent {
   tone: DiagnosticTone
 }
 
+export interface TransferProgressSnapshot {
+  downloadedBytes: number
+  totalBytes: number | null
+  speedBytesPerSecond: number
+  updatedAt: number
+}
+
 export interface TransferTaskView {
   id: string
   displayTitle: string
@@ -66,6 +73,7 @@ export const createTransferTaskView = (
   task: DownloadTask,
   progress: number,
   logs: QueueLogEntry[] = [],
+  transferProgress: TransferProgressSnapshot | null = null,
 ): TransferTaskView => {
   const titleParts = splitTaskTitle(task.title)
   const issue = classifyTaskIssue(task, logs)
@@ -80,9 +88,9 @@ export const createTransferTaskView = (
     statusBadge: completedWithWarnings ? 'warning' : statusBadge(task.status),
     progressValue: progress,
     progressLabel: `${progress}%`,
-    speedLabel: '--',
-    etaLabel: '--',
-    sizeLabel: '--',
+    speedLabel: transferProgress ? formatSpeedLabel(transferProgress.speedBytesPerSecond) : '--',
+    etaLabel: transferProgress ? etaLabel(transferProgress) : '--',
+    sizeLabel: transferProgress ? sizeLabel(transferProgress) : '--',
     issueLabel: issue.label,
     shortLocation: shortLocation(task.output_path),
     fullLocation: outputDir(task.output_path),
@@ -93,6 +101,60 @@ export const createTransferTaskView = (
     primaryActionIcon: actionIcon(primaryAction),
     secondaryActions: secondaryActionsForTask(task, primaryAction),
   }
+}
+
+export const formatSpeedLabel = (bytesPerSecond: number): string => {
+  if (bytesPerSecond <= 0 || !Number.isFinite(bytesPerSecond)) {
+    return '--'
+  }
+
+  return `${formatBytes(bytesPerSecond)}/s`
+}
+
+const sizeLabel = (progress: TransferProgressSnapshot): string => {
+  if (progress.totalBytes && progress.totalBytes > 0) {
+    return `${formatBytes(progress.downloadedBytes)} / ${formatBytes(progress.totalBytes)}`
+  }
+
+  return progress.downloadedBytes > 0 ? formatBytes(progress.downloadedBytes) : '--'
+}
+
+const etaLabel = (progress: TransferProgressSnapshot): string => {
+  if (!progress.totalBytes || progress.totalBytes <= 0 || progress.speedBytesPerSecond <= 0) {
+    return '--'
+  }
+
+  const remainingBytes = Math.max(0, progress.totalBytes - progress.downloadedBytes)
+  if (remainingBytes === 0) {
+    return '0s'
+  }
+
+  const seconds = Math.ceil(remainingBytes / progress.speedBytesPerSecond)
+  if (seconds < 60) {
+    return `${seconds}s`
+  }
+  if (seconds < 3600) {
+    return `${Math.ceil(seconds / 60)}m`
+  }
+
+  return `${Math.ceil(seconds / 3600)}h`
+}
+
+const formatBytes = (value: number): string => {
+  if (!Number.isFinite(value) || value <= 0) {
+    return '0 B'
+  }
+
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  let size = value
+  let unitIndex = 0
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024
+    unitIndex += 1
+  }
+
+  const precision = unitIndex === 0 || size >= 10 ? 0 : 1
+  return `${size.toFixed(precision)} ${units[unitIndex]}`
 }
 
 export const createTaskDiagnosticView = (task: DownloadTask, logs: QueueLogEntry[] = []): TaskDiagnosticView => {

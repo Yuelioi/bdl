@@ -2,7 +2,9 @@ use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
 use bdl_core::account::{QrLoginSession, QrLoginStatus, poll_qr_login, start_qr_login};
-use bdl_core::fetcher::{FetchConfig, Fetcher, ReqwestFetcher, state_path_for};
+use bdl_core::fetcher::{
+    FetchConfig, FetchProgress, Fetcher, ProgressSender, ReqwestFetcher, state_path_for,
+};
 use bdl_core::ids::{PartId, SourceId};
 use bdl_core::model::NormalizedSourceTree;
 use bdl_core::muxer::{
@@ -23,6 +25,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_opener::OpenerExt;
 use tokio::fs;
+use tokio::sync::mpsc::unbounded_channel;
 
 use crate::events;
 use crate::state::{AccountSnapshot, AppState, SettingsSnapshot};
@@ -77,6 +80,15 @@ pub struct BulkQueueResult {
     pub updated: Vec<DownloadTask>,
     pub removed: Vec<String>,
     pub failed: Vec<BulkQueueFailure>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct QueueProgressEntry {
+    pub task_id: String,
+    pub resource_id: String,
+    pub downloaded_bytes: u64,
+    pub total_bytes: Option<u64>,
+    pub created_at: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -841,7 +853,8 @@ async fn run_download_task(
             &format!("下载资源 {}", resource_label(resource)),
         )?;
 
-        if let Err(error) = fetcher.fetch(resource, None).await {
+        let progress = progress_sender(app, &task.id);
+        if let Err(error) = fetcher.fetch(resource, Some(progress)).await {
             let updated =
                 state.update_resource_status(&task.id, &resource.id, ResourceStatus::Failed)?;
             events::emit(app, events::QUEUE_TASK_UPDATED, &updated)?;
@@ -937,6 +950,29 @@ fn should_fetch(resource: &DownloadResource) -> bool {
             | DownloadResourceIntent::Subtitle
             | DownloadResourceIntent::Danmaku
     ) && !resource.current_urls.is_empty()
+}
+
+fn progress_sender(app: &AppHandle, task_id: &str) -> ProgressSender {
+    let (sender, mut receiver) = unbounded_channel::<FetchProgress>();
+    let app = app.clone();
+    let task_id = task_id.to_owned();
+
+    tauri::async_runtime::spawn(async move {
+        while let Some(progress) = receiver.recv().await {
+            let entry = QueueProgressEntry {
+                task_id: task_id.clone(),
+                resource_id: progress.resource_id,
+                downloaded_bytes: progress.downloaded_bytes,
+                total_bytes: progress.total_bytes,
+                created_at: Utc::now().to_rfc3339(),
+            };
+            if let Err(error) = events::emit(&app, events::QUEUE_PROGRESS_UPDATED, &entry) {
+                tracing::warn!("failed to emit queue progress: {}", error.message);
+            }
+        }
+    });
+
+    sender
 }
 
 struct MuxAttachmentSelection {

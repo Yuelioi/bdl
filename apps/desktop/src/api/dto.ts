@@ -170,6 +170,14 @@ export interface QueueLogEntry {
   created_at: string
 }
 
+export interface QueueProgressEntry {
+  task_id: string
+  resource_id: string
+  downloaded_bytes: number
+  total_bytes: number | null
+  created_at: string
+}
+
 export type DuplicateNamingStrategy = 'append_suffix' | 'overwrite_existing'
 export type VideoCodecPreference = 'auto' | 'avc' | 'hevc' | 'av1'
 export type MissingQualityPolicy = 'lower' | 'skip' | 'ask'

@@ -85,6 +85,7 @@ const toggleVisible = () => {
 
       <span class="progress-cell" role="cell">
         <strong>{{ view.progressLabel }}</strong>
+        <small>{{ view.sizeLabel }}</small>
         <UiProgressBar :value="view.progressValue" />
       </span>
 
@@ -250,6 +251,7 @@ const toggleVisible = () => {
 }
 
 .progress-cell strong,
+.progress-cell small,
 .metric-cell,
 .issue-cell,
 .location-cell {
@@ -260,6 +262,12 @@ const toggleVisible = () => {
 .progress-cell strong {
   color: var(--color-text);
   font-weight: 700;
+}
+
+.progress-cell small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .progress-cell :deep(.progress-track) {
