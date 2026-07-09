@@ -21,8 +21,20 @@ interface PageTreeNode {
   label: string
   meta?: string
   partIds: string[]
+  searchText: string
+  sortTitle: string
+  durationSeconds: number | null
+  sourceOrder: number
+  leafPartId?: string
   children?: PageTreeNode[]
 }
+
+interface VisiblePartEntry {
+  id: string
+  label: string
+}
+
+type ResultSortMode = 'source' | 'title_asc' | 'duration_desc'
 
 const sourceKindLabels: Record<SourceKind, string> = {
   video: '视频',
@@ -48,6 +60,10 @@ const mediaMode = ref<DownloadMediaMode>('audio_video')
 const videoQuality = ref('best')
 const audioQuality = ref('best')
 const videoCodec = ref<VideoCodecPreference>('auto')
+const resultQuery = ref('')
+const resultSort = ref<ResultSortMode>('source')
+const rangeExpression = ref('')
+const rangeError = ref('')
 
 const mediaModeOptions = [
   { label: '音视频', value: 'audio_video' },
@@ -86,16 +102,33 @@ const archiveModeOptions = [
   { label: '媒体 + 全部可用素材', value: 'complete_archive' },
   { label: '使用设置页自定义素材', value: 'custom' },
 ]
+const resultSortOptions = [
+  { label: '原始顺序', value: 'source' },
+  { label: '标题 A-Z', value: 'title_asc' },
+  { label: '时长优先', value: 'duration_desc' },
+]
 
 const activeSource = computed(() => parse.activeSource)
 const selectedIds = computed(() => parse.activeSelection)
 const selectedCount = computed(() => selectedIds.value.length)
-const treeNodes = computed(() => (activeSource.value ? toTreeNodes(activeSource.value) : []))
+const treeNodes = computed(() => {
+  if (!activeSource.value) {
+    return []
+  }
+
+  const filtered = filterTreeNodes(toTreeNodes(activeSource.value), resultQuery.value)
+  return numberVisibleParts(sortTreeNodes(filtered, resultSort.value))
+})
+const visiblePartEntries = computed(() => flattenVisibleParts(treeNodes.value))
+const visiblePartCount = computed(() => visiblePartEntries.value.length)
 const createLoading = computed(() => Boolean(parse.loadingBySource.__create__))
 const activeLoading = computed(() => Boolean(activeSource.value && parse.loadingBySource[activeSource.value.source.id]))
 const activeError = computed(() => (activeSource.value ? parse.errorsBySource[activeSource.value.source.id] : null))
 const canCreateTasks = computed(() => Boolean(activeSource.value && selectedCount.value > 0 && !activeLoading.value))
 const canLoadMore = computed(() => Boolean(activeSource.value?.source.has_more && !activeLoading.value))
+const hasResultQuery = computed(() => resultQuery.value.trim().length > 0)
+const canSelectVisible = computed(() => Boolean(activeSource.value && visiblePartCount.value > 0 && !activeLoading.value))
+const canSelectRange = computed(() => Boolean(activeSource.value && rangeExpression.value.trim() && visiblePartCount.value > 0 && !activeLoading.value))
 const createTaskLabel = computed(() => {
   if (activeLoading.value) {
     return '处理中'
@@ -114,6 +147,7 @@ const activeSourceKindLabel = computed(() => (activeSource.value ? sourceKindLab
 const activeSourceTitle = computed(() => activeSource.value?.source.title ?? '')
 const canCloseActiveSource = computed(() => Boolean(activeSource.value && parse.sourceOrder.length > 1))
 const sourceMenuLabel = computed(() => (parse.sourceOrder.length > 0 ? `已解析 ${parse.sourceOrder.length}` : '无记录'))
+const visibleResultLabel = computed(() => (hasResultQuery.value ? `匹配 ${visiblePartCount.value}` : `可见 ${visiblePartCount.value}`))
 const includesVideo = computed(() => mediaMode.value !== 'audio_only')
 const includesAudio = computed(() => mediaMode.value !== 'video_only')
 const downloadSettingsSummary = computed(() => {
@@ -226,7 +260,10 @@ const parseAll = () => {
 
 const selectAllLoaded = () => {
   if (activeSource.value) {
-    parse.selectAllLoaded(activeSource.value.source.id)
+    parse.selectPartIds(
+      activeSource.value.source.id,
+      visiblePartEntries.value.map((entry) => entry.id),
+    )
   }
 }
 
@@ -265,9 +302,25 @@ const toggleNode = (nodeId: string) => {
   }
 }
 
+const selectRange = () => {
+  if (!activeSource.value) {
+    return
+  }
+
+  rangeError.value = ''
+  try {
+    const indexes = parseRangeExpression(rangeExpression.value, visiblePartEntries.value.length)
+    const partIds = indexes.map((index) => visiblePartEntries.value[index].id)
+    parse.selectPartIds(activeSource.value.source.id, partIds)
+    parse.setNotice(`已选中 ${partIds.length} 个可见分集`, 'success')
+  } catch (error) {
+    rangeError.value = errorMessage(error)
+  }
+}
+
 const toTreeNodes = (tree: NormalizedSourceTree): PageTreeNode[] =>
-  tree.groups.flatMap((group) => {
-    const itemNodes = group.items.map((item) => itemNode(item, tree.source.kind)).flat()
+  tree.groups.flatMap((group, groupIndex) => {
+    const itemNodes = group.items.map((item, itemIndex) => itemNode(item, tree.source.kind, itemIndex)).flat()
 
     if (tree.source.kind === 'video' && group.items.length === 1) {
       return videoItemNodes(group.items[0])
@@ -283,12 +336,20 @@ const toTreeNodes = (tree: NormalizedSourceTree): PageTreeNode[] =>
         label: group.title,
         meta: `${group.items.length} 项`,
         partIds: group.items.flatMap((item) => item.parts.map((part) => part.id)),
+        searchText: searchableText(group.title, `${group.items.length} 项`),
+        sortTitle: group.title,
+        durationSeconds: maxDuration(group.items.map((item) => item.duration_seconds)),
+        sourceOrder: groupIndex,
         children: itemNodes,
       },
     ]
   })
 
-const itemNode = (item: NormalizedSourceTree['groups'][number]['items'][number], sourceKind: SourceKind): PageTreeNode[] => {
+const itemNode = (
+  item: NormalizedSourceTree['groups'][number]['items'][number],
+  sourceKind: SourceKind,
+  itemIndex: number,
+): PageTreeNode[] => {
   if (item.parts.length === 1) {
     const part = item.parts[0]
     return [
@@ -297,6 +358,11 @@ const itemNode = (item: NormalizedSourceTree['groups'][number]['items'][number],
         label: item.title || part.title,
         meta: item.owner_name ?? partMeta(item, part),
         partIds: [part.id],
+        searchText: searchableText(item.title, item.owner_name, part.title, part.bvid, part.cid),
+        sortTitle: item.title || part.title,
+        durationSeconds: item.duration_seconds,
+        sourceOrder: itemIndex,
+        leafPartId: part.id,
       },
     ]
   }
@@ -311,6 +377,10 @@ const itemNode = (item: NormalizedSourceTree['groups'][number]['items'][number],
       label: item.title,
       meta: `${item.parts.length} P`,
       partIds: item.parts.map((part) => part.id),
+      searchText: searchableText(item.title, item.owner_name, `${item.parts.length} P`),
+      sortTitle: item.title,
+      durationSeconds: item.duration_seconds,
+      sourceOrder: itemIndex,
       children: item.parts.map((part, index) => partNode(item, part, index)),
     },
   ]
@@ -328,7 +398,148 @@ const partNode = (
   label: part.title || item.title || `P${index + 1}`,
   meta: partMeta(item, part),
   partIds: [part.id],
+  searchText: searchableText(item.title, item.owner_name, part.title, part.bvid, part.cid),
+  sortTitle: part.title || item.title || `P${index + 1}`,
+  durationSeconds: item.duration_seconds,
+  sourceOrder: index,
+  leafPartId: part.id,
 })
+
+const filterTreeNodes = (nodes: PageTreeNode[], query: string): PageTreeNode[] => {
+  const normalized = normalizeSearch(query)
+  if (!normalized) {
+    return nodes.map(cloneTreeNode)
+  }
+
+  return nodes
+    .map((node) => filterTreeNode(node, normalized))
+    .filter((node): node is PageTreeNode => Boolean(node))
+}
+
+const filterTreeNode = (node: PageTreeNode, query: string): PageTreeNode | null => {
+  const children = node.children
+    ?.map((child) => filterTreeNode(child, query))
+    .filter((child): child is PageTreeNode => Boolean(child))
+
+  if (node.searchText.includes(query)) {
+    return cloneTreeNode(node)
+  }
+
+  if (children?.length) {
+    return {
+      ...node,
+      partIds: children.flatMap((child) => child.partIds),
+      children,
+    }
+  }
+
+  return null
+}
+
+const sortTreeNodes = (nodes: PageTreeNode[], mode: ResultSortMode): PageTreeNode[] => {
+  const sorted = nodes.map((node) => ({
+    ...node,
+    children: node.children ? sortTreeNodes(node.children, mode) : undefined,
+  }))
+
+  if (mode === 'source') {
+    return sorted
+  }
+
+  return sorted.sort((left, right) => compareTreeNodes(left, right, mode))
+}
+
+const compareTreeNodes = (left: PageTreeNode, right: PageTreeNode, mode: ResultSortMode): number => {
+  if (mode === 'duration_desc') {
+    const byDuration = (right.durationSeconds ?? -1) - (left.durationSeconds ?? -1)
+    if (byDuration !== 0) {
+      return byDuration
+    }
+  }
+
+  if (mode === 'title_asc' || mode === 'duration_desc') {
+    const byTitle = left.sortTitle.localeCompare(right.sortTitle, 'zh-Hans-CN', { numeric: true, sensitivity: 'base' })
+    if (byTitle !== 0) {
+      return byTitle
+    }
+  }
+
+  return left.sourceOrder - right.sourceOrder
+}
+
+const numberVisibleParts = (nodes: PageTreeNode[]): PageTreeNode[] => {
+  let index = 0
+  const visit = (node: PageTreeNode): PageTreeNode => {
+    const children = node.children?.map(visit)
+    if (!children?.length && node.leafPartId) {
+      index += 1
+      return {
+        ...node,
+        label: `${String(index).padStart(2, '0')}  ${node.label}`,
+      }
+    }
+
+    return { ...node, children }
+  }
+
+  return nodes.map(visit)
+}
+
+const flattenVisibleParts = (nodes: PageTreeNode[]): VisiblePartEntry[] =>
+  nodes.flatMap((node) => {
+    if (node.children?.length) {
+      return flattenVisibleParts(node.children)
+    }
+
+    return node.leafPartId ? [{ id: node.leafPartId, label: node.label }] : []
+  })
+
+const cloneTreeNode = (node: PageTreeNode): PageTreeNode => ({
+  ...node,
+  children: node.children?.map(cloneTreeNode),
+})
+
+const searchableText = (...values: Array<string | number | null | undefined>): string =>
+  values
+    .filter((value) => value !== null && value !== undefined && value !== '')
+    .map((value) => normalizeSearch(String(value)))
+    .join(' ')
+
+const normalizeSearch = (value: string): string => value.trim().toLocaleLowerCase()
+
+const maxDuration = (values: Array<number | null>): number | null => {
+  const durations = values.filter((value): value is number => typeof value === 'number')
+  return durations.length ? Math.max(...durations) : null
+}
+
+const parseRangeExpression = (value: string, total: number): number[] => {
+  const expression = value.trim()
+  if (!expression) {
+    throw new Error('请输入范围')
+  }
+
+  const selected = new Set<number>()
+  for (const token of expression.split(/[,，\s]+/).filter(Boolean)) {
+    const match = token.match(/^(\d+)(?:-(\d+))?$/)
+    if (!match) {
+      throw new Error(`范围格式无效：${token}`)
+    }
+
+    const start = Number(match[1])
+    const end = Number(match[2] ?? match[1])
+    const min = Math.min(start, end)
+    const max = Math.max(start, end)
+    if (min < 1 || max > total) {
+      throw new Error(`范围超出当前可见数量：${token}`)
+    }
+
+    for (let index = min; index <= max; index += 1) {
+      selected.add(index - 1)
+    }
+  }
+
+  return [...selected].sort((left, right) => left - right)
+}
 
 const partMeta = (
   item: NormalizedSourceTree['groups'][number]['items'][number],
@@ -421,10 +632,10 @@ const errorMessage = (error: unknown): string => {
       <div v-if="activeSource" class="result-toolbar">
         <div class="result-current">
           <strong :title="activeSourceTitle">{{ activeSourceTitle }}</strong>
-          <span>{{ activeSourceKindLabel }} · 已选 {{ selectedCount }} 个 · 已解析 {{ loadedLabel }}</span>
+          <span>{{ activeSourceKindLabel }} · 已选 {{ selectedCount }} 个 · 已解析 {{ loadedLabel }} · {{ visibleResultLabel }}</span>
         </div>
         <div class="result-actions">
-          <UiButton variant="secondary" :disabled="activeLoading" @click="selectAllLoaded">全选已加载</UiButton>
+          <UiButton variant="secondary" :disabled="!canSelectVisible" @click="selectAllLoaded">全选可见</UiButton>
           <UiButton variant="secondary" :disabled="activeLoading || selectedCount === 0" @click="clearSelection">
             清空
           </UiButton>
@@ -440,9 +651,24 @@ const errorMessage = (error: unknown): string => {
             @click="closeSource(activeSource.source.id)"
           />
         </div>
+        <div class="result-tools">
+          <UiTextField v-model="resultQuery" label="搜索结果" placeholder="标题 / UP 主 / BV" :disabled="activeLoading" />
+          <UiSelect v-model="resultSort" label="排序" :options="resultSortOptions" :disabled="activeLoading" />
+          <div class="range-control">
+            <UiTextField
+              v-model="rangeExpression"
+              label="范围"
+              placeholder="1-5,7,9-12"
+              :disabled="activeLoading || visiblePartCount === 0"
+            />
+            <UiButton type="button" variant="secondary" :disabled="!canSelectRange" @click="selectRange">选中</UiButton>
+          </div>
+        </div>
+        <p v-if="rangeError" class="range-error">{{ rangeError }}</p>
       </div>
 
-      <UiTree v-if="activeSource" :nodes="treeNodes" :selected-ids="selectedIds" @toggle="toggleNode" />
+      <UiTree v-if="activeSource && treeNodes.length" :nodes="treeNodes" :selected-ids="selectedIds" @toggle="toggleNode" />
+      <div v-else-if="activeSource" class="empty-state">没有匹配结果</div>
       <div v-else class="empty-state">暂无结果</div>
       <p v-if="activeError" class="inline-alert">{{ activeError }}</p>
     </section>
@@ -702,6 +928,35 @@ const errorMessage = (error: unknown): string => {
   height: 28px;
 }
 
+.result-tools {
+  grid-column: 1 / -1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(150px, 180px) minmax(220px, 280px);
+  align-items: end;
+  gap: var(--space-10, 10px);
+}
+
+.range-control {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: var(--space-8);
+}
+
+.range-control :deep(.ui-button) {
+  height: var(--height-input);
+}
+
+.range-error {
+  grid-column: 1 / -1;
+  margin: calc(var(--space-8) * -1) 0 0;
+  color: var(--color-danger);
+  font-size: var(--font-12);
+  font-weight: 700;
+}
+
 .empty-state {
   color: var(--color-muted);
   font-size: var(--font-12);
@@ -868,8 +1123,13 @@ const errorMessage = (error: unknown): string => {
 @media (max-width: 840px) {
   .parse-form,
   .result-toolbar,
+  .result-tools,
   .download-settings-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .range-control {
+    grid-template-columns: minmax(0, 1fr) 88px;
   }
 
   .parse-actions,

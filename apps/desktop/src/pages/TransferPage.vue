@@ -8,15 +8,19 @@ import { useUiStore } from '../stores/ui'
 import UiButton from '../ui/Button.vue'
 import UiDialog from '../ui/Dialog.vue'
 import UiInlineNotice from '../ui/InlineNotice.vue'
+import UiSelect from '../ui/Select.vue'
 import UiTabs from '../ui/Tabs.vue'
 import UiTextField from '../ui/TextField.vue'
 import BulkActionBar from '../ui/BulkActionBar.vue'
 import TaskInspector from '../ui/TaskInspector.vue'
 import TransferTaskTable from '../ui/TransferTaskTable.vue'
 
+type TransferSortMode = 'queue' | 'name_asc' | 'progress_desc' | 'speed_desc' | 'issue_first'
+
 const queue = useQueueStore()
 const ui = useUiStore()
 const completedSearch = ref('')
+const transferSort = ref<TransferSortMode>('queue')
 const taskDetailOpen = ref(false)
 const queueFilter = computed({
   get: () => queue.activeFilter,
@@ -29,17 +33,25 @@ const tabs = computed<Array<{ label: string; value: QueueFilter; count: number }
   { label: '已完成', value: 'completed', count: queue.countByFilter('completed') },
   { label: '全部', value: 'all', count: queue.tasks.length },
 ])
+const transferSortOptions = [
+  { label: '默认顺序', value: 'queue' },
+  { label: '名称 A-Z', value: 'name_asc' },
+  { label: '进度高优先', value: 'progress_desc' },
+  { label: '速度高优先', value: 'speed_desc' },
+  { label: '问题优先', value: 'issue_first' },
+]
 const completedSearchQuery = computed(() => completedSearch.value.trim().toLowerCase())
 const visibleTasks = computed(() => {
-  if (queue.activeFilter !== 'completed' || !completedSearchQuery.value) {
-    return queue.filteredTasks
+  let tasks = queue.filteredTasks
+  if (queue.activeFilter === 'completed' && completedSearchQuery.value) {
+    tasks = tasks.filter((task) =>
+      [task.title, task.source_id, sourceReference(task.source_id), task.output_path].some((value) =>
+        value.toLowerCase().includes(completedSearchQuery.value),
+      ),
+    )
   }
 
-  return queue.filteredTasks.filter((task) =>
-    [task.title, task.source_id, sourceReference(task.source_id), task.output_path].some((value) =>
-      value.toLowerCase().includes(completedSearchQuery.value),
-    ),
-  )
+  return sortTransferTasks(tasks, transferSort.value)
 })
 const taskViews = computed(() =>
   visibleTasks.value.map((task) =>
@@ -179,6 +191,55 @@ const isCancellable = (status: TaskStatus): boolean =>
   status === 'waiting' || status === 'parsing' || status === 'downloading' || status === 'muxing' || status === 'paused'
 
 const isRetryable = (status: TaskStatus): boolean => status === 'failed' || status === 'cancelled' || status === 'completed'
+
+const sortTransferTasks = (tasks: typeof queue.tasks, mode: TransferSortMode): typeof queue.tasks => {
+  const indexed = tasks.map((task, index) => ({ task, index }))
+  if (mode === 'queue') {
+    return tasks
+  }
+
+  indexed.sort((left, right) => {
+    if (mode === 'name_asc') {
+      return compareByTitle(left.task.title, right.task.title, left.index, right.index)
+    }
+
+    if (mode === 'progress_desc') {
+      const progress = queue.taskProgress(right.task) - queue.taskProgress(left.task)
+      return progress || left.index - right.index
+    }
+
+    if (mode === 'speed_desc') {
+      const speed =
+        (queue.taskTransferProgress(right.task.id)?.speedBytesPerSecond ?? 0) -
+        (queue.taskTransferProgress(left.task.id)?.speedBytesPerSecond ?? 0)
+      return speed || left.index - right.index
+    }
+
+    const issue = issueRank(left.task.status) - issueRank(right.task.status)
+    return issue || left.index - right.index
+  })
+
+  return indexed.map((entry) => entry.task)
+}
+
+const compareByTitle = (left: string, right: string, leftIndex: number, rightIndex: number): number => {
+  const byTitle = left.localeCompare(right, 'zh-Hans-CN', { numeric: true, sensitivity: 'base' })
+  return byTitle || leftIndex - rightIndex
+}
+
+const issueRank = (status: TaskStatus): number => {
+  if (status === 'failed' || status === 'cancelled') {
+    return 0
+  }
+  if (status === 'paused') {
+    return 1
+  }
+  if (status === 'waiting' || status === 'parsing' || status === 'downloading' || status === 'muxing') {
+    return 2
+  }
+
+  return 3
+}
 </script>
 
 <template>
@@ -211,13 +272,15 @@ const isRetryable = (status: TaskStatus): boolean => status === 'failed' || stat
         />
       </div>
 
-      <div v-if="queue.activeFilter === 'completed'" class="completed-search">
+      <div class="transfer-list-tools">
         <UiTextField
+          v-if="queue.activeFilter === 'completed'"
           v-model="completedSearch"
           label="搜索已完成"
           placeholder="标题、来源或保存路径"
           :disabled="queue.loading"
         />
+        <UiSelect v-model="transferSort" label="排序" :options="transferSortOptions" :disabled="queue.loading" />
       </div>
 
       <div v-if="taskViews.length" class="task-list">
@@ -269,8 +332,12 @@ const isRetryable = (status: TaskStatus): boolean => status === 'failed' || stat
   overflow: hidden;
 }
 
-.completed-search {
-  max-width: 420px;
+.transfer-list-tools {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(220px, 420px) minmax(150px, 190px);
+  align-items: end;
+  gap: var(--space-12);
 }
 
 .transfer-toolbar {
@@ -334,7 +401,8 @@ const isRetryable = (status: TaskStatus): boolean => status === 'failed' || stat
 }
 
 @media (max-width: 980px) {
-  .transfer-toolbar {
+  .transfer-toolbar,
+  .transfer-list-tools {
     grid-template-columns: minmax(0, 1fr);
   }
 }

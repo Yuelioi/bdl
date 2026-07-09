@@ -273,6 +273,18 @@ export const useParseStore = defineStore('parse', {
         this.selectionBySource[sourceId] = []
       }
     },
+    selectPartIds(sourceId: string, partIds: string[], mode: 'add' | 'replace' = 'add') {
+      if (!this.sources[sourceId]) {
+        return
+      }
+
+      if (mode === 'replace') {
+        this.selectionBySource[sourceId] = uniquePartIds(partIds)
+        return
+      }
+
+      this.selectionBySource[sourceId] = uniquePartIds([...(this.selectionBySource[sourceId] ?? []), ...partIds])
+    },
     async createTasksForSelection(sourceId: string, options: CreateTaskOptions = {}) {
       const ui = useUiStore()
       const settings = useSettingsStore()
@@ -330,6 +342,8 @@ export const useParseStore = defineStore('parse', {
 
 const collectPartIds = (tree: NormalizedSourceTree): string[] =>
   tree.groups.flatMap((group) => group.items.flatMap((item) => item.parts.map((part) => part.id)))
+
+const uniquePartIds = (partIds: string[]): string[] => Array.from(new Set(partIds))
 
 const splitParseInputs = (input: string): string[] =>
   Array.from(
