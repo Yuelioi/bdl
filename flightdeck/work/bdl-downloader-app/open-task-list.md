@@ -82,7 +82,7 @@ Audited on 2026-07-09 from:
 
 ## P1 - Logs and Diagnostics
 
-- [ ] Add task log retention policy: 30 days or latest 1000 task summaries.
+- [x] Add task log retention policy: 30 days or latest 1000 task summaries.
 - [ ] Add diagnostics export from Settings or Transfer inspector.
 - [ ] Extend redaction coverage for cookies, authorization headers, signed URLs, and large response bodies.
 - [ ] Add action-specific errors for unwritable save directory, missing ffmpeg, login expired, private resource, and parse recognition failure.
