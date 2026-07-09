@@ -112,6 +112,9 @@ Current:
 - P1 optional archive embedding landed in commit `5d1bfc1`.
 - Settings now exposes optional cover/subtitle embedding. The muxer embeds supported cover images for MP4-like outputs and supported subtitle sidecars for MP4/MKV outputs; unsupported formats such as current Bilibili JSON subtitles stay as sidecar files and produce warning logs.
 - Embedding verification passed: `cargo fmt --all --check`, `cargo test -p bdl-core --test muxer --test settings`, `cargo test -p bdl-tauri commands`, `cargo check -p bdl-desktop`, `cargo check -p bdl-cli`, and `pnpm --dir apps/desktop build`.
+- P1 archive warning display landed in commit `8a28baa`.
+- Completed tasks with warning logs now surface as `已完成 · 有警告` in Transfer and show warning details in the diagnosis panel instead of looking like a fully clean archive.
+- Archive warning display verification passed: `pnpm --dir apps/desktop build`.
 
 Decisions:
 - Main navigation: `解析`, `传输`, `设置`; account lives in the top-right account button. Completed records live under Transfer's `已完成` filter, not a separate History page.
