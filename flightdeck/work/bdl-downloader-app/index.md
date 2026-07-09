@@ -160,6 +160,9 @@ Current:
 - P2 workspace check script landed in commit `f3c9475`.
 - `scripts/check.ps1` now runs Rust formatting, clippy with warnings as errors, the full Cargo workspace tests, the desktop frontend build, and `git diff --check`. The script explicitly checks native command exit codes so PowerShell cannot report a failed cargo command as success.
 - Workspace check verification passed by running `powershell -ExecutionPolicy Bypass -File .\scripts\check.ps1`; clippy cleanup was included for the warnings surfaced by that script.
+- P2 packaging script landed in commit `57d619e`.
+- `scripts/package.ps1` runs the workspace checks by default, executes `pnpm --dir apps/desktop tauri build`, then prints the release executable and bundle artifacts discovered under `target/release`. `-SkipCheck` is available for packaging-only reruns after checks have already passed.
+- Packaging verification passed with `powershell -ExecutionPolicy Bypass -File .\scripts\package.ps1 -SkipCheck`, producing `target/release/bdl-desktop.exe`, `target/release/bundle/msi/BDL_0.1.0_x64_en-US.msi`, and `target/release/bundle/nsis/BDL_0.1.0_x64-setup.exe`.
 
 Decisions:
 - Main navigation: `解析`, `传输`, `设置`; account lives in the top-right account button. Completed records live under Transfer's `已完成` filter, not a separate History page.
