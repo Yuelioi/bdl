@@ -38,6 +38,18 @@ pub struct AccountSummary {
     pub vip_label: Option<String>,
 }
 
+impl AccountSummary {
+    pub fn from_imported_cookie(cookie: &ImportedCookie) -> Self {
+        Self {
+            logged_in: true,
+            name: None,
+            avatar_url: None,
+            mid: cookie.dede_user_id().map(str::to_owned),
+            vip_label: None,
+        }
+    }
+}
+
 pub fn redact_sensitive(input: &str) -> String {
     [
         "Cookie",

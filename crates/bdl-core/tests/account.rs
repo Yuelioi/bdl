@@ -33,6 +33,15 @@ fn account_summary_defaults_to_logged_out() {
 }
 
 #[test]
+fn account_summary_from_imported_cookie_marks_logged_in() -> BdlResult<()> {
+    let cookie = ImportedCookie::parse("DedeUserID=42; SESSDATA=session; bili_jct=csrf")?;
+    let account = AccountSummary::from_imported_cookie(&cookie);
+
+    assert_eq!(account.logged_in, true);
+    Ok(())
+}
+
+#[test]
 fn redact_sensitive_removes_cookie_values_and_signed_urls() {
     let redacted = redact_sensitive(
         "Cookie: SESSDATA=secret-session; bili_jct=csrf-secret; DedeUserID=42 https://cdn.test/video.m4s?token=abc&deadline=123",

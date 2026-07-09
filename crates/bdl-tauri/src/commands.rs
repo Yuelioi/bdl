@@ -54,6 +54,11 @@ pub struct SelectionCreateTasksRequest {
     pub output_extension: Option<String>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct AccountImportCookieRequest {
+    pub cookie: String,
+}
+
 #[tauri::command]
 pub async fn parse_create_source(
     app: AppHandle,
@@ -222,18 +227,34 @@ pub async fn account_login_qr_poll() -> CommandResult<()> {
 }
 
 #[tauri::command]
-pub async fn account_import_cookie() -> CommandResult<()> {
-    unsupported("account_import_cookie")
+pub fn account_import_cookie(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    request: AccountImportCookieRequest,
+) -> CommandResult<AccountSnapshot> {
+    let account = state.import_cookie(&request.cookie)?;
+    events::emit(&app, events::ACCOUNT_UPDATED, &account)?;
+    Ok(account)
 }
 
 #[tauri::command]
-pub async fn account_logout() -> CommandResult<()> {
-    unsupported("account_logout")
+pub fn account_logout(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> CommandResult<AccountSnapshot> {
+    let account = state.logout()?;
+    events::emit(&app, events::ACCOUNT_UPDATED, &account)?;
+    Ok(account)
 }
 
 #[tauri::command]
-pub async fn account_verify() -> CommandResult<()> {
-    unsupported("account_verify")
+pub fn account_verify(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> CommandResult<AccountSnapshot> {
+    let account = state.verify_account()?;
+    events::emit(&app, events::ACCOUNT_UPDATED, &account)?;
+    Ok(account)
 }
 
 fn unsupported<T>(command: &'static str) -> CommandResult<T> {

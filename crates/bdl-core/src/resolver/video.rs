@@ -94,6 +94,14 @@ impl VideoResolver<BpiVideoApi> {
         Ok(Self::with_api(BpiVideoApi::new()?))
     }
 
+    pub fn from_cookie(cookie: &str) -> BdlResult<Self> {
+        BpiClient::builder()
+            .cookie(cookie)
+            .build()
+            .map(Self::from_bpi_client)
+            .map_err(|error| BdlError::Bpi(error.to_string()))
+    }
+
     pub fn from_bpi_client(client: BpiClient) -> Self {
         Self::with_api(BpiVideoApi::from_client(client))
     }
