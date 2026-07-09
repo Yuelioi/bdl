@@ -1559,7 +1559,7 @@ mod tests {
         let tree = episode_tree(SourceKind::Bangumi, "bangumi");
         let placeholder = PartId("part:bangumi:123:456:789".to_owned());
 
-        let requests = selected_hydration_requests(&tree, &[placeholder.clone()])
+        let requests = selected_hydration_requests(&tree, std::slice::from_ref(&placeholder))
             .expect("hydration requests should be valid");
 
         assert_eq!(

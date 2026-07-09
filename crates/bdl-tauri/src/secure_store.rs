@@ -75,6 +75,12 @@ impl SecureStore {
     }
 }
 
+impl Default for SecureStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 trait CredentialBackend: Send + Sync {
     fn load_cookie(&self) -> BdlResult<Option<String>>;
     fn save_cookie(&self, cookie: &str) -> BdlResult<()>;

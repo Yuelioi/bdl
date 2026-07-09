@@ -73,6 +73,16 @@ struct SegmentRequest {
     end: u64,
 }
 
+struct SegmentFetchRequest<'a> {
+    resource: &'a DownloadResource,
+    url: &'a str,
+    headers: HeaderMap,
+    metadata: &'a RemoteResourceMetadata,
+    progress: Option<ProgressSender>,
+    progress_by_segment: Arc<Mutex<Vec<u64>>>,
+    segment: SegmentRequest,
+}
+
 #[async_trait]
 pub trait Fetcher {
     async fn fetch(
@@ -252,19 +262,19 @@ impl ReqwestFetcher {
         }
 
         try_join_all(ranges.iter().enumerate().map(|(index, (start, end))| {
-            self.fetch_segment(
+            self.fetch_segment(SegmentFetchRequest {
                 resource,
                 url,
-                headers.clone(),
-                &metadata,
-                progress.clone(),
-                progress_by_segment.clone(),
-                SegmentRequest {
+                headers: headers.clone(),
+                metadata: &metadata,
+                progress: progress.clone(),
+                progress_by_segment: progress_by_segment.clone(),
+                segment: SegmentRequest {
                     index,
                     start: *start,
                     end: *end,
                 },
-            )
+            })
         }))
         .await?;
 
@@ -295,16 +305,16 @@ impl ReqwestFetcher {
         })
     }
 
-    async fn fetch_segment(
-        &self,
-        resource: &DownloadResource,
-        url: &str,
-        headers: HeaderMap,
-        metadata: &RemoteResourceMetadata,
-        progress: Option<ProgressSender>,
-        progress_by_segment: Arc<Mutex<Vec<u64>>>,
-        segment: SegmentRequest,
-    ) -> BdlResult<()> {
+    async fn fetch_segment(&self, request: SegmentFetchRequest<'_>) -> BdlResult<()> {
+        let SegmentFetchRequest {
+            resource,
+            url,
+            headers,
+            metadata,
+            progress,
+            progress_by_segment,
+            segment,
+        } = request;
         let segment_path = segment_path_for(&resource.temp_path, segment.index);
         let expected_len = segment.end - segment.start + 1;
         let response = self

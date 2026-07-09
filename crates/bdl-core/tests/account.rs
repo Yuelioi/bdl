@@ -31,7 +31,7 @@ fn imported_cookie_rejects_missing_csrf_cookie() {
 
 #[test]
 fn account_summary_defaults_to_logged_out() {
-    assert_eq!(AccountSummary::default().logged_in, false);
+    assert!(!AccountSummary::default().logged_in);
 }
 
 #[test]
@@ -39,7 +39,7 @@ fn account_summary_from_imported_cookie_marks_logged_in() -> BdlResult<()> {
     let cookie = ImportedCookie::parse("DedeUserID=42; SESSDATA=session; bili_jct=csrf")?;
     let account = AccountSummary::from_imported_cookie(&cookie);
 
-    assert_eq!(account.logged_in, true);
+    assert!(account.logged_in);
     Ok(())
 }
 

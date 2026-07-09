@@ -115,9 +115,8 @@ where
             .api
             .page(CheeseInputId::Season(season_id), request)
             .await?;
-        Ok(self
-            .tree_from_page(page, None, None, ResolveOptions::default())
-            .await?)
+        self.tree_from_page(page, None, None, ResolveOptions::default())
+            .await
     }
 
     async fn tree_from_page(
