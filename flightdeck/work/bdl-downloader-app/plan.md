@@ -1633,7 +1633,7 @@ Landed as smaller commits:
 - Modify: `crates/bdl-core/src/resolver/mod.rs`
 - Test: `crates/bdl-core/tests/paged_resolvers.rs`
 
-- [ ] **Step 1: Implement page-size policy**
+- [x] **Step 1: Implement page-size policy**
 
 Policy:
 
@@ -1648,6 +1648,15 @@ Known defaults:
 - Collection/series: 10 or 20 depending on endpoint.
 
 - [ ] **Step 2: Add favorite and uploader parsing**
+
+Uploader parsing is partially complete:
+
+- `crates/bdl-core/src/resolver/uploader.rs` resolves uploader video pages through `bpi-rs user.uploaded_videos`.
+- `parse_load_more` appends one uploader page.
+- `parse_load_all` appends uploader pages up to an explicit/default limit of 100.
+- `下载已选择` hydrates selected uploader placeholders before planning downloads.
+
+Favorite parsing remains.
 
 Requirements:
 

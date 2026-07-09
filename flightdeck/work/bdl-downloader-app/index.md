@@ -2,11 +2,11 @@
 
 ## State
 
-Task 13 account persistence and login is complete on branch `bdl-downloader-app`. The workspace has a Rust/Tauri/Vue scaffold, frontend-safe normalized DTOs, a pure Bilibili input classifier, a `bpi-rs` backed video resolver, a planner that turns selected normalized parts into backend-owned download tasks/resources, a resumable `reqwest` fetcher, an ffmpeg muxer, a CLI parse/download path, registered Tauri commands/events, a custom Vue UI kit, parse/transfer pages, SQLite-backed queue persistence, and top-right account login through Cookie import or QR scan.
+Task 14 is in progress on branch `bdl-downloader-app`. The workspace has a Rust/Tauri/Vue scaffold, frontend-safe normalized DTOs, a pure Bilibili input classifier, `bpi-rs` backed video and uploader resolvers, a planner that turns selected normalized parts into backend-owned download tasks/resources, a resumable `reqwest` fetcher, an ffmpeg muxer, a CLI parse/download path, registered Tauri commands/events, a custom Vue UI kit, parse/transfer pages, SQLite-backed queue persistence, and top-right account login through Cookie import or QR scan.
 
 ## Next
 
-Execute Task 14 in `plan.md`: add paged and multi-type resolvers for favorites, uploader videos, collections, series, bangumi, and courses.
+Continue Task 14 in `plan.md`: uploader video pages now work; remaining source resolvers are favorites, collections, series, bangumi, and courses.
 
 ## Read now
 
@@ -78,6 +78,10 @@ Current:
 - `AppState` now restores a persisted account cookie from `.bdl/account.cookie`, exposes account import/logout/verify, and builds video resolvers with the current cookie so parsing can return logged-in streams.
 - The account UI now uses `apps/desktop/src/stores/account.ts`, supports Cookie import, QR generation/polling, account event updates, and top-right logout. The Settings tab remains account-free.
 - Current account persistence is file-backed through `secure_store.rs`; replacing it with an OS credential-store backend remains a hardening follow-up.
+- Task 14 page-size policy landed in commit `4a88d3e`.
+- Task 14 uploader video parsing landed in commits `f2310f4`, `df916c0`, `751fb73`, and `57e981a`.
+- Uploader source parsing now loads the first page through `bpi-rs user.uploaded_videos`, `parse_load_more` appends one page, and `parse_load_all` batches pages up to the current explicit/default limit of 100.
+- `下载已选择` now hydrates selected uploader placeholder parts through the video resolver before planning tasks, so multi-P videos selected from an uploader list expand to their real parts. List sources no longer default to all selected in the parse UI.
 
 Decisions:
 - Main navigation: `解析`, `传输`, `历史`, `设置`; account lives in the top-right account button.
