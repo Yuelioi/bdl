@@ -87,6 +87,27 @@ pub struct DownloadTask {
     pub status: TaskStatus,
     pub resources: Vec<DownloadResource>,
     pub output_path: PathBuf,
+    #[serde(default)]
+    pub media_selection: DownloadTaskMediaSelection,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DownloadTaskMediaSelection {
+    pub video_quality: String,
+    pub audio_quality: String,
+    pub video_codec: String,
+    pub container: String,
+}
+
+impl Default for DownloadTaskMediaSelection {
+    fn default() -> Self {
+        Self {
+            video_quality: "unknown".to_owned(),
+            audio_quality: "unknown".to_owned(),
+            video_codec: "unknown".to_owned(),
+            container: "unknown".to_owned(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

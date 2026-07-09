@@ -3,8 +3,8 @@ use std::path::PathBuf;
 use bdl_core::BdlResult;
 use bdl_core::model::HeaderPair;
 use bdl_core::queue::{
-    DownloadResource, DownloadResourceIntent, DownloadResourceKind, DownloadTask, QueueLogEntry,
-    QueueLogLevel, ResourceStatus, TaskStatus,
+    DownloadResource, DownloadResourceIntent, DownloadResourceKind, DownloadTask,
+    DownloadTaskMediaSelection, QueueLogEntry, QueueLogLevel, ResourceStatus, TaskStatus,
 };
 use bdl_core::storage::TaskStorage;
 use uuid::Uuid;
@@ -42,6 +42,23 @@ fn task_storage_reloads_task_with_resources_after_reopen() -> BdlResult<()> {
 }
 
 #[test]
+fn task_storage_reloads_media_selection_after_reopen() -> BdlResult<()> {
+    let fixture = StorageFixture::new()?;
+    let task = sample_task();
+
+    {
+        let mut storage = TaskStorage::open(&fixture.db_path)?;
+        storage.save_task(&task)?;
+    }
+
+    let storage = TaskStorage::open(&fixture.db_path)?;
+    let tasks = storage.load_tasks()?;
+
+    assert_eq!(tasks[0].media_selection, task.media_selection);
+    Ok(())
+}
+
+#[test]
 fn task_storage_reloads_task_logs_after_reopen() -> BdlResult<()> {
     let fixture = StorageFixture::new()?;
     let task = sample_task();
@@ -69,6 +86,56 @@ fn task_storage_reloads_task_logs_after_reopen() -> BdlResult<()> {
     let logs = storage.load_task_logs(&task.id, 10)?;
 
     assert_eq!(logs, vec![second, first]);
+    Ok(())
+}
+
+#[test]
+fn task_storage_saves_completed_record_with_media_metadata() -> BdlResult<()> {
+    let fixture = StorageFixture::new()?;
+    let mut task = sample_task();
+    task.status = TaskStatus::Completed;
+    let logs = vec![
+        sample_log(
+            &task.id,
+            QueueLogLevel::Warning,
+            "跳过字幕嵌入：当前字幕格式或封装格式不支持。",
+            "2026-07-09T01:00:01Z",
+        ),
+        sample_log(
+            &task.id,
+            QueueLogLevel::Error,
+            "Cookie: SESSDATA=secret; sign=abc",
+            "2026-07-09T01:00:02Z",
+        ),
+    ];
+
+    {
+        let mut storage = TaskStorage::open(&fixture.db_path)?;
+        storage.save_task(&task)?;
+        storage.save_completed_record(&task, &logs)?;
+    }
+
+    let storage = TaskStorage::open(&fixture.db_path)?;
+    let records = storage.load_completed_records()?;
+
+    assert_eq!(records.len(), 1);
+    let record = &records[0];
+    assert_eq!(record.task_id, task.id);
+    assert_eq!(record.title, task.title);
+    assert_eq!(record.source_id, task.source_id);
+    assert_eq!(record.output_path, task.output_path);
+    assert_eq!(record.selected_video_quality, "80");
+    assert_eq!(record.selected_audio_quality, "30280");
+    assert_eq!(record.selected_video_codec, "avc");
+    assert_eq!(record.container, "mp4");
+    assert!(record.completed_at.contains('T'));
+    let summary = record
+        .error_summary
+        .as_deref()
+        .expect("warning and error logs should be summarized");
+    assert!(summary.contains("warning: 跳过字幕嵌入"));
+    assert!(summary.contains("error: Cookie:<redacted>; sign=<redacted>"));
+    assert!(!summary.contains("secret"));
     Ok(())
 }
 
@@ -160,6 +227,12 @@ fn sample_task() -> DownloadTask {
             ),
         ],
         output_path: PathBuf::from("downloads/Example - P1.mp4"),
+        media_selection: DownloadTaskMediaSelection {
+            video_quality: "80".to_owned(),
+            audio_quality: "30280".to_owned(),
+            video_codec: "avc".to_owned(),
+            container: "mp4".to_owned(),
+        },
     }
 }
 

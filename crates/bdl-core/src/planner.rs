@@ -16,8 +16,8 @@ use crate::naming::{
     resolve_duplicate_path,
 };
 use crate::queue::{
-    DownloadResource, DownloadResourceIntent, DownloadResourceKind, DownloadTask, ResourceStatus,
-    TaskStatus,
+    DownloadResource, DownloadResourceIntent, DownloadResourceKind, DownloadTask,
+    DownloadTaskMediaSelection, ResourceStatus, TaskStatus,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -270,6 +270,12 @@ fn plan_part(
         status: TaskStatus::Waiting,
         resources,
         output_path,
+        media_selection: DownloadTaskMediaSelection {
+            video_quality: stream_quality_label(video),
+            audio_quality: stream_quality_label(audio),
+            video_codec: stream_codec_label(video).to_owned(),
+            container: options.output_extension.clone(),
+        },
     })
 }
 

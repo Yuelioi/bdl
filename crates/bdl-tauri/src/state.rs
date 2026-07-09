@@ -438,6 +438,15 @@ impl AppState {
             .load_task_logs(task_id, limit)
     }
 
+    pub fn record_completed_task(&self, task: &DownloadTask) -> BdlResult<()> {
+        let logs = self.task_logs(&task.id, 1000)?;
+        self.storage
+            .lock()
+            .map_err(|_| state_poisoned("storage"))?
+            .save_completed_record(task, &logs)?;
+        Ok(())
+    }
+
     pub fn settings(&self) -> BdlResult<SettingsSnapshot> {
         Ok(self
             .settings
@@ -1257,7 +1266,7 @@ mod tests {
         NormalizedGroup, NormalizedItem, NormalizedPart, NormalizedSourceTree, PageState,
         SourceKind, SourceSummary,
     };
-    use bdl_core::queue::{DownloadTask, TaskStatus};
+    use bdl_core::queue::{DownloadTask, DownloadTaskMediaSelection, TaskStatus};
     use bdl_core::resolver::paged::PageRequest;
 
     #[test]
@@ -1510,6 +1519,7 @@ mod tests {
             status: TaskStatus::Failed,
             resources: Vec::new(),
             output_path: PathBuf::from("downloads/fixture.mp4"),
+            media_selection: DownloadTaskMediaSelection::default(),
         }
     }
 

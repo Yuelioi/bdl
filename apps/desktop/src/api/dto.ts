@@ -115,6 +115,14 @@ export interface DownloadTask {
   status: TaskStatus
   resources: DownloadResource[]
   output_path: string
+  media_selection: DownloadTaskMediaSelection
+}
+
+export interface DownloadTaskMediaSelection {
+  video_quality: string
+  audio_quality: string
+  video_codec: string
+  container: string
 }
 
 export interface DownloadResource {

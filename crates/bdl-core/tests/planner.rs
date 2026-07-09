@@ -275,6 +275,9 @@ fn plan_selected_parts_uses_configured_video_and_audio_quality() {
         tasks[0].resources[1].current_urls,
         vec!["https://example.invalid/audio-30216.m4s"]
     );
+    assert_eq!(tasks[0].media_selection.video_quality, "64");
+    assert_eq!(tasks[0].media_selection.audio_quality, "30216");
+    assert_eq!(tasks[0].media_selection.container, "mp4");
 }
 
 #[test]
@@ -296,6 +299,7 @@ fn plan_selected_parts_prefers_configured_video_codec_when_available() {
         tasks[0].resources[0].current_urls,
         vec!["https://example.invalid/video-hevc.m4s"]
     );
+    assert_eq!(tasks[0].media_selection.video_codec, "hevc");
 }
 
 #[test]

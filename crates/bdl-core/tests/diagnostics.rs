@@ -2,8 +2,8 @@ use std::path::PathBuf;
 
 use bdl_core::diagnostics::{RecommendedAction, diagnose_task};
 use bdl_core::queue::{
-    DownloadResource, DownloadResourceIntent, DownloadResourceKind, DownloadTask, QueueLogEntry,
-    QueueLogLevel, ResourceStatus, TaskStatus,
+    DownloadResource, DownloadResourceIntent, DownloadResourceKind, DownloadTask,
+    DownloadTaskMediaSelection, QueueLogEntry, QueueLogLevel, ResourceStatus, TaskStatus,
 };
 
 #[test]
@@ -91,6 +91,7 @@ fn failed_task(audio_status: ResourceStatus) -> DownloadTask {
         source_id: "source:1".to_owned(),
         status: TaskStatus::Failed,
         output_path: PathBuf::from("downloads/example.mp4"),
+        media_selection: DownloadTaskMediaSelection::default(),
         resources: vec![
             resource(
                 "resource:video",

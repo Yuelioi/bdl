@@ -1,14 +1,33 @@
 use std::path::{Path, PathBuf};
 
+use chrono::Utc;
 use rusqlite::{Connection, Transaction, params};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
+use crate::account::redact_sensitive;
 use crate::error::BdlResult;
-use crate::queue::{DownloadResource, DownloadTask, QueueLogEntry};
+use crate::queue::{DownloadResource, DownloadTask, QueueLogEntry, QueueLogLevel};
+
+const MAX_COMPLETION_ERROR_SUMMARY_CHARS: usize = 2000;
 
 pub struct TaskStorage {
     conn: Connection,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompletedRecord {
+    pub id: String,
+    pub task_id: String,
+    pub title: String,
+    pub source_id: String,
+    pub output_path: PathBuf,
+    pub selected_video_quality: String,
+    pub selected_audio_quality: String,
+    pub selected_video_codec: String,
+    pub container: String,
+    pub error_summary: Option<String>,
+    pub completed_at: String,
 }
 
 impl TaskStorage {
@@ -80,7 +99,7 @@ impl TaskStorage {
 
     pub fn load_tasks(&self) -> BdlResult<Vec<DownloadTask>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, title, source_id, status, output_path FROM tasks ORDER BY sort_order, rowid",
+            "SELECT id, title, source_id, status, output_path, media_selection FROM tasks ORDER BY sort_order, rowid",
         )?;
         let task_rows = stmt.query_map([], |row| {
             Ok(TaskRow {
@@ -89,6 +108,7 @@ impl TaskStorage {
                 source_id: row.get(2)?,
                 status_json: row.get(3)?,
                 output_path: row.get(4)?,
+                media_selection_json: row.get(5)?,
             })
         })?;
 
@@ -103,10 +123,101 @@ impl TaskStorage {
                 status: deserialize_json(&task_row.status_json)?,
                 resources,
                 output_path: PathBuf::from(task_row.output_path),
+                media_selection: deserialize_json(&task_row.media_selection_json)?,
             });
         }
 
         Ok(tasks)
+    }
+
+    pub fn save_completed_record(
+        &mut self,
+        task: &DownloadTask,
+        logs: &[QueueLogEntry],
+    ) -> BdlResult<CompletedRecord> {
+        let record = completed_record_from_task(task, logs, Utc::now().to_rfc3339());
+        self.conn.execute(
+            r#"
+            INSERT INTO history (
+                id,
+                task_id,
+                title,
+                source_id,
+                output_path,
+                selected_video_quality,
+                selected_audio_quality,
+                selected_video_codec,
+                container,
+                error_summary,
+                completed_at
+            )
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+            ON CONFLICT(id) DO UPDATE SET
+                task_id = excluded.task_id,
+                title = excluded.title,
+                source_id = excluded.source_id,
+                output_path = excluded.output_path,
+                selected_video_quality = excluded.selected_video_quality,
+                selected_audio_quality = excluded.selected_audio_quality,
+                selected_video_codec = excluded.selected_video_codec,
+                container = excluded.container,
+                error_summary = excluded.error_summary,
+                completed_at = excluded.completed_at
+            "#,
+            params![
+                record.id.as_str(),
+                record.task_id.as_str(),
+                record.title.as_str(),
+                record.source_id.as_str(),
+                path_to_string(&record.output_path),
+                record.selected_video_quality.as_str(),
+                record.selected_audio_quality.as_str(),
+                record.selected_video_codec.as_str(),
+                record.container.as_str(),
+                record.error_summary.as_deref(),
+                record.completed_at.as_str(),
+            ],
+        )?;
+
+        Ok(record)
+    }
+
+    pub fn load_completed_records(&self) -> BdlResult<Vec<CompletedRecord>> {
+        let mut stmt = self.conn.prepare(
+            r#"
+            SELECT
+                id,
+                task_id,
+                title,
+                source_id,
+                output_path,
+                selected_video_quality,
+                selected_audio_quality,
+                selected_video_codec,
+                container,
+                error_summary,
+                completed_at
+            FROM history
+            ORDER BY completed_at DESC, rowid DESC
+            "#,
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(CompletedRecord {
+                id: row.get(0)?,
+                task_id: row.get::<_, Option<String>>(1)?.unwrap_or_default(),
+                title: row.get(2)?,
+                source_id: row.get(3)?,
+                output_path: PathBuf::from(row.get::<_, String>(4)?),
+                selected_video_quality: row.get(5)?,
+                selected_audio_quality: row.get(6)?,
+                selected_video_codec: row.get(7)?,
+                container: row.get(8)?,
+                error_summary: row.get(9)?,
+                completed_at: row.get(10)?,
+            })
+        })?;
+
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
     pub fn append_task_log(&mut self, entry: &QueueLogEntry) -> BdlResult<()> {
@@ -202,6 +313,7 @@ struct TaskRow {
     source_id: String,
     status_json: String,
     output_path: String,
+    media_selection_json: String,
 }
 
 struct ResourceRow {
@@ -231,6 +343,7 @@ fn run_migrations(conn: &Connection) -> BdlResult<()> {
             source_id TEXT NOT NULL,
             status TEXT NOT NULL,
             output_path TEXT NOT NULL,
+            media_selection TEXT NOT NULL DEFAULT '{"video_quality":"unknown","audio_quality":"unknown","video_codec":"unknown","container":"unknown"}',
             sort_order INTEGER NOT NULL DEFAULT 0,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -265,7 +378,13 @@ fn run_migrations(conn: &Connection) -> BdlResult<()> {
             id TEXT PRIMARY KEY,
             task_id TEXT,
             title TEXT NOT NULL,
+            source_id TEXT NOT NULL DEFAULT '',
             output_path TEXT NOT NULL,
+            selected_video_quality TEXT NOT NULL DEFAULT 'unknown',
+            selected_audio_quality TEXT NOT NULL DEFAULT 'unknown',
+            selected_video_codec TEXT NOT NULL DEFAULT 'unknown',
+            container TEXT NOT NULL DEFAULT 'unknown',
+            error_summary TEXT,
             completed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
 
@@ -279,19 +398,57 @@ fn run_migrations(conn: &Connection) -> BdlResult<()> {
         );
         "#,
     )?;
+    add_column_if_missing(
+        conn,
+        "tasks",
+        "media_selection",
+        "media_selection TEXT NOT NULL DEFAULT '{\"video_quality\":\"unknown\",\"audio_quality\":\"unknown\",\"video_codec\":\"unknown\",\"container\":\"unknown\"}'",
+    )?;
+    add_column_if_missing(
+        conn,
+        "history",
+        "source_id",
+        "source_id TEXT NOT NULL DEFAULT ''",
+    )?;
+    add_column_if_missing(
+        conn,
+        "history",
+        "selected_video_quality",
+        "selected_video_quality TEXT NOT NULL DEFAULT 'unknown'",
+    )?;
+    add_column_if_missing(
+        conn,
+        "history",
+        "selected_audio_quality",
+        "selected_audio_quality TEXT NOT NULL DEFAULT 'unknown'",
+    )?;
+    add_column_if_missing(
+        conn,
+        "history",
+        "selected_video_codec",
+        "selected_video_codec TEXT NOT NULL DEFAULT 'unknown'",
+    )?;
+    add_column_if_missing(
+        conn,
+        "history",
+        "container",
+        "container TEXT NOT NULL DEFAULT 'unknown'",
+    )?;
+    add_column_if_missing(conn, "history", "error_summary", "error_summary TEXT")?;
     Ok(())
 }
 
 fn save_task_in_tx(tx: &Transaction<'_>, task: &DownloadTask, sort_order: usize) -> BdlResult<()> {
     tx.execute(
         r#"
-        INSERT INTO tasks (id, title, source_id, status, output_path, sort_order, updated_at)
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6, CURRENT_TIMESTAMP)
+        INSERT INTO tasks (id, title, source_id, status, output_path, media_selection, sort_order, updated_at)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, CURRENT_TIMESTAMP)
         ON CONFLICT(id) DO UPDATE SET
             title = excluded.title,
             source_id = excluded.source_id,
             status = excluded.status,
             output_path = excluded.output_path,
+            media_selection = excluded.media_selection,
             sort_order = excluded.sort_order,
             updated_at = CURRENT_TIMESTAMP
         "#,
@@ -301,6 +458,7 @@ fn save_task_in_tx(tx: &Transaction<'_>, task: &DownloadTask, sort_order: usize)
             task.source_id,
             serialize_json(&task.status)?,
             path_to_string(&task.output_path),
+            serialize_json(&task.media_selection)?,
             sort_order as i64,
         ],
     )?;
@@ -356,4 +514,96 @@ where
 
 fn path_to_string(path: &Path) -> String {
     path.to_string_lossy().into_owned()
+}
+
+fn add_column_if_missing(
+    conn: &Connection,
+    table: &str,
+    column: &str,
+    column_definition: &str,
+) -> BdlResult<()> {
+    if column_exists(conn, table, column)? {
+        return Ok(());
+    }
+
+    conn.execute(
+        &format!("ALTER TABLE {table} ADD COLUMN {column_definition}"),
+        [],
+    )?;
+    Ok(())
+}
+
+fn column_exists(conn: &Connection, table: &str, column: &str) -> BdlResult<bool> {
+    let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
+    let columns = stmt.query_map([], |row| row.get::<_, String>(1))?;
+
+    for existing in columns {
+        if existing? == column {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
+}
+
+fn completed_record_from_task(
+    task: &DownloadTask,
+    logs: &[QueueLogEntry],
+    completed_at: String,
+) -> CompletedRecord {
+    CompletedRecord {
+        id: task.id.clone(),
+        task_id: task.id.clone(),
+        title: task.title.clone(),
+        source_id: task.source_id.clone(),
+        output_path: task.output_path.clone(),
+        selected_video_quality: task.media_selection.video_quality.clone(),
+        selected_audio_quality: task.media_selection.audio_quality.clone(),
+        selected_video_codec: task.media_selection.video_codec.clone(),
+        container: task.media_selection.container.clone(),
+        error_summary: completion_error_summary(logs),
+        completed_at,
+    }
+}
+
+fn completion_error_summary(logs: &[QueueLogEntry]) -> Option<String> {
+    let mut relevant_logs = logs
+        .iter()
+        .filter(|log| matches!(log.level, QueueLogLevel::Warning | QueueLogLevel::Error))
+        .collect::<Vec<_>>();
+    relevant_logs.sort_by(|left, right| left.created_at.cmp(&right.created_at));
+
+    let summary = relevant_logs
+        .into_iter()
+        .map(|log| {
+            format!(
+                "{}: {}",
+                queue_log_level_label(log.level),
+                redact_sensitive(&log.message)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let summary = truncate_chars(&summary, MAX_COMPLETION_ERROR_SUMMARY_CHARS);
+
+    (!summary.is_empty()).then_some(summary)
+}
+
+fn queue_log_level_label(level: QueueLogLevel) -> &'static str {
+    match level {
+        QueueLogLevel::Info => "info",
+        QueueLogLevel::Warning => "warning",
+        QueueLogLevel::Error => "error",
+    }
+}
+
+fn truncate_chars(value: &str, max_chars: usize) -> String {
+    if value.chars().count() <= max_chars {
+        return value.to_owned();
+    }
+
+    let keep_chars = max_chars.saturating_sub(3);
+    let mut truncated = value.chars().take(keep_chars).collect::<String>();
+    truncated.push_str("...");
+    truncated
 }

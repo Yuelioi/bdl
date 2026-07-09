@@ -914,6 +914,16 @@ async fn run_download_task(
     let completed = state.update_task_status(&task.id, TaskStatus::Completed)?;
     events::emit(app, events::QUEUE_TASK_UPDATED, &completed)?;
     emit_queue_log(app, state, &task.id, QueueLogLevel::Info, "下载完成")?;
+    if let Err(error) = state.record_completed_task(&completed) {
+        tracing::warn!("failed to save completed task record: {error}");
+        let _ = emit_queue_log(
+            app,
+            state,
+            &task.id,
+            QueueLogLevel::Warning,
+            &format!("完成记录保存失败：{error}"),
+        );
+    }
 
     Ok(())
 }
@@ -1294,7 +1304,7 @@ mod tests {
     use bdl_core::model::HeaderPair;
     use bdl_core::queue::{
         DownloadResource, DownloadResourceIntent, DownloadResourceKind, DownloadTask,
-        ResourceStatus, TaskStatus,
+        DownloadTaskMediaSelection, ResourceStatus, TaskStatus,
     };
 
     #[test]
@@ -1306,6 +1316,7 @@ mod tests {
             status: TaskStatus::Completed,
             resources: Vec::new(),
             output_path: PathBuf::from("downloads/A&B <C>.mp4"),
+            media_selection: DownloadTaskMediaSelection::default(),
         };
 
         let nfo = nfo_content(&task);
