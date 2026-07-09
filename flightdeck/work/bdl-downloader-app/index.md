@@ -165,6 +165,8 @@ Current:
 - Packaging verification passed with `powershell -ExecutionPolicy Bypass -File .\scripts\package.ps1 -SkipCheck`, producing `target/release/bdl-desktop.exe`, `target/release/bundle/msi/BDL_0.1.0_x64_en-US.msi`, and `target/release/bundle/nsis/BDL_0.1.0_x64-setup.exe`.
 - P2 minimum-window QA at 1100x720 completed.
 - Chrome/Playwright checked `解析`, `传输`, and `设置` at `1100x720`; each page reported `document.body.scrollWidth == document.body.clientWidth == 1100` and no visible right overflow. Clean screenshots were inspected after dismissing browser-only Tauri `invoke` fallback toasts. No page-level horizontal scrollbar, major overlap, or blocked primary workflow panel was observed.
+- P2 release QA checklist landed in `flightdeck/work/bdl-downloader-app/release-qa.md`.
+- The release checklist covers parse, download/transfer recovery, account persistence, diagnostics/log redaction, missing FFmpeg messaging, and minimum-window inspection, with explicit expected outcomes and evidence to record per release candidate.
 
 Decisions:
 - Main navigation: `解析`, `传输`, `设置`; account lives in the top-right account button. Completed records live under Transfer's `已完成` filter, not a separate History page.

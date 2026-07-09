@@ -98,7 +98,7 @@ Audited on 2026-07-09 from:
 - [x] Add `scripts/check.ps1` for fmt, clippy, tests, and frontend build.
 - [x] Add `scripts/package.ps1` for Tauri packaging and artifact path output.
 - [x] Complete minimum-window QA at 1100x720.
-- [ ] Add release QA for parse, download, transfer recovery, persisted cookie, log redaction, and ffmpeg missing messages.
+- [x] Add release QA for parse, download, transfer recovery, persisted cookie, log redaction, and ffmpeg missing messages.
 
 ## Plan Maintenance
 
