@@ -1,6 +1,8 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+use crate::ids::{GroupId, ItemId, PartId, SourceId};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SourceKind {
@@ -16,7 +18,7 @@ pub enum SourceKind {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SourceSummary {
-    pub id: String,
+    pub id: SourceId,
     pub kind: SourceKind,
     pub input: String,
     pub title: String,
@@ -33,7 +35,7 @@ pub struct NormalizedSourceTree {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NormalizedGroup {
-    pub id: String,
+    pub id: GroupId,
     pub kind: String,
     pub title: String,
     pub items: Vec<NormalizedItem>,
@@ -51,7 +53,7 @@ pub struct PageState {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NormalizedItem {
-    pub id: String,
+    pub id: ItemId,
     pub title: String,
     pub owner_name: Option<String>,
     pub cover_url: Option<String>,
@@ -61,7 +63,7 @@ pub struct NormalizedItem {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NormalizedPart {
-    pub id: String,
+    pub id: PartId,
     pub title: String,
     pub aid: Option<u64>,
     pub bvid: Option<String>,
@@ -78,8 +80,14 @@ pub struct MediaStream {
     pub codec: StreamCodec,
     pub bandwidth: Option<u64>,
     pub urls: Vec<String>,
-    pub headers: Vec<(String, String)>,
+    pub headers: Vec<HeaderPair>,
     pub acquired_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HeaderPair {
+    pub name: String,
+    pub value: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -90,7 +98,7 @@ pub enum MediaKind {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum StreamQuality {
     Best,
     Quality(u32),
