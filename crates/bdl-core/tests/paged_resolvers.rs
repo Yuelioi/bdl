@@ -30,6 +30,10 @@ fn effective_page_size_uses_endpoint_default_when_api_max_is_unknown() {
     );
     assert_eq!(effective_page_size(PagedSourceKind::Collection, None), 20);
     assert_eq!(effective_page_size(PagedSourceKind::Series, None), 20);
+    assert_eq!(
+        effective_page_size(PagedSourceKind::CheeseEpisodes, None),
+        30
+    );
 }
 
 #[test]

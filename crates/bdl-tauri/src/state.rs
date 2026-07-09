@@ -14,6 +14,8 @@ use bdl_core::model::{
 use bdl_core::queue::{
     DownloadResourceIntent, DownloadTask, QueueLogEntry, ResourceStatus, TaskStatus,
 };
+use bdl_core::resolver::bangumi::BangumiResolver;
+use bdl_core::resolver::cheese::CheeseResolver;
 use bdl_core::resolver::collection::{
     CollectionInputIds, CollectionResolver, SeriesInputIds, SeriesResolver,
 };
@@ -97,6 +99,12 @@ impl AppState {
                     .await?
             }
             SourceKind::Series => self.series_resolver()?.resolve(classified, options).await?,
+            SourceKind::Bangumi => {
+                self.bangumi_resolver()?
+                    .resolve(classified, options)
+                    .await?
+            }
+            SourceKind::Cheese => self.cheese_resolver()?.resolve(classified, options).await?,
             _ => self.video_resolver()?.resolve(classified, options).await?,
         };
         self.parse_sources
@@ -172,17 +180,11 @@ impl AppState {
             });
         }
 
-        let resolver = self.video_resolver()?;
         let mut part_ids = selected_part_ids.to_vec();
 
         for request in requests {
-            let hydrated = resolver
-                .resolve(
-                    ClassifiedInput::VideoBvid(request.bvid),
-                    ResolveOptions {
-                        fetch_streams: true,
-                    },
-                )
+            let hydrated = self
+                .resolve_media_input_with_streams(request.input.clone())
                 .await?;
             let hydrated_part_ids = hydrate_placeholder_part(
                 &mut tree,
@@ -308,13 +310,7 @@ impl AppState {
         let task = self.task_snapshot(task_id)?;
         let refresh_ids = task_media_refresh_ids(&task)?;
         let refreshed = self
-            .video_resolver()?
-            .resolve(
-                refresh_ids.input,
-                ResolveOptions {
-                    fetch_streams: true,
-                },
-            )
+            .resolve_media_input_with_streams(refresh_ids.input)
             .await?;
         let part =
             find_part_by_cid(&refreshed, refresh_ids.cid).ok_or_else(|| BdlError::Planning {
@@ -541,6 +537,33 @@ impl AppState {
                 let next_page = self.series_resolver()?.resolve_page(ids, request).await?;
                 append_source_page(tree, next_page)
             }
+            SourceKind::Cheese => {
+                let season_id = cheese_season_id(tree)?;
+                let request = next_page_request(tree)?;
+                let next_page = self
+                    .cheese_resolver()?
+                    .resolve_page(season_id, request)
+                    .await?;
+                append_source_page(tree, next_page)
+            }
+            kind => Err(BdlError::UnsupportedSource {
+                kind: source_kind_name(kind).to_owned(),
+            }),
+        }
+    }
+
+    async fn resolve_media_input_with_streams(
+        &self,
+        input: ClassifiedInput,
+    ) -> BdlResult<NormalizedSourceTree> {
+        let options = ResolveOptions {
+            fetch_streams: true,
+        };
+
+        match input.source_kind() {
+            SourceKind::Video => self.video_resolver()?.resolve(input, options).await,
+            SourceKind::Bangumi => self.bangumi_resolver()?.resolve(input, options).await,
+            SourceKind::Cheese => self.cheese_resolver()?.resolve(input, options).await,
             kind => Err(BdlError::UnsupportedSource {
                 kind: source_kind_name(kind).to_owned(),
             }),
@@ -606,12 +629,36 @@ impl AppState {
             None => SeriesResolver::new(),
         }
     }
+
+    fn bangumi_resolver(&self) -> BdlResult<BangumiResolver> {
+        match self
+            .account_cookie
+            .lock()
+            .map_err(|_| state_poisoned("account_cookie"))?
+            .clone()
+        {
+            Some(cookie) => BangumiResolver::from_cookie(&cookie),
+            None => BangumiResolver::new(),
+        }
+    }
+
+    fn cheese_resolver(&self) -> BdlResult<CheeseResolver> {
+        match self
+            .account_cookie
+            .lock()
+            .map_err(|_| state_poisoned("account_cookie"))?
+            .clone()
+        {
+            Some(cookie) => CheeseResolver::from_cookie(&cookie),
+            None => CheeseResolver::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct PartHydrationRequest {
     part_id: PartId,
-    bvid: String,
+    input: ClassifiedInput,
     target_cid: Option<u64>,
 }
 
@@ -689,6 +736,15 @@ fn task_media_refresh_ids(task: &DownloadTask) -> BdlResult<TaskMediaRefreshIds>
         .ok_or_else(|| BdlError::Planning {
             message: format!("任务 `{}` 缺少可刷新媒体标识。", task.title),
         })?;
+
+    if let Some(ids) = episode_task_media_refresh_ids(part_segment, "bangumi")? {
+        return Ok(ids);
+    }
+
+    if let Some(ids) = episode_task_media_refresh_ids(part_segment, "cheese")? {
+        return Ok(ids);
+    }
+
     let mut parts = part_segment.split(':');
     let video_key = parts
         .next()
@@ -713,6 +769,38 @@ fn task_media_refresh_ids(task: &DownloadTask) -> BdlResult<TaskMediaRefreshIds>
     };
 
     Ok(TaskMediaRefreshIds { input, cid })
+}
+
+fn episode_task_media_refresh_ids(
+    part_segment: &str,
+    kind: &'static str,
+) -> BdlResult<Option<TaskMediaRefreshIds>> {
+    let mut parts = part_segment.split(':');
+    if parts.next() != Some(kind) {
+        return Ok(None);
+    }
+
+    let _season_id = parse_positive_u64(parts.next()).ok_or_else(|| BdlError::Planning {
+        message: format!("任务缺少 {kind} season ID，无法刷新下载地址。"),
+    })?;
+    let ep_id = parse_positive_u64(parts.next()).ok_or_else(|| BdlError::Planning {
+        message: format!("任务缺少 {kind} ep ID，无法刷新下载地址。"),
+    })?;
+    let cid = parse_positive_u64(parts.next()).ok_or_else(|| BdlError::Planning {
+        message: format!("任务缺少 {kind} CID，无法刷新下载地址。"),
+    })?;
+    let raw_url = format!("https://www.bilibili.com/{kind}/play/ep{ep_id}");
+    let input = match kind {
+        "bangumi" => ClassifiedInput::Bangumi { raw_url },
+        "cheese" => ClassifiedInput::Cheese { raw_url },
+        _ => {
+            return Err(BdlError::UnsupportedSource {
+                kind: kind.to_owned(),
+            });
+        }
+    };
+
+    Ok(Some(TaskMediaRefreshIds { input, cid }))
 }
 
 fn find_part_by_cid(tree: &NormalizedSourceTree, cid: u64) -> Option<&NormalizedPart> {
@@ -768,6 +856,17 @@ fn series_ids(tree: &NormalizedSourceTree) -> BdlResult<SeriesInputIds> {
         mid: Some(mid),
         series_id,
     })
+}
+
+fn cheese_season_id(tree: &NormalizedSourceTree) -> BdlResult<u64> {
+    tree.source
+        .id
+        .0
+        .strip_prefix("cheese:")
+        .and_then(|value| value.parse::<u64>().ok())
+        .ok_or_else(|| BdlError::Planning {
+            message: format!("来源 `{}` 缺少课程 season ID。", tree.source.id.0),
+        })
 }
 
 fn parse_two_part_source_id(source_id: &SourceId, prefix: &str) -> BdlResult<(u64, u64)> {
@@ -900,13 +999,9 @@ fn selected_hydration_requests(
             continue;
         }
 
-        let bvid = part.bvid.clone().ok_or_else(|| BdlError::Planning {
-            message: format!("选中的分 P `{}` 缺少 BV ID，无法补齐下载流。", part_id.0),
-        })?;
-
         requests.push(PartHydrationRequest {
             part_id: part_id.clone(),
-            bvid,
+            input: hydration_input_for_part(tree.source.kind, part, part_id)?,
             target_cid: part.cid,
         });
     }
@@ -926,13 +1021,67 @@ fn part_needs_hydration(part: &NormalizedPart) -> bool {
     part.cid.is_none() || part.streams.is_empty()
 }
 
+fn hydration_input_for_part(
+    kind: SourceKind,
+    part: &NormalizedPart,
+    part_id: &PartId,
+) -> BdlResult<ClassifiedInput> {
+    match kind {
+        SourceKind::Bangumi => {
+            let ep_id = episode_id_from_part_id(part_id, "bangumi")?;
+            Ok(ClassifiedInput::Bangumi {
+                raw_url: format!("https://www.bilibili.com/bangumi/play/ep{ep_id}"),
+            })
+        }
+        SourceKind::Cheese => {
+            let ep_id = episode_id_from_part_id(part_id, "cheese")?;
+            Ok(ClassifiedInput::Cheese {
+                raw_url: format!("https://www.bilibili.com/cheese/play/ep{ep_id}"),
+            })
+        }
+        _ => {
+            let bvid = part.bvid.clone().ok_or_else(|| BdlError::Planning {
+                message: format!("选中的分 P `{}` 缺少 BV ID，无法补齐下载流。", part_id.0),
+            })?;
+            Ok(ClassifiedInput::VideoBvid(bvid))
+        }
+    }
+}
+
+fn episode_id_from_part_id(part_id: &PartId, expected_kind: &'static str) -> BdlResult<u64> {
+    let mut parts = part_id
+        .0
+        .strip_prefix("part:")
+        .into_iter()
+        .flat_map(|value| value.split(':'));
+    let kind = parts.next().ok_or_else(|| BdlError::Planning {
+        message: format!("选中的分 P `{}` 缺少来源类型。", part_id.0),
+    })?;
+    if kind != expected_kind {
+        return Err(BdlError::Planning {
+            message: format!("选中的分 P `{}` 不是 {expected_kind} 来源。", part_id.0),
+        });
+    }
+    let _season_id = parse_positive_u64(parts.next()).ok_or_else(|| BdlError::Planning {
+        message: format!("选中的分 P `{}` 缺少 season ID。", part_id.0),
+    })?;
+
+    parse_positive_u64(parts.next()).ok_or_else(|| BdlError::Planning {
+        message: format!("选中的分 P `{}` 缺少 ep ID。", part_id.0),
+    })
+}
+
+fn parse_positive_u64(value: Option<&str>) -> Option<u64> {
+    value?.parse::<u64>().ok().filter(|value| *value > 0)
+}
+
 fn hydrate_placeholder_part(
     tree: &mut NormalizedSourceTree,
     placeholder_id: &PartId,
     target_cid: Option<u64>,
     hydrated: NormalizedSourceTree,
 ) -> BdlResult<Vec<PartId>> {
-    let mut hydrated_item = first_hydrated_item(hydrated)?;
+    let mut hydrated_item = hydrated_item_for_target(hydrated, target_cid)?;
     let hydrated_part_ids = selected_hydrated_part_ids(&hydrated_item.parts, target_cid)?;
 
     if hydrated_part_ids.is_empty() {
@@ -985,15 +1134,29 @@ fn selected_hydrated_part_ids(
         .collect::<Vec<_>>())
 }
 
-fn first_hydrated_item(hydrated: NormalizedSourceTree) -> BdlResult<NormalizedItem> {
-    hydrated
+fn hydrated_item_for_target(
+    hydrated: NormalizedSourceTree,
+    target_cid: Option<u64>,
+) -> BdlResult<NormalizedItem> {
+    let mut items = hydrated
         .groups
         .into_iter()
         .flat_map(|group| group.items)
-        .next()
-        .ok_or_else(|| BdlError::Planning {
-            message: "视频解析结果为空，无法创建下载任务。".to_owned(),
-        })
+        .collect::<Vec<_>>();
+
+    if let Some(target_cid) = target_cid {
+        let item_index = items
+            .iter()
+            .position(|item| item.parts.iter().any(|part| part.cid == Some(target_cid)))
+            .ok_or_else(|| BdlError::Planning {
+                message: format!("解析结果缺少 CID `{target_cid}`，无法创建下载任务。"),
+            })?;
+        return Ok(items.swap_remove(item_index));
+    }
+
+    items.into_iter().next().ok_or_else(|| BdlError::Planning {
+        message: "解析结果为空，无法创建下载任务。".to_owned(),
+    })
 }
 
 fn merge_missing_item_metadata(target: &mut NormalizedItem, fallback: &NormalizedItem) {
@@ -1072,8 +1235,28 @@ mod tests {
             requests,
             vec![PartHydrationRequest {
                 part_id: placeholder,
-                bvid: "BV1xx411c7mD".to_owned(),
+                input: ClassifiedInput::VideoBvid("BV1xx411c7mD".to_owned()),
                 target_cid: None,
+            }]
+        );
+    }
+
+    #[test]
+    fn selected_hydration_requests_builds_episode_request_for_bangumi() {
+        let tree = episode_tree(SourceKind::Bangumi, "bangumi");
+        let placeholder = PartId("part:bangumi:123:456:789".to_owned());
+
+        let requests = selected_hydration_requests(&tree, &[placeholder.clone()])
+            .expect("hydration requests should be valid");
+
+        assert_eq!(
+            requests,
+            vec![PartHydrationRequest {
+                part_id: placeholder,
+                input: ClassifiedInput::Bangumi {
+                    raw_url: "https://www.bilibili.com/bangumi/play/ep456".to_owned(),
+                },
+                target_cid: Some(789),
             }]
         );
     }
@@ -1221,6 +1404,36 @@ mod tests {
         assert_eq!(ids.cid, 346910923);
     }
 
+    #[test]
+    fn task_media_refresh_ids_extracts_bangumi_episode_and_cid_from_task_id() {
+        let task = task_with_id("task:bangumi:123:part:bangumi:123:456:789");
+
+        let ids = task_media_refresh_ids(&task).expect("task id should contain media ids");
+
+        assert_eq!(
+            ids.input,
+            ClassifiedInput::Bangumi {
+                raw_url: "https://www.bilibili.com/bangumi/play/ep456".to_owned(),
+            }
+        );
+        assert_eq!(ids.cid, 789);
+    }
+
+    #[test]
+    fn task_media_refresh_ids_extracts_cheese_episode_and_cid_from_task_id() {
+        let task = task_with_id("task:cheese:123:part:cheese:123:456:789");
+
+        let ids = task_media_refresh_ids(&task).expect("task id should contain media ids");
+
+        assert_eq!(
+            ids.input,
+            ClassifiedInput::Cheese {
+                raw_url: "https://www.bilibili.com/cheese/play/ep456".to_owned(),
+            }
+        );
+        assert_eq!(ids.cid, 789);
+    }
+
     fn task_with_id(id: &str) -> DownloadTask {
         DownloadTask {
             id: id.to_owned(),
@@ -1270,6 +1483,42 @@ mod tests {
                     total_count: Some(45),
                     has_more: true,
                 }),
+            }],
+        }
+    }
+
+    fn episode_tree(kind: SourceKind, label: &str) -> NormalizedSourceTree {
+        NormalizedSourceTree {
+            source: SourceSummary {
+                id: SourceId(format!("{label}:123")),
+                kind,
+                input: format!("https://www.bilibili.com/{label}/play/ss123"),
+                title: "fixture source".to_owned(),
+                loaded_count: 1,
+                total_count: Some(1),
+                has_more: false,
+            },
+            groups: vec![NormalizedGroup {
+                id: GroupId(format!("group:{label}:123")),
+                kind: label.to_owned(),
+                title: "fixture source".to_owned(),
+                items: vec![NormalizedItem {
+                    id: ItemId(format!("item:{label}:123:456")),
+                    title: "fixture episode".to_owned(),
+                    owner_name: None,
+                    cover_url: None,
+                    duration_seconds: Some(62),
+                    parts: vec![NormalizedPart {
+                        id: PartId(format!("part:{label}:123:456:789")),
+                        title: "fixture episode".to_owned(),
+                        aid: Some(170001),
+                        bvid: None,
+                        cid: Some(789),
+                        streams: Vec::new(),
+                        assets: Vec::new(),
+                    }],
+                }],
+                page: None,
             }],
         }
     }

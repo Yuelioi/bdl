@@ -1,3 +1,5 @@
+pub mod bangumi;
+pub mod cheese;
 pub mod collection;
 pub mod favorite;
 pub mod paged;

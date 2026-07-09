@@ -2,11 +2,11 @@
 
 ## State
 
-Task 14 is in progress on branch `bdl-downloader-app`, but product focus has temporarily shifted to the Transfer page IA refactor. The workspace has a Rust/Tauri/Vue scaffold, frontend-safe normalized DTOs, a pure Bilibili input classifier, `bpi-rs` backed video and uploader resolvers, a planner that turns selected normalized parts into backend-owned download tasks/resources, a resumable `reqwest` fetcher, an ffmpeg muxer, a CLI parse/download path, registered Tauri commands/events, a custom Vue UI kit, parse/transfer pages, SQLite-backed queue persistence, and top-right account login through Cookie import or QR scan.
+Task 14 is code-complete on branch `bdl-downloader-app`. The workspace has a Rust/Tauri/Vue scaffold, frontend-safe normalized DTOs, a pure Bilibili input classifier, `bpi-rs` backed video/favorite/uploader/collection/series/bangumi/cheese resolvers, a planner that turns selected normalized parts into backend-owned download tasks/resources, a resumable `reqwest` fetcher, an ffmpeg muxer, a CLI parse/download path, registered Tauri commands/events, a custom Vue UI kit, parse/transfer pages, SQLite-backed queue persistence, and top-right account login through Cookie import or QR scan.
 
 ## Next
 
-Continue `transfer-product-refactor-plan.md` verification. Phase 1 through Phase 5 main code paths are implemented and build locally; remaining items are manual Tauri-window visual QA and a clean commit boundary.
+Continue Task 15 derived assets, naming, and history/settings cleanup. Transfer manual Tauri-window visual QA remains a product-polish follow-up if the Transfer page is revisited.
 
 ## Read now
 
@@ -89,6 +89,11 @@ Current:
 - Transfer Phase 2 is code-complete pending manual QA: the right detail pane now defaults failed/cancelled tasks to `诊断`, separates `概览` / `轨道` / `事件` / `原始日志`, keeps raw logs out of the primary view, redacts obvious cookie/signed URL material in displayed logs, can copy a redacted diagnostic summary, and `bdl-core::diagnostics` classifies 404, 403, FFmpeg missing, merge failure, and timeout into recommended actions.
 - Transfer Phase 3/4 main code paths are implemented: `queue_retry` is ordinary retry, `queue_refresh_urls_and_retry` explicitly refreshes URLs before retry, frontend `refresh_retry` calls the explicit command, and Transfer now has a `BulkActionBar` for pause/resume/retry/refresh-retry/remove plus `清理已完成`. Backend bulk commands return per-task `updated`, `removed`, and `failed` results.
 - Transfer Phase 5 main code paths are implemented: settings now expose only backend-honored transfer controls (`concurrent_tasks`, `retry_count`, `auto_refresh_expired_urls`), the worker honors configured concurrency and retry count, expired URL errors can auto-refresh once per task, and Transfer has a compact status strip with real counts plus `速度 --`.
+- Transfer refactor checkpoint was committed as `794f97c feat: refine transfer manager workflow`.
+- Task 14 collection and series parsing is implemented through `crates/bdl-core/src/resolver/collection.rs`, with `parse_load_more` / `parse_load_all` appending collection and series pages through the same normalized tree path.
+- Task 14 bangumi and course parsing is implemented through dedicated `bangumi` and `cheese` resolvers. Bangumi `ss`/`ep` links normalize to season episode items and hydrate streams through `bangumi.playurl`; course `ss`/`ep` links normalize to paged course episode items and hydrate streams through `cheese.playurl`.
+- Tauri selection hydration and task URL refresh now dispatch by source type instead of assuming every empty stream can be refreshed as a normal BV video.
+- Task 14 resolver verification passed: `cargo fmt --all --check`, `cargo test -p bdl-core --test bangumi_resolver --test cheese_resolver --test paged_resolvers`, `cargo test -p bdl-tauri state`, and `cargo check -p bdl-desktop`.
 
 Decisions:
 - Main navigation: `解析`, `传输`, `设置`; account lives in the top-right account button. Completed records live under Transfer's `已完成` filter, not a separate History page.

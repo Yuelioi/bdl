@@ -8,6 +8,7 @@ pub enum PagedSourceKind {
     UploaderVideos,
     Collection,
     Series,
+    CheeseEpisodes,
 }
 
 impl PagedSourceKind {
@@ -16,6 +17,7 @@ impl PagedSourceKind {
             Self::Favorite => 20,
             Self::UploaderVideos => 30,
             Self::Collection | Self::Series => 20,
+            Self::CheeseEpisodes => 30,
         }
     }
 }

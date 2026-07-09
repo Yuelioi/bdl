@@ -1676,15 +1676,21 @@ Requirements:
 - `parse_load_all` requires an explicit limit or confirmation from frontend.
 - `下载已选择` only creates tasks for loaded selected items.
 
-- [ ] **Step 3: Add collection and series parsing**
+- [x] **Step 3: Add collection and series parsing**
 
 Normalize collection/series into the same `Source -> Group -> Item -> Part` tree.
 
-- [ ] **Step 4: Add bangumi and course parsing**
+- [x] **Step 4: Add bangumi and course parsing**
 
 Normalize seasons/courses into the same tree. Do not assume VIP capabilities; use actual streams returned by `bpi-rs`.
 
-- [ ] **Step 5: Commit**
+Implementation notes:
+
+- `crates/bdl-core/src/resolver/bangumi.rs` resolves `ss` and `ep` inputs through `bpi-rs bangumi.info.detail` and hydrates streams through `bangumi.playurl`.
+- `crates/bdl-core/src/resolver/cheese.rs` resolves `ss` and `ep` inputs through `bpi-rs cheese.info`, pages course episodes through `cheese.info.ep_list`, and hydrates streams through `cheese.playurl`.
+- `AppState` now routes bangumi/course parsing through dedicated resolvers, hydrates selected empty parts by source type, and refreshes expired task URLs for video, bangumi, and cheese task IDs.
+
+- [x] **Step 5: Commit**
 
 ```powershell
 git add crates/bdl-core crates/bdl-tauri apps/desktop/src
