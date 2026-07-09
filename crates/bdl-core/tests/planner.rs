@@ -6,8 +6,9 @@ use chrono::Utc;
 
 use bdl_core::ids::{GroupId, ItemId, PartId, SourceId};
 use bdl_core::model::{
-    AssetKind, FetchPolicy, HeaderPair, MediaKind, MediaStream, NormalizedGroup, NormalizedItem,
-    NormalizedPart, NormalizedSourceTree, SourceKind, SourceSummary, StreamCodec, StreamQuality,
+    AssetKind, DerivedAsset, FetchPolicy, HeaderPair, MediaKind, MediaStream, NormalizedGroup,
+    NormalizedItem, NormalizedPart, NormalizedSourceTree, SourceKind, SourceSummary, StreamCodec,
+    StreamQuality,
 };
 use bdl_core::naming::DuplicateNamingStrategy;
 use bdl_core::planner::{
@@ -85,6 +86,44 @@ fn plan_selected_parts_complete_archive_adds_derived_asset_intents() {
             DownloadResourceIntent::Danmaku,
             DownloadResourceIntent::Nfo,
         ]
+    );
+}
+
+#[test]
+fn plan_selected_parts_complete_archive_uses_asset_urls_and_formats() {
+    let tree = fixture_tree(true);
+    let options = DownloadOptions::new(PathBuf::from("downloads"))
+        .with_archive_mode(ArchiveMode::CompleteArchive);
+
+    let tasks = plan_selected_parts(&tree, &[PartId("part:BV1:100".to_owned())], &options)
+        .expect("complete archive should plan asset resources");
+
+    let subtitle = resource_by_intent(&tasks[0], DownloadResourceIntent::Subtitle);
+    assert_eq!(
+        subtitle.current_urls,
+        vec!["https://example.invalid/subtitle.json".to_owned()]
+    );
+    assert!(
+        subtitle
+            .target_path
+            .ends_with("Fixture Video/P1 - P1.subtitle.json")
+    );
+    assert!(
+        subtitle
+            .headers
+            .iter()
+            .any(|header| header.name == "Referer")
+    );
+
+    let danmaku = resource_by_intent(&tasks[0], DownloadResourceIntent::Danmaku);
+    assert_eq!(
+        danmaku.current_urls,
+        vec!["https://example.invalid/danmaku.xml".to_owned()]
+    );
+    assert!(
+        danmaku
+            .target_path
+            .ends_with("Fixture Video/P1 - P1.danmaku.xml")
     );
 }
 
@@ -317,8 +356,20 @@ fn fixture_tree(include_audio: bool) -> NormalizedSourceTree {
                     streams,
                     assets: vec![
                         AssetKind::Cover.with_policy(FetchPolicy::OnDemand),
-                        AssetKind::Subtitle.with_policy(FetchPolicy::OnDemand),
-                        AssetKind::Danmaku.with_policy(FetchPolicy::OnDemand),
+                        DerivedAsset::with_urls(
+                            AssetKind::Subtitle,
+                            FetchPolicy::OnDemand,
+                            "json",
+                            vec!["https://example.invalid/subtitle.json".to_owned()],
+                            asset_headers(),
+                        ),
+                        DerivedAsset::with_urls(
+                            AssetKind::Danmaku,
+                            FetchPolicy::OnDemand,
+                            "xml",
+                            vec!["https://example.invalid/danmaku.xml".to_owned()],
+                            asset_headers(),
+                        ),
                         AssetKind::Nfo.with_policy(FetchPolicy::OnDemand),
                     ],
                 }],
@@ -351,6 +402,23 @@ fn media_stream(
 
 fn fixture_part_mut(tree: &mut NormalizedSourceTree) -> &mut NormalizedPart {
     &mut tree.groups[0].items[0].parts[0]
+}
+
+fn resource_by_intent(
+    task: &bdl_core::queue::DownloadTask,
+    intent: DownloadResourceIntent,
+) -> &bdl_core::queue::DownloadResource {
+    task.resources
+        .iter()
+        .find(|resource| resource.intent == intent)
+        .expect("resource should exist")
+}
+
+fn asset_headers() -> Vec<HeaderPair> {
+    vec![HeaderPair {
+        name: "Referer".to_owned(),
+        value: "https://www.bilibili.com/".to_owned(),
+    }]
 }
 
 fn unique_temp_dir() -> PathBuf {

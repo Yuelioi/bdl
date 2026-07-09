@@ -8,8 +8,8 @@ use serde::{Deserialize, Serialize};
 use crate::error::{BdlError, BdlResult};
 use crate::ids::PartId;
 use crate::model::{
-    MediaKind, MediaStream, NormalizedItem, NormalizedPart, NormalizedSourceTree, StreamCodec,
-    StreamQuality,
+    AssetKind, DerivedAsset, MediaKind, MediaStream, NormalizedItem, NormalizedPart,
+    NormalizedSourceTree, StreamCodec, StreamQuality,
 };
 use crate::naming::{
     DEFAULT_NAMING_TEMPLATE, DuplicateNamingStrategy, NamingContext, render_output_path,
@@ -201,7 +201,12 @@ fn plan_part(
     ];
 
     if options.archive_mode == ArchiveMode::CompleteArchive {
-        resources.extend(complete_archive_resources(&task_id, &output_path, item));
+        resources.extend(complete_archive_resources(
+            &task_id,
+            &output_path,
+            item,
+            part,
+        ));
     }
 
     Ok(DownloadTask {
@@ -366,6 +371,7 @@ fn complete_archive_resources(
     task_id: &str,
     output_path: &Path,
     item: &NormalizedItem,
+    part: &NormalizedPart,
 ) -> Vec<DownloadResource> {
     [
         DownloadResourceIntent::Cover,
@@ -374,7 +380,7 @@ fn complete_archive_resources(
         DownloadResourceIntent::Nfo,
     ]
     .into_iter()
-    .map(|intent| asset_resource(task_id, output_path, item, intent))
+    .map(|intent| asset_resource(task_id, output_path, item, part, intent))
     .collect()
 }
 
@@ -382,16 +388,22 @@ fn asset_resource(
     task_id: &str,
     output_path: &Path,
     item: &NormalizedItem,
+    part: &NormalizedPart,
     intent: DownloadResourceIntent,
 ) -> DownloadResource {
     let suffix = resource_suffix(intent);
-    let target_path = sibling_resource_path(output_path, suffix, None);
+    let asset = part_asset(part, intent);
+    let target_path = sibling_resource_path(
+        output_path,
+        suffix,
+        asset.and_then(|asset| asset.format.as_deref()),
+    );
     DownloadResource {
         id: format!("{task_id}:resource:{suffix}"),
         kind: DownloadResourceKind::Asset,
         intent,
-        current_urls: asset_urls(item, intent),
-        headers: Vec::new(),
+        current_urls: asset_urls(item, asset, intent),
+        headers: asset.map(|asset| asset.headers.clone()).unwrap_or_default(),
         temp_path: temp_path_for(&target_path),
         target_path,
         status: ResourceStatus::Pending,
@@ -450,13 +462,35 @@ fn sibling_resource_path(output_path: &Path, suffix: &str, extension: Option<&st
     output_path.with_file_name(file_name)
 }
 
-fn asset_urls(item: &NormalizedItem, intent: DownloadResourceIntent) -> Vec<String> {
+fn part_asset(part: &NormalizedPart, intent: DownloadResourceIntent) -> Option<&DerivedAsset> {
+    let kind = match intent {
+        DownloadResourceIntent::Cover => AssetKind::Cover,
+        DownloadResourceIntent::Subtitle => AssetKind::Subtitle,
+        DownloadResourceIntent::Danmaku => AssetKind::Danmaku,
+        DownloadResourceIntent::Nfo => AssetKind::Nfo,
+        DownloadResourceIntent::Video | DownloadResourceIntent::Audio => return None,
+    };
+
+    part.assets.iter().find(|asset| asset.kind == kind)
+}
+
+fn asset_urls(
+    item: &NormalizedItem,
+    asset: Option<&DerivedAsset>,
+    intent: DownloadResourceIntent,
+) -> Vec<String> {
     match intent {
-        DownloadResourceIntent::Cover => item.cover_url.iter().cloned().collect(),
+        DownloadResourceIntent::Cover => asset
+            .map(|asset| asset.urls.clone())
+            .unwrap_or_default()
+            .into_iter()
+            .chain(item.cover_url.iter().cloned())
+            .collect(),
+        DownloadResourceIntent::Subtitle | DownloadResourceIntent::Danmaku => {
+            asset.map(|asset| asset.urls.clone()).unwrap_or_default()
+        }
         DownloadResourceIntent::Video
         | DownloadResourceIntent::Audio
-        | DownloadResourceIntent::Subtitle
-        | DownloadResourceIntent::Danmaku
         | DownloadResourceIntent::Nfo => Vec::new(),
     }
 }

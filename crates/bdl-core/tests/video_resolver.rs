@@ -3,8 +3,8 @@ use bdl_core::error::BdlError;
 use bdl_core::input::ClassifiedInput;
 use bdl_core::model::{AssetKind, FetchPolicy, MediaKind, SourceKind, StreamCodec, StreamQuality};
 use bdl_core::resolver::video::{
-    BpiVideoApi, ResolvedDashStream, ResolvedPlayUrl, ResolvedVideo, ResolvedVideoPage, VideoApi,
-    VideoInputId, VideoResolver,
+    BpiVideoApi, ResolvedDashStream, ResolvedPlayUrl, ResolvedPlayerInfo, ResolvedSubtitle,
+    ResolvedVideo, ResolvedVideoPage, VideoApi, VideoInputId, VideoResolver,
 };
 use bdl_core::resolver::{ResolveOptions, Resolver};
 
@@ -12,6 +12,7 @@ use bdl_core::resolver::{ResolveOptions, Resolver};
 struct FakeVideoApi {
     video: ResolvedVideo,
     play_url: ResolvedPlayUrl,
+    player_info: ResolvedPlayerInfo,
 }
 
 #[async_trait]
@@ -25,6 +26,16 @@ impl VideoApi for FakeVideoApi {
         assert_eq!(id, &VideoInputId::Bvid("BV1xx411c7mD".to_owned()));
         assert_eq!(cid, 62131);
         Ok(self.play_url.clone())
+    }
+
+    async fn player_info(
+        &self,
+        id: &VideoInputId,
+        cid: u64,
+    ) -> Result<ResolvedPlayerInfo, BdlError> {
+        assert_eq!(id, &VideoInputId::Bvid("BV1xx411c7mD".to_owned()));
+        assert_eq!(cid, 62131);
+        Ok(self.player_info.clone())
     }
 }
 
@@ -119,6 +130,50 @@ async fn video_resolver_maps_dash_streams_when_requested() -> Result<(), BdlErro
 }
 
 #[tokio::test]
+async fn video_resolver_maps_archive_asset_urls_when_streams_are_requested() -> Result<(), BdlError>
+{
+    let resolver = VideoResolver::with_api(fake_api());
+
+    let tree = resolver
+        .resolve(
+            ClassifiedInput::VideoBvid("BV1xx411c7mD".to_owned()),
+            ResolveOptions {
+                fetch_streams: true,
+            },
+        )
+        .await?;
+
+    let assets = &tree.groups[0].items[0].parts[0].assets;
+    let subtitle = assets
+        .iter()
+        .find(|asset| asset.kind == AssetKind::Subtitle)
+        .expect("subtitle asset should exist");
+    assert_eq!(subtitle.format.as_deref(), Some("json"));
+    assert_eq!(
+        subtitle.urls,
+        vec!["https://subtitle.example.invalid/zh.json".to_owned()]
+    );
+    assert!(
+        subtitle
+            .headers
+            .iter()
+            .any(|header| header.name == "Referer")
+    );
+
+    let danmaku = assets
+        .iter()
+        .find(|asset| asset.kind == AssetKind::Danmaku)
+        .expect("danmaku asset should exist");
+    assert_eq!(danmaku.format.as_deref(), Some("xml"));
+    assert_eq!(
+        danmaku.urls,
+        vec!["https://comment.bilibili.com/62131.xml".to_owned()]
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn video_resolver_rejects_non_video_input() {
     let resolver = VideoResolver::with_api(fake_api());
 
@@ -188,6 +243,13 @@ fn fake_api() -> FakeVideoApi {
                 backup_urls: Vec::new(),
                 bandwidth: Some(192_000),
                 codecs: "mp4a.40.2".to_owned(),
+            }],
+        },
+        player_info: ResolvedPlayerInfo {
+            subtitles: vec![ResolvedSubtitle {
+                lan: "zh-CN".to_owned(),
+                lan_doc: "中文".to_owned(),
+                url: "//subtitle.example.invalid/zh.json".to_owned(),
             }],
         },
     }

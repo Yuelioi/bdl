@@ -906,6 +906,8 @@ fn should_fetch(resource: &DownloadResource) -> bool {
         DownloadResourceIntent::Video
             | DownloadResourceIntent::Audio
             | DownloadResourceIntent::Cover
+            | DownloadResourceIntent::Subtitle
+            | DownloadResourceIntent::Danmaku
     ) && !resource.current_urls.is_empty()
 }
 
@@ -1224,17 +1226,37 @@ mod tests {
 
     #[test]
     fn should_fetch_skips_empty_cover_asset() {
-        let resource = DownloadResource {
-            id: "resource:cover".to_owned(),
-            kind: DownloadResourceKind::Asset,
-            intent: DownloadResourceIntent::Cover,
-            current_urls: Vec::new(),
-            headers: Vec::<HeaderPair>::new(),
-            target_path: PathBuf::from("cover"),
-            temp_path: PathBuf::from("cover.bdlpart"),
-            status: ResourceStatus::Pending,
-        };
+        let resource = resource(DownloadResourceIntent::Cover, Vec::new());
 
         assert!(!should_fetch(&resource));
+    }
+
+    #[test]
+    fn should_fetch_downloads_subtitle_and_danmaku_assets_with_urls() {
+        let subtitle = resource(
+            DownloadResourceIntent::Subtitle,
+            vec!["https://example.invalid/subtitle.json".to_owned()],
+        );
+        let danmaku = resource(
+            DownloadResourceIntent::Danmaku,
+            vec!["https://example.invalid/danmaku.xml".to_owned()],
+        );
+
+        assert!(should_fetch(&subtitle));
+        assert!(should_fetch(&danmaku));
+    }
+
+    fn resource(intent: DownloadResourceIntent, current_urls: Vec<String>) -> DownloadResource {
+        let suffix = format!("{intent:?}").to_ascii_lowercase();
+        DownloadResource {
+            id: format!("resource:{suffix}"),
+            kind: DownloadResourceKind::Asset,
+            intent,
+            current_urls,
+            headers: Vec::<HeaderPair>::new(),
+            target_path: PathBuf::from(&suffix),
+            temp_path: PathBuf::from(format!("{suffix}.bdlpart")),
+            status: ResourceStatus::Pending,
+        }
     }
 }

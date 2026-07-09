@@ -129,6 +129,8 @@ impl AssetKind {
             kind: self,
             format: None,
             fetch_policy,
+            urls: Vec::new(),
+            headers: Vec::new(),
         }
     }
 }
@@ -138,6 +140,28 @@ pub struct DerivedAsset {
     pub kind: AssetKind,
     pub format: Option<String>,
     pub fetch_policy: FetchPolicy,
+    #[serde(default)]
+    pub urls: Vec<String>,
+    #[serde(default)]
+    pub headers: Vec<HeaderPair>,
+}
+
+impl DerivedAsset {
+    pub fn with_urls(
+        kind: AssetKind,
+        fetch_policy: FetchPolicy,
+        format: impl Into<String>,
+        urls: Vec<String>,
+        headers: Vec<HeaderPair>,
+    ) -> Self {
+        Self {
+            kind,
+            format: Some(format.into()),
+            fetch_policy,
+            urls,
+            headers,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

@@ -1,8 +1,9 @@
 use async_trait::async_trait;
 use bpi_rs::BpiClient;
+use bpi_rs::danmaku::DanmakuXmlListParams;
 use bpi_rs::ids::{Aid, Bvid, Cid};
 use bpi_rs::video::videostream_url::DashStream;
-use bpi_rs::video::{VideoPlayUrlParams, VideoViewParams};
+use bpi_rs::video::{VideoPlayUrlParams, VideoPlayerInfoParams, VideoViewParams};
 use chrono::{DateTime, Utc};
 
 use super::{ResolveOptions, Resolver};
@@ -10,8 +11,9 @@ use crate::error::{BdlError, BdlResult};
 use crate::ids::{GroupId, ItemId, PartId, SourceId};
 use crate::input::ClassifiedInput;
 use crate::model::{
-    AssetKind, FetchPolicy, HeaderPair, MediaKind, MediaStream, NormalizedGroup, NormalizedItem,
-    NormalizedPart, NormalizedSourceTree, SourceKind, SourceSummary, StreamCodec, StreamQuality,
+    AssetKind, DerivedAsset, FetchPolicy, HeaderPair, MediaKind, MediaStream, NormalizedGroup,
+    NormalizedItem, NormalizedPart, NormalizedSourceTree, SourceKind, SourceSummary, StreamCodec,
+    StreamQuality,
 };
 
 const DEFAULT_REFERER: &str = "https://www.bilibili.com/";
@@ -77,11 +79,27 @@ pub struct ResolvedDashStream {
     pub codecs: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ResolvedPlayerInfo {
+    pub subtitles: Vec<ResolvedSubtitle>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedSubtitle {
+    pub lan: String,
+    pub lan_doc: String,
+    pub url: String,
+}
+
 #[async_trait]
 pub trait VideoApi: Send + Sync {
     async fn view(&self, id: &VideoInputId) -> BdlResult<ResolvedVideo>;
 
     async fn play_url(&self, id: &VideoInputId, cid: u64) -> BdlResult<ResolvedPlayUrl>;
+
+    async fn player_info(&self, _id: &VideoInputId, _cid: u64) -> BdlResult<ResolvedPlayerInfo> {
+        Ok(ResolvedPlayerInfo::default())
+    }
 }
 
 #[derive(Debug)]
@@ -132,11 +150,12 @@ where
         let mut parts = Vec::with_capacity(pages.len());
         for page in pages {
             let part_key = format!("{canonical_key}:{}", page.cid);
-            let streams = if options.fetch_streams {
+            let (streams, player_info) = if options.fetch_streams {
                 let play_url = self.api.play_url(&input_id, page.cid).await?;
-                map_play_url(&part_key, play_url, Utc::now())
+                let player_info = self.api.player_info(&input_id, page.cid).await?;
+                (map_play_url(&part_key, play_url, Utc::now()), player_info)
             } else {
-                Vec::new()
+                (Vec::new(), ResolvedPlayerInfo::default())
             };
 
             parts.push(NormalizedPart {
@@ -146,7 +165,7 @@ where
                 bvid: Some(video.bvid.clone()),
                 cid: Some(page.cid),
                 streams,
-                assets: vec![AssetKind::Cover.with_policy(FetchPolicy::OnDemand)],
+                assets: archive_assets(page.cid, &player_info),
             });
         }
 
@@ -251,6 +270,35 @@ impl VideoApi for BpiVideoApi {
                 .collect(),
         })
     }
+
+    async fn player_info(&self, id: &VideoInputId, cid: u64) -> BdlResult<ResolvedPlayerInfo> {
+        let data = self
+            .client
+            .video()
+            .player_info_v2(player_info_params(id, cid)?)
+            .await
+            .map_err(|error| BdlError::Bpi(error.to_string()))?;
+
+        Ok(ResolvedPlayerInfo {
+            subtitles: data
+                .subtitle
+                .map(|info| {
+                    info.subtitles
+                        .into_iter()
+                        .filter_map(|subtitle| {
+                            normalize_asset_url(&subtitle.subtitle_url).map(|url| {
+                                ResolvedSubtitle {
+                                    lan: subtitle.lan,
+                                    lan_doc: subtitle.lan_doc,
+                                    url,
+                                }
+                            })
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
+        })
+    }
 }
 
 impl From<DashStream> for ResolvedDashStream {
@@ -294,6 +342,19 @@ fn play_url_params(id: &VideoInputId, cid: u64) -> BdlResult<VideoPlayUrlParams>
         .format_version(0)
         .fourk(true)
         .high_quality(true))
+}
+
+fn player_info_params(id: &VideoInputId, cid: u64) -> BdlResult<VideoPlayerInfoParams> {
+    let cid = Cid::new(cid).map_err(|error| BdlError::Bpi(error.to_string()))?;
+    match id {
+        VideoInputId::Aid(aid) => Aid::new(*aid)
+            .map(|aid| VideoPlayerInfoParams::from_aid(aid, cid))
+            .map_err(|error| BdlError::Bpi(error.to_string())),
+        VideoInputId::Bvid(bvid) => bvid
+            .parse::<Bvid>()
+            .map(|bvid| VideoPlayerInfoParams::from_bvid(bvid, cid))
+            .map_err(|error| BdlError::Bpi(error.to_string())),
+    }
 }
 
 fn normalized_pages(video: &ResolvedVideo) -> Vec<ResolvedVideoPage> {
@@ -354,6 +415,61 @@ fn map_play_url(
                 }),
         )
         .collect()
+}
+
+fn archive_assets(cid: u64, player_info: &ResolvedPlayerInfo) -> Vec<DerivedAsset> {
+    let mut assets = vec![AssetKind::Cover.with_policy(FetchPolicy::OnDemand)];
+
+    if let Some(asset) = subtitle_asset(player_info) {
+        assets.push(asset);
+    }
+    if let Some(asset) = danmaku_asset(cid) {
+        assets.push(asset);
+    }
+    assets.push(AssetKind::Nfo.with_policy(FetchPolicy::OnDemand));
+
+    assets
+}
+
+fn subtitle_asset(player_info: &ResolvedPlayerInfo) -> Option<DerivedAsset> {
+    let urls = player_info
+        .subtitles
+        .iter()
+        .filter_map(|subtitle| normalize_asset_url(&subtitle.url))
+        .collect::<Vec<_>>();
+
+    (!urls.is_empty()).then(|| {
+        DerivedAsset::with_urls(
+            AssetKind::Subtitle,
+            FetchPolicy::OnDemand,
+            "json",
+            urls,
+            default_stream_headers(),
+        )
+    })
+}
+
+fn danmaku_asset(cid: u64) -> Option<DerivedAsset> {
+    Cid::new(cid).ok().map(|cid| {
+        DerivedAsset::with_urls(
+            AssetKind::Danmaku,
+            FetchPolicy::OnDemand,
+            "xml",
+            vec![DanmakuXmlListParams::new(cid).comment_xml_url()],
+            default_stream_headers(),
+        )
+    })
+}
+
+fn normalize_asset_url(url: &str) -> Option<String> {
+    let trimmed = url.trim();
+    if trimmed.is_empty() {
+        None
+    } else if trimmed.starts_with("//") {
+        Some(format!("https:{trimmed}"))
+    } else {
+        Some(trimmed.to_owned())
+    }
 }
 
 fn map_stream(

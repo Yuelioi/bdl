@@ -1754,9 +1754,11 @@ Do not fetch subtitles/danmaku during fast parse.
 Current partial implementation:
 
 - Complete archive mode downloads cover assets when a cover URL is present.
+- Normal video resolving reads subtitles from `video.player_info_v2` through `bpi-rs` when stream hydration is requested.
+- Normal video resolving creates danmaku XML archive assets through `bpi-rs` `DanmakuXmlListParams`.
 - NFO resources are generated locally after muxing.
 - Cover/subtitle/danmaku resources with no available URL are marked complete with a warning log instead of leaving completed tasks with pending resources.
-- Subtitle and danmaku API fetching plus custom asset selection remain pending.
+- Custom asset selection remains pending.
 
 - [ ] **Step 3: Implement completed records in Transfer**
 

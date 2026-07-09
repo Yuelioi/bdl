@@ -37,7 +37,7 @@ Audited on 2026-07-09 from:
 - [x] Split Settings into clear sections for current supported settings.
 - [x] Explain every currently exposed user-facing mode with concrete output behavior.
 - [x] Rename archive preset copy so `快速下载` means "final merged video only".
-- [x] Explain current `完整归档` support honestly: video + cover when available + generated NFO; subtitles/danmaku still pending.
+- [x] Explain current `完整归档` support honestly: video + generated NFO + cover/subtitles/danmaku when URLs are available.
 - [x] Do not expose `自定义` until resource-level custom asset selection works end to end.
 - [x] Show all supported naming variables beside the naming template field.
 - [x] Provide naming template presets for single video, multi-part video, collection/series, and bangumi/course.
@@ -58,8 +58,8 @@ Audited on 2026-07-09 from:
 
 ## P1 - Archive Assets
 
-- [ ] Fetch subtitles through `bpi-rs` when available.
-- [ ] Fetch danmaku through `bpi-rs` when available.
+- [x] Fetch subtitles through `bpi-rs` when available.
+- [x] Fetch danmaku through `bpi-rs` when available.
 - [ ] Add custom archive selection for cover, subtitles, danmaku, NFO, and raw stream retention.
 - [ ] Add optional cover/subtitle embedding in ffmpeg post-processing when the container supports it.
 - [ ] Record unavailable archive assets as user-facing warnings without claiming full archive success.

@@ -147,7 +147,9 @@ fn normalized_source_tree_serializes_stable_shape() {
                                         {
                                             "kind": "cover",
                                             "format": null,
-                                            "fetch_policy": "on_demand"
+                                            "fetch_policy": "on_demand",
+                                            "urls": [],
+                                            "headers": []
                                         }
                                     ]
                                 }

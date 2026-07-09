@@ -124,7 +124,7 @@ const settingsDataDir = computed({
 })
 const settingsArchiveDescription = computed(() =>
   settings.draft.archive_mode === 'complete_archive'
-    ? '保存最终视频，并额外生成 NFO；有封面地址时会下载封面。字幕和弹幕抓取还在任务清单中，暂不承诺完整。'
+    ? '保存最终视频，并额外生成 NFO；解析到封面、字幕或弹幕地址时会一并下载，不可用的素材会在任务日志中记录。'
     : '只下载视频轨道和音频轨道，合并为最终可播放文件；不抓取封面、字幕、弹幕或 NFO。',
 )
 const settingsDuplicateDescription = computed(() =>
