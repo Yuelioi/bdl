@@ -2,11 +2,11 @@
 
 ## State
 
-Task 9 desktop app shell is complete on branch `bdl-downloader-app`. The workspace has a Rust/Tauri/Vue scaffold, frontend-safe normalized DTOs, a pure Bilibili input classifier, a `bpi-rs` backed video resolver, a planner that turns selected normalized parts into backend-owned download tasks/resources, a resumable `reqwest` fetcher, an ffmpeg muxer, a CLI parse/download path, registered Tauri commands/events, and a custom Vue UI kit with the initial desktop shell.
+Task 10 parse page is complete on branch `bdl-downloader-app`. The workspace has a Rust/Tauri/Vue scaffold, frontend-safe normalized DTOs, a pure Bilibili input classifier, a `bpi-rs` backed video resolver, a planner that turns selected normalized parts into backend-owned download tasks/resources, a resumable `reqwest` fetcher, an ffmpeg muxer, a CLI parse/download path, registered Tauri commands/events, a custom Vue UI kit, and a parse page wired to Tauri commands.
 
 ## Next
 
-Execute Task 10 in `plan.md`: wire the parse page to Tauri commands through frontend DTOs and a parse store.
+Execute Task 11 in `plan.md`: add the transfer page and queue store around backend queue state.
 
 ## Read now
 
@@ -59,6 +59,10 @@ Current:
 - Completed Task 9 UI kit and app shell in commit `58078ea`.
 - Task 9 verification passed: `pnpm --dir apps/desktop build`.
 - The desktop shell now has custom shared controls, nav tabs `解析` / `传输` / `历史` / `设置`, a top-right login/account split button with logout dropdown, QR/Cookie login dialog surface, help drawer, toast host, source tree, transfer tabs, task row, and settings download controls.
+- Completed Task 10 parse page in commit `45d4816`.
+- Task 10 verification passed: `cargo check -p bdl-desktop`, `cargo test --workspace`, `cargo fmt --all --check`, and `pnpm --dir apps/desktop build`.
+- The parse page now has frontend DTOs matching Rust serde output, typed Tauri wrappers, a Pinia parse store, source list, selectable normalized tree, `解析更多` / `解析全部` placeholders, and `下载已选择` creating backend queue tasks without auto-navigation. The toast action `查看传输` is user-triggered.
+- `selection_create_tasks` is now implemented in the Tauri bridge for loaded parsed sources so the parse page can add tasks to the in-memory queue.
 
 Decisions:
 - Main navigation: `解析`, `传输`, `历史`, `设置`; account lives in the top-right account button.

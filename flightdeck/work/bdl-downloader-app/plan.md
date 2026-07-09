@@ -1328,7 +1328,7 @@ git commit -m "feat: add desktop app shell and ui kit"
 - Create: `apps/desktop/src/stores/parse.ts`
 - Create: `apps/desktop/src/pages/ParsePage.vue`
 
-- [ ] **Step 1: Define frontend DTOs matching Rust**
+- [x] **Step 1: Define frontend DTOs matching Rust**
 
 Types:
 
@@ -1351,7 +1351,7 @@ export interface NormalizedSourceTree {
 
 Keep TypeScript field names identical to Rust serde output.
 
-- [ ] **Step 2: Implement parse store**
+- [x] **Step 2: Implement parse store**
 
 Store state:
 
@@ -1371,7 +1371,7 @@ Actions:
 - `toggleNode(sourceId: string, nodeId: string)`.
 - `createTasksForSelection(sourceId: string)`.
 
-- [ ] **Step 3: Implement parse page layout**
+- [x] **Step 3: Implement parse page layout**
 
 Layout:
 
@@ -1384,7 +1384,7 @@ Primary action: `下载已选择`.
 
 Do not auto-navigate after task creation. Show toast with `查看传输`.
 
-- [ ] **Step 4: Run frontend build**
+- [x] **Step 4: Run frontend build**
 
 Run:
 
@@ -1394,7 +1394,7 @@ pnpm --dir apps/desktop build
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add apps/desktop/src

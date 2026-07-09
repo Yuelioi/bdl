@@ -1,10 +1,10 @@
 # Cockpit — bdl
 
-Focus: BDL downloader vertical slice is moving from backend bridge into the interactive desktop UI.
+Focus: BDL downloader vertical slice is moving from parse UI into transfer queue UI.
 
 ## In flight
 
-- [bdl-downloader-app](work/bdl-downloader-app/index.md) — Task 9 app shell complete; next is Task 10 parse page wiring.
+- [bdl-downloader-app](work/bdl-downloader-app/index.md) — Task 10 parse page complete; next is Task 11 transfer queue UI.
 
 ## Open questions
 
