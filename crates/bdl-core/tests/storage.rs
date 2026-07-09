@@ -8,6 +8,7 @@ use bdl_core::queue::{
     QueueLogLevel, ResourceStatus, TaskStatus,
 };
 use bdl_core::storage::TaskStorage;
+use chrono::{Duration, Utc};
 use uuid::Uuid;
 
 #[test]
@@ -104,6 +105,64 @@ fn task_storage_reloads_task_logs_after_reopen() -> BdlResult<()> {
     let logs = storage.load_task_logs(&task.id, 10)?;
 
     assert_eq!(logs, vec![second, first]);
+    Ok(())
+}
+
+#[test]
+fn task_storage_prunes_task_logs_older_than_retention_window() -> BdlResult<()> {
+    let fixture = StorageFixture::new()?;
+    let task = sample_task();
+    let old_log = sample_log(
+        &task.id,
+        QueueLogLevel::Info,
+        "old log",
+        &(Utc::now() - Duration::days(31)).to_rfc3339(),
+    );
+    let fresh_log = sample_log(
+        &task.id,
+        QueueLogLevel::Info,
+        "fresh log",
+        &Utc::now().to_rfc3339(),
+    );
+
+    {
+        let mut storage = TaskStorage::open(&fixture.db_path)?;
+        storage.save_task(&task)?;
+        storage.append_task_log(&old_log)?;
+        storage.append_task_log(&fresh_log)?;
+    }
+
+    let storage = TaskStorage::open(&fixture.db_path)?;
+    let logs = storage.load_task_logs(&task.id, 10)?;
+
+    assert_eq!(logs, vec![fresh_log]);
+    Ok(())
+}
+
+#[test]
+fn task_storage_keeps_latest_thousand_logs_per_task() -> BdlResult<()> {
+    let fixture = StorageFixture::new()?;
+    let task = sample_task();
+
+    {
+        let mut storage = TaskStorage::open(&fixture.db_path)?;
+        storage.save_task(&task)?;
+        for index in 0..1002 {
+            storage.append_task_log(&sample_log(
+                &task.id,
+                QueueLogLevel::Info,
+                &format!("log {index}"),
+                &Utc::now().to_rfc3339(),
+            ))?;
+        }
+    }
+
+    let storage = TaskStorage::open(&fixture.db_path)?;
+    let logs = storage.load_task_logs(&task.id, 2000)?;
+
+    assert_eq!(logs.len(), 1000);
+    assert_eq!(logs[0].message, "log 1001");
+    assert_eq!(logs[999].message, "log 2");
     Ok(())
 }
 

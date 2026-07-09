@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use chrono::Utc;
+use chrono::{Duration, Utc};
 use rusqlite::{Connection, Transaction, params};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -10,6 +10,8 @@ use crate::error::BdlResult;
 use crate::queue::{DownloadResource, DownloadTask, QueueLogEntry, QueueLogLevel};
 
 const MAX_COMPLETION_ERROR_SUMMARY_CHARS: usize = 2000;
+const TASK_LOG_RETENTION_DAYS: i64 = 30;
+const MAX_TASK_LOGS_PER_TASK: usize = 1000;
 
 pub struct TaskStorage {
     conn: Connection,
@@ -239,6 +241,7 @@ impl TaskStorage {
                 entry.created_at.as_str(),
             ],
         )?;
+        self.prune_task_logs(entry.task_id.as_str())?;
         Ok(())
     }
 
@@ -310,6 +313,31 @@ impl TaskStorage {
         }
 
         Ok(resources)
+    }
+
+    fn prune_task_logs(&mut self, task_id: &str) -> BdlResult<()> {
+        let cutoff = (Utc::now() - Duration::days(TASK_LOG_RETENTION_DAYS)).to_rfc3339();
+        self.conn.execute(
+            "DELETE FROM task_logs WHERE datetime(created_at) < datetime(?1)",
+            [cutoff],
+        )?;
+
+        let max_logs = i64::try_from(MAX_TASK_LOGS_PER_TASK).unwrap_or(i64::MAX);
+        self.conn.execute(
+            r#"
+            DELETE FROM task_logs
+            WHERE task_id = ?1
+              AND id NOT IN (
+                SELECT id
+                FROM task_logs
+                WHERE task_id = ?1
+                ORDER BY id DESC
+                LIMIT ?2
+              )
+            "#,
+            params![task_id, max_logs],
+        )?;
+        Ok(())
     }
 }
 
