@@ -8,6 +8,7 @@ use bdl_core::model::NormalizedSourceTree;
 use bdl_core::queue::{DownloadTask, TaskStatus};
 use bdl_core::resolver::video::VideoResolver;
 use bdl_core::resolver::{ResolveOptions, Resolver};
+use bdl_core::settings::AppSettings;
 use bdl_core::storage::TaskStorage;
 use bdl_core::{BdlError, BdlResult};
 use serde::{Deserialize, Serialize};
@@ -146,22 +147,7 @@ impl AppState {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SettingsSnapshot {
-    pub download_dir: Option<String>,
-    pub quality: String,
-    pub archive_mode: String,
-}
-
-impl Default for SettingsSnapshot {
-    fn default() -> Self {
-        Self {
-            download_dir: None,
-            quality: "best".to_owned(),
-            archive_mode: "fast".to_owned(),
-        }
-    }
-}
+pub type SettingsSnapshot = AppSettings;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct AccountSnapshot {

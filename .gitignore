@@ -36,6 +36,7 @@ apps/**/src-tauri/gen/
 apps/**/dist/
 
 # Local app runtime data
+.bdl/
 *.bdlpart
 *.part
 *.tmp

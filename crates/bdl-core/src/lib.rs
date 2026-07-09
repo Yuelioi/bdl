@@ -7,6 +7,7 @@ pub mod muxer;
 pub mod planner;
 pub mod queue;
 pub mod resolver;
+pub mod settings;
 pub mod storage;
 
 pub use error::{BdlError, BdlResult};
