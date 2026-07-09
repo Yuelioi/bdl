@@ -1,5 +1,7 @@
 use bdl_core::BdlResult;
 use bdl_core::account::{AccountSummary, ImportedCookie, QrLoginStatus, redact_sensitive};
+use bpi_rs::ids::Mid;
+use bpi_rs::login::{LoginNav, LoginWbiImg};
 
 #[test]
 fn imported_cookie_accepts_required_bilibili_login_cookies() -> BdlResult<()> {
@@ -39,6 +41,48 @@ fn account_summary_from_imported_cookie_marks_logged_in() -> BdlResult<()> {
 
     assert_eq!(account.logged_in, true);
     Ok(())
+}
+
+#[test]
+fn account_summary_from_login_nav_uses_verified_profile() -> BdlResult<()> {
+    let account = AccountSummary::from_login_nav(&LoginNav {
+        is_login: true,
+        mid: Some(Mid::new(42).expect("fixture mid should be valid")),
+        uname: Some("fixture user".to_owned()),
+        face: Some("https://example.test/avatar.jpg".to_owned()),
+        wbi_img: LoginWbiImg {
+            img_url: "https://example.test/img.png".to_owned(),
+            sub_url: "https://example.test/sub.png".to_owned(),
+        },
+    });
+
+    assert_eq!(
+        account,
+        AccountSummary {
+            logged_in: true,
+            name: Some("fixture user".to_owned()),
+            avatar_url: Some("https://example.test/avatar.jpg".to_owned()),
+            mid: Some("42".to_owned()),
+            vip_label: None,
+        }
+    );
+    Ok(())
+}
+
+#[test]
+fn account_summary_from_logged_out_nav_clears_profile() {
+    let account = AccountSummary::from_login_nav(&LoginNav {
+        is_login: false,
+        mid: None,
+        uname: None,
+        face: None,
+        wbi_img: LoginWbiImg {
+            img_url: "https://example.test/img.png".to_owned(),
+            sub_url: "https://example.test/sub.png".to_owned(),
+        },
+    });
+
+    assert_eq!(account, AccountSummary::default());
 }
 
 #[test]

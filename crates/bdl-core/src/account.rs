@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use bpi_rs::BpiClient;
+use bpi_rs::login::LoginNav;
 use bpi_rs::login::LoginQrPollParams;
 use qrcode::QrCode;
 use qrcode::render::svg;
@@ -91,6 +92,20 @@ impl AccountSummary {
             vip_label: None,
         }
     }
+
+    pub fn from_login_nav(nav: &LoginNav) -> Self {
+        if !nav.is_login {
+            return Self::default();
+        }
+
+        Self {
+            logged_in: true,
+            name: nav.uname.clone(),
+            avatar_url: nav.face.clone(),
+            mid: nav.mid.map(|mid| mid.get().to_string()),
+            vip_label: None,
+        }
+    }
 }
 
 pub async fn start_qr_login() -> BdlResult<QrLoginSession> {
@@ -130,6 +145,20 @@ pub async fn poll_qr_login(qrcode_key: &str) -> BdlResult<QrLoginPollOutcome> {
         message: data.message,
         cookie_header,
     })
+}
+
+pub async fn verify_cookie_session(cookie: &str) -> BdlResult<AccountSummary> {
+    let client = BpiClient::builder()
+        .cookie(cookie)
+        .build()
+        .map_err(|error| BdlError::Bpi(error.to_string()))?;
+    let nav = match client.login().nav().await {
+        Ok(nav) => nav,
+        Err(error) if error.requires_login() => return Ok(AccountSummary::default()),
+        Err(error) => return Err(BdlError::Bpi(error.to_string())),
+    };
+
+    Ok(AccountSummary::from_login_nav(&nav))
 }
 
 pub fn redact_sensitive(input: &str) -> String {

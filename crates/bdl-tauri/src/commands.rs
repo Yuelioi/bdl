@@ -759,13 +759,40 @@ pub fn account_logout(
 }
 
 #[tauri::command]
-pub fn account_verify(
+pub async fn account_verify(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> CommandResult<AccountSnapshot> {
-    let account = state.verify_account()?;
+    let account = state.verify_account().await?;
     events::emit(&app, events::ACCOUNT_UPDATED, &account)?;
     Ok(account)
+}
+
+pub fn start_account_startup_verification(app: &AppHandle) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        let state = app.state::<AppState>();
+        let account = match state.verify_account().await {
+            Ok(account) => account,
+            Err(error) => {
+                tracing::warn!("startup account verification failed: {error}");
+                match state.account() {
+                    Ok(account) => account,
+                    Err(error) => {
+                        tracing::warn!(
+                            "failed to read account after startup verification: {error}"
+                        );
+                        return;
+                    }
+                }
+            }
+        };
+
+        if let Err(error) = events::emit(&app, events::ACCOUNT_UPDATED, &account) {
+            tracing::warn!("failed to emit startup account update: {}", error.message);
+        }
+    });
 }
 
 fn update_task_status(

@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use bdl_core::account::{AccountSummary, ImportedCookie};
+use bdl_core::account::{AccountSummary, ImportedCookie, verify_cookie_session};
 use bdl_core::ids::{PartId, SourceId};
 use bdl_core::input::{ClassifiedInput, classify_input};
 use bdl_core::model::{
@@ -530,6 +530,33 @@ impl AppState {
     }
 
     pub fn logout(&self) -> BdlResult<AccountSnapshot> {
+        self.clear_account_state()
+    }
+
+    pub async fn verify_account(&self) -> BdlResult<AccountSnapshot> {
+        let Some(raw_cookie) = self
+            .account_cookie
+            .lock()
+            .map_err(|_| state_poisoned("account_cookie"))?
+            .clone()
+        else {
+            return self.account();
+        };
+
+        let account = verify_cookie_session(&raw_cookie).await?;
+        if account.logged_in {
+            self.storage
+                .lock()
+                .map_err(|_| state_poisoned("storage"))?
+                .save_account_summary(&account)?;
+            *self.account.lock().map_err(|_| state_poisoned("account"))? = account.clone();
+            return Ok(account);
+        }
+
+        self.clear_account_state()
+    }
+
+    fn clear_account_state(&self) -> BdlResult<AccountSnapshot> {
         self.secure_store.clear_cookie()?;
         self.storage
             .lock()
@@ -542,26 +569,6 @@ impl AppState {
         *self.account.lock().map_err(|_| state_poisoned("account"))? = AccountSnapshot::default();
 
         self.account()
-    }
-
-    pub fn verify_account(&self) -> BdlResult<AccountSnapshot> {
-        let Some(raw_cookie) = self
-            .account_cookie
-            .lock()
-            .map_err(|_| state_poisoned("account_cookie"))?
-            .clone()
-        else {
-            return self.account();
-        };
-
-        let imported_cookie = ImportedCookie::parse(raw_cookie)?;
-        let account = AccountSummary::from_imported_cookie(&imported_cookie);
-        self.storage
-            .lock()
-            .map_err(|_| state_poisoned("storage"))?
-            .save_account_summary(&account)?;
-        *self.account.lock().map_err(|_| state_poisoned("account"))? = account.clone();
-        Ok(account)
     }
 
     fn persist_queue(&self, queue: &[DownloadTask]) -> BdlResult<()> {

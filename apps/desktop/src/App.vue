@@ -221,9 +221,9 @@ const signOut = async () => {
 }
 
 const initializeApp = async () => {
+  await account.startEventListeners()
   void account.load()
   void settings.load()
-  void account.startEventListeners()
   await queue.startEventListeners()
   await queue.list()
   const recovery = await queue.loadStartupRecovery()

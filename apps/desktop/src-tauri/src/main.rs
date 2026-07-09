@@ -1,6 +1,10 @@
 fn main() {
     tauri::Builder::default()
         .manage(bdl_tauri::state::AppState::new().expect("failed to initialize BDL app state"))
+        .setup(|app| {
+            bdl_tauri::commands::start_account_startup_verification(app.handle());
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             bdl_tauri::commands::parse_create_source,
             bdl_tauri::commands::parse_load_more,
