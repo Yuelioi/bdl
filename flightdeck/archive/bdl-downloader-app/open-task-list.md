@@ -7,9 +7,9 @@ Audited on 2026-07-09 from:
 
 - `flightdeck/knowledge/bdl-downloader/product-flow.md`
 - `flightdeck/knowledge/bdl-downloader/architecture.md`
-- `flightdeck/work/bdl-downloader-app/plan.md`
-- `flightdeck/work/bdl-downloader-app/transfer-product-refactor-plan.md`
-- `flightdeck/work/bdl-downloader-app/index.md`
+- `flightdeck/archive/bdl-downloader-app/plan.md`
+- `flightdeck/archive/bdl-downloader-app/transfer-product-refactor-plan.md`
+- `flightdeck/archive/bdl-downloader-app/index.md`
 
 ## Product Corrections
 

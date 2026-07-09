@@ -2,19 +2,19 @@
 
 ## State
 
-Task 14 is code-complete on branch `bdl-downloader-app`. The workspace has a Rust/Tauri/Vue scaffold, frontend-safe normalized DTOs, a pure Bilibili input classifier, `bpi-rs` backed video/favorite/uploader/collection/series/bangumi/cheese resolvers, a planner that turns selected normalized parts into backend-owned download tasks/resources, a resumable `reqwest` fetcher, an ffmpeg muxer, a CLI parse/download path, registered Tauri commands/events, a custom Vue UI kit, parse/transfer pages, SQLite-backed queue persistence, and top-right account login through Cookie import or QR scan.
+Archived on 2026-07-09. The BDL downloader implementation task list is complete and committed. The workspace has a Rust/Tauri/Vue scaffold, frontend-safe normalized DTOs, a pure Bilibili input classifier, `bpi-rs` backed video/favorite/uploader/collection/series/bangumi/cheese resolvers, a planner that turns selected normalized parts into backend-owned download tasks/resources, a resumable `reqwest` fetcher, an ffmpeg muxer, a CLI parse/download path, registered Tauri commands/events, a custom Vue UI kit, parse/transfer/settings pages, SQLite-backed queue persistence, OS credential-backed cookie storage, diagnostics, packaging scripts, and release QA notes.
 
 ## Next
 
-Continue from `flightdeck/work/bdl-downloader-app/open-task-list.md`. Immediate focus is Parse selection IA, Settings clarity, unfinished archive assets, completed records inside Transfer, and Transfer manual QA. Do not use the older History-page wording in `plan.md` as current product direction.
+No active implementation tasks remain in this topic. For future work, create a fresh topic under `flightdeck/work/` and use this archived package as historical context.
 
 ## Read now
 
 - flightdeck/knowledge/bdl-downloader/product-flow.md
 - flightdeck/knowledge/bdl-downloader/architecture.md
-- flightdeck/work/bdl-downloader-app/open-task-list.md
-- flightdeck/work/bdl-downloader-app/transfer-product-refactor-plan.md
-- flightdeck/work/bdl-downloader-app/plan.md
+- flightdeck/archive/bdl-downloader-app/open-task-list.md
+- flightdeck/archive/bdl-downloader-app/transfer-product-refactor-plan.md
+- flightdeck/archive/bdl-downloader-app/plan.md
 
 ## Read if
 
@@ -27,7 +27,7 @@ Current:
 - Created the initial flightdeck deck.
 - Captured BDL product flow and architecture decisions.
 - Moved durable design material into `flightdeck/knowledge/bdl-downloader/`.
-- Wrote the phased implementation plan in `flightdeck/work/bdl-downloader-app/plan.md`.
+- Wrote the phased implementation plan in `flightdeck/archive/bdl-downloader-app/plan.md`.
 - Completed Task 1 scaffold in commits `c3cac74` and `b482e22`.
 - Task 1 verification passed: `cargo check --workspace`, `pnpm --dir apps/desktop install`, and `pnpm --dir apps/desktop build`.
 - Code review required removing the absolute `bpi-rs` dependency from Task 1 and replacing the placeholder icon with a generated Tauri icon set; both are done.
@@ -85,7 +85,7 @@ Current:
 - Uploader source parsing now loads the first page through `bpi-rs user.uploaded_videos`, `parse_load_more` appends one page, and `parse_load_all` batches pages up to the current explicit/default limit of 100.
 - Favorite source parsing now loads video resources from `bpi-rs fav.list_detail` for links with `fid` or `media_id`, appends pages through the same `parse_load_more` path, and uses API `has_more` to avoid count issues when non-video resources are filtered out.
 - `下载已选择` now hydrates selected uploader placeholder parts through the video resolver before planning tasks, so multi-P videos selected from an uploader list expand to their real parts. List sources no longer default to all selected in the parse UI.
-- Transfer page product grill produced `flightdeck/work/bdl-downloader-app/transfer-product-refactor-plan.md`. Key outcomes: batch task management comes first, the list should become a quasi-table, filters should be `活动` / `失败` / `已完成` / `全部`, completed records stay in Transfer instead of a separate History page, failure diagnosis and recovery actions must be explicit, queue ordering controls are intentionally out of scope, and settings must only expose backend-honored behavior.
+- Transfer page product grill produced `flightdeck/archive/bdl-downloader-app/transfer-product-refactor-plan.md`. Key outcomes: batch task management comes first, the list should become a quasi-table, filters should be `活动` / `失败` / `已完成` / `全部`, completed records stay in Transfer instead of a separate History page, failure diagnosis and recovery actions must be explicit, queue ordering controls are intentionally out of scope, and settings must only expose backend-honored behavior.
 - Transfer Phase 1 implementation is in progress: the task list now uses workflow filters (`活动` / `失败` / `已完成` / `全部`), frontend-only transfer view models, a quasi-table task list, icon-based row actions, row selection, short issue labels, short location display, and correct empty states. Verified with `pnpm run build`; manual visual QA and commit are pending.
 - Transfer Phase 2 is code-complete pending manual QA: the right detail pane now defaults failed/cancelled tasks to `诊断`, separates `概览` / `轨道` / `事件` / `原始日志`, keeps raw logs out of the primary view, redacts obvious cookie/signed URL material in displayed logs, can copy a redacted diagnostic summary, and `bdl-core::diagnostics` classifies 404, 403, FFmpeg missing, merge failure, and timeout into recommended actions.
 - Transfer Phase 3/4 main code paths are implemented: `queue_retry` is ordinary retry, `queue_refresh_urls_and_retry` explicitly refreshes URLs before retry, frontend `refresh_retry` calls the explicit command, and Transfer now has a `BulkActionBar` for pause/resume/retry/refresh-retry/remove plus `清理已完成`. Backend bulk commands return per-task `updated`, `removed`, and `failed` results.
@@ -165,7 +165,7 @@ Current:
 - Packaging verification passed with `powershell -ExecutionPolicy Bypass -File .\scripts\package.ps1 -SkipCheck`, producing `target/release/bdl-desktop.exe`, `target/release/bundle/msi/BDL_0.1.0_x64_en-US.msi`, and `target/release/bundle/nsis/BDL_0.1.0_x64-setup.exe`.
 - P2 minimum-window QA at 1100x720 completed.
 - Chrome/Playwright checked `解析`, `传输`, and `设置` at `1100x720`; each page reported `document.body.scrollWidth == document.body.clientWidth == 1100` and no visible right overflow. Clean screenshots were inspected after dismissing browser-only Tauri `invoke` fallback toasts. No page-level horizontal scrollbar, major overlap, or blocked primary workflow panel was observed.
-- P2 release QA checklist landed in `flightdeck/work/bdl-downloader-app/release-qa.md`.
+- P2 release QA checklist landed in `flightdeck/archive/bdl-downloader-app/release-qa.md`.
 - The release checklist covers parse, download/transfer recovery, account persistence, diagnostics/log redaction, missing FFmpeg messaging, and minimum-window inspection, with explicit expected outcomes and evidence to record per release candidate.
 - Transfer visual QA follow-up is complete. Chrome/Playwright rendered real Transfer components with mocked Tauri startup, settings, account, queue, logs, and command responses at `1365x768` and `1100x720`. Both viewports reported `documentElement.scrollWidth == clientWidth`, no visible horizontal scrollers, and inspector raw logs/track lists stayed inside their panels. The narrow `1100x720` layout now gives the task list usable height and lays the inspector summary/tabs side-by-side so the summary actions are not clipped.
 - Persisted Transfer workflow verification is covered by `state::tests::persisted_queue_management_workflows_survive_reload`. The test uses a temporary real SQLite `TaskStorage`, exercises pause/resume, retry, refresh-link URL replacement plus retry, remove, and clear-completed behavior through `AppState`, then reopens storage and verifies the results persisted.

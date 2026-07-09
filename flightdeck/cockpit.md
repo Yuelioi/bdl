@@ -1,10 +1,14 @@
 # Cockpit — bdl
 
-Focus: BDL downloader vertical slice is moving from account login into paged and multi-type source resolvers.
+Focus: No active flightdeck work topic.
 
-## In flight
+## In Flight
 
-- [bdl-downloader-app](work/bdl-downloader-app/index.md) — Task 13 account persistence and login complete; next is Task 14 paged and multi-type resolvers.
+- None.
+
+## Archived
+
+- [bdl-downloader-app](archive/bdl-downloader-app/index.md) — BDL downloader implementation task list completed and archived on 2026-07-09.
 
 ## Open questions
 

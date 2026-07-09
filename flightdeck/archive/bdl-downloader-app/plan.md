@@ -12,7 +12,7 @@
 
 ## Current Plan Override
 
-The original Transfer page scope in Task 11 was sufficient for a functional prototype, but it is superseded for product-quality work by `flightdeck/work/bdl-downloader-app/transfer-product-refactor-plan.md`.
+The original Transfer page scope in Task 11 was sufficient for a functional prototype, but it is superseded for product-quality work by `flightdeck/archive/bdl-downloader-app/transfer-product-refactor-plan.md`.
 
 Apply that focused plan for Transfer work before continuing unresolved resolver expansion. Its key product decisions are:
 
@@ -132,7 +132,7 @@ apps/
         main.rs
 ```
 
-The root `docs/` directory should stay absent unless we later decide to publish user-facing docs. Durable implementation knowledge lives under `flightdeck/knowledge/`; active handoff stays under `flightdeck/work/bdl-downloader-app/`.
+The root `docs/` directory should stay absent unless we later decide to publish user-facing docs. Durable implementation knowledge lives under `flightdeck/knowledge/`; active handoff stays under `flightdeck/archive/bdl-downloader-app/`.
 
 ---
 
@@ -1768,8 +1768,8 @@ Landed across the Task 15/P1 continuation commits recorded in `index.md`, includ
 
 - Create: `scripts/check.ps1`
 - Create: `scripts/package.ps1`
-- Create: `flightdeck/work/bdl-downloader-app/release-qa.md`
-- Update: `flightdeck/work/bdl-downloader-app/open-task-list.md`
+- Create: `flightdeck/archive/bdl-downloader-app/release-qa.md`
+- Update: `flightdeck/archive/bdl-downloader-app/open-task-list.md`
 
 - [x] **Step 1: Add a single check script**
 
@@ -1781,7 +1781,7 @@ Landed across the Task 15/P1 continuation commits recorded in `index.md`, includ
 
 - [x] **Step 3: Manual QA checklist**
 
-Release QA is captured in `flightdeck/work/bdl-downloader-app/release-qa.md`. Minimum-window browser QA covered Parse, Transfer, and Settings at `1100x720`; Transfer follow-up QA covered `1365x768` and `1100x720` with real components and mocked Tauri responses.
+Release QA is captured in `flightdeck/archive/bdl-downloader-app/release-qa.md`. Minimum-window browser QA covered Parse, Transfer, and Settings at `1100x720`; Transfer follow-up QA covered `1365x768` and `1100x720` with real components and mocked Tauri responses.
 
 - [x] **Step 4: Commit**
 
@@ -1802,7 +1802,7 @@ Landed as:
 - Keep Tauri commands as glue; they call core services and emit events.
 - Frontend transfer state is backend-authoritative.
 - Commit after each task.
-- Update `flightdeck/work/bdl-downloader-app/index.md` after each completed phase with current state and next step.
+- Update `flightdeck/archive/bdl-downloader-app/index.md` after each completed phase with current state and next step.
 
 ## Verification Matrix
 
