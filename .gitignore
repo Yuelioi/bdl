@@ -1,0 +1,47 @@
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Editors and local workspace state
+.vscode/
+.idea/
+.worktrees/
+*.swp
+*.swo
+
+# Environment and local secrets
+.env
+.env.*
+!.env.example
+
+# Rust
+/target/
+**/*.rs.bk
+
+# Node / frontend
+node_modules/
+dist/
+dist-ssr/
+.vite/
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Tauri / build outputs
+src-tauri/target/
+apps/**/src-tauri/target/
+apps/**/dist/
+
+# Local app runtime data
+*.bdlpart
+*.part
+*.tmp
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+/downloads/
+/output/
+/logs/
