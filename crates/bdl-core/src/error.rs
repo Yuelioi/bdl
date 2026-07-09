@@ -11,6 +11,9 @@ pub enum BdlError {
     #[error("bpi error: {0}")]
     Bpi(String),
 
+    #[error("planning error: {message}")]
+    Planning { message: String },
+
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
 }
