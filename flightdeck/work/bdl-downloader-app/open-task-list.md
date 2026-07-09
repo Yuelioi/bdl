@@ -66,9 +66,9 @@ Audited on 2026-07-09 from:
 
 ## P1 - Completed Records
 
-- [ ] Build completed-record search inside Transfer `已完成`.
-- [ ] Search by title, source URL/input, and save path.
-- [ ] Support open file, open directory, re-download, copy source link, remove record, and clear completed records.
+- [x] Build completed-record search inside Transfer `已完成`.
+- [x] Search by title, source URL/input, and save path.
+- [x] Support open file, open directory, re-download, copy source link, remove record, and clear completed records.
 - [ ] Persist selected quality, audio, codec, container, final path, download time, and error summary for completed records.
 
 ## P1 - Downloader Reliability

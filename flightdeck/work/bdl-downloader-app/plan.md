@@ -1778,6 +1778,13 @@ Actions:
 - copy source link.
 - remove completed record.
 
+Current partial implementation:
+
+- Transfer `已完成` has a search box filtering by title, source id/link, and output path.
+- Completed task menus include open folder, re-download, copy source, and remove; the bulk bar already clears completed records.
+- Completed retry resets all resources to pending so cleaned raw streams are downloaded again.
+- Durable completed-record metadata beyond the queue snapshot remains pending.
+
 - [ ] **Step 4: Implement settings page**
 
 Sections:

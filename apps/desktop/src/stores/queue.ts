@@ -227,6 +227,21 @@ export const useQueueStore = defineStore('queue', {
     async openDir(taskId: string) {
       await this.runVoidCommand(() => queueOpenDir(taskId))
     },
+    async copySource(taskId: string) {
+      const ui = useUiStore()
+      const task = this.tasks.find((task) => task.id === taskId)
+      if (!task) {
+        ui.pushToast('任务不存在', 'danger')
+        return
+      }
+
+      try {
+        await navigator.clipboard.writeText(sourceReference(task.source_id))
+        ui.pushToast('已复制来源', 'success')
+      } catch (error) {
+        ui.pushToast(errorMessage(error), 'danger')
+      }
+    },
     async loadLogs(taskId: string) {
       const ui = useUiStore()
       this.logsLoadingByTask[taskId] = true
@@ -326,6 +341,32 @@ const mergeLogs = (...sources: QueueLogEntry[][]): QueueLogEntry[] => {
 
 const logKey = (log: QueueLogEntry): string =>
   `${log.task_id}\n${log.created_at}\n${log.level}\n${log.message}`
+
+export const sourceReference = (sourceId: string): string => {
+  if (sourceId.startsWith('video:')) {
+    const id = sourceId.slice('video:'.length)
+    if (/^BV/i.test(id) || /^av\d+/i.test(id)) {
+      return `https://www.bilibili.com/video/${id}`
+    }
+  }
+
+  const uploader = sourceId.match(/^uploader:(\d+):videos$/)
+  if (uploader) {
+    return `https://space.bilibili.com/${uploader[1]}/video`
+  }
+
+  const bangumi = sourceId.match(/^bangumi:(\d+)$/)
+  if (bangumi) {
+    return `https://www.bilibili.com/bangumi/play/ss${bangumi[1]}`
+  }
+
+  const cheese = sourceId.match(/^cheese:(\d+)$/)
+  if (cheese) {
+    return `https://www.bilibili.com/cheese/play/ss${cheese[1]}`
+  }
+
+  return sourceId
+}
 
 const errorMessage = (error: unknown): string => {
   if (error instanceof Error) {

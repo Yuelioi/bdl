@@ -309,9 +309,10 @@ impl AppState {
                 message: format!("任务 `{task_id}` 不存在。"),
             })?;
 
+        let should_redownload_all = queue[task_index].status == TaskStatus::Completed;
         queue[task_index].status = TaskStatus::Waiting;
         for resource in &mut queue[task_index].resources {
-            if resource.status != ResourceStatus::Completed {
+            if should_redownload_all || resource.status != ResourceStatus::Completed {
                 resource.status = ResourceStatus::Pending;
             }
         }

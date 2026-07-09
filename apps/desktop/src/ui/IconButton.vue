@@ -36,6 +36,7 @@ const iconPaths: Record<string, string[]> = {
   trash: ['M4 7h16', 'M10 11v6', 'M14 11v6', 'M6 7l1 14h10l1-14', 'M9 7V4h6v3'],
   file: ['M6 3h8l4 4v14H6z', 'M14 3v5h5'],
   folder: ['M3 6h7l2 2h9v11H3z'],
+  copy: ['M8 8h11v11H8z', 'M5 16H4V4h12v1'],
   help: ['M12 18h.01', 'M9.25 9a3 3 0 1 1 4.32 2.69c-.95.57-1.57 1.13-1.57 2.31', 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z'],
   'chevron-down': ['M7 10l5 5 5-5'],
   more: ['M5 12h.01', 'M12 12h.01', 'M19 12h.01'],

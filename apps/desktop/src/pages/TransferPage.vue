@@ -1,13 +1,14 @@
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 
 import type { TaskStatus } from '../api/dto'
-import { useQueueStore, type QueueFilter } from '../stores/queue'
+import { sourceReference, useQueueStore, type QueueFilter } from '../stores/queue'
 import { useSettingsStore } from '../stores/settings'
 import { createTransferTaskView, type TaskActionKind } from '../stores/transferView'
 import { useUiStore } from '../stores/ui'
 import UiButton from '../ui/Button.vue'
 import UiTabs from '../ui/Tabs.vue'
+import UiTextField from '../ui/TextField.vue'
 import BulkActionBar from '../ui/BulkActionBar.vue'
 import TaskInspector from '../ui/TaskInspector.vue'
 import TransferTaskTable from '../ui/TransferTaskTable.vue'
@@ -15,6 +16,7 @@ import TransferTaskTable from '../ui/TransferTaskTable.vue'
 const queue = useQueueStore()
 const settings = useSettingsStore()
 const ui = useUiStore()
+const completedSearch = ref('')
 const queueFilter = computed({
   get: () => queue.activeFilter,
   set: (value: QueueFilter) => queue.setFilter(value),
@@ -26,8 +28,20 @@ const tabs = computed<Array<{ label: string; value: QueueFilter; count: number }
   { label: '已完成', value: 'completed', count: queue.countByFilter('completed') },
   { label: '全部', value: 'all', count: queue.tasks.length },
 ])
+const completedSearchQuery = computed(() => completedSearch.value.trim().toLowerCase())
+const visibleTasks = computed(() => {
+  if (queue.activeFilter !== 'completed' || !completedSearchQuery.value) {
+    return queue.filteredTasks
+  }
+
+  return queue.filteredTasks.filter((task) =>
+    [task.title, task.source_id, sourceReference(task.source_id), task.output_path].some((value) =>
+      value.toLowerCase().includes(completedSearchQuery.value),
+    ),
+  )
+})
 const taskViews = computed(() =>
-  queue.filteredTasks.map((task) =>
+  visibleTasks.value.map((task) =>
     createTransferTaskView(task, queue.taskProgress(task), queue.logsByTask[task.id] ?? []),
   ),
 )
@@ -39,7 +53,7 @@ const selectedLogsLoading = computed(() =>
 const selectedProgress = computed(() => (queue.selectedTask ? queue.taskProgress(queue.selectedTask) : 0))
 const selectedTaskSet = computed(() => new Set(queue.selectedTaskIds))
 const selectedTasks = computed(() => queue.tasks.filter((task) => selectedTaskSet.value.has(task.id)))
-const bulkScopeTasks = computed(() => (selectedTasks.value.length > 0 ? selectedTasks.value : queue.filteredTasks))
+const bulkScopeTasks = computed(() => (selectedTasks.value.length > 0 ? selectedTasks.value : visibleTasks.value))
 const pausableTaskIds = computed(() => bulkScopeTasks.value.filter((task) => isPausable(task.status)).map((task) => task.id))
 const resumableTaskIds = computed(() => bulkScopeTasks.value.filter((task) => task.status === 'paused').map((task) => task.id))
 const retryableTaskIds = computed(() => bulkScopeTasks.value.filter((task) => isRetryable(task.status)).map((task) => task.id))
@@ -65,6 +79,9 @@ const emptyTitle = computed(() => {
     return '没有失败任务'
   }
   if (queue.activeFilter === 'completed') {
+    if (completedSearchQuery.value) {
+      return '没有匹配的完成记录'
+    }
     return '还没有完成任务'
   }
 
@@ -110,6 +127,10 @@ const handleTaskAction = (taskId: string, action: Exclude<TaskActionKind, 'none'
   }
   if (action === 'open_dir') {
     void queue.openDir(taskId)
+    return
+  }
+  if (action === 'copy_source') {
+    void queue.copySource(taskId)
   }
 }
 
@@ -152,7 +173,7 @@ const runClearCompleted = () => {
 const isPausable = (status: TaskStatus): boolean =>
   status === 'waiting' || status === 'parsing' || status === 'downloading' || status === 'muxing'
 
-const isRetryable = (status: TaskStatus): boolean => status === 'failed' || status === 'cancelled'
+const isRetryable = (status: TaskStatus): boolean => status === 'failed' || status === 'cancelled' || status === 'completed'
 </script>
 
 <template>
@@ -175,6 +196,15 @@ const isRetryable = (status: TaskStatus): boolean => status === 'failed' || stat
       </div>
 
       <UiTabs v-model="queueFilter" :tabs="tabs" />
+
+      <div v-if="queue.activeFilter === 'completed'" class="completed-search">
+        <UiTextField
+          v-model="completedSearch"
+          label="搜索已完成"
+          placeholder="标题、来源或保存路径"
+          :disabled="queue.loading"
+        />
+      </div>
 
       <BulkActionBar
         :selected-count="queue.selectedTaskIds.length"
@@ -246,6 +276,10 @@ const isRetryable = (status: TaskStatus): boolean => status === 'failed' || stat
 
 .transfer-detail {
   overflow: hidden;
+}
+
+.completed-search {
+  max-width: 420px;
 }
 
 .task-list {

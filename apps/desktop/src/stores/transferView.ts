@@ -11,6 +11,7 @@ export type TaskActionKind =
   | 'remove'
   | 'open_file'
   | 'open_dir'
+  | 'copy_source'
   | 'none'
 
 export interface TaskActionDescriptor {
@@ -54,6 +55,7 @@ export interface TransferTaskView {
   shortLocation: string
   fullLocation: string
   outputPath: string
+  sourceId: string
   primaryAction: TaskActionKind
   primaryActionLabel: string
   primaryActionIcon: string
@@ -85,6 +87,7 @@ export const createTransferTaskView = (
     shortLocation: shortLocation(task.output_path),
     fullLocation: outputDir(task.output_path),
     outputPath: task.output_path,
+    sourceId: task.source_id,
     primaryAction,
     primaryActionLabel: actionLabel(primaryAction),
     primaryActionIcon: actionIcon(primaryAction),
@@ -423,7 +426,12 @@ const secondaryActionsForTask = (task: DownloadTask, primaryAction: TaskActionKi
   const actions: TaskActionDescriptor[] = []
 
   if (task.status === 'completed') {
-    actions.push(actionDescriptor('open_dir'), actionDescriptor('remove'))
+    actions.push(
+      actionDescriptor('open_dir'),
+      actionDescriptor('retry', '重新下载'),
+      actionDescriptor('copy_source'),
+      actionDescriptor('remove'),
+    )
     return actions.filter((action) => action.kind !== primaryAction)
   }
 
@@ -441,9 +449,12 @@ const secondaryActionsForTask = (task: DownloadTask, primaryAction: TaskActionKi
   return actions.filter((action) => action.kind !== primaryAction)
 }
 
-const actionDescriptor = (kind: Exclude<TaskActionKind, 'none'>): TaskActionDescriptor => ({
+const actionDescriptor = (
+  kind: Exclude<TaskActionKind, 'none'>,
+  label = actionLabel(kind),
+): TaskActionDescriptor => ({
   kind,
-  label: actionLabel(kind),
+  label,
   icon: actionIcon(kind),
   tone: kind === 'remove' || kind === 'cancel' ? 'danger' : 'normal',
 })
@@ -470,6 +481,7 @@ const actionLabel = (action: TaskActionKind): string => {
     remove: '移除',
     open_file: '打开文件',
     open_dir: '打开文件夹',
+    copy_source: '复制来源',
     none: '',
   }
 
@@ -486,6 +498,7 @@ const actionIcon = (action: TaskActionKind): string => {
     remove: 'trash',
     open_file: 'file',
     open_dir: 'folder',
+    copy_source: 'copy',
     none: 'more',
   }
 
