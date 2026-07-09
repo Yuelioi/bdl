@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
 
-import type { DownloadTask, TaskStatus } from '../api/dto'
+import type { DownloadResourceIntent, DownloadTask, ResourceStatus, TaskStatus } from '../api/dto'
 import { useQueueStore, type QueueFilter } from '../stores/queue'
 import UiButton from '../ui/Button.vue'
 import UiStatusBadge from '../ui/StatusBadge.vue'
@@ -20,6 +20,13 @@ const tabs = computed(() => [
 ])
 
 const selectedLogs = computed(() => (queue.selectedTaskId ? (queue.logsByTask[queue.selectedTaskId] ?? []) : []))
+const selectedLogsLoading = computed(() =>
+  queue.selectedTaskId ? Boolean(queue.logsLoadingByTask[queue.selectedTaskId]) : false,
+)
+const selectedOutputDir = computed(() => outputDir(queue.selectedTask?.output_path ?? null))
+const selectedCanRetry = computed(
+  () => queue.selectedTask?.status === 'failed' || queue.selectedTask?.status === 'cancelled',
+)
 
 onMounted(() => {
   void queue.startEventListeners()
@@ -62,6 +69,74 @@ const stageText = (status: TaskStatus): string => {
     cancelled: '已取消',
   }
   return labels[status]
+}
+
+const statusBadge = (status: TaskStatus): 'ready' | 'downloading' | 'queued' | 'done' | 'error' | 'paused' => {
+  if (status === 'completed') {
+    return 'done'
+  }
+  if (status === 'failed' || status === 'cancelled') {
+    return 'error'
+  }
+  if (status === 'paused') {
+    return 'paused'
+  }
+  if (status === 'waiting') {
+    return 'queued'
+  }
+  if (status === 'downloading' || status === 'parsing' || status === 'muxing') {
+    return 'downloading'
+  }
+  return 'ready'
+}
+
+const resourceStatusBadge = (status: ResourceStatus): 'ready' | 'downloading' | 'queued' | 'done' | 'error' | 'paused' => {
+  if (status === 'completed') {
+    return 'done'
+  }
+  if (status === 'failed' || status === 'cancelled') {
+    return 'error'
+  }
+  if (status === 'paused') {
+    return 'paused'
+  }
+  if (status === 'pending') {
+    return 'queued'
+  }
+  return 'downloading'
+}
+
+const resourceStatusText = (status: ResourceStatus): string => {
+  const labels: Record<ResourceStatus, string> = {
+    pending: '等待',
+    downloading: '下载中',
+    completed: '已完成',
+    failed: '失败',
+    paused: '已暂停',
+    cancelled: '已取消',
+  }
+  return labels[status]
+}
+
+const resourceIntentText = (intent: DownloadResourceIntent): string => {
+  const labels: Record<DownloadResourceIntent, string> = {
+    video: '视频',
+    audio: '音频',
+    cover: '封面',
+    subtitle: '字幕',
+    danmaku: '弹幕',
+    nfo: 'NFO',
+  }
+  return labels[intent]
+}
+
+const outputDir = (path: string | null): string => {
+  if (!path) {
+    return '--'
+  }
+
+  const separatorIndex = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'))
+  return separatorIndex >= 0 ? path.slice(0, separatorIndex) : '.'
 }
 </script>
 
@@ -109,22 +184,78 @@ const stageText = (status: TaskStatus): string => {
     <aside class="panel transfer-detail">
       <div class="panel-heading">
         <h2>详情</h2>
-        <UiStatusBadge v-if="queue.selectedTask" status="ready">{{ stageText(queue.selectedTask.status) }}</UiStatusBadge>
+        <UiStatusBadge v-if="queue.selectedTask" :status="statusBadge(queue.selectedTask.status)">
+          {{ stageText(queue.selectedTask.status) }}
+        </UiStatusBadge>
       </div>
 
       <template v-if="queue.selectedTask">
-        <div class="detail-block">
-          <strong>{{ queue.selectedTask.title }}</strong>
-          <span>{{ resourceMeta(queue.selectedTask) }}</span>
-          <span>{{ queue.selectedTask.output_path }}</span>
+        <div class="detail-actions">
+          <UiButton
+            v-if="selectedCanRetry"
+            variant="primary"
+            @click="queue.retry(queue.selectedTask.id)"
+          >
+            重试
+          </UiButton>
+          <UiButton variant="secondary" @click="queue.openDir(queue.selectedTask.id)">打开文件夹</UiButton>
+          <UiButton variant="secondary" @click="queue.openFile(queue.selectedTask.id)">打开文件</UiButton>
         </div>
 
-        <div class="log-list">
-          <div v-for="log in selectedLogs" :key="`${log.created_at}-${log.message}`" class="log-row">
-            <span>{{ log.level }}</span>
-            <p>{{ log.message }}</p>
+        <div class="detail-block">
+          <strong>{{ queue.selectedTask.title }}</strong>
+          <div class="detail-field">
+            <span>资源</span>
+            <p>{{ resourceMeta(queue.selectedTask) }}</p>
           </div>
-          <div v-if="!selectedLogs.length" class="empty-state compact">暂无日志</div>
+          <div class="detail-field">
+            <span>保存目录</span>
+            <p>{{ selectedOutputDir }}</p>
+          </div>
+          <div class="detail-field">
+            <span>输出文件</span>
+            <p>{{ queue.selectedTask.output_path }}</p>
+          </div>
+        </div>
+
+        <div class="detail-section">
+          <div class="section-title">
+            <h3>资源</h3>
+          </div>
+          <div class="resource-list">
+            <div
+              v-for="resource in queue.selectedTask.resources"
+              :key="resource.id"
+              class="resource-row"
+              :class="{ failed: resource.status === 'failed' || resource.status === 'cancelled' }"
+            >
+              <span>{{ resourceIntentText(resource.intent) }}</span>
+              <UiStatusBadge :status="resourceStatusBadge(resource.status)">
+                {{ resourceStatusText(resource.status) }}
+              </UiStatusBadge>
+            </div>
+          </div>
+        </div>
+
+        <div class="detail-section logs-section">
+          <div class="section-title">
+            <h3>日志</h3>
+            <UiButton
+              variant="ghost"
+              :disabled="selectedLogsLoading"
+              @click="queue.loadLogs(queue.selectedTask.id)"
+            >
+              刷新
+            </UiButton>
+          </div>
+          <div class="log-list">
+            <div v-for="log in selectedLogs" :key="`${log.created_at}-${log.message}`" class="log-row">
+              <span :class="`level-${log.level}`">{{ log.level }}</span>
+              <p>{{ log.message }}</p>
+            </div>
+            <div v-if="selectedLogsLoading && !selectedLogs.length" class="empty-state compact">日志加载中</div>
+            <div v-else-if="!selectedLogs.length" class="empty-state compact">暂无日志</div>
+          </div>
         </div>
       </template>
       <div v-else class="empty-state">未选择任务</div>
@@ -141,11 +272,14 @@ const stageText = (status: TaskStatus): string => {
 .transfer-detail {
   min-width: 0;
   min-height: 0;
-  overflow: hidden;
 }
 
 .transfer-main {
   overflow: hidden;
+}
+
+.transfer-detail {
+  overflow: auto;
 }
 
 .task-list {
@@ -161,25 +295,95 @@ const stageText = (status: TaskStatus): string => {
   gap: var(--space-8);
 }
 
-.detail-block strong,
-.detail-block span {
+.detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+}
+
+.detail-block strong {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.detail-block span {
-  color: var(--color-muted);
-  font-size: var(--font-12);
+.detail-field {
+  min-width: 0;
+  display: grid;
+  gap: var(--space-4);
 }
 
+.detail-field span,
+.section-title h3 {
+  color: var(--color-muted);
+  font-size: var(--font-12);
+  font-weight: 700;
+}
+
+.detail-field p {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--color-text);
+  font-size: var(--font-12);
+  line-height: 1.5;
+}
+
+.detail-section {
+  min-height: 0;
+  display: grid;
+  gap: var(--space-8);
+}
+
+.logs-section {
+  min-height: 0;
+}
+
+.section-title {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+}
+
+.section-title h3 {
+  margin: 0;
+}
+
+.resource-list,
 .log-list {
   min-height: 0;
   overflow: auto;
   display: grid;
   align-content: start;
   gap: var(--space-8);
+}
+
+.resource-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+  padding: var(--space-8);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-6);
+  background: var(--color-panel);
+}
+
+.resource-row.failed {
+  border-color: rgb(201 42 42 / 26%);
+  background: #fffafa;
+}
+
+.resource-row > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--font-12);
+  font-weight: 700;
 }
 
 .log-row {
@@ -195,6 +399,18 @@ const stageText = (status: TaskStatus): string => {
   color: var(--color-muted);
   font-size: var(--font-12);
   font-weight: 700;
+}
+
+.log-row .level-error {
+  color: var(--color-danger);
+}
+
+.log-row .level-warning {
+  color: var(--color-warning);
+}
+
+.log-row .level-info {
+  color: var(--color-accent-strong);
 }
 
 .log-row p {

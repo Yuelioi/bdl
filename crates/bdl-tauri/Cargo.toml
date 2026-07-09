@@ -12,6 +12,7 @@ chrono.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true

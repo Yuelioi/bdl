@@ -22,6 +22,7 @@ interface QueueState {
   activeFilter: QueueFilter
   selectedTaskId: string | null
   logsByTask: Record<string, QueueLogEntry[]>
+  logsLoadingByTask: Record<string, boolean>
   loading: boolean
   listening: boolean
   unlisten: UnlistenFn[]
@@ -33,6 +34,7 @@ export const useQueueStore = defineStore('queue', {
     activeFilter: 'downloading',
     selectedTaskId: null,
     logsByTask: {},
+    logsLoadingByTask: {},
     loading: false,
     listening: false,
     unlisten: [],
@@ -118,6 +120,7 @@ export const useQueueStore = defineStore('queue', {
     },
     async retry(taskId: string) {
       await this.runTaskCommand(() => queueRetry(taskId), '已重新入队')
+      await this.loadLogs(taskId)
     },
     async remove(taskId: string) {
       const ui = useUiStore()
@@ -125,6 +128,7 @@ export const useQueueStore = defineStore('queue', {
         await queueRemove(taskId)
         this.tasks = this.tasks.filter((task) => task.id !== taskId)
         delete this.logsByTask[taskId]
+        delete this.logsLoadingByTask[taskId]
         this.selectedTaskId = this.tasks[0]?.id ?? null
         if (this.selectedTaskId) {
           void this.loadLogs(this.selectedTaskId)
@@ -142,11 +146,14 @@ export const useQueueStore = defineStore('queue', {
     },
     async loadLogs(taskId: string) {
       const ui = useUiStore()
+      this.logsLoadingByTask[taskId] = true
       try {
         const logs = await queueLogs(taskId, LOG_LIMIT)
         this.logsByTask[taskId] = mergeLogs(logs, this.logsByTask[taskId] ?? [])
       } catch (error) {
         ui.pushToast(errorMessage(error), 'danger')
+      } finally {
+        this.logsLoadingByTask[taskId] = false
       }
     },
     async runTaskCommand(command: () => Promise<DownloadTask>, successMessage: string) {

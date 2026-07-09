@@ -275,6 +275,27 @@ impl AppState {
         Ok(task)
     }
 
+    pub fn retry_task(&self, task_id: &str) -> BdlResult<DownloadTask> {
+        let mut queue = self.queue.lock().map_err(|_| state_poisoned("queue"))?;
+        let task_index = queue
+            .iter()
+            .position(|task| task.id == task_id)
+            .ok_or_else(|| BdlError::Planning {
+                message: format!("任务 `{task_id}` 不存在。"),
+            })?;
+
+        queue[task_index].status = TaskStatus::Waiting;
+        for resource in &mut queue[task_index].resources {
+            if resource.status != ResourceStatus::Completed {
+                resource.status = ResourceStatus::Pending;
+            }
+        }
+
+        let task = queue[task_index].clone();
+        self.persist_queue(&queue)?;
+        Ok(task)
+    }
+
     pub fn task_status(&self, task_id: &str) -> BdlResult<TaskStatus> {
         self.queue
             .lock()
@@ -304,6 +325,18 @@ impl AppState {
             .lock()
             .map_err(|_| state_poisoned("queue"))?
             .clone())
+    }
+
+    pub fn task_snapshot(&self, task_id: &str) -> BdlResult<DownloadTask> {
+        self.queue
+            .lock()
+            .map_err(|_| state_poisoned("queue"))?
+            .iter()
+            .find(|task| task.id == task_id)
+            .cloned()
+            .ok_or_else(|| BdlError::Planning {
+                message: format!("任务 `{task_id}` 不存在。"),
+            })
     }
 
     pub fn append_task_log(&self, entry: QueueLogEntry) -> BdlResult<QueueLogEntry> {

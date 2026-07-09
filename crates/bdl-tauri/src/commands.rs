@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use bdl_core::BdlError;
 use bdl_core::account::{QrLoginSession, QrLoginStatus, poll_qr_login, start_qr_login};
@@ -14,6 +14,7 @@ use bdl_core::queue::{
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
+use tauri_plugin_opener::OpenerExt;
 
 use crate::events;
 use crate::state::{AccountSnapshot, AppState, SettingsSnapshot};
@@ -236,7 +237,17 @@ pub fn queue_retry(
     state: State<'_, AppState>,
     task_id: String,
 ) -> CommandResult<DownloadTask> {
-    update_task_status(app, state, &task_id, TaskStatus::Waiting)
+    let task = state.retry_task(&task_id)?;
+    events::emit(&app, events::QUEUE_TASK_UPDATED, &task)?;
+    emit_queue_log(
+        &app,
+        state.inner(),
+        &task_id,
+        QueueLogLevel::Info,
+        "重试任务",
+    )?;
+    start_queue_worker(&app);
+    Ok(task)
 }
 
 #[tauri::command]
@@ -250,13 +261,27 @@ pub fn queue_remove(
 }
 
 #[tauri::command]
-pub async fn queue_open_file(_task_id: String) -> CommandResult<()> {
-    unsupported("queue_open_file")
+pub fn queue_open_file(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    task_id: String,
+) -> CommandResult<()> {
+    let task = state.task_snapshot(&task_id)?;
+    if task.output_path.exists() {
+        open_path(&app, &task.output_path)
+    } else {
+        open_task_output_dir(&app, &task)
+    }
 }
 
 #[tauri::command]
-pub async fn queue_open_dir(_task_id: String) -> CommandResult<()> {
-    unsupported("queue_open_dir")
+pub fn queue_open_dir(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    task_id: String,
+) -> CommandResult<()> {
+    let task = state.task_snapshot(&task_id)?;
+    open_task_output_dir(&app, &task)
 }
 
 #[tauri::command]
@@ -540,6 +565,24 @@ fn resource_label(resource: &DownloadResource) -> &'static str {
         DownloadResourceIntent::Danmaku => "弹幕",
         DownloadResourceIntent::Nfo => "NFO",
     }
+}
+
+fn open_task_output_dir(app: &AppHandle, task: &DownloadTask) -> CommandResult<()> {
+    let dir = task.output_path.parent().ok_or_else(|| CommandError {
+        code: "invalid_output_path".to_owned(),
+        message: format!("任务 `{}` 没有有效输出目录。", task.title),
+    })?;
+    std::fs::create_dir_all(dir).map_err(BdlError::from)?;
+    open_path(app, dir)
+}
+
+fn open_path(app: &AppHandle, path: &Path) -> CommandResult<()> {
+    app.opener()
+        .open_path(path.to_string_lossy().into_owned(), None::<String>)
+        .map_err(|error| CommandError {
+            code: "open_path_failed".to_owned(),
+            message: format!("打开路径失败：{error}"),
+        })
 }
 
 fn emit_queue_log(

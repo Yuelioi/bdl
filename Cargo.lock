@@ -305,6 +305,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tauri",
+ "tauri-plugin-opener",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
