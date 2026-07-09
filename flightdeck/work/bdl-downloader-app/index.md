@@ -2,11 +2,11 @@
 
 ## State
 
-Task 10 parse page is complete on branch `bdl-downloader-app`. The workspace has a Rust/Tauri/Vue scaffold, frontend-safe normalized DTOs, a pure Bilibili input classifier, a `bpi-rs` backed video resolver, a planner that turns selected normalized parts into backend-owned download tasks/resources, a resumable `reqwest` fetcher, an ffmpeg muxer, a CLI parse/download path, registered Tauri commands/events, a custom Vue UI kit, and a parse page wired to Tauri commands.
+Task 11 transfer queue UI is complete on branch `bdl-downloader-app`. The workspace has a Rust/Tauri/Vue scaffold, frontend-safe normalized DTOs, a pure Bilibili input classifier, a `bpi-rs` backed video resolver, a planner that turns selected normalized parts into backend-owned download tasks/resources, a resumable `reqwest` fetcher, an ffmpeg muxer, a CLI parse/download path, registered Tauri commands/events, a custom Vue UI kit, a parse page wired to Tauri commands, and a transfer page backed by queue state.
 
 ## Next
 
-Execute Task 11 in `plan.md`: add the transfer page and queue store around backend queue state.
+Execute Task 12 in `plan.md`: add persistent task storage and startup recovery.
 
 ## Read now
 
@@ -63,6 +63,10 @@ Current:
 - Task 10 verification passed: `cargo check -p bdl-desktop`, `cargo test --workspace`, `cargo fmt --all --check`, and `pnpm --dir apps/desktop build`.
 - The parse page now has frontend DTOs matching Rust serde output, typed Tauri wrappers, a Pinia parse store, source list, selectable normalized tree, `解析更多` / `解析全部` placeholders, and `下载已选择` creating backend queue tasks without auto-navigation. The toast action `查看传输` is user-triggered.
 - `selection_create_tasks` is now implemented in the Tauri bridge for loaded parsed sources so the parse page can add tasks to the in-memory queue.
+- Completed Task 11 transfer queue UI in commit `700b067`.
+- Task 11 verification passed: `cargo check -p bdl-desktop`, `cargo test --workspace`, `cargo fmt --all --check`, and `pnpm --dir apps/desktop build`.
+- The transfer page now has filters `正在下载`, `队列中`, `已暂停`, `失败`, `已完成`, and `全部`, a Pinia queue store listening for queue events, task detail/log panels, and task row actions for pause/resume/cancel/retry/remove/open-file/open-dir.
+- Queue pause/resume/cancel/retry/remove now perform in-memory Tauri state transitions and emit `queue://task-updated`; file open commands still return typed `unsupported` until file actions are implemented.
 
 Decisions:
 - Main navigation: `解析`, `传输`, `历史`, `设置`; account lives in the top-right account button.

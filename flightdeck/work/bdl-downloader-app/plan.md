@@ -1411,7 +1411,7 @@ git commit -m "feat: add parse page"
 - Create: `apps/desktop/src/pages/TransferPage.vue`
 - Modify: `apps/desktop/src/ui/TaskRow.vue`
 
-- [ ] **Step 1: Implement queue store**
+- [x] **Step 1: Implement queue store**
 
 State:
 
@@ -1437,7 +1437,7 @@ Event handling:
 - `queue://resource-updated`.
 - `queue://log-appended`.
 
-- [ ] **Step 2: Implement transfer filters**
+- [x] **Step 2: Implement transfer filters**
 
 Filters:
 
@@ -1450,7 +1450,7 @@ Filters:
 全部
 ```
 
-- [ ] **Step 3: Implement task row**
+- [x] **Step 3: Implement task row**
 
 Task row height target: 64 px.
 
@@ -1470,7 +1470,7 @@ Second line:
 - ETA.
 - save path or current stage.
 
-- [ ] **Step 4: Run frontend build**
+- [x] **Step 4: Run frontend build**
 
 Run:
 
@@ -1480,7 +1480,7 @@ pnpm --dir apps/desktop build
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add apps/desktop/src
