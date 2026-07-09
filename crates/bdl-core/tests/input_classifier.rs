@@ -80,7 +80,9 @@ fn extracts_mid_from_plain_uploader_space_url() {
 fn preserves_raw_urls_for_supported_source_urls() {
     let favorite = "https://space.bilibili.com/12345/favlist?fid=678";
     let collection = "https://www.bilibili.com/medialist/play/12345?season_id=678";
+    let space_collection = "https://space.bilibili.com/12345/lists/678?type=season";
     let series = "https://space.bilibili.com/12345/lists/987?type=series&series_id=987";
+    let space_series = "https://space.bilibili.com/12345/lists/988?type=series";
     let bangumi = "https://www.bilibili.com/bangumi/play/ss123";
     let cheese = "https://www.bilibili.com/cheese/play/ss456";
 
@@ -97,9 +99,21 @@ fn preserves_raw_urls_for_supported_source_urls() {
         }
     );
     assert_eq!(
+        classify_input(space_collection).unwrap(),
+        ClassifiedInput::Collection {
+            raw_url: space_collection.into()
+        }
+    );
+    assert_eq!(
         classify_input(series).unwrap(),
         ClassifiedInput::Series {
             raw_url: series.into()
+        }
+    );
+    assert_eq!(
+        classify_input(space_series).unwrap(),
+        ClassifiedInput::Series {
+            raw_url: space_series.into()
         }
     );
     assert_eq!(

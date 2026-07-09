@@ -81,6 +81,23 @@ fn classify_url(raw_url: &str, url: &Url) -> Option<ClassifiedInput> {
                 return Some(ClassifiedInput::Uploader { mid });
             }
         }
+
+        if is_space_list_path(&segments) {
+            if query_param_eq(url, "type", "series") || has_query_param(url, "series_id") {
+                return Some(ClassifiedInput::Series {
+                    raw_url: raw_url.to_string(),
+                });
+            }
+
+            if query_param_eq(url, "type", "season")
+                || query_param_eq(url, "type", "collection")
+                || has_query_param(url, "season_id")
+            {
+                return Some(ClassifiedInput::Collection {
+                    raw_url: raw_url.to_string(),
+                });
+            }
+        }
     }
 
     if path_starts_with(&segments, &["bangumi", "play"]) {
@@ -175,12 +192,23 @@ fn is_uploader_path(segments: &[&str]) -> bool {
             .is_some_and(|segment| segment.eq_ignore_ascii_case("video"))
 }
 
+fn is_space_list_path(segments: &[&str]) -> bool {
+    segments
+        .get(1)
+        .is_some_and(|segment| segment.eq_ignore_ascii_case("lists"))
+}
+
 fn space_mid(segments: &[&str]) -> Option<u64> {
     segments.first()?.parse::<u64>().ok()
 }
 
 fn has_query_param(url: &Url, key: &str) -> bool {
     url.query_pairs().any(|(name, _)| name == key)
+}
+
+fn query_param_eq(url: &Url, key: &str, expected_value: &str) -> bool {
+    url.query_pairs()
+        .any(|(name, value)| name == key && value.eq_ignore_ascii_case(expected_value))
 }
 
 fn is_b23_host(host: &str) -> bool {

@@ -9,6 +9,9 @@ use bdl_core::model::{
     NormalizedItem, NormalizedPart, NormalizedSourceTree, PageState, SourceKind,
 };
 use bdl_core::queue::{DownloadTask, TaskStatus};
+use bdl_core::resolver::collection::{
+    CollectionInputIds, CollectionResolver, SeriesInputIds, SeriesResolver,
+};
 use bdl_core::resolver::favorite::FavoriteResolver;
 use bdl_core::resolver::paged::PageRequest;
 use bdl_core::resolver::uploader::UploaderResolver;
@@ -77,6 +80,12 @@ impl AppState {
                     .resolve(classified, options)
                     .await?
             }
+            SourceKind::Collection => {
+                self.collection_resolver()?
+                    .resolve(classified, options)
+                    .await?
+            }
+            SourceKind::Series => self.series_resolver()?.resolve(classified, options).await?,
             _ => self.video_resolver()?.resolve(classified, options).await?,
         };
         self.parse_sources
@@ -325,6 +334,21 @@ impl AppState {
                 let next_page = self.uploader_resolver()?.resolve_page(mid, request).await?;
                 append_source_page(tree, next_page)
             }
+            SourceKind::Collection => {
+                let ids = collection_ids(tree)?;
+                let request = next_page_request(tree)?;
+                let next_page = self
+                    .collection_resolver()?
+                    .resolve_page(ids, request)
+                    .await?;
+                append_source_page(tree, next_page)
+            }
+            SourceKind::Series => {
+                let ids = series_ids(tree)?;
+                let request = next_page_request(tree)?;
+                let next_page = self.series_resolver()?.resolve_page(ids, request).await?;
+                append_source_page(tree, next_page)
+            }
             kind => Err(BdlError::UnsupportedSource {
                 kind: source_kind_name(kind).to_owned(),
             }),
@@ -364,6 +388,30 @@ impl AppState {
         {
             Some(cookie) => FavoriteResolver::from_cookie(&cookie),
             None => FavoriteResolver::new(),
+        }
+    }
+
+    fn collection_resolver(&self) -> BdlResult<CollectionResolver> {
+        match self
+            .account_cookie
+            .lock()
+            .map_err(|_| state_poisoned("account_cookie"))?
+            .clone()
+        {
+            Some(cookie) => CollectionResolver::from_cookie(&cookie),
+            None => CollectionResolver::new(),
+        }
+    }
+
+    fn series_resolver(&self) -> BdlResult<SeriesResolver> {
+        match self
+            .account_cookie
+            .lock()
+            .map_err(|_| state_poisoned("account_cookie"))?
+            .clone()
+        {
+            Some(cookie) => SeriesResolver::from_cookie(&cookie),
+            None => SeriesResolver::new(),
         }
     }
 }
@@ -430,6 +478,42 @@ fn favorite_media_id(tree: &NormalizedSourceTree) -> BdlResult<u64> {
         .ok_or_else(|| BdlError::Planning {
             message: format!("来源 `{}` 缺少收藏夹 ID。", tree.source.id.0),
         })
+}
+
+fn collection_ids(tree: &NormalizedSourceTree) -> BdlResult<CollectionInputIds> {
+    let (mid, season_id) = parse_two_part_source_id(&tree.source.id, "collection")?;
+    Ok(CollectionInputIds { mid, season_id })
+}
+
+fn series_ids(tree: &NormalizedSourceTree) -> BdlResult<SeriesInputIds> {
+    let (mid, series_id) = parse_two_part_source_id(&tree.source.id, "series")?;
+    Ok(SeriesInputIds {
+        mid: Some(mid),
+        series_id,
+    })
+}
+
+fn parse_two_part_source_id(source_id: &SourceId, prefix: &str) -> BdlResult<(u64, u64)> {
+    let mut parts = source_id
+        .0
+        .strip_prefix(prefix)
+        .and_then(|value| value.strip_prefix(':'))
+        .into_iter()
+        .flat_map(|value| value.split(':'));
+    let first = parts
+        .next()
+        .and_then(|value| value.parse::<u64>().ok())
+        .ok_or_else(|| BdlError::Planning {
+            message: format!("来源 `{}` 缺少 {prefix} mid。", source_id.0),
+        })?;
+    let second = parts
+        .next()
+        .and_then(|value| value.parse::<u64>().ok())
+        .ok_or_else(|| BdlError::Planning {
+            message: format!("来源 `{}` 缺少 {prefix} ID。", source_id.0),
+        })?;
+
+    Ok((first, second))
 }
 
 fn next_page_request(tree: &NormalizedSourceTree) -> BdlResult<PageRequest> {

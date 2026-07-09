@@ -1,3 +1,4 @@
+pub mod collection;
 pub mod favorite;
 pub mod paged;
 pub mod uploader;
