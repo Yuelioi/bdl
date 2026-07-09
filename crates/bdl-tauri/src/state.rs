@@ -5,8 +5,9 @@ use std::sync::Mutex;
 use bdl_core::account::{AccountSummary, ImportedCookie};
 use bdl_core::ids::SourceId;
 use bdl_core::input::classify_input;
-use bdl_core::model::NormalizedSourceTree;
+use bdl_core::model::{NormalizedSourceTree, SourceKind};
 use bdl_core::queue::{DownloadTask, TaskStatus};
+use bdl_core::resolver::uploader::UploaderResolver;
 use bdl_core::resolver::video::VideoResolver;
 use bdl_core::resolver::{ResolveOptions, Resolver};
 use bdl_core::settings::AppSettings;
@@ -50,10 +51,15 @@ impl AppState {
         fetch_streams: bool,
     ) -> BdlResult<NormalizedSourceTree> {
         let classified = classify_input(input)?;
-        let resolver = self.video_resolver()?;
-        let tree = resolver
-            .resolve(classified, ResolveOptions { fetch_streams })
-            .await?;
+        let options = ResolveOptions { fetch_streams };
+        let tree = match classified.source_kind() {
+            SourceKind::Uploader => {
+                self.uploader_resolver()?
+                    .resolve(classified, options)
+                    .await?
+            }
+            _ => self.video_resolver()?.resolve(classified, options).await?,
+        };
         self.parse_sources
             .lock()
             .map_err(|_| state_poisoned("parse_sources"))?
@@ -205,6 +211,18 @@ impl AppState {
         {
             Some(cookie) => VideoResolver::from_cookie(&cookie),
             None => VideoResolver::new(),
+        }
+    }
+
+    fn uploader_resolver(&self) -> BdlResult<UploaderResolver> {
+        match self
+            .account_cookie
+            .lock()
+            .map_err(|_| state_poisoned("account_cookie"))?
+            .clone()
+        {
+            Some(cookie) => UploaderResolver::from_cookie(&cookie),
+            None => UploaderResolver::new(),
         }
     }
 }

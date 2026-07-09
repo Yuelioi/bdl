@@ -16,7 +16,7 @@ authors = ["YUELI <yuelioi1210@gmail.com>"]
 [workspace.dependencies]
 anyhow = "1"
 async-trait = "0.1"
-bpi-rs = { version = "0.2.3", default-features = false, features = ["login", "video"] }
+bpi-rs = { version = "0.2.3", default-features = false, features = ["login", "user", "video"] }
 bytes = "1"
 chrono = { version = "0.4", features = ["clock", "serde"] }
 futures = "0.3"
