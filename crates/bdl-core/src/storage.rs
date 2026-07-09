@@ -51,6 +51,16 @@ impl TaskStorage {
         Ok(())
     }
 
+    pub fn replace_tasks(&mut self, tasks: &[DownloadTask]) -> BdlResult<()> {
+        let tx = self.conn.transaction()?;
+        tx.execute("DELETE FROM tasks", [])?;
+        for (index, task) in tasks.iter().enumerate() {
+            save_task_in_tx(&tx, task, index)?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
     pub fn load_tasks(&self) -> BdlResult<Vec<DownloadTask>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, title, source_id, status, output_path FROM tasks ORDER BY sort_order, rowid",
