@@ -16,6 +16,7 @@ use futures::future::join_all;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_opener::OpenerExt;
+use tokio::fs;
 
 use crate::events;
 use crate::state::{AccountSnapshot, AppState, SettingsSnapshot};
@@ -747,6 +748,8 @@ async fn run_download_task(
         .await
         .map_err(BdlError::from)?;
 
+    finalize_archive_assets(app, state, &task).await?;
+
     if !task_should_continue(state, &task.id)? {
         emit_queue_log(
             app,
@@ -772,6 +775,88 @@ fn should_fetch(resource: &DownloadResource) -> bool {
             | DownloadResourceIntent::Audio
             | DownloadResourceIntent::Cover
     ) && !resource.current_urls.is_empty()
+}
+
+async fn finalize_archive_assets(
+    app: &AppHandle,
+    state: &AppState,
+    task: &DownloadTask,
+) -> CommandResult<()> {
+    let latest = state.task_snapshot(&task.id)?;
+    for resource in latest
+        .resources
+        .iter()
+        .filter(|resource| resource.kind == bdl_core::queue::DownloadResourceKind::Asset)
+        .filter(|resource| resource.status.can_start())
+    {
+        match resource.intent {
+            DownloadResourceIntent::Nfo => {
+                write_nfo(&latest, resource).await?;
+                let updated = state.update_resource_status(
+                    &latest.id,
+                    &resource.id,
+                    ResourceStatus::Completed,
+                )?;
+                events::emit(app, events::QUEUE_TASK_UPDATED, &updated)?;
+                emit_queue_log(app, state, &latest.id, QueueLogLevel::Info, "生成 NFO")?;
+            }
+            DownloadResourceIntent::Cover
+            | DownloadResourceIntent::Subtitle
+            | DownloadResourceIntent::Danmaku
+                if resource.current_urls.is_empty() =>
+            {
+                let updated = state.update_resource_status(
+                    &latest.id,
+                    &resource.id,
+                    ResourceStatus::Completed,
+                )?;
+                events::emit(app, events::QUEUE_TASK_UPDATED, &updated)?;
+                emit_queue_log(
+                    app,
+                    state,
+                    &latest.id,
+                    QueueLogLevel::Warning,
+                    &format!("跳过{}：暂无可用地址", resource_label(resource)),
+                )?;
+            }
+            _ => {}
+        }
+    }
+
+    Ok(())
+}
+
+async fn write_nfo(task: &DownloadTask, resource: &DownloadResource) -> CommandResult<()> {
+    if let Some(parent) = resource.target_path.parent() {
+        fs::create_dir_all(parent).await.map_err(BdlError::from)?;
+    }
+    fs::write(&resource.target_path, nfo_content(task))
+        .await
+        .map_err(BdlError::from)?;
+    Ok(())
+}
+
+fn nfo_content(task: &DownloadTask) -> String {
+    format!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
+<movie>\n\
+  <title>{}</title>\n\
+  <source>{}</source>\n\
+  <filename>{}</filename>\n\
+</movie>\n",
+        escape_xml(&task.title),
+        escape_xml(&task.source_id),
+        escape_xml(&task.output_path.to_string_lossy())
+    )
+}
+
+fn escape_xml(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&apos;")
 }
 
 fn resource_by_intent(
@@ -866,5 +951,50 @@ fn parse_archive_mode(value: &str) -> CommandResult<ArchiveMode> {
             code: "invalid_archive_mode".to_owned(),
             message: format!("unknown archive mode `{other}`"),
         }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{nfo_content, should_fetch};
+    use std::path::PathBuf;
+
+    use bdl_core::model::HeaderPair;
+    use bdl_core::queue::{
+        DownloadResource, DownloadResourceIntent, DownloadResourceKind, DownloadTask,
+        ResourceStatus, TaskStatus,
+    };
+
+    #[test]
+    fn nfo_content_escapes_xml_sensitive_fields() {
+        let task = DownloadTask {
+            id: "task:fixture".to_owned(),
+            title: "A&B <C>".to_owned(),
+            source_id: "video:\"source\"".to_owned(),
+            status: TaskStatus::Completed,
+            resources: Vec::new(),
+            output_path: PathBuf::from("downloads/A&B <C>.mp4"),
+        };
+
+        let nfo = nfo_content(&task);
+
+        assert!(nfo.contains("A&amp;B &lt;C&gt;"));
+        assert!(nfo.contains("video:&quot;source&quot;"));
+    }
+
+    #[test]
+    fn should_fetch_skips_empty_cover_asset() {
+        let resource = DownloadResource {
+            id: "resource:cover".to_owned(),
+            kind: DownloadResourceKind::Asset,
+            intent: DownloadResourceIntent::Cover,
+            current_urls: Vec::new(),
+            headers: Vec::<HeaderPair>::new(),
+            target_path: PathBuf::from("cover"),
+            temp_path: PathBuf::from("cover.bdlpart"),
+            status: ResourceStatus::Pending,
+        };
+
+        assert!(!should_fetch(&resource));
     }
 }

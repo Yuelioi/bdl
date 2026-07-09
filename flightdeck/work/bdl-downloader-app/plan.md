@@ -1753,6 +1753,13 @@ Presets:
 
 Do not fetch subtitles/danmaku during fast parse.
 
+Current partial implementation:
+
+- Complete archive mode downloads cover assets when a cover URL is present.
+- NFO resources are generated locally after muxing.
+- Cover/subtitle/danmaku resources with no available URL are marked complete with a warning log instead of leaving completed tasks with pending resources.
+- Subtitle and danmaku API fetching plus custom asset selection remain pending.
+
 - [ ] **Step 3: Implement history page**
 
 Search fields:
