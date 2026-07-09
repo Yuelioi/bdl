@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{BdlError, BdlResult};
 
+const MAX_REDACTED_TEXT_CHARS: usize = 4000;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImportedCookie {
     raw: String,
@@ -131,18 +133,30 @@ pub async fn poll_qr_login(qrcode_key: &str) -> BdlResult<QrLoginPollOutcome> {
 }
 
 pub fn redact_sensitive(input: &str) -> String {
-    [
-        "Cookie",
+    let value = ["Cookie", "Authorization", "Proxy-Authorization"]
+        .into_iter()
+        .fold(input.to_owned(), |value, key| {
+            redact_header_value(&value, key)
+        });
+    let value = redact_signed_urls(&value);
+    let value = [
         "SESSDATA",
         "bili_jct",
         "DedeUserID",
+        "DedeUserID__ckMd5",
+        "buvid3",
+        "sid",
+        "access_key",
         "token",
         "deadline",
         "expires",
+        "bili_ticket",
+        "bili_ticket_expires",
         "sign",
     ]
     .into_iter()
-    .fold(input.to_owned(), |value, key| redact_key_value(&value, key))
+    .fold(value, |value, key| redact_key_value(&value, key));
+    truncate_chars(&value, MAX_REDACTED_TEXT_CHARS)
 }
 
 fn render_qr_svg(url: &str) -> BdlResult<String> {
@@ -221,6 +235,104 @@ fn redact_key_value(input: &str, key: &str) -> String {
     output
 }
 
+fn redact_header_value(input: &str, key: &str) -> String {
+    let lower = input.to_ascii_lowercase();
+    let key_lower = key.to_ascii_lowercase();
+    let mut output = String::with_capacity(input.len());
+    let mut cursor = 0;
+
+    while let Some(relative_start) = lower[cursor..].find(&key_lower) {
+        let start = cursor + relative_start;
+        let key_end = start + key_lower.len();
+        let Some((separator_start, separator)) = next_separator(input, key_end) else {
+            output.push_str(&input[cursor..key_end]);
+            cursor = key_end;
+            continue;
+        };
+        if separator != ':' {
+            output.push_str(&input[cursor..=separator_start]);
+            cursor = separator_start + separator.len_utf8();
+            continue;
+        }
+
+        output.push_str(&input[cursor..separator_start]);
+        output.push_str(": <redacted>");
+        cursor = consume_header_value(input, separator_start + separator.len_utf8());
+    }
+
+    output.push_str(&input[cursor..]);
+    output
+}
+
+fn redact_signed_urls(input: &str) -> String {
+    let mut output = String::with_capacity(input.len());
+    let mut cursor = 0;
+
+    while let Some(relative_start) = find_next_url(&input[cursor..]) {
+        let start = cursor + relative_start;
+        output.push_str(&input[cursor..start]);
+        let end = url_end(input, start);
+        let raw_url = &input[start..end];
+        output.push_str(&redact_url(raw_url));
+        cursor = end;
+    }
+
+    output.push_str(&input[cursor..]);
+    output
+}
+
+fn find_next_url(input: &str) -> Option<usize> {
+    match (input.find("http://"), input.find("https://")) {
+        (Some(http), Some(https)) => Some(http.min(https)),
+        (Some(http), None) => Some(http),
+        (None, Some(https)) => Some(https),
+        (None, None) => None,
+    }
+}
+
+fn url_end(input: &str, start: usize) -> usize {
+    let mut end = start;
+    for ch in input[start..].chars() {
+        if ch.is_whitespace() || matches!(ch, '"' | '\'' | ')' | ']' | '}' | '<' | '>') {
+            break;
+        }
+        end += ch.len_utf8();
+    }
+
+    end
+}
+
+fn redact_url(raw_url: &str) -> String {
+    let Ok(parsed) = url::Url::parse(raw_url) else {
+        return raw_url.to_owned();
+    };
+    let Some(query) = parsed.query() else {
+        return raw_url.to_owned();
+    };
+    if query.len() < 32 && !signed_query_like(query) {
+        return raw_url.to_owned();
+    }
+
+    raw_url
+        .find('?')
+        .map(|query_start| format!("{}?<redacted>", &raw_url[..query_start]))
+        .unwrap_or_else(|| raw_url.to_owned())
+}
+
+fn signed_query_like(query: &str) -> bool {
+    let lower = query.to_ascii_lowercase();
+    [
+        "token",
+        "sign",
+        "deadline",
+        "expires",
+        "bcdn_token",
+        "access_key",
+    ]
+    .iter()
+    .any(|key| lower.contains(key))
+}
+
 fn next_separator(input: &str, offset: usize) -> Option<(usize, char)> {
     let mut index = offset;
     for ch in input[offset..].chars() {
@@ -233,6 +345,18 @@ fn next_separator(input: &str, offset: usize) -> Option<(usize, char)> {
     }
 
     None
+}
+
+fn consume_header_value(input: &str, offset: usize) -> usize {
+    let mut index = offset;
+    for ch in input[offset..].chars() {
+        if matches!(ch, '\n' | '\r') {
+            return index;
+        }
+        index += ch.len_utf8();
+    }
+
+    index
 }
 
 fn consume_sensitive_value(input: &str, offset: usize) -> usize {
@@ -254,4 +378,15 @@ fn consume_sensitive_value(input: &str, offset: usize) -> usize {
     }
 
     index
+}
+
+fn truncate_chars(value: &str, max_chars: usize) -> String {
+    if value.chars().count() <= max_chars {
+        return value.to_owned();
+    }
+
+    let keep_chars = max_chars.saturating_sub(20);
+    let mut truncated = value.chars().take(keep_chars).collect::<String>();
+    truncated.push_str("...<truncated>");
+    truncated
 }

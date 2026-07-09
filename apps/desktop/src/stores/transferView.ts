@@ -264,10 +264,15 @@ export const createTaskTimeline = (task: DownloadTask, logs: QueueLogEntry[] = [
 }
 
 export const redactLogMessage = (message: string): string =>
-  message
-    .replace(/\b(SESSDATA|bili_jct|DedeUserID|DedeUserID__ckMd5)=([^;\s]+)/gi, '$1=<redacted>')
-    .replace(/\b(Cookie|Authorization):\s*[^\n]+/gi, '$1: <redacted>')
-    .replace(/https?:\/\/[^\s`"')]+/gi, (rawUrl) => redactUrl(rawUrl))
+  truncateLogMessage(
+    message
+      .replace(/\b(Cookie|Authorization|Proxy-Authorization):\s*[^\n\r]+/gi, '$1: <redacted>')
+      .replace(
+        /\b(SESSDATA|bili_jct|DedeUserID|DedeUserID__ckMd5|buvid3|sid|access_key|token|deadline|expires|bili_ticket|bili_ticket_expires|sign)=([^;&\s]+)/gi,
+        '$1=<redacted>',
+      )
+      .replace(/https?:\/\/[^\s`"')\]}<>]+/gi, (rawUrl) => redactUrl(rawUrl)),
+  )
 
 export const filterTaskByWorkflow = (status: TaskStatus, filter: QueueFilter): boolean => {
   switch (filter) {
@@ -630,4 +635,13 @@ const redactUrl = (rawUrl: string): string => {
   } catch {
     return rawUrl
   }
+}
+
+const truncateLogMessage = (message: string): string => {
+  const maxLength = 4000
+  if (message.length <= maxLength) {
+    return message
+  }
+
+  return `${message.slice(0, maxLength - 15)}...<truncated>`
 }

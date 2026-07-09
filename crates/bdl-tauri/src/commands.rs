@@ -1,7 +1,9 @@
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
-use bdl_core::account::{QrLoginSession, QrLoginStatus, poll_qr_login, start_qr_login};
+use bdl_core::account::{
+    QrLoginSession, QrLoginStatus, poll_qr_login, redact_sensitive, start_qr_login,
+};
 use bdl_core::fetcher::{
     FetchConfig, FetchProgress, Fetcher, ProgressSender, ReqwestFetcher, state_path_for,
 };
@@ -613,12 +615,22 @@ pub async fn diagnostics_export(
     }
 
     let tasks = state.queue_snapshot()?;
+    let redacted_tasks = tasks
+        .iter()
+        .cloned()
+        .map(redact_task_for_diagnostics)
+        .collect::<Vec<_>>();
     let task_logs = tasks
         .iter()
         .map(|task| {
+            let logs = state
+                .task_logs(&task.id, 50)?
+                .into_iter()
+                .map(redact_log_for_diagnostics)
+                .collect::<Vec<_>>();
             Ok(serde_json::json!({
                 "task_id": task.id,
-                "logs": state.task_logs(&task.id, 50)?,
+                "logs": logs,
             }))
         })
         .collect::<BdlResult<Vec<_>>>()?;
@@ -629,7 +641,7 @@ pub async fn diagnostics_export(
         "data_dir": state.data_dir(),
         "account": state.account()?,
         "settings": settings_json,
-        "tasks": tasks,
+        "tasks": redacted_tasks,
         "task_logs": task_logs,
     });
     let file_name = format!(
@@ -1275,6 +1287,37 @@ fn redact_url(raw: &str) -> String {
     format!("{}://<redacted>@{}", &raw[..scheme_end], &raw[host_start..])
 }
 
+fn redact_task_for_diagnostics(mut task: DownloadTask) -> DownloadTask {
+    for resource in &mut task.resources {
+        resource.current_urls = resource
+            .current_urls
+            .iter()
+            .map(|url| redact_sensitive(url))
+            .collect();
+        for header in &mut resource.headers {
+            if is_sensitive_header(&header.name) {
+                header.value = "<redacted>".to_owned();
+            } else {
+                header.value = redact_sensitive(&header.value);
+            }
+        }
+    }
+
+    task
+}
+
+fn redact_log_for_diagnostics(mut log: QueueLogEntry) -> QueueLogEntry {
+    log.message = redact_sensitive(&log.message);
+    log
+}
+
+fn is_sensitive_header(name: &str) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "cookie" | "authorization" | "proxy-authorization"
+    )
+}
+
 fn emit_queue_log(
     app: &AppHandle,
     state: &AppState,
@@ -1354,13 +1397,15 @@ fn parse_archive_mode(value: &str) -> CommandResult<ArchiveMode> {
 
 #[cfg(test)]
 mod tests {
-    use super::{nfo_content, should_fetch};
+    use super::{
+        nfo_content, redact_log_for_diagnostics, redact_task_for_diagnostics, should_fetch,
+    };
     use std::path::PathBuf;
 
     use bdl_core::model::HeaderPair;
     use bdl_core::queue::{
         DownloadResource, DownloadResourceIntent, DownloadResourceKind, DownloadTask,
-        DownloadTaskMediaSelection, ResourceStatus, TaskStatus,
+        DownloadTaskMediaSelection, QueueLogEntry, QueueLogLevel, ResourceStatus, TaskStatus,
     };
 
     #[test]
@@ -1402,6 +1447,56 @@ mod tests {
 
         assert!(should_fetch(&subtitle));
         assert!(should_fetch(&danmaku));
+    }
+
+    #[test]
+    fn diagnostics_redaction_removes_resource_urls_headers_and_log_secrets() {
+        let mut task = DownloadTask {
+            id: "task:fixture".to_owned(),
+            title: "fixture".to_owned(),
+            source_id: "video:fixture".to_owned(),
+            status: TaskStatus::Failed,
+            resources: vec![DownloadResource {
+                id: "resource:video".to_owned(),
+                kind: DownloadResourceKind::Video,
+                intent: DownloadResourceIntent::Video,
+                current_urls: vec![
+                    "https://cdn.test/video.m4s?token=secret&deadline=123".to_owned(),
+                ],
+                headers: vec![
+                    HeaderPair {
+                        name: "Cookie".to_owned(),
+                        value: "SESSDATA=secret".to_owned(),
+                    },
+                    HeaderPair {
+                        name: "Authorization".to_owned(),
+                        value: "Bearer secret-token".to_owned(),
+                    },
+                ],
+                target_path: PathBuf::from("video.m4s"),
+                temp_path: PathBuf::from("video.m4s.bdlpart"),
+                status: ResourceStatus::Failed,
+            }],
+            output_path: PathBuf::from("downloads/fixture.mp4"),
+            refresh_intent: None,
+            media_selection: DownloadTaskMediaSelection::default(),
+        };
+
+        task = redact_task_for_diagnostics(task);
+        let log = redact_log_for_diagnostics(QueueLogEntry {
+            task_id: "task:fixture".to_owned(),
+            level: QueueLogLevel::Error,
+            message: "Authorization: Bearer secret-token".to_owned(),
+            created_at: "2026-07-09T12:00:00Z".to_owned(),
+        });
+
+        assert_eq!(
+            task.resources[0].current_urls,
+            ["https://cdn.test/video.m4s?<redacted>"]
+        );
+        assert_eq!(task.resources[0].headers[0].value, "<redacted>");
+        assert_eq!(task.resources[0].headers[1].value, "<redacted>");
+        assert!(!log.message.contains("secret-token"));
     }
 
     fn resource(intent: DownloadResourceIntent, current_urls: Vec<String>) -> DownloadResource {

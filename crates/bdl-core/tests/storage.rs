@@ -211,8 +211,9 @@ fn task_storage_saves_completed_record_with_media_metadata() -> BdlResult<()> {
         .as_deref()
         .expect("warning and error logs should be summarized");
     assert!(summary.contains("warning: 跳过字幕嵌入"));
-    assert!(summary.contains("error: Cookie:<redacted>; sign=<redacted>"));
+    assert!(summary.contains("error: Cookie: <redacted>"));
     assert!(!summary.contains("secret"));
+    assert!(!summary.contains("abc"));
     Ok(())
 }
 

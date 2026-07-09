@@ -64,11 +64,22 @@ fn qr_login_status_maps_known_bilibili_codes() {
 #[test]
 fn redact_sensitive_removes_cookie_values_and_signed_urls() {
     let redacted = redact_sensitive(
-        "Cookie: SESSDATA=secret-session; bili_jct=csrf-secret; DedeUserID=42 https://cdn.test/video.m4s?token=abc&deadline=123",
+        "Cookie: SESSDATA=secret-session; bili_jct=csrf-secret; DedeUserID=42\nAuthorization: Bearer secret-token\nhttps://cdn.test/video.m4s?token=abc&deadline=123&bcdn_token=long",
     );
 
     assert!(!redacted.contains("secret-session"));
     assert!(!redacted.contains("csrf-secret"));
     assert!(!redacted.contains("DedeUserID=42"));
+    assert!(!redacted.contains("Bearer secret-token"));
     assert!(!redacted.contains("token=abc"));
+    assert!(redacted.contains("Authorization: <redacted>"));
+    assert!(redacted.contains("https://cdn.test/video.m4s?<redacted>"));
+}
+
+#[test]
+fn redact_sensitive_truncates_large_response_bodies() {
+    let redacted = redact_sensitive(&format!("response body: {}", "x".repeat(5000)));
+
+    assert!(redacted.len() < 4100);
+    assert!(redacted.ends_with("...<truncated>"));
 }
