@@ -47,7 +47,49 @@ pub fn diagnose_task(task: &DownloadTask, logs: &[QueueLogEntry]) -> TaskDiagnos
         };
     }
 
-    if contains_any(&error_text, &["403", "permission", "forbidden", "权限"]) {
+    if contains_any(
+        &error_text,
+        &[
+            "permission denied",
+            "access is denied",
+            "拒绝访问",
+            "保存目录不可写",
+            "readonly",
+        ],
+    ) {
+        return TaskDiagnostic {
+            summary: "保存目录不可写".to_owned(),
+            detail: "下载器无法写入目标目录，请检查目录权限、磁盘状态，或在设置中更换保存目录。"
+                .to_owned(),
+            recommended_action: RecommendedAction::InspectRawLog,
+            failed_intent,
+        };
+    }
+
+    if contains_any(
+        &error_text,
+        &["private", "私密", "不可见", "无权访问", "访问受限"],
+    ) {
+        return TaskDiagnostic {
+            summary: "资源不可访问".to_owned(),
+            detail: "资源可能是私密稿件、已失效，或当前账号没有访问权限。".to_owned(),
+            recommended_action: RecommendedAction::LoginThenRetry,
+            failed_intent,
+        };
+    }
+
+    if contains_any(
+        &error_text,
+        &[
+            "403",
+            "401",
+            "forbidden",
+            "unauthorized",
+            "登录",
+            "cookie",
+            "权限",
+        ],
+    ) {
         return TaskDiagnostic {
             summary: "权限或登录状态异常".to_owned(),
             detail: "当前账号可能未登录、Cookie 已失效，或该清晰度需要登录/VIP 权限。".to_owned(),

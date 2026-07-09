@@ -411,7 +411,11 @@ const classifyTaskIssue = (task: DownloadTask, logs: QueueLogEntry[]): Classifie
     .join('\n')
     .toLowerCase()
 
-  if (lastErrors.includes('404') || lastErrors.includes('not found') || lastErrors.includes('资源长度失败')) {
+  if (
+    lastErrors.includes('404')
+    || lastErrors.includes('资源长度失败')
+    || (lastErrors.includes('not found') && !lastErrors.includes('ffmpeg'))
+  ) {
     return {
       label: '链接可能已过期',
       detail: 'B 站的媒体直链有时效性，资源长度请求返回 404 时，通常需要重新获取下载地址后再下载。',
@@ -420,13 +424,60 @@ const classifyTaskIssue = (task: DownloadTask, logs: QueueLogEntry[]): Classifie
       recommendedActionLabel: actionLabel('refresh_retry'),
     }
   }
-  if (lastErrors.includes('403') || lastErrors.includes('permission') || lastErrors.includes('权限')) {
+  if (
+    lastErrors.includes('permission denied')
+    || lastErrors.includes('access is denied')
+    || lastErrors.includes('拒绝访问')
+    || lastErrors.includes('保存目录不可写')
+    || lastErrors.includes('readonly')
+  ) {
+    return {
+      label: '保存目录不可写',
+      detail: '下载器无法写入目标目录。请检查目录权限、磁盘状态，或在设置中更换保存目录。',
+      trackLabel,
+      recommendedAction: null,
+      recommendedActionLabel: '查看原始日志',
+    }
+  }
+  if (
+    lastErrors.includes('private')
+    || lastErrors.includes('私密')
+    || lastErrors.includes('不可见')
+    || lastErrors.includes('无权访问')
+    || lastErrors.includes('访问受限')
+  ) {
+    return {
+      label: '资源不可访问',
+      detail: '资源可能是私密稿件、已失效，或当前账号没有访问权限。登录后再重试。',
+      trackLabel,
+      recommendedAction: 'retry',
+      recommendedActionLabel: '登录后重试',
+    }
+  }
+  if (
+    lastErrors.includes('403')
+    || lastErrors.includes('401')
+    || lastErrors.includes('forbidden')
+    || lastErrors.includes('unauthorized')
+    || lastErrors.includes('登录')
+    || lastErrors.includes('cookie')
+    || lastErrors.includes('权限')
+  ) {
     return {
       label: '权限或登录异常',
       detail: '当前账号可能未登录、Cookie 已失效，或该清晰度需要登录/VIP 权限。登录后再重试。',
       trackLabel,
       recommendedAction: 'retry',
       recommendedActionLabel: '登录后重试',
+    }
+  }
+  if (lastErrors.includes('ffmpeg not found') || lastErrors.includes('未找到 ffmpeg')) {
+    return {
+      label: '未找到 FFmpeg',
+      detail: '未检测到可用的 FFmpeg。请在设置中配置 FFmpeg 路径后再重试。',
+      trackLabel,
+      recommendedAction: null,
+      recommendedActionLabel: '查看设置',
     }
   }
   if (lastErrors.includes('ffmpeg') || lastErrors.includes('mux') || lastErrors.includes('合并')) {

@@ -10,7 +10,8 @@ use bdl_core::fetcher::{
 use bdl_core::ids::{PartId, SourceId};
 use bdl_core::model::NormalizedSourceTree;
 use bdl_core::muxer::{
-    MediaMuxer, MediaMuxerConfig, MuxRequest, supports_cover_embedding, supports_subtitle_embedding,
+    MediaMuxer, MediaMuxerConfig, MuxError, MuxRequest, supports_cover_embedding,
+    supports_subtitle_embedding,
 };
 use bdl_core::planner::{
     ArchiveMode, DownloadOptions, MissingQualityPolicy, StreamPreference, parse_stream_codec,
@@ -43,9 +44,51 @@ pub struct CommandError {
 impl From<BdlError> for CommandError {
     fn from(error: BdlError) -> Self {
         Self {
-            code: "core_error".to_owned(),
-            message: error.to_string(),
+            code: command_error_code(&error).to_owned(),
+            message: command_error_message(&error).unwrap_or_else(|| error.to_string()),
         }
+    }
+}
+
+fn command_error_code(error: &BdlError) -> &'static str {
+    match error {
+        BdlError::InvalidInput { .. } => "parse_unrecognized",
+        BdlError::UnsupportedSource { .. } => "unsupported_source",
+        BdlError::Mux(MuxError::FfmpegNotFound { .. }) => "missing_ffmpeg",
+        BdlError::Io(error) if error.kind() == ErrorKind::PermissionDenied => {
+            "unwritable_save_directory"
+        }
+        BdlError::Fetch { message } | BdlError::Bpi(message)
+            if is_private_resource_error(message) =>
+        {
+            "private_resource"
+        }
+        BdlError::Fetch { message } | BdlError::Bpi(message) if is_login_expired_error(message) => {
+            "login_required"
+        }
+        _ => "core_error",
+    }
+}
+
+fn command_error_message(error: &BdlError) -> Option<String> {
+    match error {
+        BdlError::InvalidInput { message } => Some(message.clone()),
+        BdlError::UnsupportedSource { kind } => Some(format!("暂不支持 `{kind}` 类型的来源。")),
+        BdlError::Mux(MuxError::FfmpegNotFound { .. }) => {
+            Some("未找到 FFmpeg，请在设置中配置 FFmpeg 路径。".to_owned())
+        }
+        BdlError::Io(error) if error.kind() == ErrorKind::PermissionDenied => {
+            Some("保存目录不可写，请检查权限或更换保存目录。".to_owned())
+        }
+        BdlError::Fetch { message } | BdlError::Bpi(message)
+            if is_private_resource_error(message) =>
+        {
+            Some("资源不可访问，可能是私密稿件、已失效或当前账号无权访问。".to_owned())
+        }
+        BdlError::Fetch { message } | BdlError::Bpi(message) if is_login_expired_error(message) => {
+            Some("登录状态可能已失效，请重新登录后重试。".to_owned())
+        }
+        _ => None,
     }
 }
 
@@ -1376,6 +1419,26 @@ fn is_expired_url_error(message: &str) -> bool {
     message.contains("HTTP 404") || message.contains("资源长度失败")
 }
 
+fn is_login_expired_error(message: &str) -> bool {
+    let lower = message.to_ascii_lowercase();
+    lower.contains("http 401")
+        || lower.contains("http 403")
+        || lower.contains("forbidden")
+        || lower.contains("unauthorized")
+        || message.contains("登录")
+        || message.contains("Cookie")
+        || message.contains("权限")
+}
+
+fn is_private_resource_error(message: &str) -> bool {
+    let lower = message.to_ascii_lowercase();
+    lower.contains("private")
+        || message.contains("私密")
+        || message.contains("不可见")
+        || message.contains("无权访问")
+        || message.contains("访问受限")
+}
+
 fn already_auto_refreshed(state: &AppState, task_id: &str) -> bool {
     state
         .task_logs(task_id, 50)
@@ -1402,7 +1465,9 @@ mod tests {
     };
     use std::path::PathBuf;
 
+    use bdl_core::BdlError;
     use bdl_core::model::HeaderPair;
+    use bdl_core::muxer::MuxError;
     use bdl_core::queue::{
         DownloadResource, DownloadResourceIntent, DownloadResourceKind, DownloadTask,
         DownloadTaskMediaSelection, QueueLogEntry, QueueLogLevel, ResourceStatus, TaskStatus,
@@ -1497,6 +1562,30 @@ mod tests {
         assert_eq!(task.resources[0].headers[0].value, "<redacted>");
         assert_eq!(task.resources[0].headers[1].value, "<redacted>");
         assert!(!log.message.contains("secret-token"));
+    }
+
+    #[test]
+    fn command_error_maps_action_specific_codes() {
+        let parse = super::CommandError::from(BdlError::InvalidInput {
+            message: "无法识别这个输入。".to_owned(),
+        });
+        let ffmpeg = super::CommandError::from(BdlError::Mux(MuxError::FfmpegNotFound {
+            path: "ffmpeg".to_owned(),
+        }));
+        let permission = super::CommandError::from(BdlError::Io(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "denied",
+        )));
+        let login = super::CommandError::from(BdlError::Fetch {
+            message: "HTTP 403 Forbidden".to_owned(),
+        });
+        let private = super::CommandError::from(BdlError::Bpi("稿件不可见".to_owned()));
+
+        assert_eq!(parse.code, "parse_unrecognized");
+        assert_eq!(ffmpeg.code, "missing_ffmpeg");
+        assert_eq!(permission.code, "unwritable_save_directory");
+        assert_eq!(login.code, "login_required");
+        assert_eq!(private.code, "private_resource");
     }
 
     fn resource(intent: DownloadResourceIntent, current_urls: Vec<String>) -> DownloadResource {

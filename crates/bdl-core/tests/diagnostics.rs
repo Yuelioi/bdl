@@ -43,6 +43,34 @@ fn http_403_requires_login_then_retry() {
 }
 
 #[test]
+fn permission_denied_reports_unwritable_save_directory() {
+    let diagnostic = diagnose_task(
+        &failed_task(ResourceStatus::Failed),
+        &[log(QueueLogLevel::Error, "io error: Access is denied")],
+    );
+
+    assert_eq!(diagnostic.summary, "保存目录不可写");
+    assert_eq!(
+        diagnostic.recommended_action,
+        RecommendedAction::InspectRawLog
+    );
+}
+
+#[test]
+fn private_resource_requires_account_or_access_check() {
+    let diagnostic = diagnose_task(
+        &failed_task(ResourceStatus::Failed),
+        &[log(QueueLogLevel::Error, "稿件不可见或无权访问")],
+    );
+
+    assert_eq!(diagnostic.summary, "资源不可访问");
+    assert_eq!(
+        diagnostic.recommended_action,
+        RecommendedAction::LoginThenRetry
+    );
+}
+
+#[test]
 fn ffmpeg_not_found_requires_configuration() {
     let diagnostic = diagnose_task(
         &failed_task(ResourceStatus::Completed),
