@@ -148,6 +148,9 @@ Current:
 - P1 diagnostic redaction hardening landed in commit `78d9bd0`.
 - Rust redaction now handles Cookie, Authorization, Proxy-Authorization, common Bilibili cookie/query keys, signed URL query strings, and oversized response bodies. Diagnostics export writes redacted task URLs, resource headers, and task logs instead of raw queue snapshots. Transfer inspector log redaction uses the same broader key set and truncates large messages.
 - Diagnostic redaction verification passed: `cargo fmt --all --check`, `cargo test -p bdl-core --test account --test storage`, `cargo test -p bdl-tauri commands`, `cargo check -p bdl-desktop`, `pnpm --dir apps/desktop build`, and `git diff --check`.
+- P1 action-specific errors landed in commit `14b498e`.
+- Tauri commands now return specific error codes/messages for unrecognized parse input, unsupported sources, unwritable output paths, missing FFmpeg, login-required failures, and private/inaccessible resources. Transfer diagnostics distinguish unwritable save directories, private resources, login failures, missing FFmpeg, expired URLs, and generic mux failures.
+- Action-specific error verification passed: `cargo fmt --all --check`, `cargo test -p bdl-core --test diagnostics`, `cargo test -p bdl-tauri commands`, `cargo check -p bdl-desktop`, `pnpm --dir apps/desktop build`, and `git diff --check`.
 
 Decisions:
 - Main navigation: `解析`, `传输`, `设置`; account lives in the top-right account button. Completed records live under Transfer's `已完成` filter, not a separate History page.
