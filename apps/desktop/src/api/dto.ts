@@ -188,6 +188,7 @@ export type VideoCodecPreference = 'auto' | 'avc' | 'hevc' | 'av1'
 export type MissingQualityPolicy = 'lower' | 'skip' | 'ask'
 export type LogLevel = 'debug' | 'info' | 'warning' | 'error'
 export type ArchiveMode = 'fast' | 'complete_archive' | 'custom'
+export type DownloadMediaMode = 'audio_video' | 'video_only' | 'audio_only'
 
 export interface ArchiveAssetSelection {
   cover: boolean

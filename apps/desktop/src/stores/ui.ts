@@ -27,8 +27,15 @@ export const useUiStore = defineStore('ui', {
       this.activeTab = tab
     },
     pushToast(message: string, tone: ToastMessage['tone'] = 'info', action?: ToastAction) {
-      this.toasts.push({ id: this.nextToastId, message, tone, action })
+      const id = this.nextToastId
+      this.toasts.push({ id, message, tone, action })
       this.nextToastId += 1
+
+      if (tone !== 'danger' && typeof window !== 'undefined') {
+        window.setTimeout(() => {
+          this.removeToast(id)
+        }, 3000)
+      }
     },
     removeToast(id: number) {
       this.toasts = this.toasts.filter((toast) => toast.id !== id)

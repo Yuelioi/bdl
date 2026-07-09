@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 
 import type { TaskActionKind, TransferTaskView } from '../stores/transferView'
+import UiIconButton from './IconButton.vue'
 import UiProgressBar from './ProgressBar.vue'
 import UiStatusBadge from './StatusBadge.vue'
 import TaskActionMenu from './TaskActionMenu.vue'
@@ -14,7 +15,7 @@ const { views, selectedTaskId, selectedTaskIds, loading = false } = defineProps<
 }>()
 
 const emit = defineEmits<{
-  selectTask: [taskId: string]
+  inspectTask: [taskId: string]
   toggleTaskSelection: [taskId: string]
   toggleVisibleSelection: [taskIds: string[], selected: boolean]
   taskAction: [taskId: string, action: Exclude<TaskActionKind, 'none'>]
@@ -45,8 +46,6 @@ const toggleVisible = () => {
       <div role="columnheader">进度</div>
       <div role="columnheader">速度</div>
       <div role="columnheader">剩余</div>
-      <div role="columnheader">问题</div>
-      <div role="columnheader">位置</div>
       <div class="action-head" role="columnheader">操作</div>
     </div>
 
@@ -56,11 +55,7 @@ const toggleVisible = () => {
       class="transfer-table-row task-table-row"
       :class="{ selected: selectedTaskId === view.id }"
       role="row"
-      tabindex="0"
       :aria-selected="selectedTaskId === view.id"
-      @click="emit('selectTask', view.id)"
-      @keydown.enter.prevent="emit('selectTask', view.id)"
-      @keydown.space.prevent="emit('selectTask', view.id)"
     >
       <span class="select-cell" role="cell" @click.stop @keydown.stop>
         <label class="row-check" :title="selectedSet.has(view.id) ? '取消选择' : '选择任务'">
@@ -77,6 +72,7 @@ const toggleVisible = () => {
       <span class="title-cell" role="cell">
         <strong :title="view.displayTitle">{{ view.displayTitle }}</strong>
         <small v-if="view.subtitle" :title="view.subtitle">{{ view.subtitle }}</small>
+        <small v-if="view.issueLabel !== '-'" class="issue-line" :title="view.issueLabel">{{ view.issueLabel }}</small>
       </span>
 
       <span class="status-cell" role="cell">
@@ -91,11 +87,14 @@ const toggleVisible = () => {
 
       <span class="metric-cell" role="cell">{{ view.speedLabel }}</span>
       <span class="metric-cell" role="cell">{{ view.etaLabel }}</span>
-      <span class="issue-cell" role="cell" :class="{ quiet: view.issueLabel === '-' }" :title="view.issueLabel">
-        {{ view.issueLabel }}
-      </span>
-      <span class="location-cell" role="cell" :title="view.fullLocation">{{ view.shortLocation }}</span>
       <span class="action-cell" role="cell" @click.stop @keydown.stop>
+        <UiIconButton
+          icon="info"
+          label="详情和诊断"
+          variant="ghost"
+          :disabled="loading"
+          @click="emit('inspectTask', view.id)"
+        />
         <TaskActionMenu
           :view
           :disabled="loading"
@@ -123,9 +122,9 @@ const toggleVisible = () => {
   min-width: 0;
   display: grid;
   grid-template-columns:
-    30px minmax(150px, 1fr) 58px 90px 48px 48px minmax(72px, 0.7fr)
-    64px 88px;
-  column-gap: var(--space-4);
+    30px minmax(240px, 1fr) 72px minmax(112px, 0.34fr) 74px 56px
+    96px;
+  column-gap: var(--space-8);
   align-items: center;
 }
 
@@ -144,9 +143,8 @@ const toggleVisible = () => {
 }
 
 .task-table-row {
-  min-height: 62px;
+  min-height: 58px;
   width: 100%;
-  cursor: pointer;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-8);
   background: var(--color-surface);
@@ -226,8 +224,6 @@ const toggleVisible = () => {
 
 .title-cell strong,
 .title-cell small,
-.issue-cell,
-.location-cell,
 .metric-cell {
   min-width: 0;
   overflow: hidden;
@@ -252,9 +248,7 @@ const toggleVisible = () => {
 
 .progress-cell strong,
 .progress-cell small,
-.metric-cell,
-.issue-cell,
-.location-cell {
+.metric-cell {
   color: var(--color-muted);
   font-size: var(--font-12);
 }
@@ -274,14 +268,9 @@ const toggleVisible = () => {
   height: 6px;
 }
 
-.issue-cell {
+.issue-line {
   color: var(--color-danger);
   font-weight: 650;
-}
-
-.issue-cell.quiet {
-  color: var(--color-muted);
-  font-weight: 500;
 }
 
 .action-head,
@@ -291,5 +280,14 @@ const toggleVisible = () => {
 
 .action-cell {
   min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+}
+
+.action-cell :deep(.ui-icon-button) {
+  width: 28px;
+  height: 28px;
 }
 </style>

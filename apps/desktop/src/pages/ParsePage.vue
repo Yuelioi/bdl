@@ -1,13 +1,20 @@
 <script setup lang="ts">
-import { computed, useTemplateRef } from 'vue'
+import { open } from '@tauri-apps/plugin-dialog'
+import { computed, ref, useTemplateRef } from 'vue'
 
-import type { NormalizedSourceTree, SourceKind } from '../api/dto'
+import type { DownloadMediaMode, NormalizedSourceTree, SourceKind, VideoCodecPreference } from '../api/dto'
 import UiButton from '../ui/Button.vue'
+import UiDialog from '../ui/Dialog.vue'
 import UiIconButton from '../ui/IconButton.vue'
+import UiInlineNotice from '../ui/InlineNotice.vue'
+import UiSelect from '../ui/Select.vue'
 import UiStatusBadge from '../ui/StatusBadge.vue'
 import UiTextarea from '../ui/Textarea.vue'
+import UiTextField from '../ui/TextField.vue'
 import UiTree from '../ui/Tree.vue'
 import { useParseStore } from '../stores/parse'
+import { useSettingsStore } from '../stores/settings'
+import { useUiStore } from '../stores/ui'
 
 interface PageTreeNode {
   id: string
@@ -29,7 +36,56 @@ const sourceKindLabels: Record<SourceKind, string> = {
 }
 
 const parse = useParseStore()
+const settings = useSettingsStore()
+const ui = useUiStore()
 const inputFile = useTemplateRef<HTMLInputElement>('input-file')
+const downloadDialogOpen = ref(false)
+const sourceMenuOpen = ref(false)
+const downloadDir = ref('')
+const archiveMode = ref<'fast' | 'complete_archive' | 'custom'>('fast')
+const outputExtension = ref<'mp4' | 'mkv'>('mp4')
+const mediaMode = ref<DownloadMediaMode>('audio_video')
+const videoQuality = ref('best')
+const audioQuality = ref('best')
+const videoCodec = ref<VideoCodecPreference>('auto')
+
+const mediaModeOptions = [
+  { label: '音视频', value: 'audio_video' },
+  { label: '仅视频', value: 'video_only' },
+  { label: '仅音频', value: 'audio_only' },
+]
+const videoQualityOptions = [
+  { label: '最佳可用', value: 'best' },
+  { label: '8K / 127', value: '127' },
+  { label: '4K / 120', value: '120' },
+  { label: '1080P60 / 116', value: '116' },
+  { label: '1080P+ / 112', value: '112' },
+  { label: '1080P / 80', value: '80' },
+  { label: '720P / 64', value: '64' },
+  { label: '480P / 32', value: '32' },
+  { label: '360P / 16', value: '16' },
+]
+const audioQualityOptions = [
+  { label: '最佳可用', value: 'best' },
+  { label: '高音质 / 30280', value: '30280' },
+  { label: '中音质 / 30232', value: '30232' },
+  { label: '低音质 / 30216', value: '30216' },
+]
+const codecOptions = [
+  { label: '自动', value: 'auto' },
+  { label: 'AVC / H.264', value: 'avc' },
+  { label: 'HEVC / H.265', value: 'hevc' },
+  { label: 'AV1', value: 'av1' },
+]
+const outputExtensionOptions = [
+  { label: 'MP4', value: 'mp4' },
+  { label: 'MKV', value: 'mkv' },
+]
+const archiveModeOptions = [
+  { label: '仅最终媒体', value: 'fast' },
+  { label: '媒体 + 全部可用素材', value: 'complete_archive' },
+  { label: '使用设置页自定义素材', value: 'custom' },
+]
 
 const activeSource = computed(() => parse.activeSource)
 const selectedIds = computed(() => parse.activeSelection)
@@ -55,6 +111,29 @@ const loadedLabel = computed(() => {
   return `${activeSource.value.source.loaded_count} / ${total}`
 })
 const activeSourceKindLabel = computed(() => (activeSource.value ? sourceKindLabels[activeSource.value.source.kind] : '--'))
+const activeSourceTitle = computed(() => activeSource.value?.source.title ?? '')
+const canCloseActiveSource = computed(() => Boolean(activeSource.value && parse.sourceOrder.length > 1))
+const sourceMenuLabel = computed(() => (parse.sourceOrder.length > 0 ? `已解析 ${parse.sourceOrder.length}` : '无记录'))
+const includesVideo = computed(() => mediaMode.value !== 'audio_only')
+const includesAudio = computed(() => mediaMode.value !== 'video_only')
+const downloadSettingsSummary = computed(() => {
+  const dir = downloadDir.value.trim() || 'downloads'
+  const content = optionLabel(mediaModeOptions, mediaMode.value)
+  const video = includesVideo.value ? optionLabel(videoQualityOptions, videoQuality.value) : '不下载视频'
+  const audio = includesAudio.value ? optionLabel(audioQualityOptions, audioQuality.value) : '不下载音频'
+  const codec = includesVideo.value ? optionLabel(codecOptions, videoCodec.value) : '无视频编码'
+  const archive =
+    archiveMode.value === 'complete_archive'
+      ? '视频 + 全部可用素材'
+      : archiveMode.value === 'custom'
+        ? '使用设置页自定义素材'
+        : '仅最终媒体'
+  return `${content} · ${video} · ${audio} · ${codec} · ${outputExtension.value.toUpperCase()} · ${dir} · ${archive}`
+})
+const downloadAdvancedSummary = computed(() => {
+  const codec = includesVideo.value ? optionLabel(codecOptions, videoCodec.value) : '无视频编码'
+  return `${outputExtension.value.toUpperCase()} · ${codec} · ${optionLabel(archiveModeOptions, archiveMode.value)}`
+})
 
 const submitInput = () => {
   void parse.createSource()
@@ -75,9 +154,54 @@ const handleTextFile = async (event: Event) => {
   target.value = ''
 }
 
-const createTasks = () => {
+const openDownloadSettings = async () => {
+  if (!activeSource.value || selectedCount.value === 0) {
+    parse.setNotice('请选择要下载的分集', 'warning')
+    return
+  }
+
+  await settings.ensureLoaded()
+  const defaults = settings.changed ? settings.draft : settings.saved
+
+  downloadDir.value = defaults.download_dir ?? ''
+  archiveMode.value = defaults.archive_mode
+  outputExtension.value = defaults.output_extension
+  mediaMode.value = 'audio_video'
+  videoQuality.value = defaults.quality
+  audioQuality.value = defaults.audio_quality
+  videoCodec.value = defaults.codec
+  downloadDialogOpen.value = true
+}
+
+const createTasks = async () => {
   if (activeSource.value) {
-    void parse.createTasksForSelection(activeSource.value.source.id)
+    await parse.createTasksForSelection(activeSource.value.source.id, {
+      downloadDir: downloadDir.value,
+      archiveMode: archiveMode.value,
+      outputExtension: outputExtension.value,
+      mediaMode: mediaMode.value,
+      quality: videoQuality.value,
+      audioQuality: audioQuality.value,
+      codec: videoCodec.value,
+    })
+    downloadDialogOpen.value = false
+  }
+}
+
+const chooseDownloadDir = async () => {
+  try {
+    const selected = await open({
+      directory: true,
+      multiple: false,
+      title: '选择保存目录',
+      defaultPath: downloadDir.value || settings.saved.download_dir || undefined,
+    })
+
+    if (typeof selected === 'string') {
+      downloadDir.value = selected
+    }
+  } catch (error) {
+    parse.setNotice(errorMessage(error), 'warning')
   }
 }
 
@@ -118,8 +242,21 @@ const refreshSource = () => {
   }
 }
 
+const runNoticeAction = () => {
+  if (parse.notice?.actionLabel === '查看传输') {
+    ui.setTab('transfer')
+    parse.clearNotice()
+  }
+}
+
 const closeSource = (sourceId: string) => {
+  sourceMenuOpen.value = false
   void parse.closeSource(sourceId)
+}
+
+const selectSource = (sourceId: string) => {
+  parse.setActiveSource(sourceId)
+  sourceMenuOpen.value = false
 }
 
 const toggleNode = (nodeId: string) => {
@@ -212,6 +349,18 @@ const sourceLoadedLabel = (tree: NormalizedSourceTree): string =>
   `${tree.source.loaded_count} / ${tree.source.total_count ?? tree.source.loaded_count}`
 
 const sourceSelectedCount = (sourceId: string): number => parse.selectionBySource[sourceId]?.length ?? 0
+
+function optionLabel(options: Array<{ label: string; value: string }>, value: string): string {
+  return options.find((option) => option.value === value)?.label ?? value
+}
+
+const errorMessage = (error: unknown): string => {
+  if (error instanceof Error) {
+    return error.message
+  }
+
+  return String(error)
+}
 </script>
 
 <template>
@@ -219,9 +368,36 @@ const sourceSelectedCount = (sourceId: string): number => parse.selectionBySourc
     <section class="panel parse-input-panel">
       <div class="panel-heading">
         <h2>输入</h2>
-        <UiStatusBadge :status="createLoading ? 'downloading' : 'ready'">
-          {{ createLoading ? "解析中" : "就绪" }}
-        </UiStatusBadge>
+        <div class="parse-heading-tools">
+          <div class="source-menu">
+            <button
+              class="source-menu-button"
+              type="button"
+              :disabled="parse.orderedSources.length === 0"
+              :aria-expanded="sourceMenuOpen"
+              @click="sourceMenuOpen = !sourceMenuOpen"
+            >
+              <span>{{ sourceMenuLabel }}</span>
+              <small v-if="activeSource" :title="activeSourceTitle">{{ activeSourceTitle }}</small>
+            </button>
+            <div v-if="sourceMenuOpen && parse.orderedSources.length" class="source-menu-popover" role="menu">
+              <button
+                v-for="tree in parse.orderedSources"
+                :key="tree.source.id"
+                type="button"
+                role="menuitem"
+                :class="{ active: parse.activeSourceId === tree.source.id }"
+                @click="selectSource(tree.source.id)"
+              >
+                <span>{{ tree.source.title }}</span>
+                <small>{{ sourceLoadedLabel(tree) }} · 已选 {{ sourceSelectedCount(tree.source.id) }}</small>
+              </button>
+            </div>
+          </div>
+          <UiStatusBadge :status="createLoading ? 'downloading' : 'ready'">
+            {{ createLoading ? "解析中" : "就绪" }}
+          </UiStatusBadge>
+        </div>
       </div>
       <form class="parse-form" @submit.prevent="submitInput">
         <UiTextarea v-model="parse.input" label="链接或 BV/AV" placeholder="BV1xx411c7mD&#10;https://www.bilibili.com/video/..." :rows="3" />
@@ -231,106 +407,214 @@ const sourceSelectedCount = (sourceId: string): number => parse.selectionBySourc
         </div>
         <input ref="input-file" class="visually-hidden-file" type="file" accept=".txt,.list,.csv,text/plain" @change="handleTextFile" />
       </form>
+      <UiInlineNotice
+        v-if="parse.notice"
+        :tone="parse.notice.tone"
+        :action-label="parse.notice.actionLabel"
+        @action="runNoticeAction"
+      >
+        {{ parse.notice.message }}
+      </UiInlineNotice>
     </section>
 
-    <aside class="panel source-panel">
-      <div class="panel-heading">
-        <h2>来源</h2>
-        <span class="muted-text">{{ parse.sourceOrder.length }} 个</span>
-      </div>
-
-      <div v-if="parse.orderedSources.length" class="source-list">
-        <button
-          v-for="tree in parse.orderedSources"
-          :key="tree.source.id"
-          class="source-row"
-          :class="{ active: parse.activeSourceId === tree.source.id }"
-          type="button"
-          @click="parse.setActiveSource(tree.source.id)"
-        >
-          <span>{{ tree.source.title }}</span>
-          <small>{{ sourceLoadedLabel(tree) }} · 已选 {{ sourceSelectedCount(tree.source.id) }}</small>
-        </button>
-      </div>
-      <div v-else class="empty-state">暂无来源</div>
-    </aside>
-
     <section class="panel result-panel">
-      <div class="panel-heading">
-        <h2>结果</h2>
-        <span v-if="activeSource" class="muted-text">{{ activeSource.source.kind }}</span>
+      <div v-if="activeSource" class="result-toolbar">
+        <div class="result-current">
+          <strong :title="activeSourceTitle">{{ activeSourceTitle }}</strong>
+          <span>{{ activeSourceKindLabel }} · 已选 {{ selectedCount }} 个 · 已解析 {{ loadedLabel }}</span>
+        </div>
+        <div class="result-actions">
+          <UiButton variant="secondary" :disabled="activeLoading" @click="selectAllLoaded">全选已加载</UiButton>
+          <UiButton variant="secondary" :disabled="activeLoading || selectedCount === 0" @click="clearSelection">
+            清空
+          </UiButton>
+          <UiButton variant="secondary" :disabled="!canLoadMore" @click="loadMore">解析更多</UiButton>
+          <UiButton variant="secondary" :disabled="!canLoadMore" @click="parseAll">解析全部</UiButton>
+          <UiButton :disabled="!canCreateTasks" @click="openDownloadSettings">{{ createTaskLabel }}</UiButton>
+          <UiIconButton icon="refresh" label="刷新解析结果" variant="ghost" :disabled="activeLoading" @click="refreshSource" />
+          <UiIconButton
+            v-if="canCloseActiveSource"
+            icon="x"
+            label="关闭当前结果"
+            variant="ghost"
+            @click="closeSource(activeSource.source.id)"
+          />
+        </div>
       </div>
 
       <UiTree v-if="activeSource" :nodes="treeNodes" :selected-ids="selectedIds" @toggle="toggleNode" />
       <div v-else class="empty-state">暂无结果</div>
+      <p v-if="activeError" class="inline-alert">{{ activeError }}</p>
     </section>
 
-    <aside class="panel selection-panel">
-      <div class="panel-heading">
+    <UiDialog v-model="downloadDialogOpen" title="下载设置">
+      <section class="download-dialog-summary">
+        <strong>{{ selectedCount }}</strong>
         <div>
-          <h2>准备下载</h2>
-          <span class="muted-text">{{ activeSourceKindLabel }}</span>
+          <span>个分集将加入传输</span>
+          <p>{{ activeSourceTitle }}</p>
         </div>
-        <div v-if="activeSource" class="source-heading-actions">
-          <UiIconButton icon="refresh" label="刷新来源" variant="ghost" :disabled="activeLoading" @click="refreshSource" />
-          <UiIconButton icon="x" label="关闭来源" variant="ghost" @click="closeSource(activeSource.source.id)" />
-        </div>
-      </div>
+      </section>
 
-      <div v-if="activeSource" class="selection-body">
-        <section class="selection-summary" aria-label="当前下载选择">
-          <div>
-            <span>已选</span>
-            <strong>{{ selectedCount }}</strong>
-            <small>个分集</small>
+      <div class="download-settings-form">
+        <div class="directory-row">
+          <UiTextField v-model="downloadDir" label="保存目录" placeholder="留空时使用 downloads" />
+          <UiButton variant="secondary" :disabled="activeLoading" @click="chooseDownloadDir">选择</UiButton>
+        </div>
+        <section class="download-settings-section">
+          <h3>下载内容</h3>
+          <div class="download-settings-grid">
+            <UiSelect v-model="mediaMode" label="下载内容" :options="mediaModeOptions" />
+            <UiSelect
+              v-if="includesVideo"
+              v-model="videoQuality"
+              label="视频清晰度"
+              :options="videoQualityOptions"
+            />
+            <UiSelect v-if="includesAudio" v-model="audioQuality" label="音频质量" :options="audioQualityOptions" />
           </div>
-          <dl>
-            <div>
-              <dt>来源</dt>
-              <dd>{{ activeSource.source.title }}</dd>
-            </div>
-            <div>
-              <dt>解析</dt>
-              <dd>{{ loadedLabel }}</dd>
-            </div>
-            <div>
-              <dt>输入</dt>
-              <dd>{{ activeSource.source.input }}</dd>
-            </div>
-          </dl>
         </section>
-
-        <div class="selection-actions">
-          <UiButton :disabled="!canCreateTasks" @click="createTasks">{{ createTaskLabel }}</UiButton>
-        </div>
-
-        <div class="selection-tools">
-          <UiButton variant="secondary" :disabled="!activeSource || activeLoading" @click="selectAllLoaded">全选已加载</UiButton>
-          <UiButton variant="secondary" :disabled="!activeSource || activeLoading || selectedCount === 0" @click="clearSelection">
-            清空选择
-          </UiButton>
-        </div>
-
-        <div class="parse-more-actions">
-          <UiButton variant="secondary" :disabled="!canLoadMore" @click="loadMore">解析更多</UiButton>
-          <UiButton variant="secondary" :disabled="!canLoadMore" @click="parseAll">解析全部</UiButton>
-        </div>
-
-        <p v-if="activeError" class="inline-alert">{{ activeError }}</p>
+        <details class="download-settings-more">
+          <summary>
+            <div>
+              <strong>更多选项</strong>
+              <span>{{ downloadAdvancedSummary }}</span>
+            </div>
+          </summary>
+          <section class="download-settings-section">
+            <div class="download-settings-grid">
+              <UiSelect v-if="includesVideo" v-model="videoCodec" label="视频编码偏好" :options="codecOptions" />
+              <UiSelect
+                v-model="outputExtension"
+                label="封装格式"
+                :options="outputExtensionOptions"
+              />
+              <UiSelect
+                v-model="archiveMode"
+                label="保存内容"
+                :options="archiveModeOptions"
+              />
+            </div>
+          </section>
+        </details>
+        <p class="download-settings-note">{{ downloadSettingsSummary }}</p>
       </div>
-      <div v-else class="empty-state">选择一个来源后创建下载任务</div>
-    </aside>
+
+      <template #footer>
+        <UiButton variant="secondary" :disabled="activeLoading" @click="downloadDialogOpen = false">取消</UiButton>
+        <UiButton :disabled="!canCreateTasks" @click="createTasks">加入传输</UiButton>
+      </template>
+    </UiDialog>
   </section>
 </template>
 
 <style scoped>
 .parse-page {
-  grid-template-columns: minmax(190px, 220px) minmax(0, 1fr) minmax(240px, 280px);
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr);
 }
 
 .parse-input-panel {
   grid-column: 1 / -1;
+  z-index: 10;
+  overflow: visible;
+}
+
+.parse-heading-tools {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-8);
+}
+
+.source-menu {
+  position: relative;
+  min-width: 0;
+}
+
+.source-menu-button {
+  max-width: 280px;
+  height: 28px;
+  display: inline-grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-8);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-6);
+  background: var(--color-surface);
+  color: var(--color-text);
+  padding: 0 var(--space-10, 10px);
+  font-size: var(--font-12);
+  font-weight: 700;
+}
+
+.source-menu-button:disabled {
+  color: var(--color-muted);
+  background: var(--color-panel);
+}
+
+.source-menu-button small {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-muted);
+  font-size: var(--font-12);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.source-menu-popover {
+  position: absolute;
+  top: calc(100% + var(--space-4));
+  right: 0;
+  z-index: 40;
+  width: min(420px, calc(100vw - 64px));
+  max-height: 260px;
+  display: grid;
+  gap: var(--space-4);
+  overflow-y: auto;
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-8);
+  background: var(--color-surface);
+  box-shadow: 0 12px 28px rgb(23 33 29 / 12%);
+}
+
+.source-menu-popover button {
+  min-width: 0;
+  min-height: 42px;
+  display: grid;
+  gap: var(--space-4);
+  border: 0;
+  border-radius: var(--radius-6);
+  background: transparent;
+  color: var(--color-text);
+  padding: var(--space-8);
+  text-align: left;
+}
+
+.source-menu-popover button:hover,
+.source-menu-popover button.active {
+  background: #e8f3ee;
+}
+
+.source-menu-popover span,
+.source-menu-popover small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.source-menu-popover span {
+  font-size: var(--font-13);
+  font-weight: 700;
+}
+
+.source-menu-popover small {
+  color: var(--color-muted);
+  font-size: var(--font-12);
 }
 
 .parse-form {
@@ -358,153 +642,69 @@ const sourceSelectedCount = (sourceId: string): number => parse.selectionBySourc
   pointer-events: none;
 }
 
-.source-panel,
-.result-panel,
-.selection-panel {
+.result-panel {
   min-height: 0;
+  overflow: hidden;
 }
 
-.source-list {
-  min-height: 0;
-  overflow: auto;
+.result-toolbar {
+  min-width: 0;
   display: grid;
-  align-content: start;
-  gap: var(--space-8);
-}
-
-.source-row {
-  min-height: 52px;
-  display: grid;
-  gap: var(--space-4);
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-16);
+  padding: var(--space-10, 10px) var(--space-12);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-8);
-  background: var(--color-surface);
-  color: var(--color-text);
-  padding: var(--space-8) var(--space-12);
-  text-align: left;
+  background: var(--color-panel);
 }
 
-.source-row.active {
-  border-color: rgb(8 127 91 / 40%);
-  background: #e8f3ee;
+.result-current {
+  min-width: 0;
+  display: grid;
+  gap: var(--space-4);
 }
 
-.source-row span {
+.result-current strong,
+.result-current span {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.result-current strong {
+  color: var(--color-text);
   font-size: var(--font-13);
 }
 
-.source-row small,
-.empty-state {
+.result-current span {
   color: var(--color-muted);
   font-size: var(--font-12);
-}
-
-.selection-body {
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-16);
-  overflow: auto;
-}
-
-.source-heading-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-4);
-}
-
-.selection-summary {
-  display: grid;
-  gap: var(--space-16);
-}
-
-.selection-summary > div {
-  min-height: 82px;
-  display: grid;
-  grid-template-columns: auto minmax(56px, auto) minmax(0, 1fr);
-  align-items: baseline;
-  column-gap: var(--space-8);
-  padding: var(--space-16);
-  border: 1px solid rgb(8 127 91 / 20%);
-  border-radius: var(--radius-8);
-  background: #eef8f3;
-}
-
-.selection-summary > div span,
-.selection-summary > div small {
-  color: var(--color-muted);
-  font-size: var(--font-13);
-  font-weight: 650;
-}
-
-.selection-summary > div strong {
-  color: var(--color-accent-strong);
-  font-size: 38px;
-  line-height: 1;
-}
-
-.selection-summary dl {
-  display: grid;
-  gap: var(--space-10, 10px);
-  margin: 0;
-}
-
-.selection-summary dl div {
-  min-width: 0;
-  display: grid;
-  grid-template-columns: 44px minmax(0, 1fr);
-  gap: var(--space-8);
-  align-items: start;
-}
-
-.selection-summary dt,
-.selection-summary dd {
-  margin: 0;
-  font-size: var(--font-12);
-  line-height: 1.5;
-}
-
-.selection-summary dt {
-  color: var(--color-muted);
   font-weight: 700;
 }
 
-.selection-summary dd {
-  min-width: 0;
-  color: var(--color-text);
-  overflow-wrap: anywhere;
+.result-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-4);
 }
 
-.selection-actions {
-  display: grid;
+.result-toolbar :deep(.ui-button) {
+  min-width: 64px;
+  height: 28px;
+  font-size: var(--font-12);
 }
 
-.selection-actions :deep(.ui-button) {
-  width: 100%;
+.result-actions :deep(.ui-icon-button) {
+  width: 28px;
+  height: 28px;
 }
 
-.selection-tools {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: var(--space-8);
-}
-
-.selection-tools :deep(.ui-button) {
-  width: 100%;
-}
-
-.parse-more-actions {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: var(--space-8);
-}
-
-.parse-more-actions :deep(.ui-button) {
-  width: 100%;
+.empty-state {
+  color: var(--color-muted);
+  font-size: var(--font-12);
 }
 
 .empty-state {
@@ -528,14 +728,153 @@ const sourceSelectedCount = (sourceId: string): number => parse.selectionBySourc
   overflow-wrap: anywhere;
 }
 
-@media (max-width: 1040px) {
-  .parse-page {
-    grid-template-columns: minmax(180px, 220px) minmax(0, 1fr);
-    grid-template-rows: auto minmax(0, 1fr) auto;
+.download-dialog-summary {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-12);
+  padding: var(--space-12);
+  border: 1px solid rgb(8 127 91 / 20%);
+  border-radius: var(--radius-8);
+  background: #eef8f3;
+}
+
+.download-dialog-summary > strong {
+  color: var(--color-accent-strong);
+  font-size: 34px;
+  line-height: 1;
+}
+
+.download-dialog-summary div {
+  min-width: 0;
+  display: grid;
+  gap: var(--space-4);
+}
+
+.download-dialog-summary span,
+.download-dialog-summary p {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.download-dialog-summary span {
+  color: var(--color-muted);
+  font-size: var(--font-12);
+  font-weight: 700;
+}
+
+.download-dialog-summary p {
+  color: var(--color-text);
+  font-size: var(--font-13);
+  font-weight: 700;
+}
+
+.download-settings-form {
+  display: grid;
+  gap: var(--space-12);
+}
+
+.download-settings-section {
+  display: grid;
+  gap: var(--space-8);
+}
+
+.download-settings-more {
+  min-width: 0;
+  display: grid;
+  gap: var(--space-10, 10px);
+  padding: var(--space-10, 10px) var(--space-12);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-8);
+  background: var(--color-panel);
+}
+
+.download-settings-more summary {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-12);
+  cursor: pointer;
+  list-style: none;
+}
+
+.download-settings-more summary::-webkit-details-marker {
+  display: none;
+}
+
+.download-settings-more summary::after {
+  content: "展开";
+  flex: 0 0 auto;
+  color: var(--color-muted);
+  font-size: var(--font-12);
+  font-weight: 700;
+}
+
+.download-settings-more[open] summary::after {
+  content: "收起";
+}
+
+.download-settings-more summary div {
+  min-width: 0;
+  display: grid;
+  gap: var(--space-4);
+}
+
+.download-settings-more summary strong {
+  color: var(--color-text);
+  font-size: var(--font-13);
+}
+
+.download-settings-more summary span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-muted);
+  font-size: var(--font-12);
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.download-settings-section h3 {
+  margin: 0;
+  color: var(--color-text);
+  font-size: var(--font-13);
+  font-weight: 800;
+}
+
+.download-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-12);
+}
+
+.download-settings-note {
+  margin: 0;
+  padding: var(--space-8) var(--space-12);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-6);
+  background: var(--color-panel);
+  color: var(--color-muted);
+  font-size: var(--font-12);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 840px) {
+  .parse-form,
+  .result-toolbar,
+  .download-settings-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 
-  .selection-panel {
-    grid-column: 1 / -1;
+  .parse-actions,
+  .result-actions {
+    justify-content: flex-start;
   }
 }
 </style>

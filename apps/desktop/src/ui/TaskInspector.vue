@@ -7,28 +7,23 @@ import { useUiStore } from '../stores/ui'
 import {
   createTaskDiagnosticView,
   createTaskTimeline,
-  createTransferTaskView,
   redactLogMessage,
   resourceIntentText,
   statusLabel,
-  type TaskActionKind,
-  type TransferProgressSnapshot,
 } from '../stores/transferView'
 import UiButton from './Button.vue'
-import UiProgressBar from './ProgressBar.vue'
+import UiInlineNotice from './InlineNotice.vue'
 import UiStatusBadge from './StatusBadge.vue'
 import UiTabs from './Tabs.vue'
 
-const { task, progress, transferProgress = null, logs, logsLoading = false } = defineProps<{
+const { task, progress, logs, logsLoading = false } = defineProps<{
   task: DownloadTask | null
   progress: number
-  transferProgress?: TransferProgressSnapshot | null
   logs: QueueLogEntry[]
   logsLoading?: boolean
 }>()
 
 const emit = defineEmits<{
-  taskAction: [action: Exclude<TaskActionKind, 'none'>]
   refreshLogs: []
 }>()
 
@@ -37,6 +32,7 @@ const selectedTab = ref('overview')
 const tabTouched = ref(false)
 const copied = ref(false)
 const exportingDiagnostics = ref(false)
+const exportNotice = ref('')
 
 const tabs = computed(() => [
   { label: '诊断', value: 'diagnosis' },
@@ -45,7 +41,6 @@ const tabs = computed(() => [
   { label: '事件', value: 'events', count: timeline.value.length },
   { label: '原始日志', value: 'raw_logs', count: logs.length },
 ])
-const view = computed(() => (task ? createTransferTaskView(task, progress, logs, transferProgress) : null))
 const diagnostic = computed(() => (task ? createTaskDiagnosticView(task, logs) : null))
 const timeline = computed(() => (task ? createTaskTimeline(task, logs) : []))
 const failedTrackCount = computed(
@@ -55,7 +50,6 @@ const completedTrackCount = computed(
   () => task?.resources.filter((resource) => resource.status === 'completed').length ?? 0,
 )
 const outputDirectory = computed(() => outputDir(task?.output_path ?? null))
-const canOpenOutput = computed(() => Boolean(task?.output_path))
 const redactedLogs = computed(() =>
   logs.map((log) => ({
     ...log,
@@ -110,12 +104,6 @@ const setTab = (value: string) => {
   selectedTab.value = value
 }
 
-const runRecommendedAction = () => {
-  if (diagnostic.value?.recommendedAction) {
-    emit('taskAction', diagnostic.value.recommendedAction)
-  }
-}
-
 const copyDiagnostics = async () => {
   if (!diagnosticText.value) {
     return
@@ -136,7 +124,10 @@ const exportDiagnostics = async () => {
   exportingDiagnostics.value = true
   try {
     const result = await diagnosticsExport()
-    ui.pushToast(`诊断已导出：${result.path}`, 'success')
+    exportNotice.value = `诊断已导出：${result.path}`
+    window.setTimeout(() => {
+      exportNotice.value = ''
+    }, 3000)
   } catch (error) {
     ui.pushToast(errorMessage(error), 'danger')
   } finally {
@@ -213,48 +204,12 @@ const errorMessage = (error: unknown): string => {
 
 <template>
   <div class="task-inspector">
-    <template v-if="task && view && diagnostic">
-      <section class="inspector-summary">
-        <div class="summary-title-line">
-          <div class="summary-title-copy">
-            <h2>{{ task.title }}</h2>
-            <p>{{ view.shortLocation }} · {{ diagnostic.impact }}</p>
-          </div>
-          <UiStatusBadge :status="view.statusBadge">
-            {{ view.statusLabel }}
-          </UiStatusBadge>
-        </div>
-
-        <div class="summary-progress">
-          <div>
-            <strong>{{ view.progressLabel }}</strong>
-            <span>{{ view.speedLabel }} · 剩余 {{ view.etaLabel }}</span>
-          </div>
-          <UiProgressBar :value="progress" />
-        </div>
-
-        <div class="summary-actions">
-          <UiButton
-            v-if="diagnostic.recommendedAction"
-            :variant="diagnostic.tone === 'danger' ? 'primary' : 'secondary'"
-            @click="runRecommendedAction"
-          >
-            {{ diagnostic.recommendedActionLabel }}
-          </UiButton>
-          <UiButton variant="secondary" :disabled="!canOpenOutput" @click="emit('taskAction', 'open_dir')">
-            打开文件夹
-          </UiButton>
-          <UiButton variant="secondary" :disabled="!canOpenOutput" @click="emit('taskAction', 'open_file')">
-            打开文件
-          </UiButton>
-        </div>
-      </section>
-
+    <template v-if="task && diagnostic">
       <UiTabs :model-value="selectedTab" :tabs="tabs" @update:model-value="setTab" />
 
       <section v-if="selectedTab === 'diagnosis'" class="tab-panel diagnosis-panel">
         <div class="diagnosis-block" :class="`tone-${diagnostic.tone}`">
-          <span>{{ diagnostic.recommendedActionLabel || '查看详情' }}</span>
+          <span>{{ statusLabel(task.status) }}</span>
           <h3>{{ diagnostic.summary }}</h3>
           <p>{{ diagnostic.detail }}</p>
         </div>
@@ -276,6 +231,7 @@ const errorMessage = (error: unknown): string => {
             {{ exportingDiagnostics ? '导出中' : '导出诊断' }}
           </UiButton>
         </div>
+        <UiInlineNotice v-if="exportNotice" tone="success">{{ exportNotice }}</UiInlineNotice>
       </section>
 
       <section v-else-if="selectedTab === 'overview'" class="tab-panel overview-panel">
@@ -356,6 +312,7 @@ const errorMessage = (error: unknown): string => {
           </div>
         </div>
         <div class="log-list">
+          <UiInlineNotice v-if="exportNotice" tone="success">{{ exportNotice }}</UiInlineNotice>
           <div v-for="log in redactedLogs" :key="`${log.created_at}-${log.message}`" class="log-row">
             <span :class="`level-${log.level}`">{{ log.level }}</span>
             <p>{{ log.message }}</p>
@@ -375,80 +332,9 @@ const errorMessage = (error: unknown): string => {
   min-height: 0;
   height: 100%;
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   gap: var(--space-12);
   overflow: hidden;
-}
-
-.inspector-summary {
-  min-width: 0;
-  display: grid;
-  gap: var(--space-12);
-}
-
-.summary-title-line {
-  min-width: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: start;
-  gap: var(--space-8);
-}
-
-.summary-title-copy {
-  min-width: 0;
-}
-
-.summary-title-copy h2,
-.summary-title-copy p {
-  margin: 0;
-}
-
-.summary-title-copy h2 {
-  overflow-wrap: anywhere;
-  color: var(--color-text);
-  font-size: var(--font-14);
-  line-height: 1.45;
-}
-
-.summary-title-copy p {
-  margin-top: var(--space-4);
-  overflow: hidden;
-  color: var(--color-muted);
-  font-size: var(--font-12);
-  line-height: 1.4;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.summary-progress {
-  display: grid;
-  gap: var(--space-8);
-}
-
-.summary-progress > div {
-  min-width: 0;
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--space-8);
-}
-
-.summary-progress strong {
-  font-size: var(--font-18);
-}
-
-.summary-progress span {
-  overflow: hidden;
-  color: var(--color-muted);
-  font-size: var(--font-12);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.summary-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-8);
 }
 
 .tab-panel {
@@ -756,34 +642,4 @@ const errorMessage = (error: unknown): string => {
   min-height: 72px;
 }
 
-@media (max-width: 1120px) {
-  .task-inspector {
-    grid-template-columns: minmax(260px, 0.8fr) minmax(0, 1fr);
-    grid-template-rows: auto minmax(0, 1fr);
-    column-gap: var(--space-16);
-  }
-
-  .inspector-summary {
-    grid-row: 1 / span 2;
-    align-content: start;
-  }
-
-  .task-inspector > :deep(.ui-tabs),
-  .tab-panel {
-    grid-column: 2;
-  }
-
-  .summary-title-copy p {
-    display: -webkit-box;
-    overflow: hidden;
-    white-space: normal;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-  }
-
-  .summary-progress > div {
-    display: grid;
-    gap: var(--space-4);
-  }
-}
 </style>

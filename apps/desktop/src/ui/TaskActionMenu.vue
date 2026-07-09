@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 
 import type { TaskActionDescriptor, TaskActionKind, TransferTaskView } from '../stores/transferView'
 import UiIconButton from './IconButton.vue'
@@ -13,9 +13,16 @@ const emit = defineEmits<{
   action: [action: Exclude<TaskActionKind, 'none'>]
 }>()
 
-const open = ref(false)
 const hasPrimaryAction = computed(() => view.primaryAction !== 'none')
 const hasSecondaryActions = computed(() => view.secondaryActions.length > 0)
+const dropdownItems = computed(() =>
+  view.secondaryActions.map((action) => ({
+    label: action.label,
+    icon: tablerIcon(action.icon),
+    color: action.tone === 'danger' ? 'error' : 'neutral',
+    onSelect: () => runSecondary(action),
+  })),
+)
 
 const runPrimary = () => {
   if (view.primaryAction === 'none') {
@@ -26,8 +33,23 @@ const runPrimary = () => {
 }
 
 const runSecondary = (action: TaskActionDescriptor) => {
-  open.value = false
   emit('action', action.kind)
+}
+
+const tablerIcon = (icon: string): string => {
+  const aliases: Record<string, string> = {
+    pause: 'player-pause',
+    play: 'player-play',
+    refresh: 'refresh',
+    x: 'x',
+    trash: 'trash',
+    file: 'file',
+    folder: 'folder',
+    copy: 'copy',
+    more: 'dots',
+  }
+
+  return `i-tabler-${aliases[icon] ?? icon}`
 }
 </script>
 
@@ -42,32 +64,20 @@ const runSecondary = (action: TaskActionDescriptor) => {
       :disabled
       @click.stop="runPrimary"
     />
-    <UiIconButton
+    <UDropdownMenu
       v-if="hasSecondaryActions"
-      icon="more"
-      label="更多操作"
-      variant="ghost"
+      :items="dropdownItems"
       :disabled
-      @click.stop="open = !open"
-    />
-    <div v-if="open" class="action-popover" role="menu" @click.stop>
-      <button
-        v-for="action in view.secondaryActions"
-        :key="action.kind"
-        type="button"
-        role="menuitem"
-        :class="{ danger: action.tone === 'danger' }"
-        @click="runSecondary(action)"
-      >
-        <span>{{ action.label }}</span>
-      </button>
-    </div>
+      :content="{ align: 'end', sideOffset: 4, collisionPadding: 12 }"
+      :ui="{ content: 'min-w-32' }"
+    >
+      <UiIconButton icon="more" label="更多操作" variant="ghost" :disabled />
+    </UDropdownMenu>
   </div>
 </template>
 
 <style scoped>
 .task-action-menu {
-  position: relative;
   min-width: 0;
   display: inline-flex;
   align-items: center;
@@ -78,40 +88,5 @@ const runSecondary = (action: TaskActionDescriptor) => {
 .task-action-menu :deep(.ui-icon-button) {
   width: 28px;
   height: 28px;
-}
-
-.action-popover {
-  position: absolute;
-  top: calc(100% + var(--space-4));
-  right: 0;
-  z-index: 30;
-  min-width: 112px;
-  display: grid;
-  gap: 2px;
-  padding: var(--space-4);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-8);
-  background: var(--color-surface);
-  box-shadow: 0 12px 28px rgb(23 33 29 / 12%);
-}
-
-.action-popover button {
-  height: 30px;
-  border: 0;
-  border-radius: var(--radius-6);
-  background: transparent;
-  color: var(--color-text);
-  padding: 0 var(--space-8);
-  text-align: left;
-  font-size: var(--font-13);
-  font-weight: 650;
-}
-
-.action-popover button:hover {
-  background: var(--color-panel);
-}
-
-.action-popover button.danger {
-  color: var(--color-danger);
 }
 </style>

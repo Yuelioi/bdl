@@ -1,7 +1,6 @@
 <script setup lang="ts">
 const {
   selectedCount,
-  visibleCount,
   completedCount,
   canPause,
   canResume,
@@ -11,7 +10,6 @@ const {
   loading = false,
 } = defineProps<{
   selectedCount: number
-  visibleCount: number
   completedCount: number
   canPause: boolean
   canResume: boolean
@@ -34,11 +32,8 @@ const emit = defineEmits<{
 
 <template>
   <div class="bulk-action-bar" :class="{ selected: selectedCount > 0 }">
-    <div class="bulk-copy">
-      <strong v-if="selectedCount > 0">已选择 {{ selectedCount }} 个</strong>
-      <strong v-else>当前 {{ visibleCount }} 个</strong>
-      <span v-if="selectedCount > 0">批量操作只作用于可执行的任务状态。</span>
-      <span v-else>可暂停、继续、清理已完成或刷新列表。</span>
+    <div v-if="selectedCount > 0" class="bulk-copy">
+      <strong>已选择 {{ selectedCount }} 个</strong>
     </div>
 
     <div v-if="selectedCount > 0" class="bulk-actions">
@@ -52,12 +47,17 @@ const emit = defineEmits<{
     </div>
 
     <div v-else class="bulk-actions">
-      <button type="button" :disabled="loading || !canPause" @click="emit('pause')">暂停全部</button>
-      <button type="button" :disabled="loading || !canResume" @click="emit('resume')">继续全部</button>
       <button type="button" :disabled="loading || completedCount === 0" @click="emit('clearCompleted')">
         清理已完成
       </button>
       <button type="button" :disabled="loading" @click="emit('refresh')">刷新</button>
+      <details class="bulk-more">
+        <summary>更多</summary>
+        <div>
+          <button type="button" :disabled="loading || !canPause" @click="emit('pause')">暂停全部</button>
+          <button type="button" :disabled="loading || !canResume" @click="emit('resume')">继续全部</button>
+        </div>
+      </details>
     </div>
   </div>
 </template>
@@ -65,18 +65,19 @@ const emit = defineEmits<{
 <style scoped>
 .bulk-action-bar {
   min-width: 0;
-  min-height: 40px;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  min-height: 32px;
+  display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: var(--space-12);
-  padding: var(--space-8) var(--space-12);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-8);
-  background: var(--color-panel);
 }
 
 .bulk-action-bar.selected {
+  min-height: 40px;
+  justify-content: space-between;
+  padding: var(--space-8) var(--space-12);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-8);
   border-color: rgb(8 127 91 / 28%);
   background: #f8fcfa;
 }
@@ -87,22 +88,13 @@ const emit = defineEmits<{
   gap: 2px;
 }
 
-.bulk-copy strong,
-.bulk-copy span {
+.bulk-copy strong {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.bulk-copy strong {
   color: var(--color-text);
   font-size: var(--font-13);
-}
-
-.bulk-copy span {
-  color: var(--color-muted);
-  font-size: var(--font-12);
 }
 
 .bulk-actions {
@@ -124,6 +116,55 @@ const emit = defineEmits<{
   white-space: nowrap;
 }
 
+.bulk-more {
+  position: relative;
+}
+
+.bulk-more summary {
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-6);
+  background: var(--color-surface);
+  color: var(--color-muted);
+  padding: 0 var(--space-8);
+  font-size: var(--font-12);
+  font-weight: 650;
+  white-space: nowrap;
+  cursor: pointer;
+  list-style: none;
+}
+
+.bulk-more summary::-webkit-details-marker {
+  display: none;
+}
+
+.bulk-more[open] summary {
+  background: var(--color-panel);
+}
+
+.bulk-more div {
+  position: absolute;
+  top: calc(100% + var(--space-4));
+  right: 0;
+  z-index: 20;
+  min-width: 120px;
+  display: grid;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-8);
+  background: var(--color-surface);
+  box-shadow: 0 12px 28px rgb(23 33 29 / 12%);
+}
+
+.bulk-more div button {
+  width: 100%;
+  justify-content: flex-start;
+  text-align: left;
+}
+
 .bulk-actions button:hover:not(:disabled) {
   background: var(--color-panel);
 }
@@ -143,8 +184,9 @@ const emit = defineEmits<{
 }
 
 @media (max-width: 1180px) {
-  .bulk-action-bar {
-    grid-template-columns: minmax(0, 1fr);
+  .bulk-action-bar.selected {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .bulk-actions {

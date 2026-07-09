@@ -77,8 +77,8 @@ async fn download_command(args: &[String]) -> anyhow::Result<()> {
         fetcher.fetch(audio, None).await?;
         muxer
             .mux(&MuxRequest {
-                video_path: video.target_path.clone(),
-                audio_path: audio.target_path.clone(),
+                video_path: Some(video.target_path.clone()),
+                audio_path: Some(audio.target_path.clone()),
                 output_path: task.output_path.clone(),
                 cover_path: None,
                 subtitle_paths: Vec::new(),

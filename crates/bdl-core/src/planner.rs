@@ -30,6 +30,41 @@ pub enum ArchiveMode {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DownloadMediaMode {
+    AudioVideo,
+    VideoOnly,
+    AudioOnly,
+}
+
+impl DownloadMediaMode {
+    pub fn parse(value: &str) -> BdlResult<Self> {
+        match value {
+            "audio_video" => Ok(Self::AudioVideo),
+            "video_only" => Ok(Self::VideoOnly),
+            "audio_only" => Ok(Self::AudioOnly),
+            other => Err(BdlError::Planning {
+                message: format!("下载内容设置无效：`{other}`。"),
+            }),
+        }
+    }
+
+    const fn includes_video(self) -> bool {
+        matches!(self, Self::AudioVideo | Self::VideoOnly)
+    }
+
+    const fn includes_audio(self) -> bool {
+        matches!(self, Self::AudioVideo | Self::AudioOnly)
+    }
+}
+
+impl Default for DownloadMediaMode {
+    fn default() -> Self {
+        Self::AudioVideo
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ArchiveAssetSelection {
     pub cover: bool,
@@ -139,6 +174,7 @@ pub fn parse_stream_codec(value: &str) -> BdlResult<StreamCodec> {
 pub struct DownloadOptions {
     pub output_dir: PathBuf,
     pub archive_mode: ArchiveMode,
+    pub media_mode: DownloadMediaMode,
     pub output_extension: String,
     pub naming_template: String,
     pub duplicate_naming_strategy: DuplicateNamingStrategy,
@@ -154,6 +190,7 @@ impl DownloadOptions {
         Self {
             output_dir,
             archive_mode: ArchiveMode::Fast,
+            media_mode: DownloadMediaMode::default(),
             output_extension: "mp4".to_owned(),
             naming_template: DEFAULT_NAMING_TEMPLATE.to_owned(),
             duplicate_naming_strategy: DuplicateNamingStrategy::default(),
@@ -228,26 +265,46 @@ fn plan_part(
     let part = selected.part;
     let task_id = format!("task:{}:{}", tree.source.id.0, part.id.0);
     let title = task_title(item, part);
-    let video = select_video_stream(part, options)?;
-    let audio = select_audio_stream(part, options)?;
-    let output_path = output_path_for(tree, item, part, selected, video, options, reserved_paths)?;
+    let video = if options.media_mode.includes_video() {
+        Some(select_video_stream(part, options)?)
+    } else {
+        None
+    };
+    let audio = if options.media_mode.includes_audio() {
+        Some(select_audio_stream(part, options)?)
+    } else {
+        None
+    };
+    let output_path = output_path_for(
+        tree,
+        item,
+        part,
+        selected,
+        video,
+        audio,
+        options,
+        reserved_paths,
+    )?;
 
-    let mut resources = vec![
-        media_resource(
+    let mut resources = Vec::with_capacity(2);
+    if let Some(video) = video {
+        resources.push(media_resource(
             &task_id,
             &output_path,
             DownloadResourceIntent::Video,
             DownloadResourceKind::Video,
             video,
-        )?,
-        media_resource(
+        )?);
+    }
+    if let Some(audio) = audio {
+        resources.push(media_resource(
             &task_id,
             &output_path,
             DownloadResourceIntent::Audio,
             DownloadResourceKind::Audio,
             audio,
-        )?,
-    ];
+        )?);
+    }
 
     let archive_assets = match options.archive_mode {
         ArchiveMode::Fast => ArchiveAssetSelection::none(),
@@ -273,9 +330,13 @@ fn plan_part(
         output_path,
         refresh_intent: media_refresh_intent(tree.source.kind, part),
         media_selection: DownloadTaskMediaSelection {
-            video_quality: stream_quality_label(video),
-            audio_quality: stream_quality_label(audio),
-            video_codec: stream_codec_label(video).to_owned(),
+            video_quality: video
+                .map(stream_quality_label)
+                .unwrap_or_else(|| "none".to_owned()),
+            audio_quality: audio
+                .map(stream_quality_label)
+                .unwrap_or_else(|| "none".to_owned()),
+            video_codec: video.map(stream_codec_label).unwrap_or("none").to_owned(),
             container: options.output_extension.clone(),
         },
     })
@@ -531,12 +592,17 @@ fn output_path_for(
     item: &NormalizedItem,
     part: &NormalizedPart,
     selected: SelectedPart<'_>,
-    video: &MediaStream,
+    video: Option<&MediaStream>,
+    audio: Option<&MediaStream>,
     options: &DownloadOptions,
     reserved_paths: &mut HashSet<PathBuf>,
 ) -> BdlResult<PathBuf> {
     let today = Utc::now().date_naive().to_string();
-    let quality_label = stream_quality_label(video);
+    let representative_stream = video.or(audio).ok_or_else(|| BdlError::Planning {
+        message: format!("`{}` 没有可下载的媒体流。", part.title),
+    })?;
+    let quality_label = stream_quality_label(representative_stream);
+    let codec_label = video.map(stream_codec_label).unwrap_or("none");
     let context = NamingContext {
         title: &item.title,
         part_title: &part.title,
@@ -552,7 +618,7 @@ fn output_path_for(
         collection_title: Some(&tree.source.title),
         index: Some(selected.item_index + 1),
         quality: Some(&quality_label),
-        codec: Some(stream_codec_label(video)),
+        codec: Some(codec_label),
         date: Some(&today),
         ext: &options.output_extension,
     };

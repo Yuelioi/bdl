@@ -14,8 +14,8 @@ use bdl_core::muxer::{
     supports_subtitle_embedding,
 };
 use bdl_core::planner::{
-    ArchiveMode, DownloadOptions, MissingQualityPolicy, StreamPreference, parse_stream_codec,
-    plan_selected_parts,
+    ArchiveMode, DownloadMediaMode, DownloadOptions, MissingQualityPolicy, StreamPreference,
+    parse_stream_codec, plan_selected_parts,
 };
 use bdl_core::queue::{
     DownloadResource, DownloadResourceIntent, DownloadTask, QueueLogEntry, QueueLogLevel,
@@ -154,6 +154,10 @@ pub struct SelectionCreateTasksRequest {
     pub output_dir: Option<String>,
     pub archive_mode: Option<String>,
     pub output_extension: Option<String>,
+    pub media_mode: Option<String>,
+    pub quality: Option<String>,
+    pub audio_quality: Option<String>,
+    pub codec: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -272,7 +276,8 @@ pub async fn selection_create_tasks(
 
     let output_dir = request
         .output_dir
-        .or(settings.download_dir)
+        .as_deref()
+        .or(settings.download_dir.as_deref())
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("downloads"));
 
@@ -286,12 +291,24 @@ pub async fn selection_create_tasks(
     let mut options = DownloadOptions::new(output_dir).with_archive_mode(archive_mode);
     options.output_extension = request
         .output_extension
-        .unwrap_or(settings.output_extension);
+        .clone()
+        .unwrap_or_else(|| settings.output_extension.clone());
+    options.media_mode =
+        DownloadMediaMode::parse(request.media_mode.as_deref().unwrap_or("audio_video"))?;
     options.naming_template = settings.naming_template;
     options.duplicate_naming_strategy = settings.duplicate_naming_strategy;
-    options.video_quality = StreamPreference::parse(&settings.quality, "视频清晰度")?;
-    options.audio_quality = StreamPreference::parse(&settings.audio_quality, "音频质量")?;
-    options.video_codec = parse_stream_codec(&settings.codec)?;
+    options.video_quality = StreamPreference::parse(
+        request.quality.as_deref().unwrap_or(&settings.quality),
+        "视频清晰度",
+    )?;
+    options.audio_quality = StreamPreference::parse(
+        request
+            .audio_quality
+            .as_deref()
+            .unwrap_or(&settings.audio_quality),
+        "音频质量",
+    )?;
+    options.video_codec = parse_stream_codec(request.codec.as_deref().unwrap_or(&settings.codec))?;
     options.missing_quality_policy = MissingQualityPolicy::parse(&settings.missing_quality_policy)?;
     options.archive_assets = settings.archive_assets;
 
@@ -974,7 +991,13 @@ async fn run_download_task(
 
     let muxing = state.update_task_status(&task.id, TaskStatus::Muxing)?;
     events::emit(app, events::QUEUE_TASK_UPDATED, &muxing)?;
-    emit_queue_log(app, state, &task.id, QueueLogLevel::Info, "合并音视频")?;
+    emit_queue_log(
+        app,
+        state,
+        &task.id,
+        QueueLogLevel::Info,
+        task_mux_label(&task),
+    )?;
 
     let latest = state.task_snapshot(&task.id)?;
     let attachments = mux_attachments(&latest, &runtime_options);
@@ -985,16 +1008,18 @@ async fn run_download_task(
         emit_queue_log(app, state, &latest.id, QueueLogLevel::Info, "嵌入归档素材")?;
     }
 
-    let video = resource_by_intent(&latest, DownloadResourceIntent::Video)?;
-    let audio = resource_by_intent(&latest, DownloadResourceIntent::Audio)?;
+    let video_path = completed_resource_by_intent(&latest, DownloadResourceIntent::Video)
+        .map(|resource| resource.target_path.clone());
+    let audio_path = completed_resource_by_intent(&latest, DownloadResourceIntent::Audio)
+        .map(|resource| resource.target_path.clone());
     let muxer = MediaMuxer::new(MediaMuxerConfig {
         ffmpeg_path: runtime_options.ffmpeg_path.clone(),
     })
     .map_err(BdlError::from)?;
     muxer
         .mux(&MuxRequest {
-            video_path: video.target_path.clone(),
-            audio_path: audio.target_path.clone(),
+            video_path,
+            audio_path,
             output_path: latest.output_path.clone(),
             cover_path: attachments.cover_path,
             subtitle_paths: attachments.subtitle_paths,
@@ -1250,19 +1275,6 @@ fn escape_xml(value: &str) -> String {
         .replace('\'', "&apos;")
 }
 
-fn resource_by_intent(
-    task: &DownloadTask,
-    intent: DownloadResourceIntent,
-) -> CommandResult<&DownloadResource> {
-    task.resources
-        .iter()
-        .find(|resource| resource.intent == intent)
-        .ok_or_else(|| CommandError {
-            code: "missing_resource".to_owned(),
-            message: format!("任务 `{}` 缺少 {:?} 资源。", task.title, intent),
-        })
-}
-
 fn task_should_continue(state: &AppState, task_id: &str) -> CommandResult<bool> {
     Ok(!matches!(
         state.task_status(task_id)?,
@@ -1278,6 +1290,18 @@ fn resource_label(resource: &DownloadResource) -> &'static str {
         DownloadResourceIntent::Subtitle => "字幕",
         DownloadResourceIntent::Danmaku => "弹幕",
         DownloadResourceIntent::Nfo => "NFO",
+    }
+}
+
+fn task_mux_label(task: &DownloadTask) -> &'static str {
+    match (
+        task_has_resource_intent(task, DownloadResourceIntent::Video),
+        task_has_resource_intent(task, DownloadResourceIntent::Audio),
+    ) {
+        (true, true) => "合并音视频",
+        (true, false) => "封装视频",
+        (false, true) => "封装音频",
+        (false, false) => "封装媒体",
     }
 }
 

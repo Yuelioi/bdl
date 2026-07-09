@@ -29,6 +29,8 @@ import {
   queueStartupRecovery,
 } from '../api/tauri'
 import { useUiStore } from './ui'
+import type { InlineNotice, NoticeTone } from './feedback'
+import { NOTICE_CLEAR_DELAY } from './feedback'
 import {
   defaultQueueFilter,
   filterTaskByWorkflow,
@@ -51,6 +53,8 @@ interface QueueState {
   startupRecoveryLoading: boolean
   startupRecoveryDismissed: boolean
   loading: boolean
+  notice: InlineNotice | null
+  noticeTimer: number | null
   listening: boolean
   unlisten: UnlistenFn[]
 }
@@ -78,6 +82,8 @@ export const useQueueStore = defineStore('queue', {
     startupRecoveryLoading: false,
     startupRecoveryDismissed: false,
     loading: false,
+    notice: null,
+    noticeTimer: null,
     listening: false,
     unlisten: [],
   }),
@@ -136,6 +142,27 @@ export const useQueueStore = defineStore('queue', {
       this.activeFilter = filter
       this.filterTouched = true
       this.ensureSelectedTask(true)
+    },
+    setNotice(message: string, tone: NoticeTone = 'info') {
+      this.notice = { message, tone }
+      if (this.noticeTimer !== null && typeof window !== 'undefined') {
+        window.clearTimeout(this.noticeTimer)
+        this.noticeTimer = null
+      }
+
+      if (tone !== 'danger' && typeof window !== 'undefined') {
+        this.noticeTimer = window.setTimeout(() => {
+          this.notice = null
+          this.noticeTimer = null
+        }, NOTICE_CLEAR_DELAY)
+      }
+    },
+    clearNotice() {
+      this.notice = null
+      if (this.noticeTimer !== null && typeof window !== 'undefined') {
+        window.clearTimeout(this.noticeTimer)
+        this.noticeTimer = null
+      }
     },
     selectTask(taskId: string) {
       this.selectedTaskId = taskId
@@ -341,7 +368,7 @@ export const useQueueStore = defineStore('queue', {
         if (this.selectedTaskId) {
           void this.loadLogs(this.selectedTaskId)
         }
-        ui.pushToast('已移除任务', 'info')
+        this.setNotice('已移除任务', 'info')
       } catch (error) {
         ui.pushToast(errorMessage(error), 'danger')
       }
@@ -356,13 +383,13 @@ export const useQueueStore = defineStore('queue', {
       const ui = useUiStore()
       const task = this.tasks.find((task) => task.id === taskId)
       if (!task) {
-        ui.pushToast('任务不存在', 'danger')
+        this.setNotice('任务不存在', 'warning')
         return
       }
 
       try {
         await navigator.clipboard.writeText(sourceReference(task.source_id))
-        ui.pushToast('已复制来源', 'success')
+        this.setNotice('已复制来源', 'success')
       } catch (error) {
         ui.pushToast(errorMessage(error), 'danger')
       }
@@ -384,7 +411,7 @@ export const useQueueStore = defineStore('queue', {
       try {
         const task = await command()
         this.upsertTask(task)
-        ui.pushToast(successMessage, 'success')
+        this.setNotice(successMessage, 'success')
       } catch (error) {
         ui.pushToast(errorMessage(error), 'danger')
       }
@@ -397,13 +424,12 @@ export const useQueueStore = defineStore('queue', {
 
         const succeeded = result.updated.length + result.removed.length
         if (succeeded > 0) {
-          ui.pushToast(`${actionLabel} ${succeeded} 个任务`, result.failed.length ? 'warning' : 'success')
-        }
-        if (result.failed.length > 0) {
-          ui.pushToast(`${result.failed.length} 个任务处理失败`, 'danger')
-        }
-        if (succeeded === 0 && result.failed.length === 0) {
-          ui.pushToast('没有可处理的任务', 'info')
+          const suffix = result.failed.length ? `，${result.failed.length} 个失败` : ''
+          this.setNotice(`${actionLabel} ${succeeded} 个任务${suffix}`, result.failed.length ? 'warning' : 'success')
+        } else if (result.failed.length > 0) {
+          this.setNotice(`${result.failed.length} 个任务处理失败`, 'warning')
+        } else {
+          this.setNotice('没有可处理的任务', 'info')
         }
       } catch (error) {
         ui.pushToast(errorMessage(error), 'danger')

@@ -1,6 +1,13 @@
 import { defineStore } from 'pinia'
 
-import type { NormalizedGroup, NormalizedItem, NormalizedPart, NormalizedSourceTree } from '../api/dto'
+import type {
+  DownloadMediaMode,
+  NormalizedGroup,
+  NormalizedItem,
+  NormalizedPart,
+  NormalizedSourceTree,
+  SettingsSnapshot,
+} from '../api/dto'
 import {
   parseCloseSource,
   parseCreateSource,
@@ -12,6 +19,8 @@ import {
 import { useQueueStore } from './queue'
 import { useSettingsStore } from './settings'
 import { useUiStore } from './ui'
+import type { InlineNotice, NoticeTone } from './feedback'
+import { NOTICE_CLEAR_DELAY } from './feedback'
 
 const MAX_PARSE_SOURCES = 20
 
@@ -23,6 +32,18 @@ interface ParseState {
   selectionBySource: Record<string, string[]>
   loadingBySource: Record<string, boolean>
   errorsBySource: Record<string, string | null>
+  notice: InlineNotice | null
+  noticeTimer: number | null
+}
+
+export interface CreateTaskOptions {
+  downloadDir?: string | null
+  archiveMode?: SettingsSnapshot['archive_mode']
+  outputExtension?: SettingsSnapshot['output_extension']
+  mediaMode?: DownloadMediaMode
+  quality?: string
+  audioQuality?: string
+  codec?: SettingsSnapshot['codec']
 }
 
 export const useParseStore = defineStore('parse', {
@@ -34,6 +55,8 @@ export const useParseStore = defineStore('parse', {
     selectionBySource: {},
     loadingBySource: {},
     errorsBySource: {},
+    notice: null,
+    noticeTimer: null,
   }),
   getters: {
     orderedSources(state): NormalizedSourceTree[] {
@@ -60,12 +83,33 @@ export const useParseStore = defineStore('parse', {
 
       this.input = [this.input.trim(), incoming].filter(Boolean).join('\n')
     },
+    setNotice(message: string, tone: NoticeTone = 'info', actionLabel?: string) {
+      this.notice = { message, tone, actionLabel }
+      if (this.noticeTimer !== null && typeof window !== 'undefined') {
+        window.clearTimeout(this.noticeTimer)
+        this.noticeTimer = null
+      }
+
+      if (tone !== 'danger' && typeof window !== 'undefined') {
+        this.noticeTimer = window.setTimeout(() => {
+          this.notice = null
+          this.noticeTimer = null
+        }, NOTICE_CLEAR_DELAY)
+      }
+    },
+    clearNotice() {
+      this.notice = null
+      if (this.noticeTimer !== null && typeof window !== 'undefined') {
+        window.clearTimeout(this.noticeTimer)
+        this.noticeTimer = null
+      }
+    },
     async createSource(input?: string) {
       const ui = useUiStore()
       const inputs = splitParseInputs(input ?? this.input)
 
       if (inputs.length === 0) {
-        ui.pushToast('请输入链接或 BV/AV', 'warning')
+        this.setNotice('请输入链接或 BV/AV', 'warning')
         return
       }
 
@@ -92,9 +136,9 @@ export const useParseStore = defineStore('parse', {
         }
 
         if (created > 0 && failures.length === 0) {
-          ui.pushToast(created === 1 ? '解析完成' : `已解析 ${created} 个来源`, 'success')
+          this.setNotice(created === 1 ? '解析完成' : `已解析 ${created} 个来源`, 'success')
         } else if (created > 0) {
-          ui.pushToast(`已解析 ${created} 个来源，${failures.length} 个失败`, 'warning')
+          this.setNotice(`已解析 ${created} 个来源，${failures.length} 个失败`, 'warning')
         } else {
           ui.pushToast(failures[0]?.message ?? '解析失败', 'danger')
         }
@@ -108,7 +152,7 @@ export const useParseStore = defineStore('parse', {
       try {
         const tree = await parseLoadMore({ source_id: sourceId })
         this.upsertSource(tree)
-        ui.pushToast('已解析更多', 'success')
+        this.setNotice('已解析更多', 'success')
       } catch (error) {
         this.errorsBySource[sourceId] = errorMessage(error)
         ui.pushToast(errorMessage(error), 'danger')
@@ -122,7 +166,7 @@ export const useParseStore = defineStore('parse', {
       try {
         const tree = await parseLoadAll({ source_id: sourceId, limit })
         this.upsertSource(tree)
-        ui.pushToast('已批量解析', 'success')
+        this.setNotice('已批量解析', 'success')
       } catch (error) {
         this.errorsBySource[sourceId] = errorMessage(error)
         ui.pushToast(errorMessage(error), 'danger')
@@ -140,7 +184,7 @@ export const useParseStore = defineStore('parse', {
         delete this.errorsBySource[sourceId]
         this.sourceOrder = this.sourceOrder.filter((id) => id !== sourceId)
         this.activeSourceId = this.sourceOrder[0] ?? null
-        ui.pushToast('已关闭解析源', 'info')
+        this.setNotice('已关闭解析源', 'info')
       } catch (error) {
         this.errorsBySource[sourceId] = errorMessage(error)
         ui.pushToast(errorMessage(error), 'danger')
@@ -186,7 +230,7 @@ export const useParseStore = defineStore('parse', {
       this.loadingBySource[sourceId] = true
       try {
         this.upsertSource(await parseRefreshSource({ source_id: sourceId }))
-        ui.pushToast('已刷新来源', 'success')
+        this.setNotice('已刷新来源', 'success')
       } catch (error) {
         this.errorsBySource[sourceId] = errorMessage(error)
         ui.pushToast(errorMessage(error), 'danger')
@@ -229,36 +273,41 @@ export const useParseStore = defineStore('parse', {
         this.selectionBySource[sourceId] = []
       }
     },
-    async createTasksForSelection(sourceId: string) {
+    async createTasksForSelection(sourceId: string, options: CreateTaskOptions = {}) {
       const ui = useUiStore()
       const settings = useSettingsStore()
       const queue = useQueueStore()
       const partIds = this.selectionBySource[sourceId] ?? []
 
       if (partIds.length === 0) {
-        ui.pushToast('请选择要下载的分集', 'warning')
+        this.setNotice('请选择要下载的分集', 'warning')
         return
       }
 
       this.loadingBySource[sourceId] = true
       try {
         await settings.ensureLoaded()
-        const downloadDir = settings.saved.download_dir?.trim()
+        const downloadDir =
+          options.downloadDir !== undefined ? options.downloadDir?.trim() : settings.saved.download_dir?.trim()
         const tasks = await selectionCreateTasks({
           source_id: sourceId,
           part_ids: partIds,
           output_dir: downloadDir || undefined,
-          archive_mode: settings.saved.archive_mode,
-          output_extension: settings.saved.output_extension,
+          archive_mode: options.archiveMode ?? settings.saved.archive_mode,
+          output_extension: options.outputExtension ?? settings.saved.output_extension,
+          media_mode: options.mediaMode ?? 'audio_video',
+          quality: options.quality ?? settings.saved.quality,
+          audio_quality: options.audioQuality ?? settings.saved.audio_quality,
+          codec: options.codec ?? settings.saved.codec,
         })
         this.errorsBySource[sourceId] = null
         if (tasks.length === 0) {
-          ui.pushToast('所选内容已在传输中', 'info', { label: '查看传输', tab: 'transfer' })
+          this.setNotice('所选内容已在传输中', 'info', '查看传输')
           return
         }
 
         queue.applyCreatedTasks(tasks)
-        ui.pushToast(`已创建 ${tasks.length} 个任务`, 'success', { label: '查看传输', tab: 'transfer' })
+        this.setNotice(`已创建 ${tasks.length} 个任务`, 'success', '查看传输')
       } catch (error) {
         this.errorsBySource[sourceId] = errorMessage(error)
         ui.pushToast(errorMessage(error), 'danger')

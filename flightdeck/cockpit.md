@@ -1,10 +1,10 @@
 # Cockpit — bdl
 
-Focus: No active flightdeck work topic.
+Focus: BDL downloader  UI backlog is open.
 
 ## In Flight
 
-- None.
+- [bdl-downloader-ui-followups](work/bdl-downloader-ui-followups.md) — current UI feedback cleanup completed; follow-up backlog remains open.
 
 ## Archived
 

@@ -10,6 +10,8 @@ import {
   settingsUpdate,
 } from '../api/tauri'
 import { useUiStore } from './ui'
+import type { InlineNotice, NoticeTone } from './feedback'
+import { NOTICE_CLEAR_DELAY } from './feedback'
 
 export const defaultNamingTemplate = '{title}/P{part_index} - {part_title}.{ext}'
 const legacyNamingTemplate = '{title}/{title} - P{part_index} - {part_title}.{ext}'
@@ -95,6 +97,8 @@ interface SettingsState {
   loading: boolean
   saving: boolean
   error: string | null
+  notice: InlineNotice | null
+  noticeTimer: number | null
 }
 
 export const useSettingsStore = defineStore('settings', {
@@ -105,6 +109,8 @@ export const useSettingsStore = defineStore('settings', {
     loading: false,
     saving: false,
     error: null,
+    notice: null,
+    noticeTimer: null,
   }),
   getters: {
     changed(state): boolean {
@@ -125,6 +131,27 @@ export const useSettingsStore = defineStore('settings', {
 
       await this.load()
     },
+    setNotice(message: string, tone: NoticeTone = 'info') {
+      this.notice = { message, tone }
+      if (this.noticeTimer !== null && typeof window !== 'undefined') {
+        window.clearTimeout(this.noticeTimer)
+        this.noticeTimer = null
+      }
+
+      if (tone !== 'danger' && typeof window !== 'undefined') {
+        this.noticeTimer = window.setTimeout(() => {
+          this.notice = null
+          this.noticeTimer = null
+        }, NOTICE_CLEAR_DELAY)
+      }
+    },
+    clearNotice() {
+      this.notice = null
+      if (this.noticeTimer !== null && typeof window !== 'undefined') {
+        window.clearTimeout(this.noticeTimer)
+        this.noticeTimer = null
+      }
+    },
     async load() {
       this.loading = true
       this.error = null
@@ -141,7 +168,7 @@ export const useSettingsStore = defineStore('settings', {
       const namingError = validateNamingTemplate(this.draft.naming_template)
       if (namingError) {
         this.error = namingError
-        ui.pushToast(namingError, 'warning')
+        this.setNotice(namingError, 'warning')
         return
       }
 
@@ -149,7 +176,7 @@ export const useSettingsStore = defineStore('settings', {
       this.error = null
       try {
         this.apply(await settingsUpdate(normalizeSettings(this.draft)))
-        ui.pushToast('设置已保存', 'success')
+        this.setNotice('设置已保存', 'success')
       } catch (error) {
         this.error = errorMessage(error)
         ui.pushToast(this.error, 'danger')
@@ -215,7 +242,7 @@ export const useSettingsStore = defineStore('settings', {
       const ui = useUiStore()
       try {
         const result = await maintenanceCleanupCache()
-        ui.pushToast(`已清理缓存 ${result.removed_files} 个文件`, 'success')
+        this.setNotice(`已清理缓存 ${result.removed_files} 个文件`, 'success')
       } catch (error) {
         ui.pushToast(errorMessage(error), 'danger')
       }
@@ -224,7 +251,7 @@ export const useSettingsStore = defineStore('settings', {
       const ui = useUiStore()
       try {
         const result = await maintenanceCleanupTemp()
-        ui.pushToast(`已清理临时文件 ${result.removed_files} 个`, 'success')
+        this.setNotice(`已清理临时文件 ${result.removed_files} 个`, 'success')
       } catch (error) {
         ui.pushToast(errorMessage(error), 'danger')
       }
@@ -233,7 +260,7 @@ export const useSettingsStore = defineStore('settings', {
       const ui = useUiStore()
       try {
         const result = await diagnosticsExport()
-        ui.pushToast(`诊断已导出：${result.path}`, 'success')
+        this.setNotice(`诊断已导出：${result.path}`, 'success')
       } catch (error) {
         ui.pushToast(errorMessage(error), 'danger')
       }

@@ -12,8 +12,8 @@ use bdl_core::model::{
 };
 use bdl_core::naming::DuplicateNamingStrategy;
 use bdl_core::planner::{
-    ArchiveAssetSelection, ArchiveMode, DownloadOptions, MissingQualityPolicy, StreamPreference,
-    plan_selected_parts,
+    ArchiveAssetSelection, ArchiveMode, DownloadMediaMode, DownloadOptions, MissingQualityPolicy,
+    StreamPreference, plan_selected_parts,
 };
 use bdl_core::queue::DownloadTaskRefreshInput;
 use bdl_core::queue::{DownloadResourceIntent, DownloadResourceKind, ResourceStatus, TaskStatus};
@@ -72,6 +72,46 @@ fn plan_selected_parts_fast_mode_creates_video_and_audio_resources_only() {
             .iter()
             .all(|resource| resource.kind != DownloadResourceKind::Asset)
     );
+}
+
+#[test]
+fn plan_selected_parts_video_only_creates_video_resource_only() {
+    let tree = fixture_tree(true);
+    let mut options = DownloadOptions::new(PathBuf::from("downloads"));
+    options.media_mode = DownloadMediaMode::VideoOnly;
+
+    let tasks = plan_selected_parts(&tree, &[PartId("part:BV1:100".to_owned())], &options)
+        .expect("video-only selection should plan");
+
+    let intents: Vec<_> = tasks[0]
+        .resources
+        .iter()
+        .map(|resource| resource.intent)
+        .collect();
+    assert_eq!(intents, vec![DownloadResourceIntent::Video]);
+    assert_eq!(tasks[0].media_selection.video_quality, "80");
+    assert_eq!(tasks[0].media_selection.audio_quality, "none");
+    assert_eq!(tasks[0].media_selection.video_codec, "avc");
+}
+
+#[test]
+fn plan_selected_parts_audio_only_creates_audio_resource_only() {
+    let tree = fixture_tree(true);
+    let mut options = DownloadOptions::new(PathBuf::from("downloads"));
+    options.media_mode = DownloadMediaMode::AudioOnly;
+
+    let tasks = plan_selected_parts(&tree, &[PartId("part:BV1:100".to_owned())], &options)
+        .expect("audio-only selection should plan");
+
+    let intents: Vec<_> = tasks[0]
+        .resources
+        .iter()
+        .map(|resource| resource.intent)
+        .collect();
+    assert_eq!(intents, vec![DownloadResourceIntent::Audio]);
+    assert_eq!(tasks[0].media_selection.video_quality, "none");
+    assert_eq!(tasks[0].media_selection.audio_quality, "30280");
+    assert_eq!(tasks[0].media_selection.video_codec, "none");
 }
 
 #[test]

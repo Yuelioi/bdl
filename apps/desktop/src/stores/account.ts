@@ -100,14 +100,13 @@ export const useAccountStore = defineStore('account', {
       const ui = useUiStore()
       const trimmed = cookie.trim()
       if (!trimmed) {
-        ui.pushToast('请输入 Cookie', 'warning')
+        this.qrMessage = '请输入 Cookie'
         return false
       }
 
       this.saving = true
       try {
         this.profile = await accountImportCookie({ cookie: trimmed })
-        ui.pushToast('Cookie 已保存', 'success')
         return true
       } catch (error) {
         ui.pushToast(errorMessage(error), 'danger')
@@ -163,7 +162,6 @@ export const useAccountStore = defineStore('account', {
           this.profile = response.account
           this.stopQrPolling()
           this.qrSession = null
-          ui.pushToast('登录成功', 'success')
         } else if (response.status === 'expired') {
           this.stopQrPolling()
         }
@@ -193,7 +191,6 @@ export const useAccountStore = defineStore('account', {
       try {
         this.resetQrLogin()
         this.profile = await accountLogout()
-        ui.pushToast('已退出登录', 'info')
       } catch (error) {
         ui.pushToast(errorMessage(error), 'danger')
       } finally {

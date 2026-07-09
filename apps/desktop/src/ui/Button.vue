@@ -1,74 +1,63 @@
 <script setup lang="ts">
+import { computed } from 'vue'
+
 const { variant = 'primary', type = 'button', disabled = false } = defineProps<{
   variant?: 'primary' | 'secondary' | 'ghost' | 'danger'
   type?: 'button' | 'submit' | 'reset'
   disabled?: boolean
 }>()
+
+const color = computed(() => (variant === 'danger' ? 'error' : variant === 'primary' ? 'primary' : 'neutral'))
+const uiVariant = computed(() => {
+  if (variant === 'primary' || variant === 'danger') {
+    return 'solid'
+  }
+
+  return variant === 'secondary' ? 'outline' : 'ghost'
+})
+const toneClass = computed(() => `variant-${variant}`)
 </script>
 
 <template>
-  <button class="ui-button" :class="`variant-${variant}`" :type :disabled>
+  <UButton :class="['ui-button', toneClass]" :color :variant="uiVariant" size="sm" :type :disabled>
     <slot />
-  </button>
+  </UButton>
 </template>
 
 <style scoped>
 .ui-button {
   min-width: 76px;
-  height: var(--height-button);
-  display: inline-flex;
-  align-items: center;
+  min-height: var(--height-button);
   justify-content: center;
-  gap: var(--space-8);
-  padding: 0 var(--space-12);
-  border: 1px solid transparent;
-  border-radius: var(--radius-6);
-  font-weight: 650;
   font-size: var(--font-13);
-  line-height: 1;
+  font-weight: 650;
   white-space: nowrap;
-  transition:
-    background-color 120ms ease,
-    border-color 120ms ease,
-    color 120ms ease,
-    box-shadow 120ms ease;
 }
 
-.ui-button:focus-visible {
-  outline: 2px solid rgb(8 127 91 / 30%);
-  outline-offset: 2px;
-}
-
-.ui-button:disabled {
-  opacity: 0.56;
-}
-
-.variant-primary {
+.ui-button.variant-primary {
   background: var(--color-accent);
   color: #ffffff;
 }
 
-.variant-primary:hover:not(:disabled) {
+.ui-button.variant-primary:hover:not(:disabled) {
   background: var(--color-accent-strong);
 }
 
-.variant-secondary {
-  border-color: var(--color-border);
-  background: var(--color-surface);
+.ui-button.variant-secondary {
   color: var(--color-text);
+  background: var(--color-surface);
 }
 
-.variant-secondary:hover:not(:disabled),
-.variant-ghost:hover:not(:disabled) {
+.ui-button.variant-secondary:hover:not(:disabled),
+.ui-button.variant-ghost:hover:not(:disabled) {
   background: var(--color-panel);
 }
 
-.variant-ghost {
-  background: transparent;
+.ui-button.variant-ghost {
   color: var(--color-muted);
 }
 
-.variant-danger {
+.ui-button.variant-danger {
   background: var(--color-danger);
   color: #ffffff;
 }

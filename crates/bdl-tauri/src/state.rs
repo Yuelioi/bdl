@@ -9,7 +9,7 @@ use bdl_core::ids::{PartId, SourceId};
 use bdl_core::input::{ClassifiedInput, classify_input};
 use bdl_core::model::{
     MediaKind, MediaStream, NormalizedItem, NormalizedPart, NormalizedSourceTree, PageState,
-    SourceKind, StreamQuality,
+    SourceKind, StreamCodec, StreamQuality,
 };
 use bdl_core::queue::{
     DownloadResourceIntent, DownloadTask, DownloadTaskRefreshInput, DownloadTaskRefreshIntent,
@@ -349,12 +349,44 @@ impl AppState {
                     refresh_ids.cid
                 ),
             })?;
-        let video = select_stream(part, MediaKind::Video).ok_or_else(|| BdlError::Planning {
-            message: format!("刷新下载地址失败：`{}` 缺少视频流。", part.title),
-        })?;
-        let audio = select_stream(part, MediaKind::Audio).ok_or_else(|| BdlError::Planning {
-            message: format!("刷新下载地址失败：`{}` 缺少音频流。", part.title),
-        })?;
+        let needs_video = task
+            .resources
+            .iter()
+            .any(|resource| resource.intent == DownloadResourceIntent::Video);
+        let needs_audio = task
+            .resources
+            .iter()
+            .any(|resource| resource.intent == DownloadResourceIntent::Audio);
+        let video = if needs_video {
+            Some(
+                select_task_stream(
+                    part,
+                    MediaKind::Video,
+                    &task.media_selection.video_quality,
+                    Some(&task.media_selection.video_codec),
+                )
+                .ok_or_else(|| BdlError::Planning {
+                    message: format!("刷新下载地址失败：`{}` 缺少视频流。", part.title),
+                })?,
+            )
+        } else {
+            None
+        };
+        let audio = if needs_audio {
+            Some(
+                select_task_stream(
+                    part,
+                    MediaKind::Audio,
+                    &task.media_selection.audio_quality,
+                    None,
+                )
+                .ok_or_else(|| BdlError::Planning {
+                    message: format!("刷新下载地址失败：`{}` 缺少音频流。", part.title),
+                })?,
+            )
+        } else {
+            None
+        };
 
         self.replace_task_media_urls(task_id, video, audio)
     }
@@ -405,8 +437,8 @@ impl AppState {
     fn replace_task_media_urls(
         &self,
         task_id: &str,
-        video: &MediaStream,
-        audio: &MediaStream,
+        video: Option<&MediaStream>,
+        audio: Option<&MediaStream>,
     ) -> BdlResult<DownloadTask> {
         let mut queue = self.queue.lock().map_err(|_| state_poisoned("queue"))?;
         let task_index = queue
@@ -418,8 +450,8 @@ impl AppState {
 
         for resource in &mut queue[task_index].resources {
             let stream = match resource.intent {
-                DownloadResourceIntent::Video => Some(video),
-                DownloadResourceIntent::Audio => Some(audio),
+                DownloadResourceIntent::Video => video,
+                DownloadResourceIntent::Audio => audio,
                 DownloadResourceIntent::Cover
                 | DownloadResourceIntent::Subtitle
                 | DownloadResourceIntent::Danmaku
@@ -946,17 +978,78 @@ fn find_part_by_cid(tree: &NormalizedSourceTree, cid: u64) -> Option<&Normalized
         .find(|part| part.cid == Some(cid))
 }
 
-fn select_stream(part: &NormalizedPart, kind: MediaKind) -> Option<&MediaStream> {
-    part.streams
+fn select_task_stream<'a>(
+    part: &'a NormalizedPart,
+    kind: MediaKind,
+    quality_label: &str,
+    codec_label: Option<&str>,
+) -> Option<&'a MediaStream> {
+    let streams = part
+        .streams
         .iter()
         .filter(|stream| stream.kind == kind)
-        .max_by_key(|stream| stream_quality_rank(stream.quality))
+        .collect::<Vec<_>>();
+    if streams.is_empty() {
+        return None;
+    }
+
+    let codec_matches = codec_label
+        .filter(|label| !matches!(*label, "auto" | "none" | "unknown"))
+        .map(|label| {
+            streams
+                .iter()
+                .copied()
+                .filter(|stream| stream_codec_label(stream) == label)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let candidates = if codec_matches.is_empty() {
+        streams
+    } else {
+        codec_matches
+    };
+
+    if let Some(target_quality) = parse_quality_label(quality_label) {
+        if let Some(exact) = candidates
+            .iter()
+            .copied()
+            .filter(|stream| stream_quality_rank(stream.quality) == target_quality)
+            .max_by_key(|stream| stream_selection_rank(stream))
+        {
+            return Some(exact);
+        }
+    }
+
+    candidates
+        .into_iter()
+        .max_by_key(|stream| stream_selection_rank(stream))
+}
+
+fn parse_quality_label(value: &str) -> Option<u32> {
+    value.parse::<u32>().ok().filter(|value| *value > 0)
+}
+
+fn stream_selection_rank(stream: &MediaStream) -> (u32, u64) {
+    (
+        stream_quality_rank(stream.quality),
+        stream.bandwidth.unwrap_or_default(),
+    )
 }
 
 fn stream_quality_rank(quality: StreamQuality) -> u32 {
     match quality {
         StreamQuality::Best => u32::MAX,
         StreamQuality::Quality(value) => value,
+    }
+}
+
+fn stream_codec_label(stream: &MediaStream) -> &'static str {
+    match stream.codec {
+        StreamCodec::Auto => "auto",
+        StreamCodec::Avc => "avc",
+        StreamCodec::Hevc => "hevc",
+        StreamCodec::Av1 => "av1",
+        StreamCodec::Unknown => "unknown",
     }
 }
 
@@ -1407,7 +1500,7 @@ mod tests {
     use super::{
         AppState, PartHydrationRequest, StartupRecoverySnapshot, append_new_tasks,
         append_source_page, dedupe_tasks_by_id, hydrate_placeholder_part, load_account_snapshot,
-        next_page_request, prepare_startup_recovery, remap_selected_part_ids,
+        next_page_request, prepare_startup_recovery, remap_selected_part_ids, select_task_stream,
         selected_hydration_requests, task_media_refresh_ids,
     };
     use crate::secure_store::SecureStore;
@@ -1621,7 +1714,7 @@ mod tests {
         let video = media_stream(MediaKind::Video, "https://cdn.example/new-video.m4s");
         let audio = media_stream(MediaKind::Audio, "https://cdn.example/new-audio.m4s");
         let refreshed_task = state
-            .replace_task_media_urls("task:refresh", &video, &audio)
+            .replace_task_media_urls("task:refresh", Some(&video), Some(&audio))
             .expect("refresh should replace media urls");
         assert_eq!(
             refreshed_task.resources[0].current_urls,
@@ -1920,6 +2013,39 @@ mod tests {
         assert_eq!(ids.cid, 789);
     }
 
+    #[test]
+    fn select_task_stream_prefers_saved_quality_and_codec() {
+        let mut part = video_tree().groups[0].items[0].parts[0].clone();
+        part.streams = vec![
+            profiled_media_stream(
+                MediaKind::Video,
+                StreamQuality::Quality(80),
+                StreamCodec::Avc,
+                2_000_000,
+                "https://cdn.example/video-80-avc.m4s",
+            ),
+            profiled_media_stream(
+                MediaKind::Video,
+                StreamQuality::Quality(64),
+                StreamCodec::Hevc,
+                1_800_000,
+                "https://cdn.example/video-64-hevc.m4s",
+            ),
+            profiled_media_stream(
+                MediaKind::Video,
+                StreamQuality::Quality(64),
+                StreamCodec::Avc,
+                1_500_000,
+                "https://cdn.example/video-64-avc.m4s",
+            ),
+        ];
+
+        let selected = select_task_stream(&part, MediaKind::Video, "64", Some("hevc"))
+            .expect("matching stream should be selected");
+
+        assert_eq!(selected.urls, ["https://cdn.example/video-64-hevc.m4s"]);
+    }
+
     fn task_with_id(id: &str) -> DownloadTask {
         DownloadTask {
             id: id.to_owned(),
@@ -1973,12 +2099,22 @@ mod tests {
     }
 
     fn media_stream(kind: MediaKind, url: &str) -> MediaStream {
+        profiled_media_stream(kind, StreamQuality::Best, StreamCodec::Avc, 1_000_000, url)
+    }
+
+    fn profiled_media_stream(
+        kind: MediaKind,
+        quality: StreamQuality,
+        codec: StreamCodec,
+        bandwidth: u64,
+        url: &str,
+    ) -> MediaStream {
         MediaStream {
             id: format!("stream:{kind:?}").to_ascii_lowercase(),
             kind,
-            quality: StreamQuality::Best,
-            codec: StreamCodec::Avc,
-            bandwidth: Some(1_000_000),
+            quality,
+            codec,
+            bandwidth: Some(bandwidth),
             urls: vec![url.to_owned()],
             headers: vec![HeaderPair {
                 name: "Referer".to_owned(),

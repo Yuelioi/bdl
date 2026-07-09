@@ -12,8 +12,10 @@ import type {
   QueueLogEntry,
   QueueRemoveResponse,
   ArchiveMode,
+  DownloadMediaMode,
   SettingsSnapshot,
   StartupRecoverySnapshot,
+  VideoCodecPreference,
 } from './dto'
 
 export interface CommandErrorShape {
@@ -55,6 +57,10 @@ export interface SelectionCreateTasksRequest {
   output_dir?: string
   archive_mode?: ArchiveMode
   output_extension?: string
+  media_mode?: DownloadMediaMode
+  quality?: string
+  audio_quality?: string
+  codec?: VideoCodecPreference
 }
 
 export interface AccountImportCookieRequest {

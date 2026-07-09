@@ -1,34 +1,36 @@
 <script setup lang="ts">
-import { useId } from 'vue'
-
 export interface SelectOption {
   label: string
   value: string
 }
 
 const model = defineModel<string>({ default: '' })
-defineProps<{
+const { label, options, disabled = false } = defineProps<{
   label: string
   options: SelectOption[]
   disabled?: boolean
 }>()
-
-const fieldId = useId()
 </script>
 
 <template>
-  <label class="ui-field" :for="fieldId">
+  <label class="ui-field">
     <span>{{ label }}</span>
-    <span class="select-shell">
-      <select :id="fieldId" v-model="model" :disabled>
-        <option v-for="option in options" :key="option.value" :value="option.value">
-          {{ option.label }}
-        </option>
-      </select>
-      <svg aria-hidden="true" class="select-icon" viewBox="0 0 24 24">
-        <path d="M7 10l5 5 5-5" />
-      </svg>
-    </span>
+    <USelect
+      v-model="model"
+      :items="options"
+      value-key="value"
+      label-key="label"
+      color="neutral"
+      variant="outline"
+      size="md"
+      :disabled
+      trailing-icon="i-tabler-chevron-down"
+      selected-icon="i-tabler-check"
+      :portal="false"
+      :content="{ side: 'bottom', sideOffset: 4, collisionPadding: 12, position: 'popper', avoidCollisions: false }"
+      :ui="{ content: 'z-50 !max-h-44 shadow-lg', item: 'font-medium' }"
+      class="ui-select"
+    />
   </label>
 </template>
 
@@ -41,55 +43,12 @@ const fieldId = useId()
   font-weight: 600;
 }
 
-.select-shell {
-  position: relative;
-  display: block;
-  min-width: 0;
-}
-
-select {
-  appearance: none;
+.ui-select {
   width: 100%;
-  height: var(--height-input);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-6);
-  background: var(--color-surface);
-  color: var(--color-text);
-  padding: 0 38px 0 var(--space-12);
-  font-size: var(--font-14);
+}
+
+.ui-field :deep(button) {
+  min-height: var(--height-input);
   font-weight: 650;
-  line-height: var(--height-input);
-  cursor: pointer;
-}
-
-select:focus {
-  border-color: var(--color-accent);
-  outline: 2px solid rgb(8 127 91 / 16%);
-  outline-offset: 0;
-}
-
-select:disabled {
-  background: var(--color-panel);
-  cursor: not-allowed;
-}
-
-option {
-  color: var(--color-text);
-  background: var(--color-surface);
-}
-
-.select-icon {
-  pointer-events: none;
-  position: absolute;
-  right: var(--space-12);
-  top: 50%;
-  width: 16px;
-  height: 16px;
-  translate: 0 -50%;
-  fill: none;
-  stroke: var(--color-muted);
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
 }
 </style>

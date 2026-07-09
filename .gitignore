@@ -48,3 +48,4 @@ apps/**/src-tauri/downloads/
 /downloads/
 /output/
 /logs/
+.bdl-run

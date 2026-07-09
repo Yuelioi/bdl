@@ -17,7 +17,7 @@ const ui = useUiStore()
         >
           {{ toast.action.label }}
         </button>
-        <button type="button" aria-label="关闭通知" @click="ui.removeToast(toast.id)">x</button>
+        <button class="toast-close" type="button" aria-label="关闭通知" @click="ui.removeToast(toast.id)">x</button>
       </div>
     </div>
   </Teleport>
@@ -36,13 +36,12 @@ const ui = useUiStore()
 
 .toast {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto 28px;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
   gap: var(--space-8);
   min-height: 44px;
   padding: var(--space-8) var(--space-12);
   border: 1px solid var(--color-border);
-  border-left-width: 4px;
   border-radius: var(--radius-8);
   background: var(--color-surface);
   box-shadow: 0 12px 28px rgb(23 33 29 / 12%);
@@ -52,6 +51,7 @@ const ui = useUiStore()
 
 .toast span {
   min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .toast button {
@@ -72,18 +72,26 @@ const ui = useUiStore()
 }
 
 .tone-info {
-  border-left-color: var(--color-accent);
+  border-color: rgb(8 127 91 / 24%);
+  background: #fbfdfc;
 }
 
 .tone-success {
-  border-left-color: var(--color-success);
+  border-color: rgb(43 138 62 / 24%);
+  background: #f5fbf6;
 }
 
 .tone-warning {
-  border-left-color: var(--color-warning);
+  border-color: rgb(230 119 0 / 28%);
+  background: #fff8ef;
 }
 
 .tone-danger {
-  border-left-color: var(--color-danger);
+  border-color: rgb(201 42 42 / 28%);
+  background: #fffafa;
+}
+
+.toast-close {
+  justify-self: end;
 }
 </style>

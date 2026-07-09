@@ -10,6 +10,9 @@ pub enum MuxError {
     #[error("ffmpeg not found: {path}")]
     FfmpegNotFound { path: String },
 
+    #[error("missing media input")]
+    MissingMediaInput,
+
     #[error("ffmpeg failed with code {code:?}: {stderr}")]
     CommandFailed { code: Option<i32>, stderr: String },
 
@@ -19,8 +22,8 @@ pub enum MuxError {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MuxRequest {
-    pub video_path: PathBuf,
-    pub audio_path: PathBuf,
+    pub video_path: Option<PathBuf>,
+    pub audio_path: Option<PathBuf>,
     pub output_path: PathBuf,
     pub cover_path: Option<PathBuf>,
     pub subtitle_paths: Vec<PathBuf>,
@@ -57,7 +60,7 @@ impl MediaMuxer {
     pub async fn mux(&self, request: &MuxRequest) -> Result<(), MuxError> {
         let ffmpeg_path = ensure_executable(self.ffmpeg_path.clone())?;
         let mut command = Command::new(ffmpeg_path);
-        for arg in ffmpeg_args(request) {
+        for arg in ffmpeg_args(request)? {
             command.arg(arg);
         }
         let output = command.output().await?;
@@ -73,7 +76,11 @@ impl MediaMuxer {
     }
 }
 
-fn ffmpeg_args(request: &MuxRequest) -> Vec<OsString> {
+fn ffmpeg_args(request: &MuxRequest) -> Result<Vec<OsString>, MuxError> {
+    if request.video_path.is_none() && request.audio_path.is_none() {
+        return Err(MuxError::MissingMediaInput);
+    }
+
     let cover_path = request
         .cover_path
         .as_deref()
@@ -89,14 +96,18 @@ fn ffmpeg_args(request: &MuxRequest) -> Vec<OsString> {
         return basic_mux_args(request);
     }
 
-    let mut args = vec![
-        os("-y"),
-        os("-i"),
-        request.video_path.clone().into_os_string(),
-    ];
-    args.extend([os("-i"), request.audio_path.clone().into_os_string()]);
-
-    let mut next_input_index = 2usize;
+    let mut args = vec![os("-y")];
+    let mut next_input_index = 0usize;
+    let video_input_index = push_optional_input(
+        &mut args,
+        request.video_path.as_ref(),
+        &mut next_input_index,
+    );
+    let audio_input_index = push_optional_input(
+        &mut args,
+        request.audio_path.as_ref(),
+        &mut next_input_index,
+    );
     let cover_input_index = cover_path.map(|path| {
         args.extend([os("-i"), path.as_os_str().to_owned()]);
         let index = next_input_index;
@@ -111,7 +122,12 @@ fn ffmpeg_args(request: &MuxRequest) -> Vec<OsString> {
         next_input_index += 1;
     }
 
-    args.extend([os("-map"), os("0:v:0"), os("-map"), os("1:a:0")]);
+    if let Some(index) = video_input_index {
+        args.extend([os("-map"), os(format!("{index}:v:0"))]);
+    }
+    if let Some(index) = audio_input_index {
+        args.extend([os("-map"), os(format!("{index}:a:0"))]);
+    }
     if let Some(index) = cover_input_index {
         args.extend([os("-map"), os(format!("{index}:v:0"))]);
     }
@@ -122,35 +138,46 @@ fn ffmpeg_args(request: &MuxRequest) -> Vec<OsString> {
     if subtitle_input_indices.is_empty() || !is_mp4_like(&request.output_path) {
         args.extend([os("-c"), os("copy")]);
     } else {
-        args.extend([
-            os("-c:v"),
-            os("copy"),
-            os("-c:a"),
-            os("copy"),
-            os("-c:s"),
-            os("mov_text"),
-        ]);
+        if video_input_index.is_some() || cover_input_index.is_some() {
+            args.extend([os("-c:v"), os("copy")]);
+        }
+        if audio_input_index.is_some() {
+            args.extend([os("-c:a"), os("copy")]);
+        }
+        args.extend([os("-c:s"), os("mov_text")]);
     }
 
     if cover_input_index.is_some() {
-        args.extend([os("-disposition:v:1"), os("attached_pic")]);
+        let cover_stream_index = if video_input_index.is_some() { 1 } else { 0 };
+        args.extend([
+            os(format!("-disposition:v:{cover_stream_index}")),
+            os("attached_pic"),
+        ]);
     }
 
     args.push(request.output_path.clone().into_os_string());
-    args
+    Ok(args)
 }
 
-fn basic_mux_args(request: &MuxRequest) -> Vec<OsString> {
-    vec![
-        os("-y"),
-        os("-i"),
-        request.video_path.clone().into_os_string(),
-        os("-i"),
-        request.audio_path.clone().into_os_string(),
+fn basic_mux_args(request: &MuxRequest) -> Result<Vec<OsString>, MuxError> {
+    let mut args = vec![os("-y")];
+    let mut next_input_index = 0usize;
+    push_optional_input(
+        &mut args,
+        request.video_path.as_ref(),
+        &mut next_input_index,
+    );
+    push_optional_input(
+        &mut args,
+        request.audio_path.as_ref(),
+        &mut next_input_index,
+    );
+    args.extend([
         os("-c"),
         os("copy"),
         request.output_path.clone().into_os_string(),
-    ]
+    ]);
+    Ok(args)
 }
 
 pub fn supports_cover_embedding(output_path: &Path, cover_path: &Path) -> bool {
@@ -194,6 +221,18 @@ fn lower_extension(path: &Path) -> Option<String> {
 
 fn os(value: impl Into<OsString>) -> OsString {
     value.into()
+}
+
+fn push_optional_input(
+    args: &mut Vec<OsString>,
+    path: Option<&PathBuf>,
+    next_input_index: &mut usize,
+) -> Option<usize> {
+    let path = path?;
+    args.extend([os("-i"), path.as_os_str().to_owned()]);
+    let index = *next_input_index;
+    *next_input_index += 1;
+    Some(index)
 }
 
 fn ensure_executable(path: PathBuf) -> Result<PathBuf, MuxError> {

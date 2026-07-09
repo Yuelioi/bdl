@@ -44,6 +44,44 @@ async fn media_muxer_uses_configured_ffmpeg_path() {
 }
 
 #[tokio::test]
+async fn media_muxer_supports_video_only_output() {
+    let dir = temp_case_dir("video-only").await;
+    let record_path = dir.join("args.txt");
+    let ffmpeg = fake_ffmpeg(&dir, &record_path, 0, "").await;
+    let mut request = mux_request(dir.clone());
+    request.audio_path = None;
+
+    MediaMuxer::with_ffmpeg_path(ffmpeg)
+        .mux(&request)
+        .await
+        .expect("fake ffmpeg should succeed");
+
+    let args = tokio::fs::read_to_string(record_path).await.unwrap();
+    assert!(args.contains("video.m4s"));
+    assert!(!args.contains("audio.m4s"));
+    assert!(args.contains("output.mp4"));
+}
+
+#[tokio::test]
+async fn media_muxer_supports_audio_only_output() {
+    let dir = temp_case_dir("audio-only").await;
+    let record_path = dir.join("args.txt");
+    let ffmpeg = fake_ffmpeg(&dir, &record_path, 0, "").await;
+    let mut request = mux_request(dir.clone());
+    request.video_path = None;
+
+    MediaMuxer::with_ffmpeg_path(ffmpeg)
+        .mux(&request)
+        .await
+        .expect("fake ffmpeg should succeed");
+
+    let args = tokio::fs::read_to_string(record_path).await.unwrap();
+    assert!(!args.contains("video.m4s"));
+    assert!(args.contains("audio.m4s"));
+    assert!(args.contains("output.mp4"));
+}
+
+#[tokio::test]
 async fn media_muxer_returns_exit_code_and_stderr_when_ffmpeg_fails() {
     let dir = temp_case_dir("failed").await;
     let record_path = dir.join("args.txt");
@@ -123,8 +161,8 @@ async fn media_muxer_skips_unsupported_json_subtitle_embedding() {
 
 fn mux_request(dir: PathBuf) -> MuxRequest {
     MuxRequest {
-        video_path: dir.join("video.m4s"),
-        audio_path: dir.join("audio.m4s"),
+        video_path: Some(dir.join("video.m4s")),
+        audio_path: Some(dir.join("audio.m4s")),
         output_path: dir.join("output.mp4"),
         cover_path: None,
         subtitle_paths: Vec::new(),
