@@ -68,13 +68,14 @@ export const createTransferTaskView = (
   const titleParts = splitTaskTitle(task.title)
   const issue = classifyTaskIssue(task, logs)
   const primaryAction = primaryActionForTask(task, issue)
+  const completedWithWarnings = task.status === 'completed' && hasWarningLogs(logs)
 
   return {
     id: task.id,
     displayTitle: titleParts.displayTitle,
     subtitle: titleParts.subtitle,
-    statusLabel: statusLabel(task.status),
-    statusBadge: statusBadge(task.status),
+    statusLabel: completedWithWarnings ? '已完成 · 有警告' : statusLabel(task.status),
+    statusBadge: completedWithWarnings ? 'warning' : statusBadge(task.status),
     progressValue: progress,
     progressLabel: `${progress}%`,
     speedLabel: '--',
@@ -98,6 +99,18 @@ export const createTaskDiagnosticView = (task: DownloadTask, logs: QueueLogEntry
   ).length
   const completedCount = task.resources.filter((resource) => resource.status === 'completed').length
   const trackImpact = `轨道 ${task.resources.length} 个 · 已完成 ${completedCount} · 失败 ${failedCount}`
+  const warningLogs = logs.filter((log) => log.level === 'warning')
+
+  if (task.status === 'completed' && warningLogs.length > 0) {
+    return {
+      summary: '任务已完成但归档有警告',
+      detail: warningLogs.map((log) => redactLogMessage(log.message)).join('；'),
+      impact: trackImpact,
+      recommendedAction: 'open_file',
+      recommendedActionLabel: actionLabel('open_file'),
+      tone: 'warning',
+    }
+  }
 
   if (task.status === 'completed') {
     return {
@@ -301,6 +314,17 @@ const classifyTaskIssue = (task: DownloadTask, logs: QueueLogEntry[]): Classifie
     }
   }
 
+  const warningLogs = logs.filter((log) => log.level === 'warning')
+  if (task.status === 'completed' && warningLogs.length > 0) {
+    return {
+      label: '归档有警告',
+      detail: warningLogs.map((log) => redactLogMessage(log.message)).join('；'),
+      trackLabel: '归档素材',
+      recommendedAction: 'open_file',
+      recommendedActionLabel: actionLabel('open_file'),
+    }
+  }
+
   if (task.status !== 'failed') {
     return {
       label: '-',
@@ -372,6 +396,8 @@ const classifyTaskIssue = (task: DownloadTask, logs: QueueLogEntry[]): Classifie
     recommendedActionLabel: actionLabel('retry'),
   }
 }
+
+const hasWarningLogs = (logs: QueueLogEntry[]): boolean => logs.some((log) => log.level === 'warning')
 
 const primaryActionForTask = (task: DownloadTask, issue: ClassifiedIssue): TaskActionKind => {
   if (task.status === 'completed') {

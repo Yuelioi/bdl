@@ -8,7 +8,6 @@ import {
   createTransferTaskView,
   redactLogMessage,
   resourceIntentText,
-  statusBadge,
   statusLabel,
   type TaskActionKind,
 } from '../stores/transferView'
@@ -195,8 +194,8 @@ const outputDir = (path: string | null): string => {
             <h2>{{ task.title }}</h2>
             <p>{{ view.shortLocation }} · {{ diagnostic.impact }}</p>
           </div>
-          <UiStatusBadge :status="statusBadge(task.status)">
-            {{ statusLabel(task.status) }}
+          <UiStatusBadge :status="view.statusBadge">
+            {{ view.statusLabel }}
           </UiStatusBadge>
         </div>
 

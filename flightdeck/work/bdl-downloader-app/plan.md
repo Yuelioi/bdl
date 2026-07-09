@@ -1760,7 +1760,7 @@ Current partial implementation:
 - Settings expose optional cover/subtitle embedding. The muxer embeds supported cover images for MP4-like outputs and supported subtitle sidecars for MP4/MKV outputs; unsupported formats such as current Bilibili JSON subtitles remain sidecar files with warning logs.
 - NFO resources are generated locally after muxing.
 - Cover/subtitle/danmaku resources with no available URL are marked complete with a warning log instead of leaving completed tasks with pending resources.
-- Richer archive warning state remains pending.
+- Completed tasks with warning logs surface as `已完成 · 有警告` in Transfer and show warning detail in the diagnosis panel.
 
 - [ ] **Step 3: Implement completed records in Transfer**
 
