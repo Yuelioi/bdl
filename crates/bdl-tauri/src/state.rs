@@ -5,8 +5,11 @@ use std::sync::Mutex;
 use bdl_core::account::{AccountSummary, ImportedCookie};
 use bdl_core::ids::{PartId, SourceId};
 use bdl_core::input::{ClassifiedInput, classify_input};
-use bdl_core::model::{NormalizedItem, NormalizedPart, NormalizedSourceTree, SourceKind};
+use bdl_core::model::{
+    NormalizedItem, NormalizedPart, NormalizedSourceTree, PageState, SourceKind,
+};
 use bdl_core::queue::{DownloadTask, TaskStatus};
+use bdl_core::resolver::paged::PageRequest;
 use bdl_core::resolver::uploader::UploaderResolver;
 use bdl_core::resolver::video::VideoResolver;
 use bdl_core::resolver::{ResolveOptions, Resolver};
@@ -92,6 +95,31 @@ impl AppState {
             .ok_or_else(|| BdlError::Planning {
                 message: format!("解析源 `{}` 不存在，请重新解析。", source_id.0),
             })
+    }
+
+    pub async fn load_more(&self, source_id: &SourceId) -> BdlResult<NormalizedSourceTree> {
+        let mut tree = self.source_snapshot(source_id)?;
+
+        match tree.source.kind {
+            SourceKind::Uploader => {
+                let mid = uploader_mid(&tree)?;
+                let request = next_page_request(&tree)?;
+                let next_page = self.uploader_resolver()?.resolve_page(mid, request).await?;
+                append_source_page(&mut tree, next_page)?;
+            }
+            kind => {
+                return Err(BdlError::UnsupportedSource {
+                    kind: source_kind_name(kind).to_owned(),
+                });
+            }
+        }
+
+        self.parse_sources
+            .lock()
+            .map_err(|_| state_poisoned("parse_sources"))?
+            .insert(tree.source.id.clone(), tree.clone());
+
+        Ok(tree)
     }
 
     pub async fn prepare_selection(
@@ -326,6 +354,101 @@ fn load_account_snapshot(
     }
 }
 
+fn uploader_mid(tree: &NormalizedSourceTree) -> BdlResult<u64> {
+    match classify_input(&tree.source.input)? {
+        ClassifiedInput::Uploader { mid } => Ok(mid),
+        other => Err(BdlError::UnsupportedSource {
+            kind: source_kind_name(other.source_kind()).to_owned(),
+        }),
+    }
+}
+
+fn next_page_request(tree: &NormalizedSourceTree) -> BdlResult<PageRequest> {
+    let page = tree
+        .groups
+        .iter()
+        .find_map(|group| group.page.clone())
+        .ok_or_else(|| BdlError::Planning {
+            message: format!("来源 `{}` 没有分页状态。", tree.source.id.0),
+        })?;
+
+    if !page.has_more {
+        return Err(BdlError::Planning {
+            message: format!("来源 `{}` 没有更多可解析内容。", tree.source.title),
+        });
+    }
+
+    Ok(PageRequest {
+        page_number: page.page_number,
+        page_size: page.page_size,
+    }
+    .next())
+}
+
+fn append_source_page(
+    existing: &mut NormalizedSourceTree,
+    next_page: NormalizedSourceTree,
+) -> BdlResult<()> {
+    if existing.source.id != next_page.source.id {
+        return Err(BdlError::Planning {
+            message: format!(
+                "分页来源不匹配：`{}` != `{}`。",
+                existing.source.id.0, next_page.source.id.0
+            ),
+        });
+    }
+
+    let mut next_group = next_page
+        .groups
+        .into_iter()
+        .next()
+        .ok_or_else(|| BdlError::Planning {
+            message: "分页解析结果为空。".to_owned(),
+        })?;
+    let next_page_state = next_group.page.take().ok_or_else(|| BdlError::Planning {
+        message: "分页解析结果缺少分页状态。".to_owned(),
+    })?;
+
+    let group = existing
+        .groups
+        .iter_mut()
+        .find(|group| group.id == next_group.id)
+        .ok_or_else(|| BdlError::Planning {
+            message: format!("来源 `{}` 缺少目标分组。", existing.source.id.0),
+        })?;
+
+    let mut seen_ids = group
+        .items
+        .iter()
+        .map(|item| item.id.clone())
+        .collect::<HashSet<_>>();
+    group.items.extend(
+        next_group
+            .items
+            .into_iter()
+            .filter(|item| seen_ids.insert(item.id.clone())),
+    );
+
+    let total_count = next_page.source.total_count.or(existing.source.total_count);
+    let has_more = total_count
+        .map(|total| group.items.len() < total)
+        .unwrap_or(next_page_state.loaded_count >= next_page_state.page_size as usize);
+    let page_state = PageState {
+        page_number: next_page_state.page_number,
+        page_size: next_page_state.page_size,
+        loaded_count: group.items.len(),
+        total_count,
+        has_more,
+    };
+
+    group.page = Some(page_state);
+    existing.source.loaded_count = existing.groups.iter().map(|group| group.items.len()).sum();
+    existing.source.total_count = total_count;
+    existing.source.has_more = has_more;
+
+    Ok(())
+}
+
 fn selected_hydration_requests(
     tree: &NormalizedSourceTree,
     selected_part_ids: &[PartId],
@@ -470,17 +593,31 @@ fn remap_selected_part_ids(
     *selected_part_ids = remapped;
 }
 
+fn source_kind_name(kind: SourceKind) -> &'static str {
+    match kind {
+        SourceKind::Video => "video",
+        SourceKind::Bangumi => "bangumi",
+        SourceKind::Cheese => "cheese",
+        SourceKind::Favorite => "favorite",
+        SourceKind::Collection => "collection",
+        SourceKind::Series => "series",
+        SourceKind::Uploader => "uploader",
+        SourceKind::Unknown => "unknown",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        PartHydrationRequest, hydrate_placeholder_part, remap_selected_part_ids,
-        selected_hydration_requests,
+        PartHydrationRequest, append_source_page, hydrate_placeholder_part, next_page_request,
+        remap_selected_part_ids, selected_hydration_requests,
     };
     use bdl_core::ids::{GroupId, ItemId, PartId, SourceId};
     use bdl_core::model::{
-        NormalizedGroup, NormalizedItem, NormalizedPart, NormalizedSourceTree, SourceKind,
-        SourceSummary,
+        NormalizedGroup, NormalizedItem, NormalizedPart, NormalizedSourceTree, PageState,
+        SourceKind, SourceSummary,
     };
+    use bdl_core::resolver::paged::PageRequest;
 
     #[test]
     fn selected_hydration_requests_returns_unique_selected_placeholders() {
@@ -573,6 +710,41 @@ mod tests {
         );
     }
 
+    #[test]
+    fn next_page_request_advances_from_current_page_state() {
+        let request = next_page_request(&uploader_tree()).expect("next page should exist");
+
+        assert_eq!(
+            request,
+            PageRequest {
+                page_number: 2,
+                page_size: 30,
+            }
+        );
+    }
+
+    #[test]
+    fn append_source_page_merges_items_and_updates_cumulative_page_state() {
+        let mut tree = uploader_tree();
+
+        append_source_page(&mut tree, next_uploader_tree()).expect("page should append");
+
+        assert_eq!(tree.source.loaded_count, 2);
+        assert_eq!(tree.source.total_count, Some(45));
+        assert!(tree.source.has_more);
+        assert_eq!(tree.groups[0].items.len(), 2);
+
+        let page = tree.groups[0]
+            .page
+            .as_ref()
+            .expect("page state should exist");
+        assert_eq!(page.page_number, 2);
+        assert_eq!(page.page_size, 30);
+        assert_eq!(page.loaded_count, 2);
+        assert_eq!(page.total_count, Some(45));
+        assert!(page.has_more);
+    }
+
     fn uploader_tree() -> NormalizedSourceTree {
         NormalizedSourceTree {
             source: SourceSummary {
@@ -604,7 +776,55 @@ mod tests {
                         assets: Vec::new(),
                     }],
                 }],
-                page: None,
+                page: Some(PageState {
+                    page_number: 1,
+                    page_size: 30,
+                    loaded_count: 1,
+                    total_count: Some(45),
+                    has_more: true,
+                }),
+            }],
+        }
+    }
+
+    fn next_uploader_tree() -> NormalizedSourceTree {
+        NormalizedSourceTree {
+            source: SourceSummary {
+                id: SourceId("uploader:1001:videos".to_owned()),
+                kind: SourceKind::Uploader,
+                input: "https://space.bilibili.com/1001/video".to_owned(),
+                title: "fixture owner 的投稿".to_owned(),
+                loaded_count: 1,
+                total_count: Some(45),
+                has_more: true,
+            },
+            groups: vec![NormalizedGroup {
+                id: GroupId("group:uploader:1001:videos".to_owned()),
+                kind: "uploader_videos".to_owned(),
+                title: "fixture owner 的投稿".to_owned(),
+                items: vec![NormalizedItem {
+                    id: ItemId("item:uploader:1001:BV1yy411c7mD".to_owned()),
+                    title: "fixture upload page 2".to_owned(),
+                    owner_name: Some("fixture owner".to_owned()),
+                    cover_url: None,
+                    duration_seconds: None,
+                    parts: vec![NormalizedPart {
+                        id: PartId("part:uploader:1001:BV1yy411c7mD".to_owned()),
+                        title: "fixture upload page 2".to_owned(),
+                        aid: Some(170002),
+                        bvid: Some("BV1yy411c7mD".to_owned()),
+                        cid: None,
+                        streams: Vec::new(),
+                        assets: Vec::new(),
+                    }],
+                }],
+                page: Some(PageState {
+                    page_number: 2,
+                    page_size: 30,
+                    loaded_count: 1,
+                    total_count: Some(45),
+                    has_more: true,
+                }),
             }],
         }
     }

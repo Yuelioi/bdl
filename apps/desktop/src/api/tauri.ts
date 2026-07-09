@@ -33,6 +33,10 @@ export interface ParseCloseSourceResponse {
   removed: boolean
 }
 
+export interface ParseSourcePageRequest {
+  source_id: string
+}
+
 export interface SelectionCreateTasksRequest {
   source_id: string
   part_ids: string[]
@@ -52,7 +56,8 @@ export interface AccountLoginQrPollRequest {
 export const parseCreateSource = (request: ParseCreateSourceRequest) =>
   invokeCommand<NormalizedSourceTree>('parse_create_source', { request })
 
-export const parseLoadMore = () => invokeCommand<void>('parse_load_more')
+export const parseLoadMore = (request: ParseSourcePageRequest) =>
+  invokeCommand<NormalizedSourceTree>('parse_load_more', { request })
 
 export const parseLoadAll = () => invokeCommand<void>('parse_load_all')
 

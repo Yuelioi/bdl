@@ -73,6 +73,20 @@ impl<A> UploaderResolver<A> {
     }
 }
 
+impl<A> UploaderResolver<A>
+where
+    A: UploaderApi,
+{
+    pub async fn resolve_page(
+        &self,
+        mid: u64,
+        request: PageRequest,
+    ) -> BdlResult<NormalizedSourceTree> {
+        let page = self.api.uploaded_videos(mid, request).await?;
+        Ok(normalized_tree_from_page(page))
+    }
+}
+
 #[async_trait]
 impl<A> Resolver for UploaderResolver<A>
 where
@@ -93,34 +107,7 @@ where
             PagedSourceKind::UploaderVideos,
             Some(UPLOADER_API_MAX_PAGE_SIZE),
         );
-        let page = self.api.uploaded_videos(mid, request).await?;
-        let page_state = page_state(page.request, page.videos.len(), page.total_count);
-        let title = uploader_title(page.mid, page.owner_name.as_deref());
-
-        let items = page
-            .videos
-            .into_iter()
-            .map(|video| map_video_item(page.mid, video))
-            .collect::<Vec<_>>();
-
-        Ok(NormalizedSourceTree {
-            source: SourceSummary {
-                id: SourceId(format!("uploader:{}:videos", page.mid)),
-                kind: SourceKind::Uploader,
-                input: format!("https://space.bilibili.com/{}/video", page.mid),
-                title: title.clone(),
-                loaded_count: items.len(),
-                total_count: page.total_count,
-                has_more: page_state.has_more,
-            },
-            groups: vec![NormalizedGroup {
-                id: GroupId(format!("group:uploader:{}:videos", page.mid)),
-                kind: "uploader_videos".to_owned(),
-                title,
-                items,
-                page: Some(page_state),
-            }],
-        })
+        self.resolve_page(mid, request).await
     }
 }
 
@@ -212,6 +199,35 @@ fn map_video_item(source_mid: u64, video: ResolvedUploaderVideo) -> NormalizedIt
             cid: None,
             streams: Vec::new(),
             assets: vec![AssetKind::Cover.with_policy(FetchPolicy::OnDemand)],
+        }],
+    }
+}
+
+fn normalized_tree_from_page(page: ResolvedUploaderPage) -> NormalizedSourceTree {
+    let page_state = page_state(page.request, page.videos.len(), page.total_count);
+    let title = uploader_title(page.mid, page.owner_name.as_deref());
+    let items = page
+        .videos
+        .into_iter()
+        .map(|video| map_video_item(page.mid, video))
+        .collect::<Vec<_>>();
+
+    NormalizedSourceTree {
+        source: SourceSummary {
+            id: SourceId(format!("uploader:{}:videos", page.mid)),
+            kind: SourceKind::Uploader,
+            input: format!("https://space.bilibili.com/{}/video", page.mid),
+            title: title.clone(),
+            loaded_count: items.len(),
+            total_count: page.total_count,
+            has_more: page_state.has_more,
+        },
+        groups: vec![NormalizedGroup {
+            id: GroupId(format!("group:uploader:{}:videos", page.mid)),
+            kind: "uploader_videos".to_owned(),
+            title,
+            items,
+            page: Some(page_state),
         }],
     }
 }

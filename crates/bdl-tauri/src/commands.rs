@@ -47,6 +47,11 @@ pub struct QueueRemoveResponse {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+pub struct ParseSourcePageRequest {
+    pub source_id: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct SelectionCreateTasksRequest {
     pub source_id: String,
     pub part_ids: Vec<String>,
@@ -86,8 +91,14 @@ pub async fn parse_create_source(
 }
 
 #[tauri::command]
-pub async fn parse_load_more() -> CommandResult<()> {
-    unsupported("parse_load_more")
+pub async fn parse_load_more(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    request: ParseSourcePageRequest,
+) -> CommandResult<NormalizedSourceTree> {
+    let tree = state.load_more(&SourceId(request.source_id)).await?;
+    events::emit(&app, events::PARSE_SOURCE_UPDATED, &tree)?;
+    Ok(tree)
 }
 
 #[tauri::command]

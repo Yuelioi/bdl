@@ -11,6 +11,7 @@ use bdl_core::resolver::{ResolveOptions, Resolver};
 #[derive(Debug, Clone)]
 struct FakeUploaderApi {
     page: ResolvedUploaderPage,
+    expected_request: PageRequest,
 }
 
 #[async_trait]
@@ -21,13 +22,7 @@ impl UploaderApi for FakeUploaderApi {
         request: PageRequest,
     ) -> Result<ResolvedUploaderPage, BdlError> {
         assert_eq!(mid, 1001);
-        assert_eq!(
-            request,
-            PageRequest {
-                page_number: 1,
-                page_size: 30,
-            }
-        );
+        assert_eq!(request, self.expected_request);
         Ok(self.page.clone())
     }
 }
@@ -89,6 +84,53 @@ async fn uploader_resolver_maps_first_uploaded_video_page() -> Result<(), BdlErr
 }
 
 #[tokio::test]
+async fn uploader_resolver_resolves_requested_uploaded_video_page() -> Result<(), BdlError> {
+    let resolver = UploaderResolver::with_api(FakeUploaderApi {
+        page: ResolvedUploaderPage {
+            request: PageRequest {
+                page_number: 2,
+                page_size: 30,
+            },
+            videos: vec![ResolvedUploaderVideo {
+                aid: 170002,
+                bvid: "BV1yy411c7mD".to_owned(),
+                title: "fixture upload page 2".to_owned(),
+                owner_mid: 1001,
+                owner_name: Some("fixture owner".to_owned()),
+                cover_url: None,
+                duration_seconds: None,
+            }],
+            ..fake_page()
+        },
+        expected_request: PageRequest {
+            page_number: 2,
+            page_size: 30,
+        },
+    });
+
+    let tree = resolver
+        .resolve_page(
+            1001,
+            PageRequest {
+                page_number: 2,
+                page_size: 30,
+            },
+        )
+        .await?;
+
+    assert_eq!(tree.source.loaded_count, 1);
+    assert_eq!(
+        tree.groups[0].page.as_ref().map(|page| page.page_number),
+        Some(2)
+    );
+    assert_eq!(
+        tree.groups[0].items[0].id.0,
+        "item:uploader:1001:BV1yy411c7mD"
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn uploader_resolver_rejects_non_uploader_input() {
     let resolver = UploaderResolver::with_api(fake_api());
 
@@ -108,23 +150,31 @@ async fn uploader_resolver_rejects_non_uploader_input() {
 
 fn fake_api() -> FakeUploaderApi {
     FakeUploaderApi {
-        page: ResolvedUploaderPage {
-            mid: 1001,
-            owner_name: Some("fixture owner".to_owned()),
-            request: PageRequest {
-                page_number: 1,
-                page_size: 30,
-            },
-            total_count: Some(45),
-            videos: vec![ResolvedUploaderVideo {
-                aid: 170001,
-                bvid: "BV1xx411c7mD".to_owned(),
-                title: "fixture upload".to_owned(),
-                owner_mid: 1001,
-                owner_name: Some("fixture owner".to_owned()),
-                cover_url: Some("https://example.invalid/cover.jpg".to_owned()),
-                duration_seconds: Some(62),
-            }],
+        page: fake_page(),
+        expected_request: PageRequest {
+            page_number: 1,
+            page_size: 30,
         },
+    }
+}
+
+fn fake_page() -> ResolvedUploaderPage {
+    ResolvedUploaderPage {
+        mid: 1001,
+        owner_name: Some("fixture owner".to_owned()),
+        request: PageRequest {
+            page_number: 1,
+            page_size: 30,
+        },
+        total_count: Some(45),
+        videos: vec![ResolvedUploaderVideo {
+            aid: 170001,
+            bvid: "BV1xx411c7mD".to_owned(),
+            title: "fixture upload".to_owned(),
+            owner_mid: 1001,
+            owner_name: Some("fixture owner".to_owned()),
+            cover_url: Some("https://example.invalid/cover.jpg".to_owned()),
+            duration_seconds: Some(62),
+        }],
     }
 }
