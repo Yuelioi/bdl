@@ -1316,6 +1316,7 @@ mod tests {
             status: TaskStatus::Completed,
             resources: Vec::new(),
             output_path: PathBuf::from("downloads/A&B <C>.mp4"),
+            refresh_intent: None,
             media_selection: DownloadTaskMediaSelection::default(),
         };
 

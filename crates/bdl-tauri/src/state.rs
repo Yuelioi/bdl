@@ -12,7 +12,8 @@ use bdl_core::model::{
     SourceKind, StreamQuality,
 };
 use bdl_core::queue::{
-    DownloadResourceIntent, DownloadTask, QueueLogEntry, ResourceStatus, TaskStatus,
+    DownloadResourceIntent, DownloadTask, DownloadTaskRefreshInput, DownloadTaskRefreshIntent,
+    QueueLogEntry, ResourceStatus, TaskStatus,
 };
 use bdl_core::resolver::bangumi::BangumiResolver;
 use bdl_core::resolver::cheese::CheeseResolver;
@@ -756,6 +757,34 @@ fn load_account_snapshot(
 }
 
 fn task_media_refresh_ids(task: &DownloadTask) -> BdlResult<TaskMediaRefreshIds> {
+    if let Some(refresh_intent) = &task.refresh_intent {
+        return Ok(task_media_refresh_ids_from_intent(refresh_intent));
+    }
+
+    legacy_task_media_refresh_ids(task)
+}
+
+fn task_media_refresh_ids_from_intent(
+    refresh_intent: &DownloadTaskRefreshIntent,
+) -> TaskMediaRefreshIds {
+    let input = match &refresh_intent.input {
+        DownloadTaskRefreshInput::VideoBvid { bvid } => ClassifiedInput::VideoBvid(bvid.clone()),
+        DownloadTaskRefreshInput::VideoAid { aid } => ClassifiedInput::VideoAid(*aid),
+        DownloadTaskRefreshInput::BangumiEpisode { ep_id } => ClassifiedInput::Bangumi {
+            raw_url: format!("https://www.bilibili.com/bangumi/play/ep{ep_id}"),
+        },
+        DownloadTaskRefreshInput::CheeseEpisode { ep_id } => ClassifiedInput::Cheese {
+            raw_url: format!("https://www.bilibili.com/cheese/play/ep{ep_id}"),
+        },
+    };
+
+    TaskMediaRefreshIds {
+        input,
+        cid: refresh_intent.cid,
+    }
+}
+
+fn legacy_task_media_refresh_ids(task: &DownloadTask) -> BdlResult<TaskMediaRefreshIds> {
     let part_segment = task
         .id
         .split_once(":part:")
@@ -1266,7 +1295,10 @@ mod tests {
         NormalizedGroup, NormalizedItem, NormalizedPart, NormalizedSourceTree, PageState,
         SourceKind, SourceSummary,
     };
-    use bdl_core::queue::{DownloadTask, DownloadTaskMediaSelection, TaskStatus};
+    use bdl_core::queue::{
+        DownloadTask, DownloadTaskMediaSelection, DownloadTaskRefreshInput,
+        DownloadTaskRefreshIntent, TaskStatus,
+    };
     use bdl_core::resolver::paged::PageRequest;
 
     #[test]
@@ -1459,7 +1491,26 @@ mod tests {
     }
 
     #[test]
-    fn task_media_refresh_ids_extracts_bvid_and_cid_from_task_id() {
+    fn task_media_refresh_ids_uses_durable_refresh_intent_before_task_id() {
+        let mut task = task_with_id("task:opaque");
+        task.refresh_intent = Some(DownloadTaskRefreshIntent {
+            input: DownloadTaskRefreshInput::VideoBvid {
+                bvid: "BV1refresh11".to_owned(),
+            },
+            cid: 42,
+        });
+
+        let ids = task_media_refresh_ids(&task).expect("refresh intent should be used");
+
+        assert_eq!(
+            ids.input,
+            ClassifiedInput::VideoBvid("BV1refresh11".to_owned())
+        );
+        assert_eq!(ids.cid, 42);
+    }
+
+    #[test]
+    fn task_media_refresh_ids_extracts_bvid_and_cid_from_legacy_task_id() {
         let task = task_with_id("task:video:av333290567:part:BV1ZA411g7Sb:346910923");
 
         let ids = task_media_refresh_ids(&task).expect("task id should contain media ids");
@@ -1472,7 +1523,7 @@ mod tests {
     }
 
     #[test]
-    fn task_media_refresh_ids_extracts_aid_and_cid_from_task_id() {
+    fn task_media_refresh_ids_extracts_aid_and_cid_from_legacy_task_id() {
         let task = task_with_id("task:video:av333290567:part:av333290567:346910923");
 
         let ids = task_media_refresh_ids(&task).expect("task id should contain media ids");
@@ -1482,7 +1533,7 @@ mod tests {
     }
 
     #[test]
-    fn task_media_refresh_ids_extracts_bangumi_episode_and_cid_from_task_id() {
+    fn task_media_refresh_ids_extracts_bangumi_episode_and_cid_from_legacy_task_id() {
         let task = task_with_id("task:bangumi:123:part:bangumi:123:456:789");
 
         let ids = task_media_refresh_ids(&task).expect("task id should contain media ids");
@@ -1497,7 +1548,7 @@ mod tests {
     }
 
     #[test]
-    fn task_media_refresh_ids_extracts_cheese_episode_and_cid_from_task_id() {
+    fn task_media_refresh_ids_extracts_cheese_episode_and_cid_from_legacy_task_id() {
         let task = task_with_id("task:cheese:123:part:cheese:123:456:789");
 
         let ids = task_media_refresh_ids(&task).expect("task id should contain media ids");
@@ -1519,6 +1570,7 @@ mod tests {
             status: TaskStatus::Failed,
             resources: Vec::new(),
             output_path: PathBuf::from("downloads/fixture.mp4"),
+            refresh_intent: None,
             media_selection: DownloadTaskMediaSelection::default(),
         }
     }

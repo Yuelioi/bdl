@@ -115,8 +115,20 @@ export interface DownloadTask {
   status: TaskStatus
   resources: DownloadResource[]
   output_path: string
+  refresh_intent: DownloadTaskRefreshIntent | null
   media_selection: DownloadTaskMediaSelection
 }
+
+export interface DownloadTaskRefreshIntent {
+  input: DownloadTaskRefreshInput
+  cid: number
+}
+
+export type DownloadTaskRefreshInput =
+  | { kind: 'video_bvid'; bvid: string }
+  | { kind: 'video_aid'; aid: number }
+  | { kind: 'bangumi_episode'; ep_id: number }
+  | { kind: 'cheese_episode'; ep_id: number }
 
 export interface DownloadTaskMediaSelection {
   video_quality: string

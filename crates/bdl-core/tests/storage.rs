@@ -4,7 +4,8 @@ use bdl_core::BdlResult;
 use bdl_core::model::HeaderPair;
 use bdl_core::queue::{
     DownloadResource, DownloadResourceIntent, DownloadResourceKind, DownloadTask,
-    DownloadTaskMediaSelection, QueueLogEntry, QueueLogLevel, ResourceStatus, TaskStatus,
+    DownloadTaskMediaSelection, DownloadTaskRefreshInput, DownloadTaskRefreshIntent, QueueLogEntry,
+    QueueLogLevel, ResourceStatus, TaskStatus,
 };
 use bdl_core::storage::TaskStorage;
 use uuid::Uuid;
@@ -55,6 +56,23 @@ fn task_storage_reloads_media_selection_after_reopen() -> BdlResult<()> {
     let tasks = storage.load_tasks()?;
 
     assert_eq!(tasks[0].media_selection, task.media_selection);
+    Ok(())
+}
+
+#[test]
+fn task_storage_reloads_refresh_intent_after_reopen() -> BdlResult<()> {
+    let fixture = StorageFixture::new()?;
+    let task = sample_task();
+
+    {
+        let mut storage = TaskStorage::open(&fixture.db_path)?;
+        storage.save_task(&task)?;
+    }
+
+    let storage = TaskStorage::open(&fixture.db_path)?;
+    let tasks = storage.load_tasks()?;
+
+    assert_eq!(tasks[0].refresh_intent, task.refresh_intent);
     Ok(())
 }
 
@@ -227,6 +245,12 @@ fn sample_task() -> DownloadTask {
             ),
         ],
         output_path: PathBuf::from("downloads/Example - P1.mp4"),
+        refresh_intent: Some(DownloadTaskRefreshIntent {
+            input: DownloadTaskRefreshInput::VideoBvid {
+                bvid: "BV1xx411c7mD".to_owned(),
+            },
+            cid: 100,
+        }),
         media_selection: DownloadTaskMediaSelection {
             video_quality: "80".to_owned(),
             audio_quality: "30280".to_owned(),

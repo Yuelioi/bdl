@@ -99,7 +99,7 @@ impl TaskStorage {
 
     pub fn load_tasks(&self) -> BdlResult<Vec<DownloadTask>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, title, source_id, status, output_path, media_selection FROM tasks ORDER BY sort_order, rowid",
+            "SELECT id, title, source_id, status, output_path, refresh_intent, media_selection FROM tasks ORDER BY sort_order, rowid",
         )?;
         let task_rows = stmt.query_map([], |row| {
             Ok(TaskRow {
@@ -108,7 +108,8 @@ impl TaskStorage {
                 source_id: row.get(2)?,
                 status_json: row.get(3)?,
                 output_path: row.get(4)?,
-                media_selection_json: row.get(5)?,
+                refresh_intent_json: row.get(5)?,
+                media_selection_json: row.get(6)?,
             })
         })?;
 
@@ -123,6 +124,11 @@ impl TaskStorage {
                 status: deserialize_json(&task_row.status_json)?,
                 resources,
                 output_path: PathBuf::from(task_row.output_path),
+                refresh_intent: task_row
+                    .refresh_intent_json
+                    .as_deref()
+                    .map(deserialize_json)
+                    .transpose()?,
                 media_selection: deserialize_json(&task_row.media_selection_json)?,
             });
         }
@@ -313,6 +319,7 @@ struct TaskRow {
     source_id: String,
     status_json: String,
     output_path: String,
+    refresh_intent_json: Option<String>,
     media_selection_json: String,
 }
 
@@ -343,6 +350,7 @@ fn run_migrations(conn: &Connection) -> BdlResult<()> {
             source_id TEXT NOT NULL,
             status TEXT NOT NULL,
             output_path TEXT NOT NULL,
+            refresh_intent TEXT,
             media_selection TEXT NOT NULL DEFAULT '{"video_quality":"unknown","audio_quality":"unknown","video_codec":"unknown","container":"unknown"}',
             sort_order INTEGER NOT NULL DEFAULT 0,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -404,6 +412,7 @@ fn run_migrations(conn: &Connection) -> BdlResult<()> {
         "media_selection",
         "media_selection TEXT NOT NULL DEFAULT '{\"video_quality\":\"unknown\",\"audio_quality\":\"unknown\",\"video_codec\":\"unknown\",\"container\":\"unknown\"}'",
     )?;
+    add_column_if_missing(conn, "tasks", "refresh_intent", "refresh_intent TEXT")?;
     add_column_if_missing(
         conn,
         "history",
@@ -439,15 +448,22 @@ fn run_migrations(conn: &Connection) -> BdlResult<()> {
 }
 
 fn save_task_in_tx(tx: &Transaction<'_>, task: &DownloadTask, sort_order: usize) -> BdlResult<()> {
+    let refresh_intent_json = task
+        .refresh_intent
+        .as_ref()
+        .map(serialize_json)
+        .transpose()?;
+
     tx.execute(
         r#"
-        INSERT INTO tasks (id, title, source_id, status, output_path, media_selection, sort_order, updated_at)
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, CURRENT_TIMESTAMP)
+        INSERT INTO tasks (id, title, source_id, status, output_path, refresh_intent, media_selection, sort_order, updated_at)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, CURRENT_TIMESTAMP)
         ON CONFLICT(id) DO UPDATE SET
             title = excluded.title,
             source_id = excluded.source_id,
             status = excluded.status,
             output_path = excluded.output_path,
+            refresh_intent = excluded.refresh_intent,
             media_selection = excluded.media_selection,
             sort_order = excluded.sort_order,
             updated_at = CURRENT_TIMESTAMP
@@ -458,6 +474,7 @@ fn save_task_in_tx(tx: &Transaction<'_>, task: &DownloadTask, sort_order: usize)
             task.source_id,
             serialize_json(&task.status)?,
             path_to_string(&task.output_path),
+            refresh_intent_json.as_deref(),
             serialize_json(&task.media_selection)?,
             sort_order as i64,
         ],

@@ -15,6 +15,7 @@ use bdl_core::planner::{
     ArchiveAssetSelection, ArchiveMode, DownloadOptions, MissingQualityPolicy, StreamPreference,
     plan_selected_parts,
 };
+use bdl_core::queue::DownloadTaskRefreshInput;
 use bdl_core::queue::{DownloadResourceIntent, DownloadResourceKind, ResourceStatus, TaskStatus};
 
 #[test]
@@ -30,6 +31,16 @@ fn plan_selected_parts_creates_one_task_for_one_selected_part() {
     assert_eq!(tasks[0].source_id, "source:BV1");
     assert_eq!(tasks[0].status, TaskStatus::Waiting);
     assert!(tasks[0].output_path.ends_with("Fixture Video/P1 - P1.mp4"));
+    assert_eq!(
+        tasks[0]
+            .refresh_intent
+            .as_ref()
+            .expect("video task should be refreshable")
+            .input,
+        DownloadTaskRefreshInput::VideoBvid {
+            bvid: "BV1xx411c7mD".to_owned(),
+        }
+    );
 }
 
 #[test]
@@ -300,6 +311,32 @@ fn plan_selected_parts_prefers_configured_video_codec_when_available() {
         vec!["https://example.invalid/video-hevc.m4s"]
     );
     assert_eq!(tasks[0].media_selection.video_codec, "hevc");
+}
+
+#[test]
+fn plan_selected_parts_prefers_episode_refresh_intent_for_bangumi_sources() {
+    let mut tree = fixture_tree(true);
+    tree.source.kind = SourceKind::Bangumi;
+    let part = fixture_part_mut(&mut tree);
+    part.id = PartId("part:bangumi:123:456:789".to_owned());
+    part.cid = Some(789);
+
+    let tasks = plan_selected_parts(
+        &tree,
+        &[PartId("part:bangumi:123:456:789".to_owned())],
+        &DownloadOptions::new(PathBuf::from("downloads")),
+    )
+    .expect("bangumi source should plan");
+
+    let refresh_intent = tasks[0]
+        .refresh_intent
+        .as_ref()
+        .expect("bangumi task should be refreshable");
+    assert_eq!(
+        refresh_intent.input,
+        DownloadTaskRefreshInput::BangumiEpisode { ep_id: 456 }
+    );
+    assert_eq!(refresh_intent.cid, 789);
 }
 
 #[test]

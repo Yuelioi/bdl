@@ -88,7 +88,24 @@ pub struct DownloadTask {
     pub resources: Vec<DownloadResource>,
     pub output_path: PathBuf,
     #[serde(default)]
+    pub refresh_intent: Option<DownloadTaskRefreshIntent>,
+    #[serde(default)]
     pub media_selection: DownloadTaskMediaSelection,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DownloadTaskRefreshIntent {
+    pub input: DownloadTaskRefreshInput,
+    pub cid: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum DownloadTaskRefreshInput {
+    VideoBvid { bvid: String },
+    VideoAid { aid: u64 },
+    BangumiEpisode { ep_id: u64 },
+    CheeseEpisode { ep_id: u64 },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

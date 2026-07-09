@@ -9,7 +9,7 @@ use crate::error::{BdlError, BdlResult};
 use crate::ids::PartId;
 use crate::model::{
     AssetKind, DerivedAsset, MediaKind, MediaStream, NormalizedItem, NormalizedPart,
-    NormalizedSourceTree, StreamCodec, StreamQuality,
+    NormalizedSourceTree, SourceKind, StreamCodec, StreamQuality,
 };
 use crate::naming::{
     DEFAULT_NAMING_TEMPLATE, DuplicateNamingStrategy, NamingContext, render_output_path,
@@ -17,7 +17,8 @@ use crate::naming::{
 };
 use crate::queue::{
     DownloadResource, DownloadResourceIntent, DownloadResourceKind, DownloadTask,
-    DownloadTaskMediaSelection, ResourceStatus, TaskStatus,
+    DownloadTaskMediaSelection, DownloadTaskRefreshInput, DownloadTaskRefreshIntent,
+    ResourceStatus, TaskStatus,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -270,6 +271,7 @@ fn plan_part(
         status: TaskStatus::Waiting,
         resources,
         output_path,
+        refresh_intent: media_refresh_intent(tree.source.kind, part),
         media_selection: DownloadTaskMediaSelection {
             video_quality: stream_quality_label(video),
             audio_quality: stream_quality_label(audio),
@@ -425,6 +427,58 @@ fn media_resource(
         target_path,
         status: ResourceStatus::Pending,
     })
+}
+
+fn media_refresh_intent(
+    source_kind: SourceKind,
+    part: &NormalizedPart,
+) -> Option<DownloadTaskRefreshIntent> {
+    match source_kind {
+        SourceKind::Bangumi => {
+            episode_refresh_intent(part, "bangumi").or_else(|| video_refresh_intent(part))
+        }
+        SourceKind::Cheese => {
+            episode_refresh_intent(part, "cheese").or_else(|| video_refresh_intent(part))
+        }
+        SourceKind::Video
+        | SourceKind::Favorite
+        | SourceKind::Collection
+        | SourceKind::Series
+        | SourceKind::Uploader
+        | SourceKind::Unknown => video_refresh_intent(part)
+            .or_else(|| episode_refresh_intent(part, "bangumi"))
+            .or_else(|| episode_refresh_intent(part, "cheese")),
+    }
+}
+
+fn video_refresh_intent(part: &NormalizedPart) -> Option<DownloadTaskRefreshIntent> {
+    let cid = part.cid?;
+    let input = if let Some(bvid) = part.bvid.as_ref().filter(|value| !value.is_empty()) {
+        DownloadTaskRefreshInput::VideoBvid { bvid: bvid.clone() }
+    } else {
+        DownloadTaskRefreshInput::VideoAid { aid: part.aid? }
+    };
+
+    Some(DownloadTaskRefreshIntent { input, cid })
+}
+
+fn episode_refresh_intent(part: &NormalizedPart, kind: &str) -> Option<DownloadTaskRefreshIntent> {
+    let cid = part.cid?;
+    let part_key = part.id.0.strip_prefix("part:")?;
+    let mut segments = part_key.split(':');
+    if segments.next()? != kind {
+        return None;
+    }
+
+    let _season_id = parse_positive_u64(segments.next()?)?;
+    let ep_id = parse_positive_u64(segments.next()?)?;
+    let input = match kind {
+        "bangumi" => DownloadTaskRefreshInput::BangumiEpisode { ep_id },
+        "cheese" => DownloadTaskRefreshInput::CheeseEpisode { ep_id },
+        _ => return None,
+    };
+
+    Some(DownloadTaskRefreshIntent { input, cid })
 }
 
 fn complete_archive_resources(
@@ -594,6 +648,10 @@ fn stream_quality_rank(quality: StreamQuality) -> u32 {
         crate::model::StreamQuality::Best => u32::MAX,
         crate::model::StreamQuality::Quality(value) => value,
     }
+}
+
+fn parse_positive_u64(value: &str) -> Option<u64> {
+    value.parse::<u64>().ok().filter(|value| *value > 0)
 }
 
 fn stream_quality_label(stream: &MediaStream) -> String {
