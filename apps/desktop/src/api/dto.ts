@@ -144,3 +144,18 @@ export interface AccountSummary {
   mid: string | null
   vip_label: string | null
 }
+
+export type QrLoginStatus = 'waiting' | 'scanned' | 'confirmed' | 'expired' | 'unknown'
+
+export interface QrLoginSession {
+  qr_url: string
+  qrcode_key: string
+  qr_image_svg: string
+  expires_in_seconds: number
+}
+
+export interface QrLoginPollResponse {
+  status: QrLoginStatus
+  message: string
+  account: AccountSummary | null
+}

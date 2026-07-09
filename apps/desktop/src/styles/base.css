@@ -280,6 +280,16 @@ button:disabled {
   font-weight: 800;
 }
 
+.qr-box.active {
+  background: #ffffff;
+}
+
+.qr-box img {
+  width: 164px;
+  height: 164px;
+  display: block;
+}
+
 .qr-panel p {
   margin: 0;
   color: var(--color-muted);

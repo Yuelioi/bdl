@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use bdl_core::BdlError;
+use bdl_core::account::{QrLoginSession, QrLoginStatus, poll_qr_login, start_qr_login};
 use bdl_core::ids::{PartId, SourceId};
 use bdl_core::model::NormalizedSourceTree;
 use bdl_core::planner::{ArchiveMode, DownloadOptions, plan_selected_parts};
@@ -57,6 +58,18 @@ pub struct SelectionCreateTasksRequest {
 #[derive(Debug, Clone, Deserialize)]
 pub struct AccountImportCookieRequest {
     pub cookie: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct AccountLoginQrPollRequest {
+    pub qrcode_key: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AccountLoginQrPollResponse {
+    pub status: QrLoginStatus,
+    pub message: String,
+    pub account: Option<AccountSnapshot>,
 }
 
 #[tauri::command]
@@ -217,13 +230,31 @@ pub fn account_get(state: State<'_, AppState>) -> CommandResult<AccountSnapshot>
 }
 
 #[tauri::command]
-pub async fn account_login_qr_start() -> CommandResult<()> {
-    unsupported("account_login_qr_start")
+pub async fn account_login_qr_start() -> CommandResult<QrLoginSession> {
+    Ok(start_qr_login().await?)
 }
 
 #[tauri::command]
-pub async fn account_login_qr_poll() -> CommandResult<()> {
-    unsupported("account_login_qr_poll")
+pub async fn account_login_qr_poll(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    request: AccountLoginQrPollRequest,
+) -> CommandResult<AccountLoginQrPollResponse> {
+    let outcome = poll_qr_login(&request.qrcode_key).await?;
+    let account = match outcome.cookie_header {
+        Some(cookie_header) => {
+            let account = state.import_cookie(&cookie_header)?;
+            events::emit(&app, events::ACCOUNT_UPDATED, &account)?;
+            Some(account)
+        }
+        None => None,
+    };
+
+    Ok(AccountLoginQrPollResponse {
+        status: outcome.status,
+        message: outcome.message,
+        account,
+    })
 }
 
 #[tauri::command]

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 
 import ParsePage from './pages/ParsePage.vue'
 import TransferPage from './pages/TransferPage.vue'
@@ -34,8 +34,16 @@ const navItems: Array<{ value: AppTab; label: string }> = [
 
 const activeTitle = computed(() => navItems.find((item) => item.value === ui.activeTab)?.label ?? '解析')
 const accountSubtitle = computed(() => `本地任务 · ${account.statusLabel}`)
-const cookieSaveDisabled = computed(() => account.saving || (loginMode.value === 'cookie' && !cookieText.value.trim()))
-const loginActionLabel = computed(() => (loginMode.value === 'cookie' ? '保存' : '开始扫码'))
+const cookieSaveDisabled = computed(
+  () => account.saving || account.qrLoading || (loginMode.value === 'cookie' && !cookieText.value.trim()),
+)
+const loginActionLabel = computed(() => {
+  if (loginMode.value === 'cookie') {
+    return '保存'
+  }
+
+  return account.qrSession ? '刷新二维码' : '开始扫码'
+})
 
 const openLoginDialog = () => {
   accountMenuOpen.value = false
@@ -44,7 +52,7 @@ const openLoginDialog = () => {
 
 const saveLogin = async () => {
   if (loginMode.value === 'qr') {
-    ui.pushToast('扫码登录暂未接入', 'info')
+    await account.startQrLogin()
     return
   }
 
@@ -64,6 +72,27 @@ onMounted(() => {
   void account.load()
   void account.startEventListeners()
 })
+
+watch(loginDialogOpen, (open) => {
+  if (!open) {
+    account.resetQrLogin()
+  }
+})
+
+watch(loginMode, (mode) => {
+  if (mode !== 'qr') {
+    account.resetQrLogin()
+  }
+})
+
+watch(
+  () => account.profile.logged_in,
+  (loggedIn) => {
+    if (loggedIn && loginDialogOpen.value) {
+      loginDialogOpen.value = false
+    }
+  },
+)
 </script>
 
 <template>
@@ -161,8 +190,11 @@ onMounted(() => {
         ]"
       />
       <div v-if="loginMode === 'qr'" class="qr-panel">
-        <div class="qr-box">QR</div>
-        <p>等待扫码</p>
+        <div class="qr-box" :class="{ active: account.qrImageSrc }">
+          <img v-if="account.qrImageSrc" :src="account.qrImageSrc" alt="" />
+          <span v-else>QR</span>
+        </div>
+        <p>{{ account.qrMessage || '等待扫码' }}</p>
       </div>
       <UiTextarea v-else v-model="cookieText" label="Cookie" placeholder="SESSDATA=..." />
       <template #footer>

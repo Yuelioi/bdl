@@ -1,6 +1,13 @@
 import { invoke } from '@tauri-apps/api/core'
 
-import type { AccountSummary, DownloadTask, NormalizedSourceTree, QueueRemoveResponse } from './dto'
+import type {
+  AccountSummary,
+  DownloadTask,
+  NormalizedSourceTree,
+  QrLoginPollResponse,
+  QrLoginSession,
+  QueueRemoveResponse,
+} from './dto'
 
 export interface CommandErrorShape {
   code: string
@@ -38,6 +45,10 @@ export interface AccountImportCookieRequest {
   cookie: string
 }
 
+export interface AccountLoginQrPollRequest {
+  qrcode_key: string
+}
+
 export const parseCreateSource = (request: ParseCreateSourceRequest) =>
   invokeCommand<NormalizedSourceTree>('parse_create_source', { request })
 
@@ -70,6 +81,11 @@ export const queueOpenFile = (taskId: string) => invokeCommand<void>('queue_open
 export const queueOpenDir = (taskId: string) => invokeCommand<void>('queue_open_dir', { taskId })
 
 export const accountGet = () => invokeCommand<AccountSummary>('account_get')
+
+export const accountLoginQrStart = () => invokeCommand<QrLoginSession>('account_login_qr_start')
+
+export const accountLoginQrPoll = (request: AccountLoginQrPollRequest) =>
+  invokeCommand<QrLoginPollResponse>('account_login_qr_poll', { request })
 
 export const accountImportCookie = (request: AccountImportCookieRequest) =>
   invokeCommand<AccountSummary>('account_import_cookie', { request })

@@ -1,5 +1,9 @@
 use std::collections::BTreeMap;
 
+use bpi_rs::BpiClient;
+use bpi_rs::login::LoginQrPollParams;
+use qrcode::QrCode;
+use qrcode::render::svg;
 use serde::{Deserialize, Serialize};
 
 use crate::error::{BdlError, BdlResult};
@@ -38,6 +42,43 @@ pub struct AccountSummary {
     pub vip_label: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct QrLoginSession {
+    pub qr_url: String,
+    pub qrcode_key: String,
+    pub qr_image_svg: String,
+    pub expires_in_seconds: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum QrLoginStatus {
+    Waiting,
+    Scanned,
+    Confirmed,
+    Expired,
+    Unknown,
+}
+
+impl QrLoginStatus {
+    pub fn from_bilibili_code(code: i32) -> Self {
+        match code {
+            0 => Self::Confirmed,
+            86038 => Self::Expired,
+            86090 => Self::Scanned,
+            86101 => Self::Waiting,
+            _ => Self::Unknown,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QrLoginPollOutcome {
+    pub status: QrLoginStatus,
+    pub message: String,
+    pub cookie_header: Option<String>,
+}
+
 impl AccountSummary {
     pub fn from_imported_cookie(cookie: &ImportedCookie) -> Self {
         Self {
@@ -48,6 +89,45 @@ impl AccountSummary {
             vip_label: None,
         }
     }
+}
+
+pub async fn start_qr_login() -> BdlResult<QrLoginSession> {
+    let client = BpiClient::new().map_err(|error| BdlError::Bpi(error.to_string()))?;
+    let data = client
+        .login()
+        .qr_generate()
+        .await
+        .map_err(|error| BdlError::Bpi(error.to_string()))?;
+
+    Ok(QrLoginSession {
+        qr_image_svg: render_qr_svg(&data.url)?,
+        qr_url: data.url,
+        qrcode_key: data.qrcode_key,
+        expires_in_seconds: 180,
+    })
+}
+
+pub async fn poll_qr_login(qrcode_key: &str) -> BdlResult<QrLoginPollOutcome> {
+    let client = BpiClient::new().map_err(|error| BdlError::Bpi(error.to_string()))?;
+    let params =
+        LoginQrPollParams::new(qrcode_key).map_err(|error| BdlError::Bpi(error.to_string()))?;
+    let data = client
+        .login()
+        .qr_poll(params)
+        .await
+        .map_err(|error| BdlError::Bpi(error.to_string()))?;
+    let status = QrLoginStatus::from_bilibili_code(data.code);
+    let cookie_header = if status == QrLoginStatus::Confirmed {
+        Some(cookie_header_from_pairs(&data.cookies)?)
+    } else {
+        None
+    };
+
+    Ok(QrLoginPollOutcome {
+        status,
+        message: data.message,
+        cookie_header,
+    })
 }
 
 pub fn redact_sensitive(input: &str) -> String {
@@ -63,6 +143,34 @@ pub fn redact_sensitive(input: &str) -> String {
     ]
     .into_iter()
     .fold(input.to_owned(), |value, key| redact_key_value(&value, key))
+}
+
+fn render_qr_svg(url: &str) -> BdlResult<String> {
+    QrCode::new(url.as_bytes())
+        .map_err(|error| BdlError::Account {
+            message: format!("二维码生成失败: {error}"),
+        })
+        .map(|code| {
+            code.render::<svg::Color<'_>>()
+                .min_dimensions(180, 180)
+                .dark_color(svg::Color("#17211d"))
+                .light_color(svg::Color("#ffffff"))
+                .build()
+        })
+}
+
+fn cookie_header_from_pairs(pairs: &[(String, String)]) -> BdlResult<String> {
+    if pairs.is_empty() {
+        return Err(BdlError::Account {
+            message: "扫码登录成功但未返回 Cookie，请重新扫码。".to_owned(),
+        });
+    }
+
+    Ok(pairs
+        .iter()
+        .map(|(name, value)| format!("{name}={value}"))
+        .collect::<Vec<_>>()
+        .join("; "))
 }
 
 fn parse_cookie_pairs(raw: &str) -> BTreeMap<String, String> {

@@ -1,5 +1,5 @@
 use bdl_core::BdlResult;
-use bdl_core::account::{AccountSummary, ImportedCookie, redact_sensitive};
+use bdl_core::account::{AccountSummary, ImportedCookie, QrLoginStatus, redact_sensitive};
 
 #[test]
 fn imported_cookie_accepts_required_bilibili_login_cookies() -> BdlResult<()> {
@@ -39,6 +39,26 @@ fn account_summary_from_imported_cookie_marks_logged_in() -> BdlResult<()> {
 
     assert_eq!(account.logged_in, true);
     Ok(())
+}
+
+#[test]
+fn qr_login_status_maps_known_bilibili_codes() {
+    assert_eq!(
+        QrLoginStatus::from_bilibili_code(86101),
+        QrLoginStatus::Waiting
+    );
+    assert_eq!(
+        QrLoginStatus::from_bilibili_code(86090),
+        QrLoginStatus::Scanned
+    );
+    assert_eq!(
+        QrLoginStatus::from_bilibili_code(0),
+        QrLoginStatus::Confirmed
+    );
+    assert_eq!(
+        QrLoginStatus::from_bilibili_code(86038),
+        QrLoginStatus::Expired
+    );
 }
 
 #[test]
