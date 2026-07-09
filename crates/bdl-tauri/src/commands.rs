@@ -232,11 +232,29 @@ pub fn queue_cancel(
 }
 
 #[tauri::command]
-pub fn queue_retry(
+pub async fn queue_retry(
     app: AppHandle,
     state: State<'_, AppState>,
     task_id: String,
 ) -> CommandResult<DownloadTask> {
+    emit_queue_log(
+        &app,
+        state.inner(),
+        &task_id,
+        QueueLogLevel::Info,
+        "刷新下载地址",
+    )?;
+    if let Err(error) = state.refresh_task_media_urls(&task_id).await {
+        emit_queue_log(
+            &app,
+            state.inner(),
+            &task_id,
+            QueueLogLevel::Error,
+            &format!("刷新下载地址失败：{error}"),
+        )?;
+        return Err(error.into());
+    }
+
     let task = state.retry_task(&task_id)?;
     events::emit(&app, events::QUEUE_TASK_UPDATED, &task)?;
     emit_queue_log(

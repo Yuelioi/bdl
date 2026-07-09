@@ -7,9 +7,12 @@ use bdl_core::account::{AccountSummary, ImportedCookie};
 use bdl_core::ids::{PartId, SourceId};
 use bdl_core::input::{ClassifiedInput, classify_input};
 use bdl_core::model::{
-    NormalizedItem, NormalizedPart, NormalizedSourceTree, PageState, SourceKind,
+    MediaKind, MediaStream, NormalizedItem, NormalizedPart, NormalizedSourceTree, PageState,
+    SourceKind, StreamQuality,
 };
-use bdl_core::queue::{DownloadTask, QueueLogEntry, ResourceStatus, TaskStatus};
+use bdl_core::queue::{
+    DownloadResourceIntent, DownloadTask, QueueLogEntry, ResourceStatus, TaskStatus,
+};
 use bdl_core::resolver::collection::{
     CollectionInputIds, CollectionResolver, SeriesInputIds, SeriesResolver,
 };
@@ -296,6 +299,35 @@ impl AppState {
         Ok(task)
     }
 
+    pub async fn refresh_task_media_urls(&self, task_id: &str) -> BdlResult<DownloadTask> {
+        let task = self.task_snapshot(task_id)?;
+        let refresh_ids = task_media_refresh_ids(&task)?;
+        let refreshed = self
+            .video_resolver()?
+            .resolve(
+                refresh_ids.input,
+                ResolveOptions {
+                    fetch_streams: true,
+                },
+            )
+            .await?;
+        let part =
+            find_part_by_cid(&refreshed, refresh_ids.cid).ok_or_else(|| BdlError::Planning {
+                message: format!(
+                    "刷新下载地址失败：视频解析结果缺少 CID `{}`。",
+                    refresh_ids.cid
+                ),
+            })?;
+        let video = select_stream(part, MediaKind::Video).ok_or_else(|| BdlError::Planning {
+            message: format!("刷新下载地址失败：`{}` 缺少视频流。", part.title),
+        })?;
+        let audio = select_stream(part, MediaKind::Audio).ok_or_else(|| BdlError::Planning {
+            message: format!("刷新下载地址失败：`{}` 缺少音频流。", part.title),
+        })?;
+
+        self.replace_task_media_urls(task_id, video, audio)
+    }
+
     pub fn task_status(&self, task_id: &str) -> BdlResult<TaskStatus> {
         self.queue
             .lock()
@@ -337,6 +369,41 @@ impl AppState {
             .ok_or_else(|| BdlError::Planning {
                 message: format!("任务 `{task_id}` 不存在。"),
             })
+    }
+
+    fn replace_task_media_urls(
+        &self,
+        task_id: &str,
+        video: &MediaStream,
+        audio: &MediaStream,
+    ) -> BdlResult<DownloadTask> {
+        let mut queue = self.queue.lock().map_err(|_| state_poisoned("queue"))?;
+        let task_index = queue
+            .iter()
+            .position(|task| task.id == task_id)
+            .ok_or_else(|| BdlError::Planning {
+                message: format!("任务 `{task_id}` 不存在。"),
+            })?;
+
+        for resource in &mut queue[task_index].resources {
+            let stream = match resource.intent {
+                DownloadResourceIntent::Video => Some(video),
+                DownloadResourceIntent::Audio => Some(audio),
+                DownloadResourceIntent::Cover
+                | DownloadResourceIntent::Subtitle
+                | DownloadResourceIntent::Danmaku
+                | DownloadResourceIntent::Nfo => None,
+            };
+
+            if let Some(stream) = stream {
+                resource.current_urls.clone_from(&stream.urls);
+                resource.headers.clone_from(&stream.headers);
+            }
+        }
+
+        let task = queue[task_index].clone();
+        self.persist_queue(&queue)?;
+        Ok(task)
     }
 
     pub fn append_task_log(&self, entry: QueueLogEntry) -> BdlResult<QueueLogEntry> {
@@ -542,6 +609,12 @@ struct PartHydrationRequest {
     target_cid: Option<u64>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct TaskMediaRefreshIds {
+    input: ClassifiedInput,
+    cid: u64,
+}
+
 pub type SettingsSnapshot = AppSettings;
 pub type AccountSnapshot = AccountSummary;
 
@@ -576,6 +649,62 @@ fn load_account_snapshot(
             secure_store.clear_cookie()?;
             Ok((AccountSnapshot::default(), None))
         }
+    }
+}
+
+fn task_media_refresh_ids(task: &DownloadTask) -> BdlResult<TaskMediaRefreshIds> {
+    let part_segment = task
+        .id
+        .split_once(":part:")
+        .map(|(_, part_segment)| part_segment)
+        .ok_or_else(|| BdlError::Planning {
+            message: format!("任务 `{}` 缺少可刷新媒体标识。", task.title),
+        })?;
+    let mut parts = part_segment.split(':');
+    let video_key = parts
+        .next()
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| BdlError::Planning {
+            message: format!("任务 `{}` 缺少视频 ID，无法刷新下载地址。", task.title),
+        })?;
+    let cid = parts
+        .next()
+        .and_then(|value| value.parse::<u64>().ok())
+        .ok_or_else(|| BdlError::Planning {
+            message: format!("任务 `{}` 缺少 CID，无法刷新下载地址。", task.title),
+        })?;
+    let input = match classify_input(video_key)? {
+        ClassifiedInput::VideoAid(aid) => ClassifiedInput::VideoAid(aid),
+        ClassifiedInput::VideoBvid(bvid) => ClassifiedInput::VideoBvid(bvid),
+        other => {
+            return Err(BdlError::UnsupportedSource {
+                kind: source_kind_name(other.source_kind()).to_owned(),
+            });
+        }
+    };
+
+    Ok(TaskMediaRefreshIds { input, cid })
+}
+
+fn find_part_by_cid(tree: &NormalizedSourceTree, cid: u64) -> Option<&NormalizedPart> {
+    tree.groups
+        .iter()
+        .flat_map(|group| &group.items)
+        .flat_map(|item| &item.parts)
+        .find(|part| part.cid == Some(cid))
+}
+
+fn select_stream(part: &NormalizedPart, kind: MediaKind) -> Option<&MediaStream> {
+    part.streams
+        .iter()
+        .filter(|stream| stream.kind == kind)
+        .max_by_key(|stream| stream_quality_rank(stream.quality))
+}
+
+fn stream_quality_rank(quality: StreamQuality) -> u32 {
+    match quality {
+        StreamQuality::Best => u32::MAX,
+        StreamQuality::Quality(value) => value,
     }
 }
 
@@ -883,13 +1012,17 @@ fn source_kind_name(kind: SourceKind) -> &'static str {
 mod tests {
     use super::{
         PartHydrationRequest, append_source_page, hydrate_placeholder_part, next_page_request,
-        remap_selected_part_ids, selected_hydration_requests,
+        remap_selected_part_ids, selected_hydration_requests, task_media_refresh_ids,
     };
+    use std::path::PathBuf;
+
     use bdl_core::ids::{GroupId, ItemId, PartId, SourceId};
+    use bdl_core::input::ClassifiedInput;
     use bdl_core::model::{
         NormalizedGroup, NormalizedItem, NormalizedPart, NormalizedSourceTree, PageState,
         SourceKind, SourceSummary,
     };
+    use bdl_core::queue::{DownloadTask, TaskStatus};
     use bdl_core::resolver::paged::PageRequest;
 
     #[test]
@@ -1034,6 +1167,40 @@ mod tests {
                 .expect("page state should exist")
                 .has_more
         );
+    }
+
+    #[test]
+    fn task_media_refresh_ids_extracts_bvid_and_cid_from_task_id() {
+        let task = task_with_id("task:video:av333290567:part:BV1ZA411g7Sb:346910923");
+
+        let ids = task_media_refresh_ids(&task).expect("task id should contain media ids");
+
+        assert_eq!(
+            ids.input,
+            ClassifiedInput::VideoBvid("BV1ZA411g7Sb".to_owned())
+        );
+        assert_eq!(ids.cid, 346910923);
+    }
+
+    #[test]
+    fn task_media_refresh_ids_extracts_aid_and_cid_from_task_id() {
+        let task = task_with_id("task:video:av333290567:part:av333290567:346910923");
+
+        let ids = task_media_refresh_ids(&task).expect("task id should contain media ids");
+
+        assert_eq!(ids.input, ClassifiedInput::VideoAid(333290567));
+        assert_eq!(ids.cid, 346910923);
+    }
+
+    fn task_with_id(id: &str) -> DownloadTask {
+        DownloadTask {
+            id: id.to_owned(),
+            title: "fixture task".to_owned(),
+            source_id: "video:fixture".to_owned(),
+            status: TaskStatus::Failed,
+            resources: Vec::new(),
+            output_path: PathBuf::from("downloads/fixture.mp4"),
+        }
     }
 
     fn uploader_tree() -> NormalizedSourceTree {
