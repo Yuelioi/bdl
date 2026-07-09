@@ -2,11 +2,11 @@
 
 ## State
 
-Product and architecture decisions are captured in local flightdeck knowledge. The app has not been scaffolded yet.
+Task 1 scaffold is complete on branch `bdl-downloader-app`. The workspace now builds as a Rust/Tauri/Vue scaffold; downloader-specific models and resolver logic have not started.
 
 ## Next
 
-Execute Task 1 in `plan.md`: scaffold the Rust/Tauri workspace and verify `cargo check --workspace` plus the initial frontend build.
+Execute Task 2 in `plan.md`: define core DTOs and IDs, then run `cargo test -p bdl-core --test normalization`.
 
 ## Read now
 
@@ -26,6 +26,9 @@ Current:
 - Captured BDL product flow and architecture decisions.
 - Moved durable design material into `flightdeck/knowledge/bdl-downloader/`.
 - Wrote the phased implementation plan in `flightdeck/work/bdl-downloader-app/plan.md`.
+- Completed Task 1 scaffold in commits `c3cac74` and `b482e22`.
+- Task 1 verification passed: `cargo check --workspace`, `pnpm --dir apps/desktop install`, and `pnpm --dir apps/desktop build`.
+- Code review required removing the absolute `bpi-rs` dependency from Task 1 and replacing the placeholder icon with a generated Tauri icon set; both are done.
 
 Decisions:
 - Main navigation: `解析`, `传输`, `历史`, `设置`; account lives in the top-right account button.

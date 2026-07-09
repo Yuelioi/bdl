@@ -164,7 +164,6 @@ authors = ["YUELI <yuelioi1210@gmail.com>"]
 [workspace.dependencies]
 anyhow = "1"
 async-trait = "0.1"
-bpi-rs = { path = "E:/projects/tools/bpi-rs" }
 bytes = "1"
 chrono = { version = "0.4", features = ["clock", "serde"] }
 futures = "0.3"
@@ -193,7 +192,6 @@ authors.workspace = true
 
 [dependencies]
 async-trait.workspace = true
-bpi-rs.workspace = true
 bytes.workspace = true
 chrono.workspace = true
 futures.workspace = true
@@ -206,6 +204,8 @@ tokio.workspace = true
 tracing.workspace = true
 uuid.workspace = true
 ```
+
+Do not add `bpi-rs` in Task 1. Add it when Task 4 introduces the resolver, using a portable dependency strategy rather than a committed absolute local path.
 
 `crates/bdl-core/src/lib.rs`:
 
