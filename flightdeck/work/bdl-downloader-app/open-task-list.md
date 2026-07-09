@@ -91,7 +91,7 @@ Audited on 2026-07-09 from:
 
 - [x] Replace file-backed `.bdl/account.cookie` secure store with OS credential storage.
 - [x] Persist account summary in SQLite only, never plaintext cookie/session data.
-- [ ] Verify account state at startup and emit `account://updated`.
+- [x] Verify account state at startup and emit `account://updated`.
 
 ## P2 - Packaging and QA
 
