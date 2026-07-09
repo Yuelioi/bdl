@@ -76,7 +76,7 @@ Audited on 2026-07-09 from:
 - [x] Store durable resource intent separately from current URLs, not only recover identity from task IDs.
 - [x] Use backup CDN URLs before full URL refresh.
 - [x] Verify CDN consistency with length, ETag, or last-modified before continuing a ranged download.
-- [ ] Add real size and speed reporting instead of `--`.
+- [x] Add real size and speed reporting instead of `--`.
 - [ ] Add segment count setting once the fetcher honors it.
 - [ ] Add startup auto-recovery setting and recovery prompt.
 
