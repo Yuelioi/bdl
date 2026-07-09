@@ -261,6 +261,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bdl-core",
+ "serde_json",
  "tokio",
 ]
 

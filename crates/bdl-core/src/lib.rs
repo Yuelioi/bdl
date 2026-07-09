@@ -3,6 +3,7 @@ pub mod fetcher;
 pub mod ids;
 pub mod input;
 pub mod model;
+pub mod muxer;
 pub mod planner;
 pub mod queue;
 pub mod resolver;

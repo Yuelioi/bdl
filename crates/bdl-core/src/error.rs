@@ -17,6 +17,9 @@ pub enum BdlError {
     #[error("fetch error: {message}")]
     Fetch { message: String },
 
+    #[error(transparent)]
+    Mux(#[from] crate::muxer::MuxError),
+
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
 }
