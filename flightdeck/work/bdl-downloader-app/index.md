@@ -109,6 +109,9 @@ Current:
 - P1 custom archive selection landed in commit `9bf256b`.
 - Settings now exposes `自定义归档` with cover/subtitle/danmaku/NFO toggles and raw stream retention in the same archive section. `bdl-core::planner` supports `ArchiveMode::Custom` and filters archive resources through `ArchiveAssetSelection`; old settings files default to full asset selection.
 - Custom archive verification passed: `cargo fmt --all --check`, `cargo test -p bdl-core --test planner --test settings`, `cargo check -p bdl-desktop`, and `pnpm --dir apps/desktop build`.
+- P1 optional archive embedding landed in commit `5d1bfc1`.
+- Settings now exposes optional cover/subtitle embedding. The muxer embeds supported cover images for MP4-like outputs and supported subtitle sidecars for MP4/MKV outputs; unsupported formats such as current Bilibili JSON subtitles stay as sidecar files and produce warning logs.
+- Embedding verification passed: `cargo fmt --all --check`, `cargo test -p bdl-core --test muxer --test settings`, `cargo test -p bdl-tauri commands`, `cargo check -p bdl-desktop`, `cargo check -p bdl-cli`, and `pnpm --dir apps/desktop build`.
 
 Decisions:
 - Main navigation: `解析`, `传输`, `设置`; account lives in the top-right account button. Completed records live under Transfer's `已完成` filter, not a separate History page.
