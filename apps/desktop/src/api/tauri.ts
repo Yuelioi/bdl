@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 
-import type { DownloadTask, NormalizedSourceTree, QueueRemoveResponse } from './dto'
+import type { AccountSummary, DownloadTask, NormalizedSourceTree, QueueRemoveResponse } from './dto'
 
 export interface CommandErrorShape {
   code: string
@@ -34,6 +34,10 @@ export interface SelectionCreateTasksRequest {
   output_extension?: string
 }
 
+export interface AccountImportCookieRequest {
+  cookie: string
+}
+
 export const parseCreateSource = (request: ParseCreateSourceRequest) =>
   invokeCommand<NormalizedSourceTree>('parse_create_source', { request })
 
@@ -64,6 +68,15 @@ export const queueRemove = (taskId: string) => invokeCommand<QueueRemoveResponse
 export const queueOpenFile = (taskId: string) => invokeCommand<void>('queue_open_file', { taskId })
 
 export const queueOpenDir = (taskId: string) => invokeCommand<void>('queue_open_dir', { taskId })
+
+export const accountGet = () => invokeCommand<AccountSummary>('account_get')
+
+export const accountImportCookie = (request: AccountImportCookieRequest) =>
+  invokeCommand<AccountSummary>('account_import_cookie', { request })
+
+export const accountLogout = () => invokeCommand<AccountSummary>('account_logout')
+
+export const accountVerify = () => invokeCommand<AccountSummary>('account_verify')
 
 const invokeCommand = async <T>(command: string, args?: Record<string, unknown>): Promise<T> => {
   try {

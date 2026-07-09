@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 
 import ParsePage from './pages/ParsePage.vue'
 import TransferPage from './pages/TransferPage.vue'
+import { useAccountStore } from './stores/account'
+import { useUiStore, type AppTab } from './stores/ui'
 import UiButton from './ui/Button.vue'
 import UiDialog from './ui/Dialog.vue'
 import UiDrawer from './ui/Drawer.vue'
@@ -12,15 +14,15 @@ import UiTabs from './ui/Tabs.vue'
 import UiTextarea from './ui/Textarea.vue'
 import UiTextField from './ui/TextField.vue'
 import UiToastHost from './ui/ToastHost.vue'
-import { useUiStore, type AppTab } from './stores/ui'
 
 const ui = useUiStore()
+const account = useAccountStore()
 const outputDir = ref('')
 const outputFormat = ref('mp4')
 const accountMenuOpen = ref(false)
 const loginDialogOpen = ref(false)
 const helpDrawerOpen = ref(false)
-const loginMode = ref('qr')
+const loginMode = ref<'qr' | 'cookie'>('qr')
 const cookieText = ref('')
 
 const navItems: Array<{ value: AppTab; label: string }> = [
@@ -31,17 +33,37 @@ const navItems: Array<{ value: AppTab; label: string }> = [
 ]
 
 const activeTitle = computed(() => navItems.find((item) => item.value === ui.activeTab)?.label ?? '解析')
+const accountSubtitle = computed(() => `本地任务 · ${account.statusLabel}`)
+const cookieSaveDisabled = computed(() => account.saving || (loginMode.value === 'cookie' && !cookieText.value.trim()))
+const loginActionLabel = computed(() => (loginMode.value === 'cookie' ? '保存' : '开始扫码'))
 
 const openLoginDialog = () => {
   accountMenuOpen.value = false
   loginDialogOpen.value = true
 }
 
-const signOut = () => {
-  accountMenuOpen.value = false
-  ui.pushToast('已退出登录', 'info')
+const saveLogin = async () => {
+  if (loginMode.value === 'qr') {
+    ui.pushToast('扫码登录暂未接入', 'info')
+    return
+  }
+
+  const saved = await account.importCookie(cookieText.value)
+  if (saved) {
+    cookieText.value = ''
+    loginDialogOpen.value = false
+  }
 }
 
+const signOut = async () => {
+  accountMenuOpen.value = false
+  await account.logout()
+}
+
+onMounted(() => {
+  void account.load()
+  void account.startEventListeners()
+})
 </script>
 
 <template>
@@ -70,26 +92,32 @@ const signOut = () => {
       <header class="top-bar">
         <div>
           <h1>{{ activeTitle }}</h1>
-          <p>本地任务 · 未登录</p>
+          <p>{{ accountSubtitle }}</p>
         </div>
         <div class="top-actions">
           <UiIconButton icon="?" label="帮助" @click="helpDrawerOpen = true" />
           <div class="account-split">
             <button class="account-button" type="button" @click="openLoginDialog">
-              <span class="account-avatar" aria-hidden="true">未</span>
-              <span>登录</span>
+              <span class="account-avatar" aria-hidden="true">
+                <img v-if="account.profile.avatar_url" :src="account.profile.avatar_url" alt="" />
+                <span v-else>{{ account.avatarLabel }}</span>
+              </span>
+              <span>{{ account.displayName }}</span>
             </button>
             <button
               class="account-menu-button"
               type="button"
               aria-label="账户菜单"
+              :aria-expanded="accountMenuOpen"
               @click="accountMenuOpen = !accountMenuOpen"
             >
               v
             </button>
             <div v-if="accountMenuOpen" class="account-popover" role="menu">
-              <button type="button" role="menuitem" @click="openLoginDialog">登录</button>
-              <button type="button" role="menuitem" @click="signOut">退出</button>
+              <button type="button" role="menuitem" @click="openLoginDialog">
+                {{ account.profile.logged_in ? '切换账号' : '登录' }}
+              </button>
+              <button v-if="account.profile.logged_in" type="button" role="menuitem" @click="signOut">退出</button>
             </div>
           </div>
         </div>
@@ -139,7 +167,7 @@ const signOut = () => {
       <UiTextarea v-else v-model="cookieText" label="Cookie" placeholder="SESSDATA=..." />
       <template #footer>
         <UiButton variant="secondary" @click="loginDialogOpen = false">取消</UiButton>
-        <UiButton @click="loginDialogOpen = false">保存</UiButton>
+        <UiButton :disabled="cookieSaveDisabled" @click="saveLogin">{{ loginActionLabel }}</UiButton>
       </template>
     </UiDialog>
 

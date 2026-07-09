@@ -136,3 +136,11 @@ export interface QueueLogEntry {
   message: string
   created_at: string
 }
+
+export interface AccountSummary {
+  logged_in: boolean
+  name: string | null
+  avatar_url: string | null
+  mid: string | null
+  vip_label: string | null
+}
