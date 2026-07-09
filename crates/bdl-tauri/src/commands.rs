@@ -2,12 +2,17 @@ use std::path::PathBuf;
 
 use bdl_core::BdlError;
 use bdl_core::account::{QrLoginSession, QrLoginStatus, poll_qr_login, start_qr_login};
+use bdl_core::fetcher::{Fetcher, ReqwestFetcher};
 use bdl_core::ids::{PartId, SourceId};
 use bdl_core::model::NormalizedSourceTree;
+use bdl_core::muxer::{MediaMuxer, MediaMuxerConfig, MuxRequest};
 use bdl_core::planner::{ArchiveMode, DownloadOptions, plan_selected_parts};
-use bdl_core::queue::{DownloadTask, TaskStatus};
+use bdl_core::queue::{
+    DownloadResource, DownloadResourceIntent, DownloadTask, ResourceStatus, TaskStatus,
+};
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 
 use crate::events;
 use crate::state::{AccountSnapshot, AppState, SettingsSnapshot};
@@ -44,6 +49,14 @@ pub struct ParseCloseSourceResponse {
 #[derive(Debug, Clone, Serialize)]
 pub struct QueueRemoveResponse {
     pub removed: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct QueueLogEntry {
+    pub task_id: String,
+    pub level: String,
+    pub message: String,
+    pub created_at: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -175,13 +188,16 @@ pub async fn selection_create_tasks(
     for task in &tasks {
         events::emit(&app, events::QUEUE_TASK_UPDATED, task)?;
     }
+    start_queue_worker(&app);
 
     Ok(tasks)
 }
 
 #[tauri::command]
-pub fn queue_list(state: State<'_, AppState>) -> CommandResult<Vec<DownloadTask>> {
-    Ok(state.queue_snapshot()?)
+pub fn queue_list(app: AppHandle, state: State<'_, AppState>) -> CommandResult<Vec<DownloadTask>> {
+    let tasks = state.queue_snapshot()?;
+    start_queue_worker(&app);
+    Ok(tasks)
 }
 
 #[tauri::command]
@@ -335,7 +351,183 @@ fn update_task_status(
 ) -> CommandResult<DownloadTask> {
     let task = state.update_task_status(task_id, status)?;
     events::emit(&app, events::QUEUE_TASK_UPDATED, &task)?;
+    if status.can_start() {
+        start_queue_worker(&app);
+    }
     Ok(task)
+}
+
+fn start_queue_worker(app: &AppHandle) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let state = app.state::<AppState>();
+        if !state.try_start_queue_worker() {
+            return;
+        }
+
+        let result = run_queue_worker(&app, state.inner()).await;
+        state.finish_queue_worker();
+
+        if let Err(error) = result {
+            tracing::error!("queue worker failed: {}", error.message);
+        }
+
+        if matches!(state.has_startable_task(), Ok(true)) {
+            start_queue_worker(&app);
+        }
+    });
+}
+
+async fn run_queue_worker(app: &AppHandle, state: &AppState) -> CommandResult<()> {
+    let fetcher = ReqwestFetcher::new()?;
+
+    loop {
+        let Some(task) = state.take_next_startable_task()? else {
+            break;
+        };
+
+        events::emit(app, events::QUEUE_TASK_UPDATED, &task)?;
+        emit_queue_log(app, &task.id, "info", "开始下载任务")?;
+
+        if let Err(error) = run_download_task(app, state, &fetcher, task.clone()).await {
+            match state.task_status(&task.id) {
+                Ok(TaskStatus::Paused | TaskStatus::Cancelled) => {
+                    emit_queue_log(app, &task.id, "warning", "任务已停止")?;
+                }
+                _ => {
+                    let failed = state.update_task_status(&task.id, TaskStatus::Failed)?;
+                    events::emit(app, events::QUEUE_TASK_UPDATED, &failed)?;
+                    emit_queue_log(app, &task.id, "error", &error.message)?;
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+async fn run_download_task(
+    app: &AppHandle,
+    state: &AppState,
+    fetcher: &ReqwestFetcher,
+    task: DownloadTask,
+) -> CommandResult<()> {
+    for resource in task
+        .resources
+        .iter()
+        .filter(|resource| should_fetch(resource))
+    {
+        if !task_should_continue(state, &task.id)? {
+            emit_queue_log(app, &task.id, "warning", "任务已暂停或取消")?;
+            return Ok(());
+        }
+        if !resource.status.can_start() {
+            continue;
+        }
+
+        let updated =
+            state.update_resource_status(&task.id, &resource.id, ResourceStatus::Downloading)?;
+        events::emit(app, events::QUEUE_TASK_UPDATED, &updated)?;
+        emit_queue_log(
+            app,
+            &task.id,
+            "info",
+            &format!("下载资源 {}", resource_label(resource)),
+        )?;
+
+        if let Err(error) = fetcher.fetch(resource, None).await {
+            let updated =
+                state.update_resource_status(&task.id, &resource.id, ResourceStatus::Failed)?;
+            events::emit(app, events::QUEUE_TASK_UPDATED, &updated)?;
+            return Err(error.into());
+        }
+
+        let updated =
+            state.update_resource_status(&task.id, &resource.id, ResourceStatus::Completed)?;
+        events::emit(app, events::QUEUE_TASK_UPDATED, &updated)?;
+    }
+
+    if !task_should_continue(state, &task.id)? {
+        emit_queue_log(app, &task.id, "warning", "任务已暂停或取消")?;
+        return Ok(());
+    }
+
+    let muxing = state.update_task_status(&task.id, TaskStatus::Muxing)?;
+    events::emit(app, events::QUEUE_TASK_UPDATED, &muxing)?;
+    emit_queue_log(app, &task.id, "info", "合并音视频")?;
+
+    let video = resource_by_intent(&task, DownloadResourceIntent::Video)?;
+    let audio = resource_by_intent(&task, DownloadResourceIntent::Audio)?;
+    let muxer = MediaMuxer::new(MediaMuxerConfig::default()).map_err(BdlError::from)?;
+    muxer
+        .mux(&MuxRequest {
+            video_path: video.target_path.clone(),
+            audio_path: audio.target_path.clone(),
+            output_path: task.output_path.clone(),
+        })
+        .await
+        .map_err(BdlError::from)?;
+
+    if !task_should_continue(state, &task.id)? {
+        emit_queue_log(app, &task.id, "warning", "任务已暂停或取消")?;
+        return Ok(());
+    }
+
+    let completed = state.update_task_status(&task.id, TaskStatus::Completed)?;
+    events::emit(app, events::QUEUE_TASK_UPDATED, &completed)?;
+    emit_queue_log(app, &task.id, "info", "下载完成")?;
+
+    Ok(())
+}
+
+fn should_fetch(resource: &DownloadResource) -> bool {
+    matches!(
+        resource.intent,
+        DownloadResourceIntent::Video
+            | DownloadResourceIntent::Audio
+            | DownloadResourceIntent::Cover
+    ) && !resource.current_urls.is_empty()
+}
+
+fn resource_by_intent(
+    task: &DownloadTask,
+    intent: DownloadResourceIntent,
+) -> CommandResult<&DownloadResource> {
+    task.resources
+        .iter()
+        .find(|resource| resource.intent == intent)
+        .ok_or_else(|| CommandError {
+            code: "missing_resource".to_owned(),
+            message: format!("任务 `{}` 缺少 {:?} 资源。", task.title, intent),
+        })
+}
+
+fn task_should_continue(state: &AppState, task_id: &str) -> CommandResult<bool> {
+    Ok(!matches!(
+        state.task_status(task_id)?,
+        TaskStatus::Paused | TaskStatus::Cancelled
+    ))
+}
+
+fn resource_label(resource: &DownloadResource) -> &'static str {
+    match resource.intent {
+        DownloadResourceIntent::Video => "视频",
+        DownloadResourceIntent::Audio => "音频",
+        DownloadResourceIntent::Cover => "封面",
+        DownloadResourceIntent::Subtitle => "字幕",
+        DownloadResourceIntent::Danmaku => "弹幕",
+        DownloadResourceIntent::Nfo => "NFO",
+    }
+}
+
+fn emit_queue_log(app: &AppHandle, task_id: &str, level: &str, message: &str) -> CommandResult<()> {
+    let entry = QueueLogEntry {
+        task_id: task_id.to_owned(),
+        level: level.to_owned(),
+        message: message.to_owned(),
+        created_at: Utc::now().to_rfc3339(),
+    };
+    events::emit(app, events::QUEUE_LOG_APPENDED, &entry)
 }
 
 fn parse_archive_mode(value: &str) -> CommandResult<ArchiveMode> {

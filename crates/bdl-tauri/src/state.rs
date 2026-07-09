@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use bdl_core::account::{AccountSummary, ImportedCookie};
 use bdl_core::ids::{PartId, SourceId};
@@ -8,7 +9,7 @@ use bdl_core::input::{ClassifiedInput, classify_input};
 use bdl_core::model::{
     NormalizedItem, NormalizedPart, NormalizedSourceTree, PageState, SourceKind,
 };
-use bdl_core::queue::{DownloadTask, TaskStatus};
+use bdl_core::queue::{DownloadTask, ResourceStatus, TaskStatus};
 use bdl_core::resolver::collection::{
     CollectionInputIds, CollectionResolver, SeriesInputIds, SeriesResolver,
 };
@@ -33,6 +34,7 @@ pub struct AppState {
     settings: Mutex<SettingsSnapshot>,
     account: Mutex<AccountSnapshot>,
     account_cookie: Mutex<Option<String>>,
+    queue_worker_active: AtomicBool,
     secure_store: SecureStore,
 }
 
@@ -58,6 +60,7 @@ impl AppState {
             settings: Mutex::new(SettingsSnapshot::default()),
             account: Mutex::new(account),
             account_cookie: Mutex::new(account_cookie),
+            queue_worker_active: AtomicBool::new(false),
             secure_store,
         })
     }
@@ -201,6 +204,35 @@ impl AppState {
         Ok(())
     }
 
+    pub fn try_start_queue_worker(&self) -> bool {
+        !self.queue_worker_active.swap(true, Ordering::SeqCst)
+    }
+
+    pub fn finish_queue_worker(&self) {
+        self.queue_worker_active.store(false, Ordering::SeqCst);
+    }
+
+    pub fn take_next_startable_task(&self) -> BdlResult<Option<DownloadTask>> {
+        let mut queue = self.queue.lock().map_err(|_| state_poisoned("queue"))?;
+        let Some(task_index) = queue.iter().position(|task| task.status.can_start()) else {
+            return Ok(None);
+        };
+
+        queue[task_index].status = TaskStatus::Downloading;
+        let task = queue[task_index].clone();
+        self.persist_queue(&queue)?;
+        Ok(Some(task))
+    }
+
+    pub fn has_startable_task(&self) -> BdlResult<bool> {
+        Ok(self
+            .queue
+            .lock()
+            .map_err(|_| state_poisoned("queue"))?
+            .iter()
+            .any(|task| task.status.can_start()))
+    }
+
     pub fn update_task_status(&self, task_id: &str, status: TaskStatus) -> BdlResult<DownloadTask> {
         let mut queue = self.queue.lock().map_err(|_| state_poisoned("queue"))?;
         let task_index = queue
@@ -214,6 +246,45 @@ impl AppState {
         let task = queue[task_index].clone();
         self.persist_queue(&queue)?;
         Ok(task)
+    }
+
+    pub fn update_resource_status(
+        &self,
+        task_id: &str,
+        resource_id: &str,
+        status: ResourceStatus,
+    ) -> BdlResult<DownloadTask> {
+        let mut queue = self.queue.lock().map_err(|_| state_poisoned("queue"))?;
+        let task_index = queue
+            .iter()
+            .position(|task| task.id == task_id)
+            .ok_or_else(|| BdlError::Planning {
+                message: format!("任务 `{task_id}` 不存在。"),
+            })?;
+        let resource = queue[task_index]
+            .resources
+            .iter_mut()
+            .find(|resource| resource.id == resource_id)
+            .ok_or_else(|| BdlError::Planning {
+                message: format!("资源 `{resource_id}` 不存在。"),
+            })?;
+
+        resource.status = status;
+        let task = queue[task_index].clone();
+        self.persist_queue(&queue)?;
+        Ok(task)
+    }
+
+    pub fn task_status(&self, task_id: &str) -> BdlResult<TaskStatus> {
+        self.queue
+            .lock()
+            .map_err(|_| state_poisoned("queue"))?
+            .iter()
+            .find(|task| task.id == task_id)
+            .map(|task| task.status)
+            .ok_or_else(|| BdlError::Planning {
+                message: format!("任务 `{task_id}` 不存在。"),
+            })
     }
 
     pub fn remove_task(&self, task_id: &str) -> BdlResult<bool> {

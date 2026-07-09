@@ -21,6 +21,10 @@ impl TaskStatus {
     pub fn is_terminal(self) -> bool {
         matches!(self, Self::Completed | Self::Failed | Self::Cancelled)
     }
+
+    pub fn can_start(self) -> bool {
+        matches!(self, Self::Waiting)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

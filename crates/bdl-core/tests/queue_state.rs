@@ -26,6 +26,15 @@ fn terminal_task_statuses_are_explicit() {
 }
 
 #[test]
+fn only_waiting_tasks_can_enter_download_flow() {
+    assert!(TaskStatus::Waiting.can_start());
+    assert!(!TaskStatus::Failed.can_start());
+    assert!(!TaskStatus::Downloading.can_start());
+    assert!(!TaskStatus::Paused.can_start());
+    assert!(!TaskStatus::Completed.can_start());
+}
+
+#[test]
 fn pending_or_failed_resources_can_enter_download_flow() {
     assert!(ResourceStatus::Pending.can_start());
     assert!(ResourceStatus::Failed.can_start());
