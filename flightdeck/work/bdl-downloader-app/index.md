@@ -127,6 +127,9 @@ Current:
 - P1 backup CDN fallback landed in commit `4ddaff2`.
 - `ReqwestFetcher` now attempts every non-empty URL in `DownloadResource.current_urls` before returning failure to the queue worker. Attempts are interleaved by retry round, so a failed primary CDN is followed by backup URLs before the automatic full URL refresh path runs.
 - Backup CDN fallback verification passed: `cargo fmt --all --check`, `cargo test -p bdl-core --test fetcher_resume`, `cargo test -p bdl-tauri commands`, `cargo check -p bdl-desktop`, and `pnpm --dir apps/desktop build`.
+- P1 ranged-download consistency checks landed in commit `90f3376`.
+- Fetch state now stores ETag and Last-Modified from HEAD responses in addition to length and downloaded bytes. Ranged resume continues only when the saved byte count and length still match and any shared ETag/Last-Modified validators are unchanged; otherwise the `.bdlpart` and state file are removed and the resource restarts cleanly.
+- Ranged consistency verification passed: `cargo fmt --all --check`, `cargo test -p bdl-core --test fetcher_resume`, `cargo check -p bdl-desktop`, and `pnpm --dir apps/desktop build`.
 
 Decisions:
 - Main navigation: `解析`, `传输`, `设置`; account lives in the top-right account button. Completed records live under Transfer's `已完成` filter, not a separate History page.
