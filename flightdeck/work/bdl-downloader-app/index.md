@@ -103,6 +103,9 @@ Current:
 - The parse page now supports multi-line input, text-file import, source refresh, retained-source cap prompts, and explicit `解析全部` confirmation. Settings now exposes backend-honored naming, duplicate-path, media, proxy, log, data directory, cleanup, and diagnostics controls. The planner honors video/audio quality, codec preference, missing-quality policy, duplicate naming strategy, custom ffmpeg path, proxy, and raw stream retention. Transfer now shows a side-nav badge after parse creates tasks.
 - P0 continuation verification passed: `cargo fmt --all --check`, `cargo test -p bdl-core --test settings --test fetcher_resume --test planner --test naming --test muxer`, `cargo test -p bdl-tauri state`, `cargo check -p bdl-desktop`, and `pnpm --dir apps/desktop build`.
 - Manual Transfer visual QA at `1365x768` and `1100x720` is still pending because the in-app browser backend was unavailable in this session (`agent.browsers.list()` returned no browsers).
+- P1 archive subtitle/danmaku fetching landed in commit `b7c266c`.
+- Normal video resolving now reads subtitle URLs from `video.player_info_v2` through `bpi-rs` when stream hydration is requested, creates danmaku XML assets through `bpi-rs` `DanmakuXmlListParams`, carries archive asset URLs/headers into planner resources, and downloads subtitle/danmaku asset resources when URLs exist.
+- P1 archive verification passed: `cargo fmt --all --check`, `cargo test -p bdl-core --test video_resolver --test planner --test normalization`, `cargo test -p bdl-tauri should_fetch`, `cargo check -p bdl-desktop`, and `pnpm --dir apps/desktop build`.
 
 Decisions:
 - Main navigation: `解析`, `传输`, `设置`; account lives in the top-right account button. Completed records live under Transfer's `已完成` filter, not a separate History page.
