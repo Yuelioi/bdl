@@ -234,6 +234,16 @@ button:disabled {
   color: var(--color-muted);
 }
 
+.chevron-icon {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .account-button:hover,
 .account-menu-button:hover,
 .account-popover button:hover {
@@ -286,6 +296,36 @@ button:disabled {
   grid-template-columns: minmax(0, 620px);
 }
 
+.settings-panel {
+  align-content: start;
+}
+
+.settings-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+.directory-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: var(--space-8);
+}
+
+.settings-error {
+  margin: 0;
+  padding: var(--space-8) var(--space-12);
+  border: 1px solid rgb(201 42 42 / 24%);
+  border-radius: var(--radius-6);
+  background: #fffafa;
+  color: var(--color-danger);
+  font-size: var(--font-13);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
 .panel {
   min-width: 0;
   min-height: 0;
@@ -307,6 +347,12 @@ button:disabled {
 
 .empty-panel {
   justify-content: center;
+}
+
+@media (max-width: 720px) {
+  .directory-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .qr-panel {

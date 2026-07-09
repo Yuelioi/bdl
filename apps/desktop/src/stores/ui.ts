@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 
-export type AppTab = 'parse' | 'transfer' | 'history' | 'settings'
+export type AppTab = 'parse' | 'transfer' | 'settings'
 
 export interface ToastMessage {
   id: number

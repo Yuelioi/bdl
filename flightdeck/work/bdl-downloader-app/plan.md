@@ -10,6 +10,18 @@
 
 ---
 
+## Current Plan Override
+
+The original Transfer page scope in Task 11 was sufficient for a functional prototype, but it is superseded for product-quality work by `flightdeck/work/bdl-downloader-app/transfer-product-refactor-plan.md`.
+
+Apply that focused plan for Transfer work before continuing unresolved resolver expansion. Its key product decisions are:
+
+- Main navigation is `解析`, `传输`, `设置`.
+- Completed records remain in Transfer under `已完成`; do not reintroduce a separate History page.
+- Transfer list should be a quasi-table for batch task management.
+- The inspector should prioritize diagnostics and recommended recovery actions.
+- Queue ordering controls are out of scope.
+
 ## Phase Gates
 
 - Phase 0 is done when the workspace builds and the desktop shell opens.

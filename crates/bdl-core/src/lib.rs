@@ -1,4 +1,5 @@
 pub mod account;
+pub mod diagnostics;
 pub mod error;
 pub mod fetcher;
 pub mod ids;

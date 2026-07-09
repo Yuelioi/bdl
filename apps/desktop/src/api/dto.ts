@@ -130,11 +130,32 @@ export interface QueueRemoveResponse {
   removed: boolean
 }
 
+export interface BulkQueueFailure {
+  task_id: string
+  message: string
+}
+
+export interface BulkQueueResult {
+  updated: DownloadTask[]
+  removed: string[]
+  failed: BulkQueueFailure[]
+}
+
 export interface QueueLogEntry {
   task_id: string
   level: 'info' | 'warning' | 'error'
   message: string
   created_at: string
+}
+
+export interface SettingsSnapshot {
+  download_dir: string | null
+  quality: string
+  archive_mode: 'fast' | 'complete_archive'
+  output_extension: 'mp4' | 'mkv'
+  concurrent_tasks: number
+  retry_count: number
+  auto_refresh_expired_urls: boolean
 }
 
 export interface AccountSummary {

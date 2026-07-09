@@ -1,0 +1,532 @@
+import type { DownloadResourceIntent, DownloadTask, QueueLogEntry, TaskStatus } from '../api/dto'
+
+export type QueueFilter = 'active' | 'failed' | 'completed' | 'all'
+
+export type TaskActionKind =
+  | 'pause'
+  | 'resume'
+  | 'retry'
+  | 'refresh_retry'
+  | 'cancel'
+  | 'remove'
+  | 'open_file'
+  | 'open_dir'
+  | 'none'
+
+export interface TaskActionDescriptor {
+  kind: Exclude<TaskActionKind, 'none'>
+  label: string
+  icon: string
+  tone?: 'normal' | 'danger'
+}
+
+export type DiagnosticTone = 'normal' | 'success' | 'warning' | 'danger'
+
+export interface TaskDiagnosticView {
+  summary: string
+  detail: string
+  impact: string
+  recommendedAction: Exclude<TaskActionKind, 'none'> | null
+  recommendedActionLabel: string
+  tone: DiagnosticTone
+}
+
+export interface TaskTimelineEvent {
+  id: string
+  time: string
+  title: string
+  detail: string
+  tone: DiagnosticTone
+}
+
+export interface TransferTaskView {
+  id: string
+  displayTitle: string
+  subtitle: string
+  statusLabel: string
+  statusBadge: 'ready' | 'downloading' | 'queued' | 'done' | 'warning' | 'error' | 'paused'
+  progressValue: number
+  progressLabel: string
+  speedLabel: string
+  etaLabel: string
+  sizeLabel: string
+  issueLabel: string
+  shortLocation: string
+  fullLocation: string
+  outputPath: string
+  primaryAction: TaskActionKind
+  primaryActionLabel: string
+  primaryActionIcon: string
+  secondaryActions: TaskActionDescriptor[]
+}
+
+export const createTransferTaskView = (
+  task: DownloadTask,
+  progress: number,
+  logs: QueueLogEntry[] = [],
+): TransferTaskView => {
+  const titleParts = splitTaskTitle(task.title)
+  const issue = classifyTaskIssue(task, logs)
+  const primaryAction = primaryActionForTask(task, issue)
+
+  return {
+    id: task.id,
+    displayTitle: titleParts.displayTitle,
+    subtitle: titleParts.subtitle,
+    statusLabel: statusLabel(task.status),
+    statusBadge: statusBadge(task.status),
+    progressValue: progress,
+    progressLabel: `${progress}%`,
+    speedLabel: '--',
+    etaLabel: '--',
+    sizeLabel: '--',
+    issueLabel: issue.label,
+    shortLocation: shortLocation(task.output_path),
+    fullLocation: outputDir(task.output_path),
+    outputPath: task.output_path,
+    primaryAction,
+    primaryActionLabel: actionLabel(primaryAction),
+    primaryActionIcon: actionIcon(primaryAction),
+    secondaryActions: secondaryActionsForTask(task, primaryAction),
+  }
+}
+
+export const createTaskDiagnosticView = (task: DownloadTask, logs: QueueLogEntry[] = []): TaskDiagnosticView => {
+  const issue = classifyTaskIssue(task, logs)
+  const failedCount = task.resources.filter(
+    (resource) => resource.status === 'failed' || resource.status === 'cancelled',
+  ).length
+  const completedCount = task.resources.filter((resource) => resource.status === 'completed').length
+  const trackImpact = `轨道 ${task.resources.length} 个 · 已完成 ${completedCount} · 失败 ${failedCount}`
+
+  if (task.status === 'completed') {
+    return {
+      summary: '任务已完成',
+      detail: '输出文件已生成，可以直接打开文件或所在文件夹。',
+      impact: trackImpact,
+      recommendedAction: 'open_file',
+      recommendedActionLabel: actionLabel('open_file'),
+      tone: 'success',
+    }
+  }
+
+  if (task.status === 'cancelled') {
+    return {
+      summary: '任务已取消',
+      detail: '任务已停止，已下载的临时文件会保留给后续恢复逻辑使用。',
+      impact: trackImpact,
+      recommendedAction: 'retry',
+      recommendedActionLabel: actionLabel('retry'),
+      tone: 'warning',
+    }
+  }
+
+  if (task.status === 'paused') {
+    return {
+      summary: '任务已暂停',
+      detail: '任务暂时不会继续下载，点击继续可以重新放回队列。',
+      impact: trackImpact,
+      recommendedAction: 'resume',
+      recommendedActionLabel: actionLabel('resume'),
+      tone: 'warning',
+    }
+  }
+
+  if (task.status === 'failed') {
+    return {
+      summary: `${issue.trackLabel}失败：${issue.label}`,
+      detail: issue.detail,
+      impact: trackImpact,
+      recommendedAction: issue.recommendedAction,
+      recommendedActionLabel: issue.recommendedActionLabel,
+      tone: 'danger',
+    }
+  }
+
+  return {
+    summary: statusLabel(task.status),
+    detail: '任务正在按队列流程执行。速度、剩余时间和大小会在下载引擎提供数据后显示。',
+    impact: trackImpact,
+    recommendedAction: task.status === 'waiting' || task.status === 'parsing' || task.status === 'downloading' || task.status === 'muxing'
+      ? 'pause'
+      : null,
+    recommendedActionLabel:
+      task.status === 'waiting' || task.status === 'parsing' || task.status === 'downloading' || task.status === 'muxing'
+        ? actionLabel('pause')
+        : '',
+    tone: 'normal',
+  }
+}
+
+export const createTaskTimeline = (task: DownloadTask, logs: QueueLogEntry[] = []): TaskTimelineEvent[] => {
+  if (!logs.length) {
+    return [
+      {
+        id: `${task.id}:status`,
+        time: '',
+        title: statusLabel(task.status),
+        detail: '暂无事件记录。',
+        tone: task.status === 'failed' || task.status === 'cancelled' ? 'danger' : 'normal',
+      },
+    ]
+  }
+
+  return logs.map((log, index) => {
+    const issue = log.level === 'error' ? classifyTaskIssue(task, [log]) : null
+    const title = issue ? `下载失败：${issue.label}` : humanLogTitle(log.message)
+
+    return {
+      id: `${log.created_at}:${index}:${log.message}`,
+      time: log.created_at,
+      title,
+      detail: redactLogMessage(log.message),
+      tone: log.level === 'error' ? 'danger' : log.level === 'warning' ? 'warning' : 'normal',
+    }
+  })
+}
+
+export const redactLogMessage = (message: string): string =>
+  message
+    .replace(/\b(SESSDATA|bili_jct|DedeUserID|DedeUserID__ckMd5)=([^;\s]+)/gi, '$1=<redacted>')
+    .replace(/\b(Cookie|Authorization):\s*[^\n]+/gi, '$1: <redacted>')
+    .replace(/https?:\/\/[^\s`"')]+/gi, (rawUrl) => redactUrl(rawUrl))
+
+export const filterTaskByWorkflow = (status: TaskStatus, filter: QueueFilter): boolean => {
+  switch (filter) {
+    case 'active':
+      return status !== 'completed'
+    case 'failed':
+      return status === 'failed' || status === 'cancelled'
+    case 'completed':
+      return status === 'completed'
+    case 'all':
+      return true
+  }
+}
+
+export const defaultQueueFilter = (tasks: DownloadTask[]): QueueFilter => {
+  if (tasks.some((task) => task.status !== 'completed')) {
+    return 'active'
+  }
+
+  if (tasks.some((task) => task.status === 'completed')) {
+    return 'completed'
+  }
+
+  return 'active'
+}
+
+export const statusLabel = (status: TaskStatus): string => {
+  const labels: Record<TaskStatus, string> = {
+    waiting: '队列中',
+    parsing: '解析中',
+    downloading: '下载中',
+    muxing: '合并中',
+    completed: '已完成',
+    failed: '失败',
+    paused: '已暂停',
+    cancelled: '已取消',
+  }
+
+  return labels[status]
+}
+
+export const statusBadge = (
+  status: TaskStatus,
+): 'ready' | 'downloading' | 'queued' | 'done' | 'warning' | 'error' | 'paused' => {
+  if (status === 'completed') {
+    return 'done'
+  }
+  if (status === 'failed' || status === 'cancelled') {
+    return 'error'
+  }
+  if (status === 'paused') {
+    return 'paused'
+  }
+  if (status === 'waiting') {
+    return 'queued'
+  }
+  if (status === 'downloading' || status === 'parsing' || status === 'muxing') {
+    return 'downloading'
+  }
+
+  return 'ready'
+}
+
+const splitTaskTitle = (title: string): { displayTitle: string; subtitle: string } => {
+  const bracketMatch = title.match(/^(.*?)\s+-\s+\[([^\]]+)\]\s+-\s+(.+)$/)
+  if (bracketMatch) {
+    return {
+      displayTitle: `${bracketMatch[2]} · ${bracketMatch[3]}`,
+      subtitle: bracketMatch[1],
+    }
+  }
+
+  const parts = title.split(/\s+-\s+/)
+  if (parts.length >= 2) {
+    const displayTitle = parts.pop() ?? title
+    return {
+      displayTitle,
+      subtitle: parts.join(' - '),
+    }
+  }
+
+  return {
+    displayTitle: title,
+    subtitle: '',
+  }
+}
+
+interface ClassifiedIssue {
+  label: string
+  detail: string
+  trackLabel: string
+  recommendedAction: Exclude<TaskActionKind, 'none'> | null
+  recommendedActionLabel: string
+}
+
+const classifyTaskIssue = (task: DownloadTask, logs: QueueLogEntry[]): ClassifiedIssue => {
+  const failedResource = task.resources.find(
+    (resource) => resource.status === 'failed' || resource.status === 'cancelled',
+  )
+  const trackLabel = failedResource ? `${resourceIntentText(failedResource.intent)}轨道` : '任务'
+
+  if (task.status === 'cancelled') {
+    return {
+      label: '已取消',
+      detail: '任务被取消，可以重新入队后继续尝试。',
+      trackLabel,
+      recommendedAction: 'retry',
+      recommendedActionLabel: actionLabel('retry'),
+    }
+  }
+
+  if (task.status !== 'failed') {
+    return {
+      label: '-',
+      detail: '',
+      trackLabel,
+      recommendedAction: null,
+      recommendedActionLabel: '',
+    }
+  }
+
+  const lastErrors = logs
+    .filter((log) => log.level === 'error')
+    .map((log) => log.message)
+    .join('\n')
+    .toLowerCase()
+
+  if (lastErrors.includes('404') || lastErrors.includes('not found') || lastErrors.includes('资源长度失败')) {
+    return {
+      label: '链接可能已过期',
+      detail: 'B 站的媒体直链有时效性，资源长度请求返回 404 时，通常需要重新获取下载地址后再下载。',
+      trackLabel,
+      recommendedAction: 'refresh_retry',
+      recommendedActionLabel: actionLabel('refresh_retry'),
+    }
+  }
+  if (lastErrors.includes('403') || lastErrors.includes('permission') || lastErrors.includes('权限')) {
+    return {
+      label: '权限或登录异常',
+      detail: '当前账号可能未登录、Cookie 已失效，或该清晰度需要登录/VIP 权限。登录后再重试。',
+      trackLabel,
+      recommendedAction: 'retry',
+      recommendedActionLabel: '登录后重试',
+    }
+  }
+  if (lastErrors.includes('ffmpeg') || lastErrors.includes('mux') || lastErrors.includes('合并')) {
+    return {
+      label: '合并失败',
+      detail: '下载轨道已经进入后处理阶段，但 ffmpeg 或封装命令失败。需要检查 ffmpeg 配置和原始日志。',
+      trackLabel,
+      recommendedAction: null,
+      recommendedActionLabel: '查看原始日志',
+    }
+  }
+  if (lastErrors.includes('timeout') || lastErrors.includes('timed out') || lastErrors.includes('超时')) {
+    return {
+      label: '网络超时',
+      detail: '请求在限定时间内没有完成，通常可以直接重试。',
+      trackLabel,
+      recommendedAction: 'retry',
+      recommendedActionLabel: actionLabel('retry'),
+    }
+  }
+
+  if (failedResource) {
+    return {
+      label: `${resourceIntentText(failedResource.intent)}轨道失败`,
+      detail: '某个媒体轨道下载失败，具体原因请查看事件或原始日志。',
+      trackLabel,
+      recommendedAction: 'retry',
+      recommendedActionLabel: actionLabel('retry'),
+    }
+  }
+
+  return {
+    label: '任务失败',
+    detail: '任务执行失败，具体原因请查看事件或原始日志。',
+    trackLabel,
+    recommendedAction: 'retry',
+    recommendedActionLabel: actionLabel('retry'),
+  }
+}
+
+const primaryActionForTask = (task: DownloadTask, issue: ClassifiedIssue): TaskActionKind => {
+  if (task.status === 'completed') {
+    return 'open_file'
+  }
+  if (task.status === 'paused') {
+    return 'resume'
+  }
+  if (task.status === 'failed') {
+    return issue.recommendedAction ?? 'retry'
+  }
+  if (task.status === 'cancelled') {
+    return 'retry'
+  }
+  if (task.status === 'waiting' || task.status === 'parsing' || task.status === 'downloading' || task.status === 'muxing') {
+    return 'pause'
+  }
+
+  return 'none'
+}
+
+const secondaryActionsForTask = (task: DownloadTask, primaryAction: TaskActionKind): TaskActionDescriptor[] => {
+  const actions: TaskActionDescriptor[] = []
+
+  if (task.status === 'completed') {
+    actions.push(actionDescriptor('open_dir'), actionDescriptor('remove'))
+    return actions.filter((action) => action.kind !== primaryAction)
+  }
+
+  if (task.status === 'failed' || task.status === 'cancelled') {
+    actions.push(actionDescriptor('retry'), actionDescriptor('open_dir'), actionDescriptor('remove'))
+    return uniqueActions(actions).filter((action) => action.kind !== primaryAction)
+  }
+
+  if (task.status === 'paused') {
+    actions.push(actionDescriptor('cancel'), actionDescriptor('remove'))
+    return actions.filter((action) => action.kind !== primaryAction)
+  }
+
+  actions.push(actionDescriptor('cancel'))
+  return actions.filter((action) => action.kind !== primaryAction)
+}
+
+const actionDescriptor = (kind: Exclude<TaskActionKind, 'none'>): TaskActionDescriptor => ({
+  kind,
+  label: actionLabel(kind),
+  icon: actionIcon(kind),
+  tone: kind === 'remove' || kind === 'cancel' ? 'danger' : 'normal',
+})
+
+const uniqueActions = (actions: TaskActionDescriptor[]): TaskActionDescriptor[] => {
+  const seen = new Set<TaskActionKind>()
+  return actions.filter((action) => {
+    if (seen.has(action.kind)) {
+      return false
+    }
+
+    seen.add(action.kind)
+    return true
+  })
+}
+
+const actionLabel = (action: TaskActionKind): string => {
+  const labels: Record<TaskActionKind, string> = {
+    pause: '暂停',
+    resume: '继续',
+    retry: '重试',
+    refresh_retry: '刷新链接并重试',
+    cancel: '取消',
+    remove: '移除',
+    open_file: '打开文件',
+    open_dir: '打开文件夹',
+    none: '',
+  }
+
+  return labels[action]
+}
+
+const actionIcon = (action: TaskActionKind): string => {
+  const icons: Record<TaskActionKind, string> = {
+    pause: 'pause',
+    resume: 'play',
+    retry: 'refresh',
+    refresh_retry: 'refresh',
+    cancel: 'x',
+    remove: 'trash',
+    open_file: 'file',
+    open_dir: 'folder',
+    none: 'more',
+  }
+
+  return icons[action]
+}
+
+const shortLocation = (path: string): string => {
+  const dir = outputDir(path)
+  if (dir === '--' || dir === '.') {
+    return dir
+  }
+
+  const normalized = dir.replaceAll('\\', '/')
+  const segments = normalized.split('/').filter(Boolean)
+  return segments.at(-1) ?? dir
+}
+
+const outputDir = (path: string | null): string => {
+  if (!path) {
+    return '--'
+  }
+
+  const separatorIndex = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'))
+  return separatorIndex >= 0 ? path.slice(0, separatorIndex) : '.'
+}
+
+export const resourceIntentText = (intent: DownloadResourceIntent): string => {
+  const labels: Record<DownloadResourceIntent, string> = {
+    video: '视频',
+    audio: '音频',
+    cover: '封面',
+    subtitle: '字幕',
+    danmaku: '弹幕',
+    nfo: 'NFO',
+  }
+
+  return labels[intent]
+}
+
+const humanLogTitle = (message: string): string => {
+  if (message.includes('开始下载任务')) {
+    return '开始下载任务'
+  }
+  if (message.includes('下载资源 音频')) {
+    return '下载音频轨道'
+  }
+  if (message.includes('下载资源 视频')) {
+    return '下载视频轨道'
+  }
+  if (message.includes('合并')) {
+    return '合并音视频'
+  }
+  if (message.includes('重试任务')) {
+    return '重试任务'
+  }
+  if (message.includes('刷新下载地址')) {
+    return '刷新下载地址'
+  }
+
+  return '任务事件'
+}
+
+const redactUrl = (rawUrl: string): string => {
+  try {
+    const parsed = new URL(rawUrl)
+    return parsed.search ? `${parsed.origin}${parsed.pathname}?<redacted>` : rawUrl
+  } catch {
+    return rawUrl
+  }
+}

@@ -9,6 +9,7 @@ import {
   parseRefreshSource,
   selectionCreateTasks,
 } from '../api/tauri'
+import { useSettingsStore } from './settings'
 import { useUiStore } from './ui'
 
 interface ParseState {
@@ -144,6 +145,7 @@ export const useParseStore = defineStore('parse', {
     },
     async createTasksForSelection(sourceId: string) {
       const ui = useUiStore()
+      const settings = useSettingsStore()
       const partIds = this.selectionBySource[sourceId] ?? []
 
       if (partIds.length === 0) {
@@ -153,11 +155,14 @@ export const useParseStore = defineStore('parse', {
 
       this.loadingBySource[sourceId] = true
       try {
+        await settings.ensureLoaded()
+        const downloadDir = settings.saved.download_dir?.trim()
         const tasks = await selectionCreateTasks({
           source_id: sourceId,
           part_ids: partIds,
-          archive_mode: 'fast',
-          output_extension: 'mp4',
+          output_dir: downloadDir || undefined,
+          archive_mode: settings.saved.archive_mode,
+          output_extension: settings.saved.output_extension,
         })
         ui.pushToast(`已创建 ${tasks.length} 个任务`, 'success', { label: '查看传输', tab: 'transfer' })
       } catch (error) {

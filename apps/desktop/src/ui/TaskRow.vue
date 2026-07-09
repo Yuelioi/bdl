@@ -71,11 +71,11 @@ const canRetry = computed(() => props.status === 'failed' || props.status === 'c
         <UiStatusBadge :status="badgeStatus">{{ statusLabel[status] }}</UiStatusBadge>
         <span class="progress-text">{{ progress }}%</span>
         <div class="task-actions">
-          <UiIconButton v-if="canPause" icon="||" label="暂停" variant="ghost" @click.stop="emit('pause')" />
-          <UiIconButton v-if="canResume" icon=">" label="恢复" variant="ghost" @click.stop="emit('resume')" />
-          <UiIconButton v-if="canRetry" icon="r" label="重试" variant="ghost" @click.stop="emit('retry')" />
+          <UiIconButton v-if="canPause" icon="pause" label="暂停" variant="ghost" @click.stop="emit('pause')" />
+          <UiIconButton v-if="canResume" icon="play" label="恢复" variant="ghost" @click.stop="emit('resume')" />
+          <UiIconButton v-if="canRetry" icon="refresh" label="重试" variant="ghost" @click.stop="emit('retry')" />
           <UiIconButton icon="x" label="取消" variant="ghost" @click.stop="emit('cancel')" />
-          <UiIconButton icon="-" label="移除" variant="ghost" @click.stop="emit('remove')" />
+          <UiIconButton icon="trash" label="移除" variant="ghost" @click.stop="emit('remove')" />
         </div>
       </div>
       <p>{{ quality }} · {{ audio }} · {{ codec }} · {{ speed }} · ETA {{ eta }} · {{ stage }}</p>
@@ -84,8 +84,8 @@ const canRetry = computed(() => props.status === 'failed' || props.status === 'c
     <div class="task-side">
       <div class="task-path">{{ path }}</div>
       <div class="file-actions">
-        <UiIconButton icon="f" label="打开文件" variant="ghost" @click.stop="emit('openFile')" />
-        <UiIconButton icon="d" label="打开目录" variant="ghost" @click.stop="emit('openDir')" />
+        <UiIconButton icon="file" label="打开文件" variant="ghost" @click.stop="emit('openFile')" />
+        <UiIconButton icon="folder" label="打开目录" variant="ghost" @click.stop="emit('openDir')" />
       </div>
     </div>
   </article>
@@ -95,7 +95,7 @@ const canRetry = computed(() => props.status === 'failed' || props.status === 'c
 .task-row {
   min-height: var(--height-task-row);
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(220px, 28%);
+  grid-template-columns: minmax(0, 1fr) minmax(176px, 24%);
   align-items: center;
   gap: var(--space-16);
   padding: var(--space-8) var(--space-12);
@@ -126,11 +126,12 @@ const canRetry = computed(() => props.status === 'failed' || props.status === 'c
 .file-actions {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-4);
+  gap: 2px;
 }
 
 .task-actions {
   margin-left: auto;
+  flex-shrink: 0;
 }
 
 h3,
@@ -162,6 +163,12 @@ p,
   display: grid;
   justify-items: end;
   gap: var(--space-4);
+}
+
+.task-actions :deep(.ui-icon-button),
+.file-actions :deep(.ui-icon-button) {
+  width: 28px;
+  height: 28px;
 }
 
 .task-path {

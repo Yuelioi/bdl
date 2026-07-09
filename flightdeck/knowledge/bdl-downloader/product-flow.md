@@ -1,6 +1,6 @@
 # BDL Product Flow
 
-SUMMARY: BDL is a Tauri desktop Bilibili downloader centered on parsing, normalized selection, transfer control, history, and settings.
+SUMMARY: BDL is a Tauri desktop Bilibili downloader centered on parsing, normalized selection, transfer control, completed-task review, and settings.
 READ WHEN: designing BDL product scope, page structure, parse UX, transfer UX, account UX, or download/archive options.
 
 ---
@@ -19,18 +19,17 @@ Supported content:
 
 Out of scope:
 
-- History, weekly picks, rankings, homepage recommendations, and followed bangumi list entry points.
+- Bilibili browsing history, weekly picks, rankings, homepage recommendations, and followed bangumi list entry points.
 - Full local media library, poster wall, player, or disk scanner.
 - Browser extension and clipboard monitoring.
 - Any paid-wall or permission bypass.
 
 ## Main Navigation
 
-The app has four primary pages:
+The app has three primary pages:
 
 - `解析`: input, parsing, normalized result tree, selection, and download option editing.
-- `传输`: active transfer management with downloading, queued, paused, failed, completed, and all filters.
-- `历史`: long-term download records with search and file actions.
+- `传输`: task management for active, failed, completed, and all transfer records.
 - `设置`: download, media, archive, and advanced settings.
 
 Account access is not a settings page. The top-right account button owns login, account status, cookie import, verification, and logout.
@@ -206,29 +205,45 @@ Only private resources or expired login state should require explicit login acti
 
 ## Transfer Page
 
-The transfer page is for real-time task control.
+The transfer page is a downloader task manager, not a debug log viewer. Batch management comes first; selected-task details are secondary.
 
 Filters:
 
-- `正在下载`
-- `队列中`
-- `已暂停`
-- `失败`
-- `已完成`
-- `全部`
+- `活动`: waiting, parsing, downloading, muxing, paused, failed, and cancelled tasks.
+- `失败`: failed and cancelled tasks that need user attention.
+- `已完成`: completed transfer records.
+- `全部`: all current transfer records.
 
-Task rows are compact, about 64 px high:
+The default filter should show work that still needs attention. If any active or failed task exists, default to `活动`; otherwise default to `已完成`, unless the user has manually selected another filter.
 
-- First line: title, status badge, total progress, actions.
-- Second line: quality, audio, codec, speed, ETA, save path, or current stage.
+The task list should be a quasi-table with stable scanning columns:
 
-Clicking a task opens details:
+```text
+名称 | 状态 | 进度 | 速度 | 剩余 | 问题 | 位置 | 操作
+```
 
-- Resource list: video, audio, cover, subtitles, danmaku, NFO.
-- Resource status and progress.
-- Retry history.
-- ffmpeg stage.
-- Log summary.
+Rules:
+
+- Long source titles should be split into a scannable main title and secondary context. The full original title belongs in tooltip or inspector.
+- The list should show a short save location, not the full output path.
+- A failed task should show a short actionable issue in the `问题` column.
+- Row actions are state-specific. Do not show every possible action on every row.
+- Completed records stay under `已完成`; do not add a separate History page.
+
+Clicking a task opens an inspector. The inspector is not a long detail page. It should prioritize:
+
+1. Current status and recommended action.
+2. Short diagnosis when a task failed.
+3. Tabs for `诊断`, `概览`, `轨道`, `事件`, and `原始日志`.
+
+Ordinary UI should prefer concrete media terms:
+
+- `视频轨道`
+- `音频轨道`
+- `字幕`
+- `封面`
+
+Avoid exposing the abstract backend term `resource` in user-facing copy unless the context is explicitly technical.
 
 Creating tasks from the parse page does not auto-navigate to the transfer page. Show a toast with a `查看传输` action and update the navigation badge.
 
@@ -250,6 +265,7 @@ Actions:
 - Pause and resume.
 - Cancel.
 - Retry.
+- Refresh links and retry.
 - Remove.
 - Open file.
 - Open directory.
@@ -259,11 +275,11 @@ Pause, cancel, and delete are distinct:
 
 - Pause keeps partial files and queue state.
 - Cancel stops the task, keeps the record, and asks whether to remove temporary files.
-- Delete removes the record and optionally final or temporary files.
+- Remove deletes the transfer record from the list and must not delete final output files unless the UI explicitly asks for file deletion.
 
-## History Page
+## Completed Records
 
-History is not a media library. It is a searchable record of downloads.
+Completed downloads are reviewed from the Transfer page's `已完成` filter. They are not a separate primary navigation page unless the product later becomes a media library.
 
 Saved fields:
 
@@ -282,7 +298,8 @@ Supported actions:
 - Open directory.
 - Re-download.
 - Copy source link.
-- Delete history record.
+- Remove completed record.
+- Clear completed records.
 
 ## Settings Page
 

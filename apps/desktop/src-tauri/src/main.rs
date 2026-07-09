@@ -14,6 +14,13 @@ fn main() {
             bdl_tauri::commands::queue_resume,
             bdl_tauri::commands::queue_cancel,
             bdl_tauri::commands::queue_retry,
+            bdl_tauri::commands::queue_refresh_urls_and_retry,
+            bdl_tauri::commands::queue_bulk_pause,
+            bdl_tauri::commands::queue_bulk_resume,
+            bdl_tauri::commands::queue_bulk_retry,
+            bdl_tauri::commands::queue_bulk_refresh_urls_and_retry,
+            bdl_tauri::commands::queue_bulk_remove,
+            bdl_tauri::commands::queue_clear_completed,
             bdl_tauri::commands::queue_remove,
             bdl_tauri::commands::queue_open_file,
             bdl_tauri::commands::queue_open_dir,
@@ -26,6 +33,7 @@ fn main() {
             bdl_tauri::commands::account_logout,
             bdl_tauri::commands::account_verify,
         ])
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .run(tauri::generate_context!())
         .expect("failed to run BDL desktop app");

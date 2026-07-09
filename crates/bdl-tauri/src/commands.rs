@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use bdl_core::BdlError;
 use bdl_core::account::{QrLoginSession, QrLoginStatus, poll_qr_login, start_qr_login};
-use bdl_core::fetcher::{Fetcher, ReqwestFetcher};
+use bdl_core::fetcher::{FetchConfig, Fetcher, ReqwestFetcher};
 use bdl_core::ids::{PartId, SourceId};
 use bdl_core::model::NormalizedSourceTree;
 use bdl_core::muxer::{MediaMuxer, MediaMuxerConfig, MuxRequest};
@@ -12,6 +12,7 @@ use bdl_core::queue::{
     ResourceStatus, TaskStatus,
 };
 use chrono::Utc;
+use futures::future::join_all;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_opener::OpenerExt;
@@ -51,6 +52,24 @@ pub struct ParseCloseSourceResponse {
 #[derive(Debug, Clone, Serialize)]
 pub struct QueueRemoveResponse {
     pub removed: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct BulkQueueRequest {
+    pub task_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct BulkQueueFailure {
+    pub task_id: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct BulkQueueResult {
+    pub updated: Vec<DownloadTask>,
+    pub removed: Vec<String>,
+    pub failed: Vec<BulkQueueFailure>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -165,9 +184,9 @@ pub async fn selection_create_tasks(
     )?;
 
     let mut options = DownloadOptions::new(output_dir).with_archive_mode(archive_mode);
-    if let Some(extension) = request.output_extension {
-        options.output_extension = extension;
-    }
+    options.output_extension = request
+        .output_extension
+        .unwrap_or(settings.output_extension);
 
     let prepared = state
         .prepare_selection(&source_id, &selected_part_ids)
@@ -232,40 +251,188 @@ pub fn queue_cancel(
 }
 
 #[tauri::command]
-pub async fn queue_retry(
+pub fn queue_retry(
     app: AppHandle,
     state: State<'_, AppState>,
     task_id: String,
 ) -> CommandResult<DownloadTask> {
-    emit_queue_log(
+    retry_task(app, state.inner(), &task_id)
+}
+
+#[tauri::command]
+pub async fn queue_refresh_urls_and_retry(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    task_id: String,
+) -> CommandResult<DownloadTask> {
+    refresh_urls_and_retry(app, state.inner(), &task_id).await
+}
+
+#[tauri::command]
+pub fn queue_bulk_pause(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    request: BulkQueueRequest,
+) -> CommandResult<BulkQueueResult> {
+    Ok(bulk_update_task_status(
         &app,
         state.inner(),
-        &task_id,
-        QueueLogLevel::Info,
-        "刷新下载地址",
-    )?;
-    if let Err(error) = state.refresh_task_media_urls(&task_id).await {
+        request.task_ids,
+        TaskStatus::Paused,
+    ))
+}
+
+#[tauri::command]
+pub fn queue_bulk_resume(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    request: BulkQueueRequest,
+) -> CommandResult<BulkQueueResult> {
+    let result =
+        bulk_update_task_status(&app, state.inner(), request.task_ids, TaskStatus::Waiting);
+    if !result.updated.is_empty() {
+        start_queue_worker(&app);
+    }
+
+    Ok(result)
+}
+
+#[tauri::command]
+pub fn queue_bulk_retry(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    request: BulkQueueRequest,
+) -> CommandResult<BulkQueueResult> {
+    let mut result = BulkQueueResult::default();
+
+    for task_id in request.task_ids {
+        match retry_task(app.clone(), state.inner(), &task_id) {
+            Ok(task) => result.updated.push(task),
+            Err(error) => result.failed.push(BulkQueueFailure {
+                task_id,
+                message: error.message,
+            }),
+        }
+    }
+
+    Ok(result)
+}
+
+#[tauri::command]
+pub async fn queue_bulk_refresh_urls_and_retry(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    request: BulkQueueRequest,
+) -> CommandResult<BulkQueueResult> {
+    let mut result = BulkQueueResult::default();
+
+    for task_id in request.task_ids {
+        let outcome = refresh_urls_and_retry(app.clone(), state.inner(), &task_id).await;
+        match outcome {
+            Ok(task) => result.updated.push(task),
+            Err(error) => result.failed.push(BulkQueueFailure {
+                task_id,
+                message: error.message,
+            }),
+        }
+    }
+
+    Ok(result)
+}
+
+#[tauri::command]
+pub fn queue_bulk_remove(
+    state: State<'_, AppState>,
+    request: BulkQueueRequest,
+) -> CommandResult<BulkQueueResult> {
+    let mut result = BulkQueueResult::default();
+
+    for task_id in request.task_ids {
+        match state.remove_task(&task_id) {
+            Ok(true) => result.removed.push(task_id),
+            Ok(false) => result.failed.push(BulkQueueFailure {
+                task_id,
+                message: "任务不存在。".to_owned(),
+            }),
+            Err(error) => result.failed.push(BulkQueueFailure {
+                task_id,
+                message: error.to_string(),
+            }),
+        }
+    }
+
+    Ok(result)
+}
+
+#[tauri::command]
+pub fn queue_clear_completed(state: State<'_, AppState>) -> CommandResult<BulkQueueResult> {
+    let task_ids = state
+        .queue_snapshot()?
+        .into_iter()
+        .filter(|task| task.status == TaskStatus::Completed)
+        .map(|task| task.id)
+        .collect::<Vec<_>>();
+    let request = BulkQueueRequest { task_ids };
+
+    queue_bulk_remove(state, request)
+}
+
+async fn refresh_urls_and_retry(
+    app: AppHandle,
+    state: &AppState,
+    task_id: &str,
+) -> CommandResult<DownloadTask> {
+    emit_queue_log(&app, state, task_id, QueueLogLevel::Info, "刷新下载地址")?;
+    if let Err(error) = state.refresh_task_media_urls(task_id).await {
         emit_queue_log(
             &app,
-            state.inner(),
-            &task_id,
+            state,
+            task_id,
             QueueLogLevel::Error,
             &format!("刷新下载地址失败：{error}"),
         )?;
         return Err(error.into());
     }
 
-    let task = state.retry_task(&task_id)?;
+    retry_task(app, state, task_id)
+}
+
+fn retry_task(app: AppHandle, state: &AppState, task_id: &str) -> CommandResult<DownloadTask> {
+    let task = state.retry_task(task_id)?;
     events::emit(&app, events::QUEUE_TASK_UPDATED, &task)?;
-    emit_queue_log(
-        &app,
-        state.inner(),
-        &task_id,
-        QueueLogLevel::Info,
-        "重试任务",
-    )?;
+    emit_queue_log(&app, state, task_id, QueueLogLevel::Info, "重试任务")?;
     start_queue_worker(&app);
     Ok(task)
+}
+
+fn bulk_update_task_status(
+    app: &AppHandle,
+    state: &AppState,
+    task_ids: Vec<String>,
+    status: TaskStatus,
+) -> BulkQueueResult {
+    let mut result = BulkQueueResult::default();
+
+    for task_id in task_ids {
+        match state.update_task_status(&task_id, status) {
+            Ok(task) => {
+                if let Err(error) = events::emit(app, events::QUEUE_TASK_UPDATED, &task) {
+                    result.failed.push(BulkQueueFailure {
+                        task_id,
+                        message: error.message,
+                    });
+                } else {
+                    result.updated.push(task);
+                }
+            }
+            Err(error) => result.failed.push(BulkQueueFailure {
+                task_id,
+                message: error.to_string(),
+            }),
+        }
+    }
+
+    result
 }
 
 #[tauri::command]
@@ -425,25 +592,77 @@ fn start_queue_worker(app: &AppHandle) {
 }
 
 async fn run_queue_worker(app: &AppHandle, state: &AppState) -> CommandResult<()> {
-    let fetcher = ReqwestFetcher::new()?;
-
     loop {
-        let Some(task) = state.take_next_startable_task()? else {
+        let settings = state.settings()?;
+        let fetcher = ReqwestFetcher::with_config(FetchConfig {
+            max_retries: retry_count(&settings),
+        });
+        let concurrent_tasks = concurrent_tasks(&settings);
+        let mut tasks = Vec::with_capacity(concurrent_tasks);
+
+        for _ in 0..concurrent_tasks {
+            let Some(task) = state.take_next_startable_task()? else {
+                break;
+            };
+
+            events::emit(app, events::QUEUE_TASK_UPDATED, &task)?;
+            emit_queue_log(app, state, &task.id, QueueLogLevel::Info, "开始下载任务")?;
+            tasks.push(task);
+        }
+
+        if tasks.is_empty() {
             break;
-        };
+        }
 
-        events::emit(app, events::QUEUE_TASK_UPDATED, &task)?;
-        emit_queue_log(app, state, &task.id, QueueLogLevel::Info, "开始下载任务")?;
+        let outcomes = join_all(
+            tasks
+                .iter()
+                .cloned()
+                .map(|task| run_download_task(app, state, &fetcher, task)),
+        )
+        .await;
 
-        if let Err(error) = run_download_task(app, state, &fetcher, task.clone()).await {
-            match state.task_status(&task.id) {
-                Ok(TaskStatus::Paused | TaskStatus::Cancelled) => {
-                    emit_queue_log(app, state, &task.id, QueueLogLevel::Warning, "任务已停止")?;
-                }
-                _ => {
-                    let failed = state.update_task_status(&task.id, TaskStatus::Failed)?;
-                    events::emit(app, events::QUEUE_TASK_UPDATED, &failed)?;
-                    emit_queue_log(app, state, &task.id, QueueLogLevel::Error, &error.message)?;
+        for (task, outcome) in tasks.into_iter().zip(outcomes) {
+            if let Err(error) = outcome {
+                match state.task_status(&task.id) {
+                    Ok(TaskStatus::Paused | TaskStatus::Cancelled) => {
+                        emit_queue_log(app, state, &task.id, QueueLogLevel::Warning, "任务已停止")?;
+                    }
+                    _ => {
+                        if settings.auto_refresh_expired_urls
+                            && is_expired_url_error(&error.message)
+                            && !already_auto_refreshed(state, &task.id)
+                        {
+                            emit_queue_log(
+                                app,
+                                state,
+                                &task.id,
+                                QueueLogLevel::Warning,
+                                "自动刷新过期链接",
+                            )?;
+
+                            match state.refresh_task_media_urls(&task.id).await {
+                                Ok(_) => {
+                                    let retried = state.retry_task(&task.id)?;
+                                    events::emit(app, events::QUEUE_TASK_UPDATED, &retried)?;
+                                    continue;
+                                }
+                                Err(refresh_error) => {
+                                    emit_queue_log(
+                                        app,
+                                        state,
+                                        &task.id,
+                                        QueueLogLevel::Error,
+                                        &format!("自动刷新过期链接失败：{refresh_error}"),
+                                    )?;
+                                }
+                            }
+                        }
+
+                        let failed = state.update_task_status(&task.id, TaskStatus::Failed)?;
+                        events::emit(app, events::QUEUE_TASK_UPDATED, &failed)?;
+                        emit_queue_log(app, state, &task.id, QueueLogLevel::Error, &error.message)?;
+                    }
                 }
             }
         }
@@ -617,6 +836,25 @@ fn emit_queue_log(
         created_at: Utc::now().to_rfc3339(),
     })?;
     events::emit(app, events::QUEUE_LOG_APPENDED, &entry)
+}
+
+fn concurrent_tasks(settings: &SettingsSnapshot) -> usize {
+    settings.concurrent_tasks.clamp(1, 5)
+}
+
+fn retry_count(settings: &SettingsSnapshot) -> usize {
+    settings.retry_count.min(5)
+}
+
+fn is_expired_url_error(message: &str) -> bool {
+    message.contains("HTTP 404") || message.contains("资源长度失败")
+}
+
+fn already_auto_refreshed(state: &AppState, task_id: &str) -> bool {
+    state
+        .task_logs(task_id, 50)
+        .map(|logs| logs.iter().any(|log| log.message == "自动刷新过期链接"))
+        .unwrap_or(false)
 }
 
 fn parse_archive_mode(value: &str) -> CommandResult<ArchiveMode> {

@@ -1,26 +1,36 @@
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { defineStore } from 'pinia'
 
-import type { DownloadTask, QueueLogEntry, TaskStatus } from '../api/dto'
+import type { BulkQueueResult, DownloadTask, QueueLogEntry } from '../api/dto'
 import {
+  queueBulkPause,
+  queueBulkRefreshUrlsAndRetry,
+  queueBulkRemove,
+  queueBulkResume,
+  queueBulkRetry,
   queueCancel,
+  queueClearCompleted,
   queueList,
   queueLogs,
   queueOpenDir,
   queueOpenFile,
   queuePause,
+  queueRefreshUrlsAndRetry,
   queueRemove,
   queueResume,
   queueRetry,
 } from '../api/tauri'
 import { useUiStore } from './ui'
+import { defaultQueueFilter, filterTaskByWorkflow, type QueueFilter } from './transferView'
 
-export type QueueFilter = 'downloading' | 'queued' | 'paused' | 'failed' | 'completed' | 'all'
+export type { QueueFilter } from './transferView'
 
 interface QueueState {
   tasks: DownloadTask[]
   activeFilter: QueueFilter
+  filterTouched: boolean
   selectedTaskId: string | null
+  selectedTaskIds: string[]
   logsByTask: Record<string, QueueLogEntry[]>
   logsLoadingByTask: Record<string, boolean>
   loading: boolean
@@ -31,8 +41,10 @@ interface QueueState {
 export const useQueueStore = defineStore('queue', {
   state: (): QueueState => ({
     tasks: [],
-    activeFilter: 'downloading',
+    activeFilter: 'active',
+    filterTouched: false,
     selectedTaskId: null,
+    selectedTaskIds: [],
     logsByTask: {},
     logsLoadingByTask: {},
     loading: false,
@@ -41,7 +53,7 @@ export const useQueueStore = defineStore('queue', {
   }),
   getters: {
     filteredTasks(state): DownloadTask[] {
-      return state.tasks.filter((task) => filterTask(task.status, state.activeFilter))
+      return state.tasks.filter((task) => filterTaskByWorkflow(task.status, state.activeFilter))
     },
     selectedTask(state): DownloadTask | null {
       return state.selectedTaskId ? (state.tasks.find((task) => task.id === state.selectedTaskId) ?? null) : null
@@ -53,7 +65,11 @@ export const useQueueStore = defineStore('queue', {
       this.loading = true
       try {
         this.tasks = await queueList()
-        this.selectedTaskId = this.selectedTaskId ?? this.tasks[0]?.id ?? null
+        this.applyDefaultFilter()
+        this.selectedTaskIds = this.selectedTaskIds.filter((taskId) =>
+          this.tasks.some((task) => task.id === taskId),
+        )
+        this.ensureSelectedTask(true)
         if (this.selectedTaskId) {
           await this.loadLogs(this.selectedTaskId)
         }
@@ -83,6 +99,8 @@ export const useQueueStore = defineStore('queue', {
     },
     setFilter(filter: QueueFilter) {
       this.activeFilter = filter
+      this.filterTouched = true
+      this.ensureSelectedTask(true)
     },
     selectTask(taskId: string) {
       this.selectedTaskId = taskId
@@ -95,7 +113,44 @@ export const useQueueStore = defineStore('queue', {
       } else {
         this.tasks[index] = task
       }
+      this.applyDefaultFilter()
       this.selectedTaskId = this.selectedTaskId ?? task.id
+    },
+    countByFilter(filter: QueueFilter): number {
+      return this.tasks.filter((task) => filterTaskByWorkflow(task.status, filter)).length
+    },
+    ensureSelectedTask(preferVisible = false) {
+      if (
+        this.selectedTaskId &&
+        this.tasks.some((task) => task.id === this.selectedTaskId) &&
+        (!preferVisible || this.filteredTasks.some((task) => task.id === this.selectedTaskId))
+      ) {
+        return
+      }
+
+      this.selectedTaskId = this.filteredTasks[0]?.id ?? this.tasks[0]?.id ?? null
+    },
+    applyDefaultFilter() {
+      if (!this.filterTouched) {
+        this.activeFilter = defaultQueueFilter(this.tasks)
+      }
+    },
+    toggleTaskSelection(taskId: string) {
+      if (this.selectedTaskIds.includes(taskId)) {
+        this.selectedTaskIds = this.selectedTaskIds.filter((selectedTaskId) => selectedTaskId !== taskId)
+        return
+      }
+
+      this.selectedTaskIds = [...this.selectedTaskIds, taskId]
+    },
+    setVisibleTaskSelection(taskIds: string[], selected: boolean) {
+      const visible = new Set(taskIds)
+      if (!selected) {
+        this.selectedTaskIds = this.selectedTaskIds.filter((taskId) => !visible.has(taskId))
+        return
+      }
+
+      this.selectedTaskIds = Array.from(new Set([...this.selectedTaskIds, ...taskIds]))
     },
     taskProgress(task: DownloadTask): number {
       if (task.status === 'completed') {
@@ -122,14 +177,37 @@ export const useQueueStore = defineStore('queue', {
       await this.runTaskCommand(() => queueRetry(taskId), '已重新入队')
       await this.loadLogs(taskId)
     },
+    async refreshUrlsAndRetry(taskId: string) {
+      await this.runTaskCommand(() => queueRefreshUrlsAndRetry(taskId), '已刷新链接并重新入队')
+      await this.loadLogs(taskId)
+    },
+    async bulkPause(taskIds: string[]) {
+      await this.runBulkCommand(() => queueBulkPause({ task_ids: taskIds }), '暂停')
+    },
+    async bulkResume(taskIds: string[]) {
+      await this.runBulkCommand(() => queueBulkResume({ task_ids: taskIds }), '继续')
+    },
+    async bulkRetry(taskIds: string[]) {
+      await this.runBulkCommand(() => queueBulkRetry({ task_ids: taskIds }), '重试')
+    },
+    async bulkRefreshUrlsAndRetry(taskIds: string[]) {
+      await this.runBulkCommand(() => queueBulkRefreshUrlsAndRetry({ task_ids: taskIds }), '刷新链接并重试')
+    },
+    async bulkRemove(taskIds: string[]) {
+      await this.runBulkCommand(() => queueBulkRemove({ task_ids: taskIds }), '移除')
+    },
+    async clearCompleted() {
+      await this.runBulkCommand(() => queueClearCompleted(), '清理已完成')
+    },
     async remove(taskId: string) {
       const ui = useUiStore()
       try {
         await queueRemove(taskId)
         this.tasks = this.tasks.filter((task) => task.id !== taskId)
+        this.selectedTaskIds = this.selectedTaskIds.filter((selectedTaskId) => selectedTaskId !== taskId)
         delete this.logsByTask[taskId]
         delete this.logsLoadingByTask[taskId]
-        this.selectedTaskId = this.tasks[0]?.id ?? null
+        this.ensureSelectedTask(true)
         if (this.selectedTaskId) {
           void this.loadLogs(this.selectedTaskId)
         }
@@ -166,6 +244,49 @@ export const useQueueStore = defineStore('queue', {
         ui.pushToast(errorMessage(error), 'danger')
       }
     },
+    async runBulkCommand(command: () => Promise<BulkQueueResult>, actionLabel: string) {
+      const ui = useUiStore()
+      try {
+        const result = await command()
+        this.applyBulkResult(result)
+
+        const succeeded = result.updated.length + result.removed.length
+        if (succeeded > 0) {
+          ui.pushToast(`${actionLabel} ${succeeded} 个任务`, result.failed.length ? 'warning' : 'success')
+        }
+        if (result.failed.length > 0) {
+          ui.pushToast(`${result.failed.length} 个任务处理失败`, 'danger')
+        }
+        if (succeeded === 0 && result.failed.length === 0) {
+          ui.pushToast('没有可处理的任务', 'info')
+        }
+      } catch (error) {
+        ui.pushToast(errorMessage(error), 'danger')
+      }
+    },
+    applyBulkResult(result: BulkQueueResult) {
+      for (const task of result.updated) {
+        const index = this.tasks.findIndex((candidate) => candidate.id === task.id)
+        if (index === -1) {
+          this.tasks.unshift(task)
+        } else {
+          this.tasks[index] = task
+        }
+      }
+
+      const removed = new Set(result.removed)
+      if (removed.size > 0) {
+        this.tasks = this.tasks.filter((task) => !removed.has(task.id))
+        this.selectedTaskIds = this.selectedTaskIds.filter((taskId) => !removed.has(taskId))
+        for (const taskId of removed) {
+          delete this.logsByTask[taskId]
+          delete this.logsLoadingByTask[taskId]
+        }
+      }
+
+      this.applyDefaultFilter()
+      this.ensureSelectedTask(true)
+    },
     async runVoidCommand(command: () => Promise<void>) {
       const ui = useUiStore()
       try {
@@ -176,23 +297,6 @@ export const useQueueStore = defineStore('queue', {
     },
   },
 })
-
-const filterTask = (status: TaskStatus, filter: QueueFilter): boolean => {
-  switch (filter) {
-    case 'downloading':
-      return status === 'downloading' || status === 'parsing' || status === 'muxing'
-    case 'queued':
-      return status === 'waiting'
-    case 'paused':
-      return status === 'paused'
-    case 'failed':
-      return status === 'failed' || status === 'cancelled'
-    case 'completed':
-      return status === 'completed'
-    case 'all':
-      return true
-  }
-}
 
 const LOG_LIMIT = 200
 

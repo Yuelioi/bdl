@@ -2,16 +2,17 @@
 
 ## State
 
-Task 14 is in progress on branch `bdl-downloader-app`. The workspace has a Rust/Tauri/Vue scaffold, frontend-safe normalized DTOs, a pure Bilibili input classifier, `bpi-rs` backed video and uploader resolvers, a planner that turns selected normalized parts into backend-owned download tasks/resources, a resumable `reqwest` fetcher, an ffmpeg muxer, a CLI parse/download path, registered Tauri commands/events, a custom Vue UI kit, parse/transfer pages, SQLite-backed queue persistence, and top-right account login through Cookie import or QR scan.
+Task 14 is in progress on branch `bdl-downloader-app`, but product focus has temporarily shifted to the Transfer page IA refactor. The workspace has a Rust/Tauri/Vue scaffold, frontend-safe normalized DTOs, a pure Bilibili input classifier, `bpi-rs` backed video and uploader resolvers, a planner that turns selected normalized parts into backend-owned download tasks/resources, a resumable `reqwest` fetcher, an ffmpeg muxer, a CLI parse/download path, registered Tauri commands/events, a custom Vue UI kit, parse/transfer pages, SQLite-backed queue persistence, and top-right account login through Cookie import or QR scan.
 
 ## Next
 
-Continue Task 14 in `plan.md`: favorites and uploader video pages now work; remaining source resolvers are collections, series, bangumi, and courses.
+Continue `transfer-product-refactor-plan.md` verification. Phase 1 through Phase 5 main code paths are implemented and build locally; remaining items are manual Tauri-window visual QA and a clean commit boundary.
 
 ## Read now
 
 - flightdeck/knowledge/bdl-downloader/product-flow.md
 - flightdeck/knowledge/bdl-downloader/architecture.md
+- flightdeck/work/bdl-downloader-app/transfer-product-refactor-plan.md
 - flightdeck/work/bdl-downloader-app/plan.md
 
 ## Read if
@@ -83,11 +84,17 @@ Current:
 - Uploader source parsing now loads the first page through `bpi-rs user.uploaded_videos`, `parse_load_more` appends one page, and `parse_load_all` batches pages up to the current explicit/default limit of 100.
 - Favorite source parsing now loads video resources from `bpi-rs fav.list_detail` for links with `fid` or `media_id`, appends pages through the same `parse_load_more` path, and uses API `has_more` to avoid count issues when non-video resources are filtered out.
 - `下载已选择` now hydrates selected uploader placeholder parts through the video resolver before planning tasks, so multi-P videos selected from an uploader list expand to their real parts. List sources no longer default to all selected in the parse UI.
+- Transfer page product grill produced `flightdeck/work/bdl-downloader-app/transfer-product-refactor-plan.md`. Key outcomes: batch task management comes first, the list should become a quasi-table, filters should be `活动` / `失败` / `已完成` / `全部`, completed records stay in Transfer instead of a separate History page, failure diagnosis and recovery actions must be explicit, queue ordering controls are intentionally out of scope, and settings must only expose backend-honored behavior.
+- Transfer Phase 1 implementation is in progress: the task list now uses workflow filters (`活动` / `失败` / `已完成` / `全部`), frontend-only transfer view models, a quasi-table task list, icon-based row actions, row selection, short issue labels, short location display, and correct empty states. Verified with `pnpm run build`; manual visual QA and commit are pending.
+- Transfer Phase 2 is code-complete pending manual QA: the right detail pane now defaults failed/cancelled tasks to `诊断`, separates `概览` / `轨道` / `事件` / `原始日志`, keeps raw logs out of the primary view, redacts obvious cookie/signed URL material in displayed logs, can copy a redacted diagnostic summary, and `bdl-core::diagnostics` classifies 404, 403, FFmpeg missing, merge failure, and timeout into recommended actions.
+- Transfer Phase 3/4 main code paths are implemented: `queue_retry` is ordinary retry, `queue_refresh_urls_and_retry` explicitly refreshes URLs before retry, frontend `refresh_retry` calls the explicit command, and Transfer now has a `BulkActionBar` for pause/resume/retry/refresh-retry/remove plus `清理已完成`. Backend bulk commands return per-task `updated`, `removed`, and `failed` results.
+- Transfer Phase 5 main code paths are implemented: settings now expose only backend-honored transfer controls (`concurrent_tasks`, `retry_count`, `auto_refresh_expired_urls`), the worker honors configured concurrency and retry count, expired URL errors can auto-refresh once per task, and Transfer has a compact status strip with real counts plus `速度 --`.
 
 Decisions:
-- Main navigation: `解析`, `传输`, `历史`, `设置`; account lives in the top-right account button.
+- Main navigation: `解析`, `传输`, `设置`; account lives in the top-right account button. Completed records live under Transfer's `已完成` filter, not a separate History page.
 - Core pipeline: `Input -> Resolver -> NormalizedDownloadPlan -> TaskQueue -> Downloader -> PostProcess -> History`.
 - Frontend consumes normalized DTOs only; Rust backend owns business state and transfer state.
 - Download engine is custom around `reqwest`/`tokio`, with a future `Fetcher` trait for optional alternate backends.
 - Resume is resource-level, with URL refresh through `bpi-rs` when CDN URLs expire.
 - Account state belongs in the top-right account menu/dialog, not Settings.
+- Queue ordering controls are not part of the product scope.

@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "Default permissions for BDL desktop.",
   "windows": ["main"],
-  "permissions": ["core:default", "opener:default"]
+  "permissions": ["core:default", "dialog:default", "opener:default"]
 }

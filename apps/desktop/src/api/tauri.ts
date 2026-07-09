@@ -2,12 +2,14 @@ import { invoke } from '@tauri-apps/api/core'
 
 import type {
   AccountSummary,
+  BulkQueueResult,
   DownloadTask,
   NormalizedSourceTree,
   QrLoginPollResponse,
   QrLoginSession,
   QueueLogEntry,
   QueueRemoveResponse,
+  SettingsSnapshot,
 } from './dto'
 
 export interface CommandErrorShape {
@@ -59,6 +61,10 @@ export interface AccountLoginQrPollRequest {
   qrcode_key: string
 }
 
+export interface BulkQueueRequest {
+  task_ids: string[]
+}
+
 export const parseCreateSource = (request: ParseCreateSourceRequest) =>
   invokeCommand<NormalizedSourceTree>('parse_create_source', { request })
 
@@ -89,6 +95,26 @@ export const queueCancel = (taskId: string) => invokeCommand<DownloadTask>('queu
 
 export const queueRetry = (taskId: string) => invokeCommand<DownloadTask>('queue_retry', { taskId })
 
+export const queueRefreshUrlsAndRetry = (taskId: string) =>
+  invokeCommand<DownloadTask>('queue_refresh_urls_and_retry', { taskId })
+
+export const queueBulkPause = (request: BulkQueueRequest) =>
+  invokeCommand<BulkQueueResult>('queue_bulk_pause', { request })
+
+export const queueBulkResume = (request: BulkQueueRequest) =>
+  invokeCommand<BulkQueueResult>('queue_bulk_resume', { request })
+
+export const queueBulkRetry = (request: BulkQueueRequest) =>
+  invokeCommand<BulkQueueResult>('queue_bulk_retry', { request })
+
+export const queueBulkRefreshUrlsAndRetry = (request: BulkQueueRequest) =>
+  invokeCommand<BulkQueueResult>('queue_bulk_refresh_urls_and_retry', { request })
+
+export const queueBulkRemove = (request: BulkQueueRequest) =>
+  invokeCommand<BulkQueueResult>('queue_bulk_remove', { request })
+
+export const queueClearCompleted = () => invokeCommand<BulkQueueResult>('queue_clear_completed')
+
 export const queueRemove = (taskId: string) => invokeCommand<QueueRemoveResponse>('queue_remove', { taskId })
 
 export const queueOpenFile = (taskId: string) => invokeCommand<void>('queue_open_file', { taskId })
@@ -108,6 +134,11 @@ export const accountImportCookie = (request: AccountImportCookieRequest) =>
 export const accountLogout = () => invokeCommand<AccountSummary>('account_logout')
 
 export const accountVerify = () => invokeCommand<AccountSummary>('account_verify')
+
+export const settingsGet = () => invokeCommand<SettingsSnapshot>('settings_get')
+
+export const settingsUpdate = (settings: SettingsSnapshot) =>
+  invokeCommand<SettingsSnapshot>('settings_update', { settings })
 
 const invokeCommand = async <T>(command: string, args?: Record<string, unknown>): Promise<T> => {
   try {

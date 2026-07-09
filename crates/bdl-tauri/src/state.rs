@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::fs;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -35,6 +36,7 @@ pub struct AppState {
     queue: Mutex<Vec<DownloadTask>>,
     storage: Mutex<TaskStorage>,
     settings: Mutex<SettingsSnapshot>,
+    settings_path: PathBuf,
     account: Mutex<AccountSnapshot>,
     account_cookie: Mutex<Option<String>>,
     queue_worker_active: AtomicBool,
@@ -51,6 +53,8 @@ pub struct PreparedSelection {
 impl AppState {
     pub fn new() -> BdlResult<Self> {
         let storage = TaskStorage::open(default_storage_path()?)?;
+        let settings_path = default_settings_path()?;
+        let settings = load_settings(&settings_path)?;
         let queue = storage.load_tasks()?;
         let secure_store = SecureStore::new(default_account_cookie_path()?);
         let persisted_cookie = secure_store.load_cookie()?;
@@ -60,7 +64,8 @@ impl AppState {
             parse_sources: Mutex::new(HashMap::new()),
             queue: Mutex::new(queue),
             storage: Mutex::new(storage),
-            settings: Mutex::new(SettingsSnapshot::default()),
+            settings: Mutex::new(settings),
+            settings_path,
             account: Mutex::new(account),
             account_cookie: Mutex::new(account_cookie),
             queue_worker_active: AtomicBool::new(false),
@@ -430,6 +435,7 @@ impl AppState {
     }
 
     pub fn update_settings(&self, settings: SettingsSnapshot) -> BdlResult<SettingsSnapshot> {
+        save_settings(&self.settings_path, &settings)?;
         *self
             .settings
             .lock()
@@ -630,6 +636,29 @@ fn default_storage_path() -> BdlResult<PathBuf> {
 
 fn default_account_cookie_path() -> BdlResult<PathBuf> {
     Ok(std::env::current_dir()?.join(".bdl").join("account.cookie"))
+}
+
+fn default_settings_path() -> BdlResult<PathBuf> {
+    Ok(std::env::current_dir()?.join(".bdl").join("settings.json"))
+}
+
+fn load_settings(path: &PathBuf) -> BdlResult<SettingsSnapshot> {
+    match fs::read_to_string(path) {
+        Ok(raw) => Ok(serde_json::from_str(&raw)?),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            Ok(SettingsSnapshot::default())
+        }
+        Err(error) => Err(error.into()),
+    }
+}
+
+fn save_settings(path: &PathBuf, settings: &SettingsSnapshot) -> BdlResult<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    fs::write(path, serde_json::to_string_pretty(settings)?)?;
+    Ok(())
 }
 
 fn load_account_snapshot(
