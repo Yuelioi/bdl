@@ -106,6 +106,9 @@ Current:
 - P1 archive subtitle/danmaku fetching landed in commit `b7c266c`.
 - Normal video resolving now reads subtitle URLs from `video.player_info_v2` through `bpi-rs` when stream hydration is requested, creates danmaku XML assets through `bpi-rs` `DanmakuXmlListParams`, carries archive asset URLs/headers into planner resources, and downloads subtitle/danmaku asset resources when URLs exist.
 - P1 archive verification passed: `cargo fmt --all --check`, `cargo test -p bdl-core --test video_resolver --test planner --test normalization`, `cargo test -p bdl-tauri should_fetch`, `cargo check -p bdl-desktop`, and `pnpm --dir apps/desktop build`.
+- P1 custom archive selection landed in commit `9bf256b`.
+- Settings now exposes `自定义归档` with cover/subtitle/danmaku/NFO toggles and raw stream retention in the same archive section. `bdl-core::planner` supports `ArchiveMode::Custom` and filters archive resources through `ArchiveAssetSelection`; old settings files default to full asset selection.
+- Custom archive verification passed: `cargo fmt --all --check`, `cargo test -p bdl-core --test planner --test settings`, `cargo check -p bdl-desktop`, and `pnpm --dir apps/desktop build`.
 
 Decisions:
 - Main navigation: `解析`, `传输`, `设置`; account lives in the top-right account button. Completed records live under Transfer's `已完成` filter, not a separate History page.
