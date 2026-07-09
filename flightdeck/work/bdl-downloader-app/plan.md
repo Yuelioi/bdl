@@ -1556,7 +1556,7 @@ git commit -m "feat: persist tasks and recover queue state"
 - Create: `apps/desktop/src/stores/account.ts`
 - Add: account dialog component under `apps/desktop/src/pages` or `apps/desktop/src/ui`
 
-- [ ] **Step 1: Implement cookie import first**
+- [x] **Step 1: Implement cookie import first**
 
 Behavior:
 
@@ -1567,7 +1567,9 @@ Behavior:
 - Cookie is persisted in system secure storage.
 - SQLite stores account summary only.
 
-- [ ] **Step 2: Implement QR login**
+Current implementation persists the cookie through `crates/bdl-tauri/src/secure_store.rs`, backed by `.bdl/account.cookie`. The wrapper keeps call sites isolated so a later OS keychain backend can replace the file-backed store without changing account commands.
+
+- [x] **Step 2: Implement QR login**
 
 Use `bpi-rs` QR APIs:
 
@@ -1576,7 +1578,7 @@ Use `bpi-rs` QR APIs:
 - Persist resulting account cookie/session when confirmed.
 - Emit `account://updated`.
 
-- [ ] **Step 3: Implement UI**
+- [x] **Step 3: Implement UI**
 
 Top-right account button:
 
@@ -1594,7 +1596,7 @@ Dropdown:
 - Import cookie.
 - Logout.
 
-- [ ] **Step 4: Redaction test**
+- [x] **Step 4: Redaction test**
 
 Add tests that logs redact:
 
@@ -1605,12 +1607,19 @@ DedeUserID
 Cookie
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add crates/bdl-core crates/bdl-tauri apps/desktop/src
 git commit -m "feat: add account login and secure cookie storage"
 ```
+
+Landed as smaller commits:
+
+- `1b3f3a4 feat: add account cookie model`
+- `01c6e50 feat: persist imported account cookie`
+- `31427dc feat: wire account cookie login ui`
+- `93884dc feat: add qr account login flow`
 
 ---
 

@@ -2,11 +2,11 @@
 
 ## State
 
-Task 12 persistent storage and recovery is complete on branch `bdl-downloader-app`. The workspace has a Rust/Tauri/Vue scaffold, frontend-safe normalized DTOs, a pure Bilibili input classifier, a `bpi-rs` backed video resolver, a planner that turns selected normalized parts into backend-owned download tasks/resources, a resumable `reqwest` fetcher, an ffmpeg muxer, a CLI parse/download path, registered Tauri commands/events, a custom Vue UI kit, parse/transfer pages, and SQLite-backed queue persistence.
+Task 13 account persistence and login is complete on branch `bdl-downloader-app`. The workspace has a Rust/Tauri/Vue scaffold, frontend-safe normalized DTOs, a pure Bilibili input classifier, a `bpi-rs` backed video resolver, a planner that turns selected normalized parts into backend-owned download tasks/resources, a resumable `reqwest` fetcher, an ffmpeg muxer, a CLI parse/download path, registered Tauri commands/events, a custom Vue UI kit, parse/transfer pages, SQLite-backed queue persistence, and top-right account login through Cookie import or QR scan.
 
 ## Next
 
-Execute Task 13 in `plan.md`: add account persistence, cookie import, QR login, and login verification.
+Execute Task 14 in `plan.md`: add paged and multi-type resolvers for favorites, uploader videos, collections, series, bangumi, and courses.
 
 ## Read now
 
@@ -72,6 +72,12 @@ Current:
 - `bdl-core::storage::TaskStorage` now creates `tasks.sqlite` with `tasks`, `resources`, `segments`, `history`, and `task_logs`, saves task/resource snapshots, and reloads them after reopening.
 - `AppState` now loads persisted queue tasks from `.bdl/tasks.sqlite` on startup and persists queue snapshots after create/pause/resume/cancel/retry/remove. It does not auto-resume tasks.
 - Settings snapshot moved into `bdl-core::settings::AppSettings`; Tauri keeps `SettingsSnapshot` as an alias.
+- Completed Task 13 account persistence and login in commits `1b3f3a4`, `01c6e50`, `31427dc`, and `93884dc`.
+- Task 13 verification passed: `cargo test -p bdl-core --test account`, `cargo test -p bdl-tauri secure_store`, `cargo check -p bdl-desktop`, `cargo fmt --all --check`, and `pnpm --dir apps/desktop build`.
+- `bdl-core::account` now validates imported cookies, redacts sensitive cookie/signed URL fields, maps QR login statuses, generates QR SVGs, and polls `bpi-rs` QR login.
+- `AppState` now restores a persisted account cookie from `.bdl/account.cookie`, exposes account import/logout/verify, and builds video resolvers with the current cookie so parsing can return logged-in streams.
+- The account UI now uses `apps/desktop/src/stores/account.ts`, supports Cookie import, QR generation/polling, account event updates, and top-right logout. The Settings tab remains account-free.
+- Current account persistence is file-backed through `secure_store.rs`; replacing it with an OS credential-store backend remains a hardening follow-up.
 
 Decisions:
 - Main navigation: `解析`, `传输`, `历史`, `设置`; account lives in the top-right account button.
@@ -79,3 +85,4 @@ Decisions:
 - Frontend consumes normalized DTOs only; Rust backend owns business state and transfer state.
 - Download engine is custom around `reqwest`/`tokio`, with a future `Fetcher` trait for optional alternate backends.
 - Resume is resource-level, with URL refresh through `bpi-rs` when CDN URLs expire.
+- Account state belongs in the top-right account menu/dialog, not Settings.
