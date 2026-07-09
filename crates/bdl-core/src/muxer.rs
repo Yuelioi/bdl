@@ -1,4 +1,5 @@
 use std::env;
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -21,6 +22,8 @@ pub struct MuxRequest {
     pub video_path: PathBuf,
     pub audio_path: PathBuf,
     pub output_path: PathBuf,
+    pub cover_path: Option<PathBuf>,
+    pub subtitle_paths: Vec<PathBuf>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -53,17 +56,11 @@ impl MediaMuxer {
 
     pub async fn mux(&self, request: &MuxRequest) -> Result<(), MuxError> {
         let ffmpeg_path = ensure_executable(self.ffmpeg_path.clone())?;
-        let output = Command::new(ffmpeg_path)
-            .arg("-y")
-            .arg("-i")
-            .arg(&request.video_path)
-            .arg("-i")
-            .arg(&request.audio_path)
-            .arg("-c")
-            .arg("copy")
-            .arg(&request.output_path)
-            .output()
-            .await?;
+        let mut command = Command::new(ffmpeg_path);
+        for arg in ffmpeg_args(request) {
+            command.arg(arg);
+        }
+        let output = command.output().await?;
 
         if output.status.success() {
             return Ok(());
@@ -74,6 +71,129 @@ impl MediaMuxer {
             stderr: stderr_summary(&output.stderr),
         })
     }
+}
+
+fn ffmpeg_args(request: &MuxRequest) -> Vec<OsString> {
+    let cover_path = request
+        .cover_path
+        .as_deref()
+        .filter(|path| supports_cover_embedding(&request.output_path, path));
+    let subtitle_paths = request
+        .subtitle_paths
+        .iter()
+        .filter(|path| supports_subtitle_embedding(&request.output_path, path))
+        .map(PathBuf::as_path)
+        .collect::<Vec<_>>();
+
+    if cover_path.is_none() && subtitle_paths.is_empty() {
+        return basic_mux_args(request);
+    }
+
+    let mut args = vec![
+        os("-y"),
+        os("-i"),
+        request.video_path.clone().into_os_string(),
+    ];
+    args.extend([os("-i"), request.audio_path.clone().into_os_string()]);
+
+    let mut next_input_index = 2usize;
+    let cover_input_index = cover_path.map(|path| {
+        args.extend([os("-i"), path.as_os_str().to_owned()]);
+        let index = next_input_index;
+        next_input_index += 1;
+        index
+    });
+
+    let mut subtitle_input_indices = Vec::with_capacity(subtitle_paths.len());
+    for subtitle_path in subtitle_paths {
+        args.extend([os("-i"), subtitle_path.as_os_str().to_owned()]);
+        subtitle_input_indices.push(next_input_index);
+        next_input_index += 1;
+    }
+
+    args.extend([os("-map"), os("0:v:0"), os("-map"), os("1:a:0")]);
+    if let Some(index) = cover_input_index {
+        args.extend([os("-map"), os(format!("{index}:v:0"))]);
+    }
+    for index in &subtitle_input_indices {
+        args.extend([os("-map"), os(format!("{index}:0"))]);
+    }
+
+    if subtitle_input_indices.is_empty() || !is_mp4_like(&request.output_path) {
+        args.extend([os("-c"), os("copy")]);
+    } else {
+        args.extend([
+            os("-c:v"),
+            os("copy"),
+            os("-c:a"),
+            os("copy"),
+            os("-c:s"),
+            os("mov_text"),
+        ]);
+    }
+
+    if cover_input_index.is_some() {
+        args.extend([os("-disposition:v:1"), os("attached_pic")]);
+    }
+
+    args.push(request.output_path.clone().into_os_string());
+    args
+}
+
+fn basic_mux_args(request: &MuxRequest) -> Vec<OsString> {
+    vec![
+        os("-y"),
+        os("-i"),
+        request.video_path.clone().into_os_string(),
+        os("-i"),
+        request.audio_path.clone().into_os_string(),
+        os("-c"),
+        os("copy"),
+        request.output_path.clone().into_os_string(),
+    ]
+}
+
+pub fn supports_cover_embedding(output_path: &Path, cover_path: &Path) -> bool {
+    is_mp4_like(output_path)
+        && matches!(
+            lower_extension(cover_path).as_deref(),
+            Some("jpg" | "jpeg" | "png")
+        )
+}
+
+pub fn supports_subtitle_embedding(output_path: &Path, subtitle_path: &Path) -> bool {
+    let subtitle_extension = lower_extension(subtitle_path);
+    if is_mp4_like(output_path) {
+        return matches!(subtitle_extension.as_deref(), Some("srt" | "vtt"));
+    }
+    if is_mkv(output_path) {
+        return matches!(
+            subtitle_extension.as_deref(),
+            Some("srt" | "ass" | "ssa" | "vtt")
+        );
+    }
+    false
+}
+
+fn is_mp4_like(path: &Path) -> bool {
+    matches!(
+        lower_extension(path).as_deref(),
+        Some("mp4" | "m4v" | "mov")
+    )
+}
+
+fn is_mkv(path: &Path) -> bool {
+    matches!(lower_extension(path).as_deref(), Some("mkv"))
+}
+
+fn lower_extension(path: &Path) -> Option<String> {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .map(|extension| extension.to_ascii_lowercase())
+}
+
+fn os(value: impl Into<OsString>) -> OsString {
+    value.into()
 }
 
 fn ensure_executable(path: PathBuf) -> Result<PathBuf, MuxError> {

@@ -1757,9 +1757,10 @@ Current partial implementation:
 - Normal video resolving reads subtitles from `video.player_info_v2` through `bpi-rs` when stream hydration is requested.
 - Normal video resolving creates danmaku XML archive assets through `bpi-rs` `DanmakuXmlListParams`.
 - Settings expose `自定义归档`; planner filters cover/subtitle/danmaku/NFO resources through `ArchiveAssetSelection`, while raw stream retention uses the existing `retain_raw_streams` setting.
+- Settings expose optional cover/subtitle embedding. The muxer embeds supported cover images for MP4-like outputs and supported subtitle sidecars for MP4/MKV outputs; unsupported formats such as current Bilibili JSON subtitles remain sidecar files with warning logs.
 - NFO resources are generated locally after muxing.
 - Cover/subtitle/danmaku resources with no available URL are marked complete with a warning log instead of leaving completed tasks with pending resources.
-- Optional cover/subtitle embedding and richer archive warning state remain pending.
+- Richer archive warning state remains pending.
 
 - [ ] **Step 3: Implement completed records in Transfer**
 

@@ -126,6 +126,14 @@ const settingsRetainRawStreams = computed({
   get: () => settings.draft.retain_raw_streams,
   set: (value: boolean) => settings.setRetainRawStreams(value),
 })
+const settingsEmbedCover = computed({
+  get: () => settings.draft.embed_cover,
+  set: (value: boolean) => settings.setEmbedCover(value),
+})
+const settingsEmbedSubtitles = computed({
+  get: () => settings.draft.embed_subtitles,
+  set: (value: boolean) => settings.setEmbedSubtitles(value),
+})
 const settingsProxyUrl = computed({
   get: () => settings.draft.proxy_url ?? '',
   set: (value: string) => settings.setProxyUrl(value),
@@ -147,17 +155,26 @@ const selectedArchiveAssetLabels = computed(() => {
   return labels
 })
 const rawStreamCopy = computed(() => (settings.draft.retain_raw_streams ? '；保留原始视频/音频轨道' : ''))
+const embeddingCopy = computed(() => {
+  const items: string[] = []
+  const canUseArchiveAssets = settings.draft.archive_mode === 'complete_archive' || settings.draft.archive_mode === 'custom'
+  const coverSelected = settings.draft.archive_mode === 'complete_archive' || settings.draft.archive_assets.cover
+  const subtitlesSelected = settings.draft.archive_mode === 'complete_archive' || settings.draft.archive_assets.subtitles
+  if (canUseArchiveAssets && coverSelected && settings.draft.embed_cover) items.push('封面')
+  if (canUseArchiveAssets && subtitlesSelected && settings.draft.embed_subtitles) items.push('字幕')
+  return items.length > 0 ? `；容器支持时嵌入${items.join('和')}` : ''
+})
 const settingsArchiveDescription = computed(() => {
   if (settings.draft.archive_mode === 'complete_archive') {
-    return `保存最终视频，并额外保存可用的封面、字幕、弹幕和 NFO${rawStreamCopy.value}。不可用的素材会在任务日志中记录。`
+    return `保存最终视频，并额外保存可用的封面、字幕、弹幕和 NFO${rawStreamCopy.value}${embeddingCopy.value}。不可用的素材会在任务日志中记录。`
   }
 
   if (settings.draft.archive_mode === 'custom') {
     const selected = selectedArchiveAssetLabels.value.length > 0 ? selectedArchiveAssetLabels.value.join('、') : '不额外保存素材'
-    return `保存最终视频，并按自定义选择保存：${selected}${rawStreamCopy.value}。`
+    return `保存最终视频，并按自定义选择保存：${selected}${rawStreamCopy.value}${embeddingCopy.value}。`
   }
 
-  return `保存最终视频${rawStreamCopy.value}；不抓取封面、字幕、弹幕或 NFO。`
+  return `保存最终视频${rawStreamCopy.value}${embeddingCopy.value}；不抓取封面、字幕、弹幕或 NFO。`
 })
 const settingsDuplicateDescription = computed(() =>
   settings.draft.duplicate_naming_strategy === 'overwrite_existing'
@@ -501,6 +518,18 @@ watch(
               label="保留原始视频/音频轨道"
               :disabled="settings.loading || settings.saving"
             />
+            <div class="archive-option-grid">
+              <UiCheckbox
+                v-model="settingsEmbedCover"
+                label="支持时嵌入封面"
+                :disabled="settings.loading || settings.saving"
+              />
+              <UiCheckbox
+                v-model="settingsEmbedSubtitles"
+                label="支持时嵌入字幕"
+                :disabled="settings.loading || settings.saving"
+              />
+            </div>
             <p class="settings-note">{{ settingsArchiveDescription }}</p>
           </section>
 

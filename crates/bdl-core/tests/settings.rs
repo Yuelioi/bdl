@@ -54,6 +54,8 @@ fn settings_deserialize_old_config_defaults_duplicate_naming_strategy() {
     assert_eq!(settings.archive_assets, ArchiveAssetSelection::all());
     assert_eq!(settings.ffmpeg_path, None);
     assert!(!settings.retain_raw_streams);
+    assert!(!settings.embed_cover);
+    assert!(!settings.embed_subtitles);
     assert_eq!(settings.proxy_url, None);
     assert_eq!(settings.log_level, "info");
     assert_eq!(settings.data_dir, None);

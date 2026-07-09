@@ -60,6 +60,8 @@ const defaultSettings = (): SettingsSnapshot => ({
   missing_quality_policy: 'lower',
   ffmpeg_path: null,
   retain_raw_streams: false,
+  embed_cover: false,
+  embed_subtitles: false,
   proxy_url: null,
   log_level: 'info',
   data_dir: null,
@@ -321,6 +323,12 @@ export const useSettingsStore = defineStore('settings', {
     setRetainRawStreams(value: boolean) {
       this.draft.retain_raw_streams = value
     },
+    setEmbedCover(value: boolean) {
+      this.draft.embed_cover = value
+    },
+    setEmbedSubtitles(value: boolean) {
+      this.draft.embed_subtitles = value
+    },
     apply(settings: SettingsSnapshot) {
       const normalized = normalizeSettings(settings)
       this.saved = cloneSettings(normalized)
@@ -347,6 +355,8 @@ const normalizeSettings = (settings: SettingsSnapshot): SettingsSnapshot => ({
     : 'lower',
   ffmpeg_path: settings.ffmpeg_path?.trim() || null,
   retain_raw_streams: settings.retain_raw_streams === true,
+  embed_cover: settings.embed_cover === true,
+  embed_subtitles: settings.embed_subtitles === true,
   proxy_url: settings.proxy_url?.trim() || null,
   log_level: logLevels.has(settings.log_level) ? settings.log_level : 'info',
   data_dir: settings.data_dir?.trim() || null,

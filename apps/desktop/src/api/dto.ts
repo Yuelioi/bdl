@@ -176,6 +176,8 @@ export interface SettingsSnapshot {
   missing_quality_policy: MissingQualityPolicy
   ffmpeg_path: string | null
   retain_raw_streams: boolean
+  embed_cover: boolean
+  embed_subtitles: boolean
   proxy_url: string | null
   log_level: LogLevel
   data_dir: string | null

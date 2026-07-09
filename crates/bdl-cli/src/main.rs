@@ -80,6 +80,8 @@ async fn download_command(args: &[String]) -> anyhow::Result<()> {
                 video_path: video.target_path.clone(),
                 audio_path: audio.target_path.clone(),
                 output_path: task.output_path.clone(),
+                cover_path: None,
+                subtitle_paths: Vec::new(),
             })
             .await?;
         println!("downloaded {}", task.output_path.display());

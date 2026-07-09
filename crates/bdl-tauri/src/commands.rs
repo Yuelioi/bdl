@@ -5,7 +5,9 @@ use bdl_core::account::{QrLoginSession, QrLoginStatus, poll_qr_login, start_qr_l
 use bdl_core::fetcher::{FetchConfig, Fetcher, ReqwestFetcher, state_path_for};
 use bdl_core::ids::{PartId, SourceId};
 use bdl_core::model::NormalizedSourceTree;
-use bdl_core::muxer::{MediaMuxer, MediaMuxerConfig, MuxRequest};
+use bdl_core::muxer::{
+    MediaMuxer, MediaMuxerConfig, MuxRequest, supports_cover_embedding, supports_subtitle_embedding,
+};
 use bdl_core::planner::{
     ArchiveMode, DownloadOptions, MissingQualityPolicy, StreamPreference, parse_stream_codec,
     plan_selected_parts,
@@ -129,6 +131,8 @@ pub struct DiagnosticsExportResponse {
 struct DownloadRuntimeOptions {
     ffmpeg_path: Option<PathBuf>,
     retain_raw_streams: bool,
+    embed_cover: bool,
+    embed_subtitles: bool,
 }
 
 impl From<&SettingsSnapshot> for DownloadRuntimeOptions {
@@ -136,6 +140,8 @@ impl From<&SettingsSnapshot> for DownloadRuntimeOptions {
         Self {
             ffmpeg_path: settings.ffmpeg_path.as_deref().map(PathBuf::from),
             retain_raw_streams: settings.retain_raw_streams,
+            embed_cover: settings.embed_cover,
+            embed_subtitles: settings.embed_subtitles,
         }
     }
 }
@@ -862,8 +868,17 @@ async fn run_download_task(
     events::emit(app, events::QUEUE_TASK_UPDATED, &muxing)?;
     emit_queue_log(app, state, &task.id, QueueLogLevel::Info, "合并音视频")?;
 
-    let video = resource_by_intent(&task, DownloadResourceIntent::Video)?;
-    let audio = resource_by_intent(&task, DownloadResourceIntent::Audio)?;
+    let latest = state.task_snapshot(&task.id)?;
+    let attachments = mux_attachments(&latest, &runtime_options);
+    for warning in &attachments.warnings {
+        emit_queue_log(app, state, &latest.id, QueueLogLevel::Warning, warning)?;
+    }
+    if attachments.cover_path.is_some() || !attachments.subtitle_paths.is_empty() {
+        emit_queue_log(app, state, &latest.id, QueueLogLevel::Info, "嵌入归档素材")?;
+    }
+
+    let video = resource_by_intent(&latest, DownloadResourceIntent::Video)?;
+    let audio = resource_by_intent(&latest, DownloadResourceIntent::Audio)?;
     let muxer = MediaMuxer::new(MediaMuxerConfig {
         ffmpeg_path: runtime_options.ffmpeg_path.clone(),
     })
@@ -872,7 +887,9 @@ async fn run_download_task(
         .mux(&MuxRequest {
             video_path: video.target_path.clone(),
             audio_path: audio.target_path.clone(),
-            output_path: task.output_path.clone(),
+            output_path: latest.output_path.clone(),
+            cover_path: attachments.cover_path,
+            subtitle_paths: attachments.subtitle_paths,
         })
         .await
         .map_err(BdlError::from)?;
@@ -910,6 +927,77 @@ fn should_fetch(resource: &DownloadResource) -> bool {
             | DownloadResourceIntent::Subtitle
             | DownloadResourceIntent::Danmaku
     ) && !resource.current_urls.is_empty()
+}
+
+struct MuxAttachmentSelection {
+    cover_path: Option<PathBuf>,
+    subtitle_paths: Vec<PathBuf>,
+    warnings: Vec<String>,
+}
+
+fn mux_attachments(
+    task: &DownloadTask,
+    runtime_options: &DownloadRuntimeOptions,
+) -> MuxAttachmentSelection {
+    let mut selection = MuxAttachmentSelection {
+        cover_path: None,
+        subtitle_paths: Vec::new(),
+        warnings: Vec::new(),
+    };
+
+    if runtime_options.embed_cover && task_has_resource_intent(task, DownloadResourceIntent::Cover)
+    {
+        match completed_resource_by_intent(task, DownloadResourceIntent::Cover) {
+            Some(resource)
+                if supports_cover_embedding(&task.output_path, &resource.target_path) =>
+            {
+                selection.cover_path = Some(resource.target_path.clone());
+            }
+            Some(_) => selection
+                .warnings
+                .push("跳过封面嵌入：当前封面格式或封装格式不支持。".to_owned()),
+            None => selection
+                .warnings
+                .push("跳过封面嵌入：没有已下载的封面文件。".to_owned()),
+        }
+    }
+
+    if runtime_options.embed_subtitles
+        && task_has_resource_intent(task, DownloadResourceIntent::Subtitle)
+    {
+        match completed_resource_by_intent(task, DownloadResourceIntent::Subtitle) {
+            Some(resource)
+                if supports_subtitle_embedding(&task.output_path, &resource.target_path) =>
+            {
+                selection.subtitle_paths.push(resource.target_path.clone());
+            }
+            Some(_) => selection
+                .warnings
+                .push("跳过字幕嵌入：当前字幕格式或封装格式不支持。".to_owned()),
+            None => selection
+                .warnings
+                .push("跳过字幕嵌入：没有已下载的字幕文件。".to_owned()),
+        }
+    }
+
+    selection
+}
+
+fn task_has_resource_intent(task: &DownloadTask, intent: DownloadResourceIntent) -> bool {
+    task.resources
+        .iter()
+        .any(|resource| resource.intent == intent)
+}
+
+fn completed_resource_by_intent(
+    task: &DownloadTask,
+    intent: DownloadResourceIntent,
+) -> Option<&DownloadResource> {
+    task.resources.iter().find(|resource| {
+        resource.intent == intent
+            && resource.status == ResourceStatus::Completed
+            && resource.target_path.is_file()
+    })
 }
 
 async fn cleanup_raw_streams(

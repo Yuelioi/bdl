@@ -64,11 +64,70 @@ async fn media_muxer_returns_exit_code_and_stderr_when_ffmpeg_fails() {
     ));
 }
 
+#[tokio::test]
+async fn media_muxer_embeds_supported_cover_for_mp4() {
+    let dir = temp_case_dir("cover").await;
+    let record_path = dir.join("args.txt");
+    let ffmpeg = fake_ffmpeg(&dir, &record_path, 0, "").await;
+    let mut request = mux_request(dir.clone());
+    request.cover_path = Some(dir.join("cover.jpg"));
+
+    MediaMuxer::with_ffmpeg_path(ffmpeg)
+        .mux(&request)
+        .await
+        .expect("fake ffmpeg should succeed");
+
+    let args = tokio::fs::read_to_string(record_path).await.unwrap();
+    assert!(args.contains("cover.jpg"));
+    assert!(args.contains("-disposition:v:1"));
+    assert!(args.contains("attached_pic"));
+}
+
+#[tokio::test]
+async fn media_muxer_embeds_supported_srt_subtitle_for_mp4() {
+    let dir = temp_case_dir("subtitle").await;
+    let record_path = dir.join("args.txt");
+    let ffmpeg = fake_ffmpeg(&dir, &record_path, 0, "").await;
+    let mut request = mux_request(dir.clone());
+    request.subtitle_paths = vec![dir.join("subtitle.srt")];
+
+    MediaMuxer::with_ffmpeg_path(ffmpeg)
+        .mux(&request)
+        .await
+        .expect("fake ffmpeg should succeed");
+
+    let args = tokio::fs::read_to_string(record_path).await.unwrap();
+    assert!(args.contains("subtitle.srt"));
+    assert!(args.contains("-c:s"));
+    assert!(args.contains("mov_text"));
+}
+
+#[tokio::test]
+async fn media_muxer_skips_unsupported_json_subtitle_embedding() {
+    let dir = temp_case_dir("json-subtitle").await;
+    let record_path = dir.join("args.txt");
+    let ffmpeg = fake_ffmpeg(&dir, &record_path, 0, "").await;
+    let mut request = mux_request(dir.clone());
+    request.subtitle_paths = vec![dir.join("subtitle.json")];
+
+    MediaMuxer::with_ffmpeg_path(ffmpeg)
+        .mux(&request)
+        .await
+        .expect("fake ffmpeg should succeed");
+
+    let args = tokio::fs::read_to_string(record_path).await.unwrap();
+    assert!(!args.contains("subtitle.json"));
+    assert!(args.contains("-c"));
+    assert!(args.contains("copy"));
+}
+
 fn mux_request(dir: PathBuf) -> MuxRequest {
     MuxRequest {
         video_path: dir.join("video.m4s"),
         audio_path: dir.join("audio.m4s"),
         output_path: dir.join("output.mp4"),
+        cover_path: None,
+        subtitle_paths: Vec::new(),
     }
 }
 
