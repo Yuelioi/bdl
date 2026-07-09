@@ -9,6 +9,14 @@ const ui = useUiStore()
     <div class="toast-host" aria-live="polite" aria-atomic="false">
       <div v-for="toast in ui.toasts" :key="toast.id" class="toast" :class="`tone-${toast.tone}`">
         <span>{{ toast.message }}</span>
+        <button
+          v-if="toast.action"
+          class="toast-action"
+          type="button"
+          @click="ui.setTab(toast.action.tab); ui.removeToast(toast.id)"
+        >
+          {{ toast.action.label }}
+        </button>
         <button type="button" aria-label="关闭通知" @click="ui.removeToast(toast.id)">x</button>
       </div>
     </div>
@@ -28,7 +36,7 @@ const ui = useUiStore()
 
 .toast {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 28px;
+  grid-template-columns: minmax(0, 1fr) auto 28px;
   align-items: center;
   gap: var(--space-8);
   min-height: 44px;
@@ -53,6 +61,14 @@ const ui = useUiStore()
   border-radius: var(--radius-6);
   background: transparent;
   color: var(--color-muted);
+}
+
+.toast-action {
+  width: auto !important;
+  padding: 0 var(--space-8);
+  color: var(--color-accent-strong) !important;
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 .tone-info {

@@ -1,26 +1,21 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 
+import ParsePage from './pages/ParsePage.vue'
 import UiButton from './ui/Button.vue'
-import UiCheckbox from './ui/Checkbox.vue'
 import UiDialog from './ui/Dialog.vue'
 import UiDrawer from './ui/Drawer.vue'
 import UiIconButton from './ui/IconButton.vue'
 import UiProgressBar from './ui/ProgressBar.vue'
 import UiSelect from './ui/Select.vue'
-import UiStatusBadge from './ui/StatusBadge.vue'
 import UiTabs from './ui/Tabs.vue'
 import UiTaskRow from './ui/TaskRow.vue'
 import UiTextarea from './ui/Textarea.vue'
 import UiTextField from './ui/TextField.vue'
 import UiToastHost from './ui/ToastHost.vue'
-import UiTree from './ui/Tree.vue'
 import { useUiStore, type AppTab } from './stores/ui'
 
 const ui = useUiStore()
-const parseInput = ref('')
-const quality = ref('best')
-const archiveEnabled = ref(true)
 const transferTab = ref('downloading')
 const outputDir = ref('')
 const outputFormat = ref('mp4')
@@ -37,21 +32,6 @@ const navItems: Array<{ value: AppTab; label: string }> = [
   { value: 'settings', label: '设置' },
 ]
 
-const sourceNodes = [
-  {
-    id: 'source',
-    label: '字幕君交流场所',
-    meta: 'BV1xx411c7mD',
-    children: [
-      {
-        id: 'part',
-        label: 'P1 字幕君交流场所',
-        meta: '34:15',
-      },
-    ],
-  },
-]
-
 const activeTitle = computed(() => navItems.find((item) => item.value === ui.activeTab)?.label ?? '解析')
 
 const openLoginDialog = () => {
@@ -64,9 +44,6 @@ const signOut = () => {
   ui.pushToast('已退出登录', 'info')
 }
 
-const submitParse = () => {
-  ui.pushToast(parseInput.value ? '已提交解析' : '请输入链接或 BV/AV', parseInput.value ? 'success' : 'warning')
-}
 </script>
 
 <template>
@@ -120,44 +97,7 @@ const submitParse = () => {
         </div>
       </header>
 
-      <section v-if="ui.activeTab === 'parse'" class="page-grid parse-grid">
-        <section class="panel input-panel">
-          <div class="panel-heading">
-            <h2>输入</h2>
-            <UiStatusBadge status="ready">就绪</UiStatusBadge>
-          </div>
-          <UiTextField v-model="parseInput" label="链接或 BV/AV" placeholder="BV1xx411c7mD" />
-          <div class="toolbar-row">
-            <UiButton @click="submitParse">解析</UiButton>
-            <UiButton variant="secondary">解析全部</UiButton>
-          </div>
-        </section>
-
-        <section class="panel result-panel">
-          <div class="panel-heading">
-            <h2>结果</h2>
-            <span class="muted-text">1 个已加载</span>
-          </div>
-          <UiTree :nodes="sourceNodes" :selected-ids="['part']" />
-        </section>
-
-        <aside class="panel selection-panel">
-          <div class="panel-heading">
-            <h2>选择</h2>
-            <span class="muted-text">1 项</span>
-          </div>
-          <UiSelect
-            v-model="quality"
-            label="清晰度"
-            :options="[
-              { label: '最佳', value: 'best' },
-              { label: '1080P', value: '1080p' },
-            ]"
-          />
-          <UiCheckbox v-model="archiveEnabled" label="完整归档" />
-          <UiButton>下载已选择</UiButton>
-        </aside>
-      </section>
+      <ParsePage v-if="ui.activeTab === 'parse'" />
 
       <section v-else-if="ui.activeTab === 'transfer'" class="page-grid transfer-grid">
         <section class="panel">

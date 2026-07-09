@@ -6,6 +6,12 @@ export interface ToastMessage {
   id: number
   tone: 'info' | 'success' | 'warning' | 'danger'
   message: string
+  action?: ToastAction
+}
+
+export interface ToastAction {
+  label: string
+  tab: AppTab
 }
 
 export const useUiStore = defineStore('ui', {
@@ -20,8 +26,8 @@ export const useUiStore = defineStore('ui', {
     setTab(tab: AppTab) {
       this.activeTab = tab
     },
-    pushToast(message: string, tone: ToastMessage['tone'] = 'info') {
-      this.toasts.push({ id: this.nextToastId, message, tone })
+    pushToast(message: string, tone: ToastMessage['tone'] = 'info', action?: ToastAction) {
+      this.toasts.push({ id: this.nextToastId, message, tone, action })
       this.nextToastId += 1
     },
     removeToast(id: number) {

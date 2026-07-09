@@ -13,6 +13,10 @@ const props = defineProps<{
   selectedIds?: string[]
 }>()
 
+const emit = defineEmits<{
+  toggle: [id: string]
+}>()
+
 interface FlatTreeNode {
   id: string
   label: string
@@ -52,6 +56,10 @@ const flatNodes = computed(() => {
       role="treeitem"
       :aria-selected="selectedSet.has(node.id)"
       :style="{ paddingLeft: `${node.depth * 18 + 10}px` }"
+      tabindex="0"
+      @click="emit('toggle', node.id)"
+      @keydown.enter.prevent="emit('toggle', node.id)"
+      @keydown.space.prevent="emit('toggle', node.id)"
     >
       <span class="tree-arrow" aria-hidden="true">{{ node.hasChildren ? ">" : "" }}</span>
       <span class="tree-label">{{ node.label }}</span>
@@ -78,7 +86,13 @@ const flatNodes = computed(() => {
   padding-right: 10px;
   border-radius: var(--radius-6);
   color: var(--color-text);
+  cursor: pointer;
   font-size: var(--font-13);
+}
+
+.tree-row:focus-visible {
+  outline: 2px solid rgb(8 127 91 / 30%);
+  outline-offset: 2px;
 }
 
 .tree-row.selected {

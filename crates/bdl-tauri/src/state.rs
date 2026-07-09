@@ -55,6 +55,25 @@ impl AppState {
             .is_some())
     }
 
+    pub fn source_snapshot(&self, source_id: &SourceId) -> BdlResult<NormalizedSourceTree> {
+        self.parse_sources
+            .lock()
+            .map_err(|_| state_poisoned("parse_sources"))?
+            .get(source_id)
+            .cloned()
+            .ok_or_else(|| BdlError::Planning {
+                message: format!("解析源 `{}` 不存在，请重新解析。", source_id.0),
+            })
+    }
+
+    pub fn enqueue_tasks(&self, tasks: Vec<DownloadTask>) -> BdlResult<()> {
+        self.queue
+            .lock()
+            .map_err(|_| state_poisoned("queue"))?
+            .extend(tasks);
+        Ok(())
+    }
+
     pub fn queue_snapshot(&self) -> BdlResult<Vec<DownloadTask>> {
         Ok(self
             .queue

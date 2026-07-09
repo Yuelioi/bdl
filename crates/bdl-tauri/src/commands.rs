@@ -1,6 +1,9 @@
+use std::path::PathBuf;
+
 use bdl_core::BdlError;
-use bdl_core::ids::SourceId;
+use bdl_core::ids::{PartId, SourceId};
 use bdl_core::model::NormalizedSourceTree;
+use bdl_core::planner::{ArchiveMode, DownloadOptions, plan_selected_parts};
 use bdl_core::queue::DownloadTask;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
@@ -35,6 +38,15 @@ pub struct ParseCreateSourceRequest {
 #[derive(Debug, Clone, Serialize)]
 pub struct ParseCloseSourceResponse {
     pub removed: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SelectionCreateTasksRequest {
+    pub source_id: String,
+    pub part_ids: Vec<String>,
+    pub output_dir: Option<String>,
+    pub archive_mode: Option<String>,
+    pub output_extension: Option<String>,
 }
 
 #[tauri::command]
@@ -75,8 +87,41 @@ pub async fn parse_refresh_source() -> CommandResult<()> {
 }
 
 #[tauri::command]
-pub async fn selection_create_tasks() -> CommandResult<()> {
-    unsupported("selection_create_tasks")
+pub fn selection_create_tasks(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    request: SelectionCreateTasksRequest,
+) -> CommandResult<Vec<DownloadTask>> {
+    let tree = state.source_snapshot(&SourceId(request.source_id))?;
+    let settings = state.settings()?;
+    let selected_part_ids = request.part_ids.into_iter().map(PartId).collect::<Vec<_>>();
+
+    let output_dir = request
+        .output_dir
+        .or(settings.download_dir)
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("downloads"));
+
+    let archive_mode = parse_archive_mode(
+        request
+            .archive_mode
+            .as_deref()
+            .unwrap_or(&settings.archive_mode),
+    )?;
+
+    let mut options = DownloadOptions::new(output_dir).with_archive_mode(archive_mode);
+    if let Some(extension) = request.output_extension {
+        options.output_extension = extension;
+    }
+
+    let tasks = plan_selected_parts(&tree, &selected_part_ids, &options)?;
+    state.enqueue_tasks(tasks.clone())?;
+
+    for task in &tasks {
+        events::emit(&app, events::QUEUE_TASK_UPDATED, task)?;
+    }
+
+    Ok(tasks)
 }
 
 #[tauri::command]
@@ -170,4 +215,15 @@ fn unsupported<T>(command: &'static str) -> CommandResult<T> {
         code: "unsupported".to_owned(),
         message: format!("command `{command}` is not implemented in this phase"),
     })
+}
+
+fn parse_archive_mode(value: &str) -> CommandResult<ArchiveMode> {
+    match value {
+        "fast" => Ok(ArchiveMode::Fast),
+        "complete_archive" => Ok(ArchiveMode::CompleteArchive),
+        other => Err(CommandError {
+            code: "invalid_archive_mode".to_owned(),
+            message: format!("unknown archive mode `{other}`"),
+        }),
+    }
 }
