@@ -2,11 +2,11 @@
 
 ## State
 
-Task 7 CLI vertical slice is complete on branch `bdl-downloader-app`. The workspace has a Rust/Tauri/Vue scaffold, frontend-safe normalized DTOs, a pure Bilibili input classifier, a `bpi-rs` backed video resolver, a planner that turns selected normalized parts into backend-owned download tasks/resources, a resumable `reqwest` fetcher, an ffmpeg muxer, and a CLI parse/download path.
+Task 8 Tauri command bridge is complete on branch `bdl-downloader-app`. The workspace has a Rust/Tauri/Vue scaffold, frontend-safe normalized DTOs, a pure Bilibili input classifier, a `bpi-rs` backed video resolver, a planner that turns selected normalized parts into backend-owned download tasks/resources, a resumable `reqwest` fetcher, an ffmpeg muxer, a CLI parse/download path, and registered Tauri commands/events.
 
 ## Next
 
-Execute Task 8 in `plan.md`: add the Tauri command and event bridge.
+Execute Task 9 in `plan.md`: add the desktop UI kit and app shell.
 
 ## Read now
 
@@ -52,6 +52,10 @@ Current:
 - Task 7 verification passed: `cargo test -p bdl-core --test muxer`, `cargo test --workspace`, `cargo check --workspace`, `cargo fmt --all --check`, `cargo run -p bdl-cli -- ffmpeg-check`, and `cargo run -p bdl-cli -- parse BV1xx411c7mD --json`.
 - `ffmpeg-check` found `D:\scoop\shims\ffmpeg.exe` on this machine; CLI live parse returned normalized JSON for `BV1xx411c7mD`.
 - CLI commands now include `parse`, `download`, `verify-cookie`, and `ffmpeg-check`; the initial `download` command supports the single-video pipeline using resolver, planner, fetcher, and muxer.
+- Completed Task 8 Tauri command and event bridge in commit `8a33ac7`.
+- Task 8 verification passed: `cargo check -p bdl-desktop`, `cargo test --workspace`, and `cargo fmt --all --check`.
+- Registered canonical Tauri commands in `apps/desktop/src-tauri/src/main.rs`. `parse_create_source`, `parse_close_source`, `queue_list`, `settings_get`, `settings_update`, and `account_get` have real state-backed behavior; not-yet-implemented commands return typed `unsupported` errors.
+- Defined canonical event names and emit paths for `parse://source-updated` and `settings://updated` in this phase.
 
 Decisions:
 - Main navigation: `解析`, `传输`, `历史`, `设置`; account lives in the top-right account button.

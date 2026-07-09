@@ -1155,7 +1155,7 @@ git commit -m "feat: add ffmpeg muxer and cli vertical slice"
 - Modify: `crates/bdl-tauri/src/lib.rs`
 - Modify: `apps/desktop/src-tauri/src/main.rs`
 
-- [ ] **Step 1: Implement app state**
+- [x] **Step 1: Implement app state**
 
 `AppState` owns:
 
@@ -1165,7 +1165,7 @@ git commit -m "feat: add ffmpeg muxer and cli vertical slice"
 - Settings snapshot.
 - Event emitter abstraction.
 
-- [ ] **Step 2: Register commands**
+- [x] **Step 2: Register commands**
 
 Command names must match the architecture knowledge:
 
@@ -1196,7 +1196,7 @@ account_verify
 
 Commands that are not implemented yet must return a typed `unsupported` error. Do not silently stub success.
 
-- [ ] **Step 3: Emit canonical events**
+- [x] **Step 3: Emit canonical events**
 
 Events:
 
@@ -1210,7 +1210,7 @@ settings://updated
 account://updated
 ```
 
-- [ ] **Step 4: Verify command registration**
+- [x] **Step 4: Verify command registration**
 
 Run:
 
@@ -1220,7 +1220,7 @@ cargo check -p bdl-desktop
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add crates/bdl-tauri apps/desktop/src-tauri
