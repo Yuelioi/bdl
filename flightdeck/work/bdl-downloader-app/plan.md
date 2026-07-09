@@ -121,7 +121,6 @@ apps/
       pages/
         ParsePage.vue
         TransferPage.vue
-        HistoryPage.vue
         SettingsPage.vue
       api/
         tauri.ts
@@ -1300,7 +1299,6 @@ Navigation labels:
 ```text
 解析
 传输
-历史
 设置
 ```
 
@@ -1699,7 +1697,7 @@ git commit -m "feat: parse paged and episodic sources"
 
 ---
 
-### Task 15: Derived Assets, Naming, History, and Settings
+### Task 15: Derived Assets, Naming, Completed Records, and Settings
 
 **Files:**
 
@@ -1708,7 +1706,7 @@ git commit -m "feat: parse paged and episodic sources"
 - Modify: `crates/bdl-core/src/settings.rs`
 - Create: `crates/bdl-core/src/naming.rs`
 - Create: `crates/bdl-core/src/history.rs`
-- Create: `apps/desktop/src/pages/HistoryPage.vue`
+- Modify: `apps/desktop/src/pages/TransferPage.vue`
 - Create: `apps/desktop/src/pages/SettingsPage.vue`
 - Create: `apps/desktop/src/stores/settings.ts`
 
@@ -1760,7 +1758,7 @@ Current partial implementation:
 - Cover/subtitle/danmaku resources with no available URL are marked complete with a warning log instead of leaving completed tasks with pending resources.
 - Subtitle and danmaku API fetching plus custom asset selection remain pending.
 
-- [ ] **Step 3: Implement history page**
+- [ ] **Step 3: Implement completed records in Transfer**
 
 Search fields:
 
@@ -1774,7 +1772,7 @@ Actions:
 - open directory.
 - re-download.
 - copy source link.
-- delete history record.
+- remove completed record.
 
 - [ ] **Step 4: Implement settings page**
 
@@ -1893,7 +1891,7 @@ Spec coverage:
 - Core Rust architecture is covered by Tasks 1 through 8 and 12 through 14.
 - Resource-level resume, URL refresh, and downloader behavior are covered by Tasks 5 and 6.
 - Account persistence is covered by Task 13.
-- History, settings, naming, derived resources, logs, and packaging are covered by Tasks 15 and 16.
+- Completed records, settings, naming, derived resources, logs, and packaging are covered by Tasks 15 and 16.
 
 Red-flag scan:
 

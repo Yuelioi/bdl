@@ -3,7 +3,9 @@ import { invoke } from '@tauri-apps/api/core'
 import type {
   AccountSummary,
   BulkQueueResult,
+  DiagnosticsExportResponse,
   DownloadTask,
+  MaintenanceResult,
   NormalizedSourceTree,
   QrLoginPollResponse,
   QrLoginSession,
@@ -77,7 +79,8 @@ export const parseLoadAll = (request: ParseLoadAllRequest) =>
 export const parseCloseSource = (sourceId: string) =>
   invokeCommand<ParseCloseSourceResponse>('parse_close_source', { sourceId })
 
-export const parseRefreshSource = () => invokeCommand<void>('parse_refresh_source')
+export const parseRefreshSource = (request: ParseSourcePageRequest) =>
+  invokeCommand<NormalizedSourceTree>('parse_refresh_source', { request })
 
 export const selectionCreateTasks = (request: SelectionCreateTasksRequest) =>
   invokeCommand<DownloadTask[]>('selection_create_tasks', { request })
@@ -139,6 +142,12 @@ export const settingsGet = () => invokeCommand<SettingsSnapshot>('settings_get')
 
 export const settingsUpdate = (settings: SettingsSnapshot) =>
   invokeCommand<SettingsSnapshot>('settings_update', { settings })
+
+export const maintenanceCleanupCache = () => invokeCommand<MaintenanceResult>('maintenance_cleanup_cache')
+
+export const maintenanceCleanupTemp = () => invokeCommand<MaintenanceResult>('maintenance_cleanup_temp')
+
+export const diagnosticsExport = () => invokeCommand<DiagnosticsExportResponse>('diagnostics_export')
 
 const invokeCommand = async <T>(command: string, args?: Record<string, unknown>): Promise<T> => {
   try {

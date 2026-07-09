@@ -1,9 +1,19 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
+use serde::{Deserialize, Serialize};
+
 use crate::error::{BdlError, BdlResult};
 
 pub const DEFAULT_NAMING_TEMPLATE: &str = "{title}/P{part_index} - {part_title}.{ext}";
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DuplicateNamingStrategy {
+    #[default]
+    AppendSuffix,
+    OverwriteExisting,
+}
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct NamingContext<'a> {
@@ -47,6 +57,41 @@ pub fn render_output_path(template: &str, context: &NamingContext<'_>) -> BdlRes
     Ok(path)
 }
 
+pub fn validate_template(template: &str) -> BdlResult<()> {
+    let mut chars = template.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        if ch == '}' {
+            return Err(BdlError::Planning {
+                message: "命名模板存在多余的 `}`。".to_owned(),
+            });
+        }
+        if ch != '{' {
+            continue;
+        }
+
+        let mut name = String::new();
+        let mut closed = false;
+        for next in chars.by_ref() {
+            if next == '}' {
+                closed = true;
+                break;
+            }
+            name.push(next);
+        }
+
+        if !closed {
+            return Err(BdlError::Planning {
+                message: "命名模板存在未闭合变量。".to_owned(),
+            });
+        }
+
+        validate_variable_name(name.trim())?;
+    }
+
+    Ok(())
+}
+
 pub fn unique_path(path: PathBuf, reserved: &mut HashSet<PathBuf>) -> PathBuf {
     let mut candidate = path.clone();
     let mut suffix = 1;
@@ -58,6 +103,17 @@ pub fn unique_path(path: PathBuf, reserved: &mut HashSet<PathBuf>) -> PathBuf {
 
     reserved.insert(candidate.clone());
     candidate
+}
+
+pub fn resolve_duplicate_path(
+    path: PathBuf,
+    reserved: &mut HashSet<PathBuf>,
+    strategy: DuplicateNamingStrategy,
+) -> PathBuf {
+    match strategy {
+        DuplicateNamingStrategy::AppendSuffix => unique_path(path, reserved),
+        DuplicateNamingStrategy::OverwriteExisting => overwrite_existing_path(path, reserved),
+    }
 }
 
 pub fn sanitize_path_component(value: &str) -> String {
@@ -78,6 +134,15 @@ pub fn sanitize_path_component(value: &str) -> String {
     } else {
         trimmed
     }
+}
+
+fn overwrite_existing_path(path: PathBuf, reserved: &mut HashSet<PathBuf>) -> PathBuf {
+    if reserved.contains(&path) {
+        return unique_path(path, reserved);
+    }
+
+    reserved.insert(path.clone());
+    path
 }
 
 fn render_template(template: &str, context: &NamingContext<'_>) -> BdlResult<String> {
@@ -113,6 +178,7 @@ fn render_template(template: &str, context: &NamingContext<'_>) -> BdlResult<Str
 }
 
 fn variable_value(name: &str, context: &NamingContext<'_>) -> BdlResult<String> {
+    validate_variable_name(name)?;
     let value = match name {
         "title" => context.title.to_owned(),
         "part_title" => context.part_title.to_owned(),
@@ -132,19 +198,24 @@ fn variable_value(name: &str, context: &NamingContext<'_>) -> BdlResult<String> 
         "codec" => context.codec.unwrap_or_default().to_owned(),
         "date" => context.date.unwrap_or_default().to_owned(),
         "ext" => context.ext.to_owned(),
-        "" => {
-            return Err(BdlError::Planning {
-                message: "命名模板存在空变量。".to_owned(),
-            });
-        }
-        other => {
-            return Err(BdlError::Planning {
-                message: format!("命名模板存在未知变量 `{other}`。"),
-            });
-        }
+        _ => unreachable!("naming variable was validated before rendering"),
     };
 
     Ok(value)
+}
+
+fn validate_variable_name(name: &str) -> BdlResult<()> {
+    match name {
+        "title" | "part_title" | "part_index" | "bvid" | "aid" | "cid" | "owner_name"
+        | "owner_mid" | "series_title" | "season_index" | "episode_index" | "episode_title"
+        | "collection_title" | "index" | "quality" | "codec" | "date" | "ext" => Ok(()),
+        "" => Err(BdlError::Planning {
+            message: "命名模板存在空变量。".to_owned(),
+        }),
+        other => Err(BdlError::Planning {
+            message: format!("命名模板存在未知变量 `{other}`。"),
+        }),
+    }
 }
 
 fn optional_u64(value: Option<u64>) -> String {

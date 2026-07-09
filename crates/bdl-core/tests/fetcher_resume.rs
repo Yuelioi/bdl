@@ -20,7 +20,11 @@ async fn fetcher_downloads_full_resource_and_sends_headers() {
     let server = TestServer::spawn(b"hello from bdl".to_vec(), 0).await;
     let dir = temp_case_dir("full").await;
     let resource = resource(server.url(), &dir, "full.bin");
-    let fetcher = ReqwestFetcher::with_config(FetchConfig { max_retries: 0 });
+    let fetcher = ReqwestFetcher::with_config(FetchConfig {
+        max_retries: 0,
+        proxy_url: None,
+    })
+    .expect("fetcher should be created");
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
 
     let outcome = fetcher
@@ -68,7 +72,11 @@ async fn fetcher_resumes_existing_bdlpart_with_range_request() {
     )
     .await
     .unwrap();
-    let fetcher = ReqwestFetcher::with_config(FetchConfig { max_retries: 0 });
+    let fetcher = ReqwestFetcher::with_config(FetchConfig {
+        max_retries: 0,
+        proxy_url: None,
+    })
+    .expect("fetcher should be created");
 
     fetcher
         .fetch(&resource, None)
@@ -87,7 +95,11 @@ async fn fetcher_stops_after_configured_retry_count() {
     let server = TestServer::spawn(b"retry".to_vec(), 3).await;
     let dir = temp_case_dir("retry").await;
     let resource = resource(server.url(), &dir, "retry.bin");
-    let fetcher = ReqwestFetcher::with_config(FetchConfig { max_retries: 2 });
+    let fetcher = ReqwestFetcher::with_config(FetchConfig {
+        max_retries: 2,
+        proxy_url: None,
+    })
+    .expect("fetcher should be created");
 
     let error = fetcher
         .fetch(&resource, None)
@@ -116,7 +128,11 @@ async fn fetcher_restarts_when_content_length_changes_between_attempts() {
     )
     .await
     .unwrap();
-    let fetcher = ReqwestFetcher::with_config(FetchConfig { max_retries: 0 });
+    let fetcher = ReqwestFetcher::with_config(FetchConfig {
+        max_retries: 0,
+        proxy_url: None,
+    })
+    .expect("fetcher should be created");
 
     fetcher
         .fetch(&resource, None)

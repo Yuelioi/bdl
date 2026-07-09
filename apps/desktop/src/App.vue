@@ -4,6 +4,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import ParsePage from './pages/ParsePage.vue'
 import TransferPage from './pages/TransferPage.vue'
 import { useAccountStore } from './stores/account'
+import { useQueueStore } from './stores/queue'
 import {
   defaultNamingTemplate,
   namingTemplatePresets,
@@ -25,6 +26,7 @@ import UiToastHost from './ui/ToastHost.vue'
 const ui = useUiStore()
 const account = useAccountStore()
 const settings = useSettingsStore()
+const queue = useQueueStore()
 const accountMenuOpen = ref(false)
 const loginDialogOpen = ref(false)
 const helpDrawerOpen = ref(false)
@@ -39,6 +41,9 @@ const navItems: Array<{ value: AppTab; label: string }> = [
 
 const activeTitle = computed(() => navItems.find((item) => item.value === ui.activeTab)?.label ?? '解析')
 const accountSubtitle = computed(() => `本地任务 · ${account.statusLabel}`)
+const transferBadgeCount = computed(() =>
+  queue.tasks.filter((task) => task.status !== 'completed' && task.status !== 'cancelled').length,
+)
 const cookieSaveDisabled = computed(
   () => account.saving || account.qrLoading || (loginMode.value === 'cookie' && !cookieText.value.trim()),
 )
@@ -61,6 +66,26 @@ const settingsOutputFormat = computed({
   get: () => settings.draft.output_extension,
   set: (value: string) => settings.setOutputExtension(value),
 })
+const settingsVideoQuality = computed({
+  get: () => settings.draft.quality,
+  set: (value: string) => settings.setVideoQuality(value),
+})
+const settingsAudioQuality = computed({
+  get: () => settings.draft.audio_quality,
+  set: (value: string) => settings.setAudioQuality(value),
+})
+const settingsCodec = computed({
+  get: () => settings.draft.codec,
+  set: (value: string) => settings.setCodec(value),
+})
+const settingsMissingQualityPolicy = computed({
+  get: () => settings.draft.missing_quality_policy,
+  set: (value: string) => settings.setMissingQualityPolicy(value),
+})
+const settingsDuplicateNamingStrategy = computed({
+  get: () => settings.draft.duplicate_naming_strategy,
+  set: (value: string) => settings.setDuplicateNamingStrategy(value),
+})
 const settingsNamingTemplate = computed({
   get: () => settings.draft.naming_template,
   set: (value: string) => settings.setNamingTemplate(value),
@@ -77,10 +102,35 @@ const settingsAutoRefreshExpiredUrls = computed({
   get: () => settings.draft.auto_refresh_expired_urls,
   set: (value: boolean) => settings.setAutoRefreshExpiredUrls(value),
 })
+const settingsFfmpegPath = computed({
+  get: () => settings.draft.ffmpeg_path ?? '',
+  set: (value: string) => settings.setFfmpegPath(value),
+})
+const settingsRetainRawStreams = computed({
+  get: () => settings.draft.retain_raw_streams,
+  set: (value: boolean) => settings.setRetainRawStreams(value),
+})
+const settingsProxyUrl = computed({
+  get: () => settings.draft.proxy_url ?? '',
+  set: (value: string) => settings.setProxyUrl(value),
+})
+const settingsLogLevel = computed({
+  get: () => settings.draft.log_level,
+  set: (value: string) => settings.setLogLevel(value),
+})
+const settingsDataDir = computed({
+  get: () => settings.draft.data_dir ?? '',
+  set: (value: string) => settings.setDataDir(value),
+})
 const settingsArchiveDescription = computed(() =>
   settings.draft.archive_mode === 'complete_archive'
     ? '保存最终视频，并额外生成 NFO；有封面地址时会下载封面。字幕和弹幕抓取还在任务清单中，暂不承诺完整。'
     : '只下载视频轨道和音频轨道，合并为最终可播放文件；不抓取封面、字幕、弹幕或 NFO。',
+)
+const settingsDuplicateDescription = computed(() =>
+  settings.draft.duplicate_naming_strategy === 'overwrite_existing'
+    ? '新任务会使用模板渲染出的原始路径；如果磁盘上已有同名文件，下载完成后会覆盖它。批量任务内部路径冲突仍会自动加后缀。'
+    : '新任务遇到同名文件时自动生成“文件名 (1)”这类路径，不覆盖已有文件。',
 )
 const resetNamingTemplate = () => {
   settings.setNamingTemplate(defaultNamingTemplate)
@@ -156,7 +206,10 @@ watch(
           type="button"
           @click="ui.setTab(item.value)"
         >
-          {{ item.label }}
+          <span>{{ item.label }}</span>
+          <span v-if="item.value === 'transfer' && transferBadgeCount > 0" class="nav-badge">
+            {{ transferBadgeCount > 99 ? '99+' : transferBadgeCount }}
+          </span>
         </button>
       </nav>
     </aside>
@@ -210,7 +263,7 @@ watch(
               <UiButton variant="ghost" :disabled="settings.loading || settings.saving || !settings.changed" @click="settings.resetDraft">
                 撤销
               </UiButton>
-              <UiButton :disabled="settings.loading || settings.saving || !settings.changed" @click="settings.save">
+              <UiButton :disabled="settings.loading || settings.saving || !settings.changed || Boolean(settings.namingTemplateError)" @click="settings.save">
                 {{ settings.saving ? '保存中' : '保存' }}
               </UiButton>
             </div>
@@ -259,7 +312,55 @@ watch(
           <section class="settings-block">
             <div class="settings-block-heading">
               <h3>媒体</h3>
-              <span>当前先支持封装格式，清晰度、音频和编码策略在任务清单中继续补齐</span>
+              <span>新建任务默认使用这些轨道选择和后处理设置</span>
+            </div>
+            <div class="settings-inline-grid">
+              <UiSelect
+                v-model="settingsVideoQuality"
+                label="视频清晰度"
+                :options="[
+                  { label: '最佳可用', value: 'best' },
+                  { label: '8K / 127', value: '127' },
+                  { label: '4K / 120', value: '120' },
+                  { label: '1080P60 / 116', value: '116' },
+                  { label: '1080P+ / 112', value: '112' },
+                  { label: '1080P / 80', value: '80' },
+                  { label: '720P / 64', value: '64' },
+                  { label: '480P / 32', value: '32' },
+                  { label: '360P / 16', value: '16' },
+                ]"
+              />
+              <UiSelect
+                v-model="settingsAudioQuality"
+                label="音频质量"
+                :options="[
+                  { label: '最佳可用', value: 'best' },
+                  { label: '高音质 / 30280', value: '30280' },
+                  { label: '中音质 / 30232', value: '30232' },
+                  { label: '低音质 / 30216', value: '30216' },
+                ]"
+              />
+            </div>
+            <div class="settings-inline-grid">
+              <UiSelect
+                v-model="settingsCodec"
+                label="视频编码偏好"
+                :options="[
+                  { label: '自动', value: 'auto' },
+                  { label: 'AVC / H.264', value: 'avc' },
+                  { label: 'HEVC / H.265', value: 'hevc' },
+                  { label: 'AV1', value: 'av1' },
+                ]"
+              />
+              <UiSelect
+                v-model="settingsMissingQualityPolicy"
+                label="目标质量不可用"
+                :options="[
+                  { label: '选择接近的可用质量', value: 'lower' },
+                  { label: '阻止创建任务', value: 'skip' },
+                  { label: '提示后再处理', value: 'ask' },
+                ]"
+              />
             </div>
             <UiSelect
               v-model="settingsOutputFormat"
@@ -269,6 +370,25 @@ watch(
                 { label: 'MKV', value: 'mkv' },
               ]"
             />
+            <div class="directory-row">
+              <UiTextField v-model="settingsFfmpegPath" label="FFmpeg 路径" placeholder="留空时使用系统 PATH 中的 ffmpeg" />
+              <UiButton variant="secondary" :disabled="settings.loading || settings.saving" @click="settings.chooseFfmpegPath">
+                选择
+              </UiButton>
+            </div>
+            <div v-if="settings.draft.ffmpeg_path" class="settings-actions">
+              <UiButton variant="ghost" :disabled="settings.loading || settings.saving" @click="settings.clearFfmpegPath">
+                使用系统 FFmpeg
+              </UiButton>
+            </div>
+            <UiCheckbox
+              v-model="settingsRetainRawStreams"
+              label="保留原始视频/音频轨道"
+              :disabled="settings.loading || settings.saving"
+            />
+            <p class="settings-note">
+              编码是偏好而非硬性过滤；目标清晰度不存在时，默认会选择最接近的可用轨道。选择“提示后再处理”时，当前版本会阻止创建任务并显示原因。
+            </p>
           </section>
 
           <section class="settings-block">
@@ -277,6 +397,7 @@ watch(
               <span>模板会先渲染预览，保存后用于新建任务</span>
             </div>
             <UiTextField v-model="settingsNamingTemplate" label="命名模板" :placeholder="defaultNamingTemplate" />
+            <p v-if="settings.namingTemplateError" class="settings-field-error">{{ settings.namingTemplateError }}</p>
             <div class="template-presets" aria-label="命名模板预设">
               <button
                 v-for="preset in namingTemplatePresets"
@@ -292,6 +413,15 @@ watch(
               <span>预览</span>
               <code>{{ settings.namingPreview }}</code>
             </div>
+            <UiSelect
+              v-model="settingsDuplicateNamingStrategy"
+              label="重名处理"
+              :options="[
+                { label: '自动加后缀（推荐）', value: 'append_suffix' },
+                { label: '覆盖已有文件', value: 'overwrite_existing' },
+              ]"
+            />
+            <p class="settings-note">{{ settingsDuplicateDescription }}</p>
             <details class="template-help">
               <summary>可用变量</summary>
               <div>
@@ -317,6 +447,47 @@ watch(
               ]"
             />
             <p class="settings-note">{{ settingsArchiveDescription }}</p>
+          </section>
+
+          <section class="settings-block">
+            <div class="settings-block-heading">
+              <h3>高级</h3>
+              <span>网络代理、日志、数据目录和维护工具</span>
+            </div>
+            <UiTextField v-model="settingsProxyUrl" label="代理地址" placeholder="例如 http://127.0.0.1:7890，留空为直连" />
+            <UiSelect
+              v-model="settingsLogLevel"
+              label="任务日志级别"
+              :options="[
+                { label: '调试', value: 'debug' },
+                { label: '信息', value: 'info' },
+                { label: '警告', value: 'warning' },
+                { label: '错误', value: 'error' },
+              ]"
+            />
+            <div class="directory-row">
+              <UiTextField v-model="settingsDataDir" label="数据目录" placeholder="留空时使用当前工作目录下的 .bdl" />
+              <UiButton variant="secondary" :disabled="settings.loading || settings.saving" @click="settings.chooseDataDir">
+                选择
+              </UiButton>
+            </div>
+            <div v-if="settings.draft.data_dir" class="settings-actions">
+              <UiButton variant="ghost" :disabled="settings.loading || settings.saving" @click="settings.clearDataDir">
+                使用默认数据目录
+              </UiButton>
+            </div>
+            <p class="settings-note">数据目录影响任务库、账户 cookie 和维护文件，修改后下次启动生效。</p>
+            <div class="settings-actions">
+              <UiButton variant="secondary" :disabled="settings.loading || settings.saving" @click="settings.cleanupCache">
+                清理缓存
+              </UiButton>
+              <UiButton variant="secondary" :disabled="settings.loading || settings.saving" @click="settings.cleanupTemp">
+                清理临时文件
+              </UiButton>
+              <UiButton variant="secondary" :disabled="settings.loading || settings.saving" @click="settings.exportDiagnostics">
+                导出诊断
+              </UiButton>
+            </div>
           </section>
           <p v-if="settings.error" class="settings-error">{{ settings.error }}</p>
         </section>

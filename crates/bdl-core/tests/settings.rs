@@ -1,4 +1,4 @@
-use bdl_core::naming::DEFAULT_NAMING_TEMPLATE;
+use bdl_core::naming::{DEFAULT_NAMING_TEMPLATE, DuplicateNamingStrategy};
 use bdl_core::settings::AppSettings;
 
 #[test]
@@ -22,4 +22,65 @@ fn settings_normalization_preserves_custom_naming_template() {
     };
 
     assert_eq!(settings.normalized().naming_template, "{title}.{ext}");
+}
+
+#[test]
+fn settings_validate_rejects_unknown_naming_variables() {
+    let settings = AppSettings {
+        naming_template: "{unknown}.{ext}".to_owned(),
+        ..AppSettings::default()
+    };
+
+    let error = settings
+        .validate()
+        .expect_err("unknown variable should fail");
+
+    assert!(error.to_string().contains("未知变量"));
+}
+
+#[test]
+fn settings_deserialize_old_config_defaults_duplicate_naming_strategy() {
+    let settings: AppSettings = serde_json::from_str(r#"{"naming_template":"{title}.{ext}"}"#)
+        .expect("old settings should deserialize");
+
+    assert_eq!(
+        settings.duplicate_naming_strategy,
+        DuplicateNamingStrategy::AppendSuffix
+    );
+    assert_eq!(settings.audio_quality, "best");
+    assert_eq!(settings.codec, "auto");
+    assert_eq!(settings.missing_quality_policy, "lower");
+    assert_eq!(settings.ffmpeg_path, None);
+    assert!(!settings.retain_raw_streams);
+    assert_eq!(settings.proxy_url, None);
+    assert_eq!(settings.log_level, "info");
+    assert_eq!(settings.data_dir, None);
+}
+
+#[test]
+fn settings_validate_rejects_invalid_media_defaults() {
+    let settings = AppSettings {
+        quality: "not-a-quality".to_owned(),
+        ..AppSettings::default()
+    };
+
+    let error = settings
+        .validate()
+        .expect_err("invalid video quality should fail");
+
+    assert!(error.to_string().contains("视频清晰度"));
+}
+
+#[test]
+fn settings_validate_rejects_invalid_proxy_url() {
+    let settings = AppSettings {
+        proxy_url: Some("file:///not-a-proxy".to_owned()),
+        ..AppSettings::default()
+    };
+
+    let error = settings
+        .validate()
+        .expect_err("unsupported proxy scheme should fail");
+
+    assert!(error.to_string().contains("代理地址协议不支持"));
 }

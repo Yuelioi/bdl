@@ -148,15 +148,38 @@ export interface QueueLogEntry {
   created_at: string
 }
 
+export type DuplicateNamingStrategy = 'append_suffix' | 'overwrite_existing'
+export type VideoCodecPreference = 'auto' | 'avc' | 'hevc' | 'av1'
+export type MissingQualityPolicy = 'lower' | 'skip' | 'ask'
+export type LogLevel = 'debug' | 'info' | 'warning' | 'error'
+
 export interface SettingsSnapshot {
   download_dir: string | null
   naming_template: string
   quality: string
   archive_mode: 'fast' | 'complete_archive'
   output_extension: 'mp4' | 'mkv'
+  duplicate_naming_strategy: DuplicateNamingStrategy
+  audio_quality: string
+  codec: VideoCodecPreference
+  missing_quality_policy: MissingQualityPolicy
+  ffmpeg_path: string | null
+  retain_raw_streams: boolean
+  proxy_url: string | null
+  log_level: LogLevel
+  data_dir: string | null
   concurrent_tasks: number
   retry_count: number
   auto_refresh_expired_urls: boolean
+}
+
+export interface MaintenanceResult {
+  removed_files: number
+  path: string
+}
+
+export interface DiagnosticsExportResponse {
+  path: string
 }
 
 export interface AccountSummary {

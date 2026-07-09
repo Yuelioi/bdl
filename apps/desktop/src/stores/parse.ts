@@ -9,8 +9,11 @@ import {
   parseRefreshSource,
   selectionCreateTasks,
 } from '../api/tauri'
+import { useQueueStore } from './queue'
 import { useSettingsStore } from './settings'
 import { useUiStore } from './ui'
+
+const MAX_PARSE_SOURCES = 20
 
 interface ParseState {
   input: string
@@ -49,23 +52,52 @@ export const useParseStore = defineStore('parse', {
         this.activeSourceId = sourceId
       }
     },
+    appendInput(value: string) {
+      const incoming = value.trim()
+      if (!incoming) {
+        return
+      }
+
+      this.input = [this.input.trim(), incoming].filter(Boolean).join('\n')
+    },
     async createSource(input?: string) {
       const ui = useUiStore()
-      const trimmed = (input ?? this.input).trim()
+      const inputs = splitParseInputs(input ?? this.input)
 
-      if (!trimmed) {
+      if (inputs.length === 0) {
         ui.pushToast('请输入链接或 BV/AV', 'warning')
         return
       }
 
+      if (!(await this.prepareSourceCapacity(inputs.length))) {
+        return
+      }
+
       this.loadingBySource.__create__ = true
+      const failures: Array<{ input: string; message: string }> = []
+      let created = 0
       try {
-        const tree = await parseCreateSource({ input: trimmed, fetch_streams: true })
-        this.upsertSource(tree)
-        this.input = ''
-        ui.pushToast('解析完成', 'success')
-      } catch (error) {
-        ui.pushToast(errorMessage(error), 'danger')
+        for (const sourceInput of inputs) {
+          try {
+            const tree = await parseCreateSource({ input: sourceInput, fetch_streams: true })
+            this.upsertSource(tree)
+            created += 1
+          } catch (error) {
+            failures.push({ input: sourceInput, message: errorMessage(error) })
+          }
+        }
+
+        if (created > 0) {
+          this.input = ''
+        }
+
+        if (created > 0 && failures.length === 0) {
+          ui.pushToast(created === 1 ? '解析完成' : `已解析 ${created} 个来源`, 'success')
+        } else if (created > 0) {
+          ui.pushToast(`已解析 ${created} 个来源，${failures.length} 个失败`, 'warning')
+        } else {
+          ui.pushToast(failures[0]?.message ?? '解析失败', 'danger')
+        }
       } finally {
         this.loadingBySource.__create__ = false
       }
@@ -116,10 +148,51 @@ export const useParseStore = defineStore('parse', {
         this.loadingBySource[sourceId] = false
       }
     },
+    async prepareSourceCapacity(incomingCount: number): Promise<boolean> {
+      const overflow = this.sourceOrder.length + incomingCount - MAX_PARSE_SOURCES
+      if (overflow <= 0) {
+        return true
+      }
+
+      const shouldPrune = window.confirm(
+        `解析结果最多保留 ${MAX_PARSE_SOURCES} 个。继续会清理最早的 ${overflow} 个来源。`,
+      )
+      if (!shouldPrune) {
+        return false
+      }
+
+      const sourceIds = this.sourceOrder.slice(-overflow)
+      for (const sourceId of sourceIds) {
+        await this.removeSource(sourceId)
+      }
+
+      return true
+    },
+    async removeSource(sourceId: string) {
+      try {
+        await parseCloseSource(sourceId)
+      } finally {
+        delete this.sources[sourceId]
+        delete this.selectionBySource[sourceId]
+        delete this.errorsBySource[sourceId]
+        this.sourceOrder = this.sourceOrder.filter((id) => id !== sourceId)
+        if (this.activeSourceId === sourceId) {
+          this.activeSourceId = this.sourceOrder[0] ?? null
+        }
+      }
+    },
     async refreshSource(sourceId: string) {
-      await this.runSourceAction(sourceId, async () => {
-        await parseRefreshSource()
-      })
+      const ui = useUiStore()
+      this.loadingBySource[sourceId] = true
+      try {
+        this.upsertSource(await parseRefreshSource({ source_id: sourceId }))
+        ui.pushToast('已刷新来源', 'success')
+      } catch (error) {
+        this.errorsBySource[sourceId] = errorMessage(error)
+        ui.pushToast(errorMessage(error), 'danger')
+      } finally {
+        this.loadingBySource[sourceId] = false
+      }
     },
     toggleNode(sourceId: string, nodeId: string) {
       const tree = this.sources[sourceId]
@@ -159,6 +232,7 @@ export const useParseStore = defineStore('parse', {
     async createTasksForSelection(sourceId: string) {
       const ui = useUiStore()
       const settings = useSettingsStore()
+      const queue = useQueueStore()
       const partIds = this.selectionBySource[sourceId] ?? []
 
       if (partIds.length === 0) {
@@ -183,6 +257,7 @@ export const useParseStore = defineStore('parse', {
           return
         }
 
+        queue.applyCreatedTasks(tasks)
         ui.pushToast(`已创建 ${tasks.length} 个任务`, 'success', { label: '查看传输', tab: 'transfer' })
       } catch (error) {
         this.errorsBySource[sourceId] = errorMessage(error)
@@ -201,23 +276,21 @@ export const useParseStore = defineStore('parse', {
       this.errorsBySource[sourceId] = null
       this.selectionBySource[sourceId] = this.selectionBySource[sourceId] ?? defaultSelection(tree)
     },
-    async runSourceAction(sourceId: string, action: () => Promise<void>) {
-      const ui = useUiStore()
-      this.loadingBySource[sourceId] = true
-      try {
-        await action()
-      } catch (error) {
-        this.errorsBySource[sourceId] = errorMessage(error)
-        ui.pushToast(errorMessage(error), 'danger')
-      } finally {
-        this.loadingBySource[sourceId] = false
-      }
-    },
   },
 })
 
 const collectPartIds = (tree: NormalizedSourceTree): string[] =>
   tree.groups.flatMap((group) => group.items.flatMap((item) => item.parts.map((part) => part.id)))
+
+const splitParseInputs = (input: string): string[] =>
+  Array.from(
+    new Set(
+      input
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean),
+    ),
+  )
 
 const defaultSelection = (tree: NormalizedSourceTree): string[] => (tree.source.kind === 'video' ? collectPartIds(tree) : [])
 

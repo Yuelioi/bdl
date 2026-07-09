@@ -39,6 +39,7 @@ pub struct AppState {
     storage: Mutex<TaskStorage>,
     settings: Mutex<SettingsSnapshot>,
     settings_path: PathBuf,
+    data_dir: PathBuf,
     account: Mutex<AccountSnapshot>,
     account_cookie: Mutex<Option<String>>,
     queue_worker_active: AtomicBool,
@@ -54,11 +55,16 @@ pub struct PreparedSelection {
 
 impl AppState {
     pub fn new() -> BdlResult<Self> {
-        let storage = TaskStorage::open(default_storage_path()?)?;
         let settings_path = default_settings_path()?;
         let settings = load_settings(&settings_path)?;
+        let data_dir = settings
+            .data_dir
+            .as_deref()
+            .map(PathBuf::from)
+            .unwrap_or(default_data_dir()?);
+        let storage = TaskStorage::open(data_dir.join("tasks.sqlite"))?;
         let queue = storage.load_tasks()?;
-        let secure_store = SecureStore::new(default_account_cookie_path()?);
+        let secure_store = SecureStore::new(data_dir.join("account.cookie"));
         let persisted_cookie = secure_store.load_cookie()?;
         let (account, account_cookie) = load_account_snapshot(&secure_store, persisted_cookie)?;
 
@@ -68,6 +74,7 @@ impl AppState {
             storage: Mutex::new(storage),
             settings: Mutex::new(settings),
             settings_path,
+            data_dir,
             account: Mutex::new(account),
             account_cookie: Mutex::new(account_cookie),
             queue_worker_active: AtomicBool::new(false),
@@ -132,6 +139,11 @@ impl AppState {
             .ok_or_else(|| BdlError::Planning {
                 message: format!("解析源 `{}` 不存在，请重新解析。", source_id.0),
             })
+    }
+
+    pub async fn refresh_source(&self, source_id: &SourceId) -> BdlResult<NormalizedSourceTree> {
+        let current = self.source_snapshot(source_id)?;
+        self.parse_source(&current.source.input, true).await
     }
 
     pub async fn load_more(&self, source_id: &SourceId) -> BdlResult<NormalizedSourceTree> {
@@ -433,8 +445,13 @@ impl AppState {
             .clone())
     }
 
+    pub fn data_dir(&self) -> PathBuf {
+        self.data_dir.clone()
+    }
+
     pub fn update_settings(&self, settings: SettingsSnapshot) -> BdlResult<SettingsSnapshot> {
         let settings = settings.normalized();
+        settings.validate()?;
         save_settings(&self.settings_path, &settings)?;
         *self
             .settings
@@ -681,12 +698,8 @@ fn state_poisoned(name: &'static str) -> BdlError {
     }
 }
 
-fn default_storage_path() -> BdlResult<PathBuf> {
-    Ok(std::env::current_dir()?.join(".bdl").join("tasks.sqlite"))
-}
-
-fn default_account_cookie_path() -> BdlResult<PathBuf> {
-    Ok(std::env::current_dir()?.join(".bdl").join("account.cookie"))
+fn default_data_dir() -> BdlResult<PathBuf> {
+    Ok(std::env::current_dir()?.join(".bdl"))
 }
 
 fn default_settings_path() -> BdlResult<PathBuf> {

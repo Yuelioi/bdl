@@ -1,16 +1,20 @@
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
-use bdl_core::BdlError;
 use bdl_core::account::{QrLoginSession, QrLoginStatus, poll_qr_login, start_qr_login};
-use bdl_core::fetcher::{FetchConfig, Fetcher, ReqwestFetcher};
+use bdl_core::fetcher::{FetchConfig, Fetcher, ReqwestFetcher, state_path_for};
 use bdl_core::ids::{PartId, SourceId};
 use bdl_core::model::NormalizedSourceTree;
 use bdl_core::muxer::{MediaMuxer, MediaMuxerConfig, MuxRequest};
-use bdl_core::planner::{ArchiveMode, DownloadOptions, plan_selected_parts};
+use bdl_core::planner::{
+    ArchiveMode, DownloadOptions, MissingQualityPolicy, StreamPreference, parse_stream_codec,
+    plan_selected_parts,
+};
 use bdl_core::queue::{
     DownloadResource, DownloadResourceIntent, DownloadTask, QueueLogEntry, QueueLogLevel,
     ResourceStatus, TaskStatus,
 };
+use bdl_core::{BdlError, BdlResult};
 use chrono::Utc;
 use futures::future::join_all;
 use serde::{Deserialize, Serialize};
@@ -110,6 +114,32 @@ pub struct AccountLoginQrPollResponse {
     pub account: Option<AccountSnapshot>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct MaintenanceResult {
+    pub removed_files: usize,
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DiagnosticsExportResponse {
+    pub path: String,
+}
+
+#[derive(Debug, Clone)]
+struct DownloadRuntimeOptions {
+    ffmpeg_path: Option<PathBuf>,
+    retain_raw_streams: bool,
+}
+
+impl From<&SettingsSnapshot> for DownloadRuntimeOptions {
+    fn from(settings: &SettingsSnapshot) -> Self {
+        Self {
+            ffmpeg_path: settings.ffmpeg_path.as_deref().map(PathBuf::from),
+            retain_raw_streams: settings.retain_raw_streams,
+        }
+    }
+}
+
 #[tauri::command]
 pub async fn parse_create_source(
     app: AppHandle,
@@ -157,8 +187,14 @@ pub fn parse_close_source(
 }
 
 #[tauri::command]
-pub async fn parse_refresh_source() -> CommandResult<()> {
-    unsupported("parse_refresh_source")
+pub async fn parse_refresh_source(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    request: ParseSourcePageRequest,
+) -> CommandResult<NormalizedSourceTree> {
+    let tree = state.refresh_source(&SourceId(request.source_id)).await?;
+    events::emit(&app, events::PARSE_SOURCE_UPDATED, &tree)?;
+    Ok(tree)
 }
 
 #[tauri::command]
@@ -189,6 +225,11 @@ pub async fn selection_create_tasks(
         .output_extension
         .unwrap_or(settings.output_extension);
     options.naming_template = settings.naming_template;
+    options.duplicate_naming_strategy = settings.duplicate_naming_strategy;
+    options.video_quality = StreamPreference::parse(&settings.quality, "视频清晰度")?;
+    options.audio_quality = StreamPreference::parse(&settings.audio_quality, "音频质量")?;
+    options.video_codec = parse_stream_codec(&settings.codec)?;
+    options.missing_quality_policy = MissingQualityPolicy::parse(&settings.missing_quality_policy)?;
 
     let prepared = state
         .prepare_selection(&source_id, &selected_part_ids)
@@ -490,6 +531,94 @@ pub fn settings_update(
 }
 
 #[tauri::command]
+pub async fn maintenance_cleanup_cache(
+    state: State<'_, AppState>,
+) -> CommandResult<MaintenanceResult> {
+    let cache_dir = state.data_dir().join("cache");
+    let removed_files = remove_dir_contents(&cache_dir).await?;
+    Ok(MaintenanceResult {
+        removed_files,
+        path: cache_dir.to_string_lossy().into_owned(),
+    })
+}
+
+#[tauri::command]
+pub async fn maintenance_cleanup_temp(
+    state: State<'_, AppState>,
+) -> CommandResult<MaintenanceResult> {
+    let data_temp_dir = state.data_dir().join("temp");
+    let mut removed_files = remove_dir_contents(&data_temp_dir).await?;
+    for task in state.queue_snapshot()? {
+        for resource in task.resources {
+            removed_files += remove_file_if_exists(&resource.temp_path).await? as usize;
+            removed_files +=
+                remove_file_if_exists(&state_path_for(&resource.temp_path)).await? as usize;
+        }
+    }
+
+    Ok(MaintenanceResult {
+        removed_files,
+        path: state.data_dir().to_string_lossy().into_owned(),
+    })
+}
+
+#[tauri::command]
+pub async fn diagnostics_export(
+    state: State<'_, AppState>,
+) -> CommandResult<DiagnosticsExportResponse> {
+    let diagnostics_dir = state.data_dir().join("diagnostics");
+    fs::create_dir_all(&diagnostics_dir)
+        .await
+        .map_err(BdlError::from)?;
+
+    let settings = state.settings()?;
+    let mut settings_json = serde_json::to_value(&settings).map_err(BdlError::from)?;
+    if let Some(proxy_url) = settings_json
+        .get("proxy_url")
+        .and_then(serde_json::Value::as_str)
+        .map(redact_url)
+    {
+        settings_json["proxy_url"] = serde_json::Value::String(proxy_url);
+    }
+
+    let tasks = state.queue_snapshot()?;
+    let task_logs = tasks
+        .iter()
+        .map(|task| {
+            Ok(serde_json::json!({
+                "task_id": task.id,
+                "logs": state.task_logs(&task.id, 50)?,
+            }))
+        })
+        .collect::<BdlResult<Vec<_>>>()?;
+
+    let report = serde_json::json!({
+        "generated_at": Utc::now().to_rfc3339(),
+        "version": crate::version(),
+        "data_dir": state.data_dir(),
+        "account": state.account()?,
+        "settings": settings_json,
+        "tasks": tasks,
+        "task_logs": task_logs,
+    });
+    let file_name = format!(
+        "bdl-diagnostics-{}.json",
+        Utc::now().format("%Y%m%d-%H%M%S")
+    );
+    let path = diagnostics_dir.join(file_name);
+    fs::write(
+        &path,
+        serde_json::to_vec_pretty(&report).map_err(BdlError::from)?,
+    )
+    .await
+    .map_err(BdlError::from)?;
+
+    Ok(DiagnosticsExportResponse {
+        path: path.to_string_lossy().into_owned(),
+    })
+}
+
+#[tauri::command]
 pub fn account_get(state: State<'_, AppState>) -> CommandResult<AccountSnapshot> {
     Ok(state.account()?)
 }
@@ -553,13 +682,6 @@ pub fn account_verify(
     Ok(account)
 }
 
-fn unsupported<T>(command: &'static str) -> CommandResult<T> {
-    Err(CommandError {
-        code: "unsupported".to_owned(),
-        message: format!("command `{command}` is not implemented in this phase"),
-    })
-}
-
 fn update_task_status(
     app: AppHandle,
     state: State<'_, AppState>,
@@ -600,8 +722,10 @@ async fn run_queue_worker(app: &AppHandle, state: &AppState) -> CommandResult<()
         let settings = state.settings()?;
         let fetcher = ReqwestFetcher::with_config(FetchConfig {
             max_retries: retry_count(&settings),
-        });
+            proxy_url: settings.proxy_url.clone(),
+        })?;
         let concurrent_tasks = concurrent_tasks(&settings);
+        let runtime_options = DownloadRuntimeOptions::from(&settings);
         let mut tasks = Vec::with_capacity(concurrent_tasks);
 
         for _ in 0..concurrent_tasks {
@@ -618,13 +742,11 @@ async fn run_queue_worker(app: &AppHandle, state: &AppState) -> CommandResult<()
             break;
         }
 
-        let outcomes = join_all(
-            tasks
-                .iter()
-                .cloned()
-                .map(|task| run_download_task(app, state, &fetcher, task)),
-        )
-        .await;
+        let outcomes =
+            join_all(tasks.iter().cloned().map(|task| {
+                run_download_task(app, state, &fetcher, task, runtime_options.clone())
+            }))
+            .await;
 
         for (task, outcome) in tasks.into_iter().zip(outcomes) {
             if let Err(error) = outcome {
@@ -680,6 +802,7 @@ async fn run_download_task(
     state: &AppState,
     fetcher: &ReqwestFetcher,
     task: DownloadTask,
+    runtime_options: DownloadRuntimeOptions,
 ) -> CommandResult<()> {
     for resource in task
         .resources
@@ -740,7 +863,10 @@ async fn run_download_task(
 
     let video = resource_by_intent(&task, DownloadResourceIntent::Video)?;
     let audio = resource_by_intent(&task, DownloadResourceIntent::Audio)?;
-    let muxer = MediaMuxer::new(MediaMuxerConfig::default()).map_err(BdlError::from)?;
+    let muxer = MediaMuxer::new(MediaMuxerConfig {
+        ffmpeg_path: runtime_options.ffmpeg_path.clone(),
+    })
+    .map_err(BdlError::from)?;
     muxer
         .mux(&MuxRequest {
             video_path: video.target_path.clone(),
@@ -749,6 +875,10 @@ async fn run_download_task(
         })
         .await
         .map_err(BdlError::from)?;
+
+    if !runtime_options.retain_raw_streams {
+        cleanup_raw_streams(app, state, &task).await?;
+    }
 
     finalize_archive_assets(app, state, &task).await?;
 
@@ -777,6 +907,33 @@ fn should_fetch(resource: &DownloadResource) -> bool {
             | DownloadResourceIntent::Audio
             | DownloadResourceIntent::Cover
     ) && !resource.current_urls.is_empty()
+}
+
+async fn cleanup_raw_streams(
+    app: &AppHandle,
+    state: &AppState,
+    task: &DownloadTask,
+) -> CommandResult<()> {
+    for resource in task.resources.iter().filter(|resource| {
+        matches!(
+            resource.intent,
+            DownloadResourceIntent::Video | DownloadResourceIntent::Audio
+        )
+    }) {
+        match fs::remove_file(&resource.target_path).await {
+            Ok(()) => {}
+            Err(error) if error.kind() == ErrorKind::NotFound => {}
+            Err(error) => return Err(BdlError::from(error).into()),
+        }
+    }
+
+    emit_queue_log(
+        app,
+        state,
+        &task.id,
+        QueueLogLevel::Info,
+        "清理原始音视频轨道",
+    )
 }
 
 async fn finalize_archive_assets(
@@ -910,6 +1067,64 @@ fn open_path(app: &AppHandle, path: &Path) -> CommandResult<()> {
         })
 }
 
+async fn remove_file_if_exists(path: &Path) -> CommandResult<bool> {
+    match fs::remove_file(path).await {
+        Ok(()) => Ok(true),
+        Err(error) if error.kind() == ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(BdlError::from(error).into()),
+    }
+}
+
+async fn remove_dir_contents(path: &Path) -> CommandResult<usize> {
+    remove_dir_contents_sync(path).map_err(Into::into)
+}
+
+fn remove_dir_contents_sync(path: &Path) -> BdlResult<usize> {
+    if !path.exists() {
+        return Ok(0);
+    }
+
+    let mut removed_files = 0;
+    for entry in std::fs::read_dir(path)? {
+        let entry = entry?;
+        let entry_path = entry.path();
+        let file_type = entry.file_type()?;
+        if file_type.is_dir() {
+            removed_files += count_files_sync(&entry_path)?;
+            std::fs::remove_dir_all(&entry_path)?;
+        } else {
+            std::fs::remove_file(&entry_path)?;
+            removed_files += 1;
+        }
+    }
+
+    Ok(removed_files)
+}
+
+fn count_files_sync(path: &Path) -> BdlResult<usize> {
+    let mut count = 0;
+    for entry in std::fs::read_dir(path)? {
+        let entry = entry?;
+        if entry.file_type()?.is_dir() {
+            count += count_files_sync(&entry.path())?;
+        } else {
+            count += 1;
+        }
+    }
+    Ok(count)
+}
+
+fn redact_url(raw: &str) -> String {
+    let Some(scheme_end) = raw.find("://") else {
+        return raw.to_owned();
+    };
+    let Some(credentials_end) = raw[scheme_end + 3..].find('@') else {
+        return raw.to_owned();
+    };
+    let host_start = scheme_end + 3 + credentials_end + 1;
+    format!("{}://<redacted>@{}", &raw[..scheme_end], &raw[host_start..])
+}
+
 fn emit_queue_log(
     app: &AppHandle,
     state: &AppState,
@@ -917,6 +1132,10 @@ fn emit_queue_log(
     level: QueueLogLevel,
     message: &str,
 ) -> CommandResult<()> {
+    if !queue_log_enabled(state, level)? {
+        return Ok(());
+    }
+
     let entry = state.append_task_log(QueueLogEntry {
         task_id: task_id.to_owned(),
         level,
@@ -924,6 +1143,25 @@ fn emit_queue_log(
         created_at: Utc::now().to_rfc3339(),
     })?;
     events::emit(app, events::QUEUE_LOG_APPENDED, &entry)
+}
+
+fn queue_log_enabled(state: &AppState, level: QueueLogLevel) -> CommandResult<bool> {
+    let settings = state.settings()?;
+    let threshold = match settings.log_level.as_str() {
+        "debug" | "info" => 1,
+        "warning" => 2,
+        "error" => 3,
+        _ => 1,
+    };
+    Ok(queue_log_level_rank(level) >= threshold)
+}
+
+fn queue_log_level_rank(level: QueueLogLevel) -> u8 {
+    match level {
+        QueueLogLevel::Info => 1,
+        QueueLogLevel::Warning => 2,
+        QueueLogLevel::Error => 3,
+    }
 }
 
 fn concurrent_tasks(settings: &SettingsSnapshot) -> usize {

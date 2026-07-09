@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use bdl_core::error::BdlError;
 use bdl_core::naming::{
     DEFAULT_NAMING_TEMPLATE, NamingContext, render_output_path, sanitize_path_component,
-    unique_path,
+    unique_path, validate_template,
 };
 
 #[test]
@@ -83,6 +83,13 @@ fn render_output_path_rejects_unknown_variables() {
         render_output_path("{unknown}.{ext}", &context).expect_err("unknown variable should fail");
 
     assert!(error.to_string().contains("未知变量"));
+}
+
+#[test]
+fn validate_template_rejects_unclosed_variables() {
+    let error = validate_template("{title").expect_err("unclosed variable should fail");
+
+    assert!(error.to_string().contains("未闭合变量"));
 }
 
 #[test]

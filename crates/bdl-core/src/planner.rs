@@ -7,8 +7,14 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{BdlError, BdlResult};
 use crate::ids::PartId;
-use crate::model::{MediaKind, MediaStream, NormalizedItem, NormalizedPart, NormalizedSourceTree};
-use crate::naming::{DEFAULT_NAMING_TEMPLATE, NamingContext, render_output_path, unique_path};
+use crate::model::{
+    MediaKind, MediaStream, NormalizedItem, NormalizedPart, NormalizedSourceTree, StreamCodec,
+    StreamQuality,
+};
+use crate::naming::{
+    DEFAULT_NAMING_TEMPLATE, DuplicateNamingStrategy, NamingContext, render_output_path,
+    resolve_duplicate_path,
+};
 use crate::queue::{
     DownloadResource, DownloadResourceIntent, DownloadResourceKind, DownloadTask, ResourceStatus,
     TaskStatus,
@@ -21,12 +27,78 @@ pub enum ArchiveMode {
     CompleteArchive,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum StreamPreference {
+    #[default]
+    Best,
+    Quality(u32),
+}
+
+impl StreamPreference {
+    pub fn parse(value: &str, field_name: &str) -> BdlResult<Self> {
+        let trimmed = value.trim();
+        if trimmed.eq_ignore_ascii_case("best") {
+            return Ok(Self::Best);
+        }
+
+        let quality = trimmed.parse::<u32>().map_err(|_| BdlError::Planning {
+            message: format!("{field_name}设置无效：`{value}`。"),
+        })?;
+
+        if quality == 0 {
+            return Err(BdlError::Planning {
+                message: format!("{field_name}设置无效：清晰度必须大于 0。"),
+            });
+        }
+
+        Ok(Self::Quality(quality))
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum MissingQualityPolicy {
+    #[default]
+    Lower,
+    Skip,
+    Ask,
+}
+
+impl MissingQualityPolicy {
+    pub fn parse(value: &str) -> BdlResult<Self> {
+        match value {
+            "lower" => Ok(Self::Lower),
+            "skip" => Ok(Self::Skip),
+            "ask" => Ok(Self::Ask),
+            other => Err(BdlError::Planning {
+                message: format!("缺失清晰度策略无效：`{other}`。"),
+            }),
+        }
+    }
+}
+
+pub fn parse_stream_codec(value: &str) -> BdlResult<StreamCodec> {
+    match value {
+        "auto" => Ok(StreamCodec::Auto),
+        "avc" => Ok(StreamCodec::Avc),
+        "hevc" => Ok(StreamCodec::Hevc),
+        "av1" => Ok(StreamCodec::Av1),
+        other => Err(BdlError::Planning {
+            message: format!("视频编码设置无效：`{other}`。"),
+        }),
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DownloadOptions {
     pub output_dir: PathBuf,
     pub archive_mode: ArchiveMode,
     pub output_extension: String,
     pub naming_template: String,
+    pub duplicate_naming_strategy: DuplicateNamingStrategy,
+    pub video_quality: StreamPreference,
+    pub audio_quality: StreamPreference,
+    pub video_codec: StreamCodec,
+    pub missing_quality_policy: MissingQualityPolicy,
 }
 
 impl DownloadOptions {
@@ -36,6 +108,11 @@ impl DownloadOptions {
             archive_mode: ArchiveMode::Fast,
             output_extension: "mp4".to_owned(),
             naming_template: DEFAULT_NAMING_TEMPLATE.to_owned(),
+            duplicate_naming_strategy: DuplicateNamingStrategy::default(),
+            video_quality: StreamPreference::default(),
+            audio_quality: StreamPreference::default(),
+            video_codec: StreamCodec::Auto,
+            missing_quality_policy: MissingQualityPolicy::default(),
         }
     }
 
@@ -102,12 +179,8 @@ fn plan_part(
     let part = selected.part;
     let task_id = format!("task:{}:{}", tree.source.id.0, part.id.0);
     let title = task_title(item, part);
-    let video = select_stream(part, MediaKind::Video).ok_or_else(|| BdlError::Planning {
-        message: format!("`{}` 缺少视频流，请重新解析后再试。", part.title),
-    })?;
-    let audio = select_stream(part, MediaKind::Audio).ok_or_else(|| BdlError::Planning {
-        message: format!("`{}` 缺少音频流，请重新解析后再试。", part.title),
-    })?;
+    let video = select_video_stream(part, options)?;
+    let audio = select_audio_stream(part, options)?;
     let output_path = output_path_for(tree, item, part, selected, video, options, reserved_paths)?;
 
     let mut resources = vec![
@@ -141,11 +214,125 @@ fn plan_part(
     })
 }
 
-fn select_stream(part: &NormalizedPart, kind: MediaKind) -> Option<&MediaStream> {
+fn select_video_stream<'a>(
+    part: &'a NormalizedPart,
+    options: &DownloadOptions,
+) -> BdlResult<&'a MediaStream> {
+    let streams = streams_by_kind(part, MediaKind::Video);
+    let codec_matches = if options.video_codec == StreamCodec::Auto {
+        Vec::new()
+    } else {
+        streams
+            .iter()
+            .copied()
+            .filter(|stream| stream.codec == options.video_codec)
+            .collect::<Vec<_>>()
+    };
+    let candidates = if codec_matches.is_empty() {
+        streams
+    } else {
+        codec_matches
+    };
+
+    select_stream_by_quality(
+        candidates,
+        options.video_quality,
+        options.missing_quality_policy,
+        "视频",
+        &part.title,
+    )
+}
+
+fn select_audio_stream<'a>(
+    part: &'a NormalizedPart,
+    options: &DownloadOptions,
+) -> BdlResult<&'a MediaStream> {
+    select_stream_by_quality(
+        streams_by_kind(part, MediaKind::Audio),
+        options.audio_quality,
+        options.missing_quality_policy,
+        "音频",
+        &part.title,
+    )
+}
+
+fn streams_by_kind(part: &NormalizedPart, kind: MediaKind) -> Vec<&MediaStream> {
     part.streams
         .iter()
         .filter(|stream| stream.kind == kind)
-        .max_by_key(|stream| stream_quality_rank(stream.quality))
+        .collect()
+}
+
+fn select_stream_by_quality<'a>(
+    streams: Vec<&'a MediaStream>,
+    preference: StreamPreference,
+    missing_policy: MissingQualityPolicy,
+    stream_label: &str,
+    part_title: &str,
+) -> BdlResult<&'a MediaStream> {
+    if streams.is_empty() {
+        return Err(BdlError::Planning {
+            message: format!("`{part_title}` 缺少{stream_label}流，请重新解析后再试。"),
+        });
+    }
+
+    match preference {
+        StreamPreference::Best => streams
+            .into_iter()
+            .max_by_key(|stream| stream_selection_rank(stream))
+            .ok_or_else(|| BdlError::Planning {
+                message: format!("`{part_title}` 缺少{stream_label}流，请重新解析后再试。"),
+            }),
+        StreamPreference::Quality(target) => {
+            select_target_quality(streams, target, missing_policy, stream_label, part_title)
+        }
+    }
+}
+
+fn select_target_quality<'a>(
+    streams: Vec<&'a MediaStream>,
+    target: u32,
+    missing_policy: MissingQualityPolicy,
+    stream_label: &str,
+    part_title: &str,
+) -> BdlResult<&'a MediaStream> {
+    if let Some(exact) = streams
+        .iter()
+        .copied()
+        .filter(|stream| stream_quality_rank(stream.quality) == target)
+        .max_by_key(|stream| stream_selection_rank(stream))
+    {
+        return Ok(exact);
+    }
+
+    if missing_policy == MissingQualityPolicy::Lower {
+        let lower_or_equal = streams
+            .iter()
+            .copied()
+            .filter(|stream| stream_quality_rank(stream.quality) <= target)
+            .max_by_key(|stream| stream_selection_rank(stream));
+
+        return lower_or_equal
+            .or_else(|| {
+                streams
+                    .iter()
+                    .copied()
+                    .min_by_key(|stream| stream_selection_rank(stream))
+            })
+            .ok_or_else(|| BdlError::Planning {
+                message: format!("`{part_title}` 缺少{stream_label}流，请重新解析后再试。"),
+            });
+    }
+
+    let action = match missing_policy {
+        MissingQualityPolicy::Skip => "已按设置跳过创建任务",
+        MissingQualityPolicy::Ask => "需要用户确认后再创建任务",
+        MissingQualityPolicy::Lower => unreachable!("lower policy handled above"),
+    };
+
+    Err(BdlError::Planning {
+        message: format!("`{part_title}` 没有 {target} 的{stream_label}流，{action}。"),
+    })
 }
 
 fn media_resource(
@@ -243,9 +430,10 @@ fn output_path_for(
     };
     let relative_path = render_output_path(&options.naming_template, &context)?;
 
-    Ok(unique_path(
+    Ok(resolve_duplicate_path(
         options.output_dir.join(relative_path),
         reserved_paths,
+        options.duplicate_naming_strategy,
     ))
 }
 
@@ -298,7 +486,14 @@ fn resource_suffix(intent: DownloadResourceIntent) -> &'static str {
     }
 }
 
-fn stream_quality_rank(quality: crate::model::StreamQuality) -> u32 {
+fn stream_selection_rank(stream: &MediaStream) -> (u32, u64) {
+    (
+        stream_quality_rank(stream.quality),
+        stream.bandwidth.unwrap_or_default(),
+    )
+}
+
+fn stream_quality_rank(quality: StreamQuality) -> u32 {
     match quality {
         crate::model::StreamQuality::Best => u32::MAX,
         crate::model::StreamQuality::Quality(value) => value,

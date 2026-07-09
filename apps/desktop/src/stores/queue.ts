@@ -116,6 +116,11 @@ export const useQueueStore = defineStore('queue', {
       this.applyDefaultFilter()
       this.selectedTaskId = this.selectedTaskId ?? task.id
     },
+    applyCreatedTasks(tasks: DownloadTask[]) {
+      for (const task of tasks) {
+        this.upsertTask(task)
+      }
+    },
     countByFilter(filter: QueueFilter): number {
       return this.tasks.filter((task) => filterTaskByWorkflow(task.status, filter)).length
     },

@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use async_trait::async_trait;
 use futures::StreamExt;
 use reqwest::header::{CONTENT_LENGTH, HeaderMap, HeaderName, HeaderValue, RANGE};
-use reqwest::{Client, StatusCode};
+use reqwest::{Client, Proxy, StatusCode};
 use serde::{Deserialize, Serialize};
 use tokio::fs::{self, OpenOptions};
 use tokio::io::AsyncWriteExt;
@@ -13,14 +13,18 @@ use tokio::sync::mpsc::UnboundedSender;
 use crate::error::{BdlError, BdlResult};
 use crate::queue::DownloadResource;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FetchConfig {
     pub max_retries: usize,
+    pub proxy_url: Option<String>,
 }
 
 impl Default for FetchConfig {
     fn default() -> Self {
-        Self { max_retries: 3 }
+        Self {
+            max_retries: 3,
+            proxy_url: None,
+        }
     }
 }
 
@@ -62,14 +66,26 @@ pub struct ReqwestFetcher {
 
 impl ReqwestFetcher {
     pub fn new() -> BdlResult<Self> {
-        Ok(Self::with_config(FetchConfig::default()))
+        Self::with_config(FetchConfig::default())
     }
 
-    pub fn with_config(config: FetchConfig) -> Self {
-        Self {
-            client: Client::new(),
-            config,
+    pub fn with_config(config: FetchConfig) -> BdlResult<Self> {
+        let mut client = Client::builder();
+        if let Some(proxy_url) = config
+            .proxy_url
+            .as_deref()
+            .filter(|value| !value.is_empty())
+        {
+            let proxy = Proxy::all(proxy_url)
+                .map_err(|error| fetch_error(format!("代理设置无效 `{proxy_url}`: {error}")))?;
+            client = client.proxy(proxy);
         }
+
+        let client = client
+            .build()
+            .map_err(|error| fetch_error(format!("创建下载客户端失败: {error}")))?;
+
+        Ok(Self { client, config })
     }
 }
 

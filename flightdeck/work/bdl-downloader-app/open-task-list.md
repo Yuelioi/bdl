@@ -13,10 +13,10 @@ Audited on 2026-07-09 from:
 
 ## Product Corrections
 
-- [ ] Keep primary navigation to `解析`, `传输`, `设置`; do not restore a separate `历史` tab.
-- [ ] Treat completed records as a Transfer filter and workflow, not as an independent page.
-- [ ] Update old plan language that still mentions `HistoryPage.vue` or `历史` navigation so future work does not reintroduce it.
-- [ ] Keep account out of Settings; login remains owned by the top-right account button.
+- [x] Keep primary navigation to `解析`, `传输`, `设置`; do not restore a separate `历史` tab.
+- [x] Treat completed records as a Transfer filter and workflow, not as an independent page.
+- [x] Update old plan language that still mentions `HistoryPage.vue` or `历史` navigation so future work does not reintroduce it.
+- [x] Keep account out of Settings; login remains owned by the top-right account button.
 
 ## P0 - Parse Page
 
@@ -27,10 +27,10 @@ Audited on 2026-07-09 from:
 - [x] Add visible checkbox/tri-state selection affordances for selectable rows.
 - [x] Add `全选已加载` and `清空选择` actions for the active source.
 - [x] Show selected count per source in the source list.
-- [ ] Add multi-line input and text-file import for batch parsing.
-- [ ] Add `解析全部` confirmation and explicit maximum item limit copy before loading many pages.
-- [ ] Cap retained parse sources at the latest 20 and ask before clearing older results.
-- [ ] Add source-level retry/refresh action once `parse_refresh_source(source_id)` is implemented.
+- [x] Add multi-line input and text-file import for batch parsing.
+- [x] Add `解析全部` confirmation and explicit maximum item limit copy before loading many pages.
+- [x] Cap retained parse sources at the latest 20 and ask before clearing older results.
+- [x] Add source-level retry/refresh action once `parse_refresh_source(source_id)` is implemented.
 
 ## P0 - Settings Page
 
@@ -38,23 +38,23 @@ Audited on 2026-07-09 from:
 - [x] Explain every currently exposed user-facing mode with concrete output behavior.
 - [x] Rename archive preset copy so `快速下载` means "final merged video only".
 - [x] Explain current `完整归档` support honestly: video + cover when available + generated NFO; subtitles/danmaku still pending.
-- [ ] Do not expose `自定义` until resource-level custom asset selection works end to end.
+- [x] Do not expose `自定义` until resource-level custom asset selection works end to end.
 - [x] Show all supported naming variables beside the naming template field.
 - [x] Provide naming template presets for single video, multi-part video, collection/series, and bangumi/course.
 - [x] Replace the default `{title}/{title} - P{part_index} - {part_title}.{ext}` template with a non-duplicating default.
-- [ ] Validate naming templates before save and surface unknown variables inline.
-- [ ] Add duplicate-path naming strategy settings once backend supports user choice beyond automatic suffixes.
-- [ ] Add media defaults: quality, audio quality, codec, missing quality policy, ffmpeg path, raw stream retention.
-- [ ] Add advanced settings: proxy, log level, data directory, cache cleanup, temp cleanup, diagnostics export.
+- [x] Validate naming templates before save and surface unknown variables inline.
+- [x] Add duplicate-path naming strategy settings once backend supports user choice beyond automatic suffixes.
+- [x] Add media defaults: quality, audio quality, codec, missing quality policy, ffmpeg path, raw stream retention.
+- [x] Add advanced settings: proxy, log level, data directory, cache cleanup, temp cleanup, diagnostics export.
 
 ## P0 - Transfer Page
 
 - [ ] Finish manual visual QA from the transfer refactor plan at 1365x768 and 1100x720.
 - [ ] Verify there is no horizontal page scrollbar and inspector content does not force layout overflow.
-- [ ] Verify failed tasks default to `诊断` and raw logs stay behind `原始日志`.
-- [ ] Verify completed tasks have primary open-file/open-folder actions.
+- [x] Verify failed tasks default to `诊断` and raw logs stay behind `原始日志`.
+- [x] Verify completed tasks have primary open-file/open-folder actions.
 - [ ] Verify bulk retry, refresh-link retry, pause/resume, remove, and clear-completed workflows on real persisted tasks.
-- [ ] Add a visible Transfer badge/count when parse creates tasks.
+- [x] Add a visible Transfer badge/count when parse creates tasks.
 
 ## P1 - Archive Assets
 

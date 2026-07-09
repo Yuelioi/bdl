@@ -124,13 +124,39 @@ button:disabled {
   border-radius: var(--radius-6);
   background: transparent;
   color: var(--color-muted);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
   text-align: left;
   padding: 0 var(--space-12);
+}
+
+.nav-item span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .nav-item.active {
   color: var(--color-text);
   background: #e8f3ee;
+}
+
+.nav-badge {
+  flex: 0 0 auto;
+  min-width: 20px;
+  height: 20px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--color-accent);
+  color: #ffffff;
+  padding: 0 6px;
+  font-size: var(--font-12);
+  font-weight: 700;
+  line-height: 1;
 }
 
 .main-region {
@@ -304,6 +330,7 @@ button:disabled {
 .settings-actions {
   display: inline-flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: var(--space-8);
 }
 
@@ -362,6 +389,14 @@ button:disabled {
   background: #fffafa;
   color: var(--color-danger);
   font-size: var(--font-13);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.settings-field-error {
+  margin: calc(-1 * var(--space-4)) 0 0;
+  color: var(--color-danger);
+  font-size: var(--font-12);
   line-height: 1.5;
   overflow-wrap: anywhere;
 }

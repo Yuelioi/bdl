@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, useTemplateRef } from 'vue'
 
 import type { NormalizedSourceTree, SourceKind } from '../api/dto'
 import UiButton from '../ui/Button.vue'
 import UiIconButton from '../ui/IconButton.vue'
 import UiStatusBadge from '../ui/StatusBadge.vue'
-import UiTextField from '../ui/TextField.vue'
+import UiTextarea from '../ui/Textarea.vue'
 import UiTree from '../ui/Tree.vue'
 import { useParseStore } from '../stores/parse'
 
@@ -29,6 +29,7 @@ const sourceKindLabels: Record<SourceKind, string> = {
 }
 
 const parse = useParseStore()
+const inputFile = useTemplateRef<HTMLInputElement>('input-file')
 
 const activeSource = computed(() => parse.activeSource)
 const selectedIds = computed(() => parse.activeSelection)
@@ -59,6 +60,21 @@ const submitInput = () => {
   void parse.createSource()
 }
 
+const importTextFile = () => {
+  inputFile.value?.click()
+}
+
+const handleTextFile = async (event: Event) => {
+  const target = event.target as HTMLInputElement
+  const file = target.files?.[0]
+  if (!file) {
+    return
+  }
+
+  parse.appendInput(await file.text())
+  target.value = ''
+}
+
 const createTasks = () => {
   if (activeSource.value) {
     void parse.createTasksForSelection(activeSource.value.source.id)
@@ -73,7 +89,14 @@ const loadMore = () => {
 
 const parseAll = () => {
   if (activeSource.value) {
-    void parse.parseAll(activeSource.value.source.id)
+    const source = activeSource.value.source
+    const total = source.total_count ?? '未知'
+    const confirmed = window.confirm(
+      `解析全部会继续加载这个来源的远端列表，当前最多解析到 100 项。\n\n当前已加载 ${source.loaded_count} / ${total}。是否继续？`,
+    )
+    if (confirmed) {
+      void parse.parseAll(source.id, 100)
+    }
   }
 }
 
@@ -86,6 +109,12 @@ const selectAllLoaded = () => {
 const clearSelection = () => {
   if (activeSource.value) {
     parse.clearSelection(activeSource.value.source.id)
+  }
+}
+
+const refreshSource = () => {
+  if (activeSource.value) {
+    void parse.refreshSource(activeSource.value.source.id)
   }
 }
 
@@ -195,8 +224,12 @@ const sourceSelectedCount = (sourceId: string): number => parse.selectionBySourc
         </UiStatusBadge>
       </div>
       <form class="parse-form" @submit.prevent="submitInput">
-        <UiTextField v-model="parse.input" label="链接或 BV/AV" placeholder="BV1xx411c7mD" />
-        <UiButton type="submit" :disabled="createLoading">解析</UiButton>
+        <UiTextarea v-model="parse.input" label="链接或 BV/AV" placeholder="BV1xx411c7mD&#10;https://www.bilibili.com/video/..." :rows="3" />
+        <div class="parse-actions">
+          <UiButton type="submit" :disabled="createLoading">解析</UiButton>
+          <UiButton type="button" variant="secondary" :disabled="createLoading" @click="importTextFile">导入文本</UiButton>
+        </div>
+        <input ref="input-file" class="visually-hidden-file" type="file" accept=".txt,.list,.csv,text/plain" @change="handleTextFile" />
       </form>
     </section>
 
@@ -238,13 +271,10 @@ const sourceSelectedCount = (sourceId: string): number => parse.selectionBySourc
           <h2>准备下载</h2>
           <span class="muted-text">{{ activeSourceKindLabel }}</span>
         </div>
-        <UiIconButton
-          v-if="activeSource"
-          icon="x"
-          label="关闭来源"
-          variant="ghost"
-          @click="closeSource(activeSource.source.id)"
-        />
+        <div v-if="activeSource" class="source-heading-actions">
+          <UiIconButton icon="refresh" label="刷新来源" variant="ghost" :disabled="activeLoading" @click="refreshSource" />
+          <UiIconButton icon="x" label="关闭来源" variant="ghost" @click="closeSource(activeSource.source.id)" />
+        </div>
       </div>
 
       <div v-if="activeSource" class="selection-body">
@@ -305,9 +335,27 @@ const sourceSelectedCount = (sourceId: string): number => parse.selectionBySourc
 
 .parse-form {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 96px;
-  align-items: end;
+  grid-template-columns: minmax(0, 1fr) 104px;
+  align-items: start;
   gap: var(--space-12);
+}
+
+.parse-actions {
+  display: grid;
+  gap: var(--space-8);
+  padding-top: 24px;
+}
+
+.parse-actions :deep(.ui-button) {
+  width: 100%;
+}
+
+.visually-hidden-file {
+  position: fixed;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .source-panel,
@@ -361,6 +409,12 @@ const sourceSelectedCount = (sourceId: string): number => parse.selectionBySourc
   flex-direction: column;
   gap: var(--space-16);
   overflow: auto;
+}
+
+.source-heading-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
 }
 
 .selection-summary {

@@ -1,4 +1,6 @@
+use std::fs;
 use std::path::PathBuf;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use chrono::Utc;
 
@@ -7,7 +9,10 @@ use bdl_core::model::{
     AssetKind, FetchPolicy, HeaderPair, MediaKind, MediaStream, NormalizedGroup, NormalizedItem,
     NormalizedPart, NormalizedSourceTree, SourceKind, SourceSummary, StreamCodec, StreamQuality,
 };
-use bdl_core::planner::{ArchiveMode, DownloadOptions, plan_selected_parts};
+use bdl_core::naming::DuplicateNamingStrategy;
+use bdl_core::planner::{
+    ArchiveMode, DownloadOptions, MissingQualityPolicy, StreamPreference, plan_selected_parts,
+};
 use bdl_core::queue::{DownloadResourceIntent, DownloadResourceKind, ResourceStatus, TaskStatus};
 
 #[test]
@@ -22,11 +27,7 @@ fn plan_selected_parts_creates_one_task_for_one_selected_part() {
     assert_eq!(tasks[0].id, "task:source:BV1:part:BV1:100");
     assert_eq!(tasks[0].source_id, "source:BV1");
     assert_eq!(tasks[0].status, TaskStatus::Waiting);
-    assert!(
-        tasks[0]
-            .output_path
-            .ends_with("Fixture Video/Fixture Video - P1 - P1.mp4")
-    );
+    assert!(tasks[0].output_path.ends_with("Fixture Video/P1 - P1.mp4"));
 }
 
 #[test]
@@ -129,21 +130,131 @@ fn plan_selected_parts_adds_suffix_for_duplicate_output_paths() {
     )
     .expect("duplicate selection should still plan unique paths");
 
-    assert!(
-        tasks[0]
-            .output_path
-            .ends_with("Fixture Video/Fixture Video - P1 - P1.mp4")
-    );
+    assert!(tasks[0].output_path.ends_with("Fixture Video/P1 - P1.mp4"));
     assert!(
         tasks[1]
             .output_path
-            .ends_with("Fixture Video/Fixture Video - P1 - P1 (1).mp4")
+            .ends_with("Fixture Video/P1 - P1 (1).mp4")
     );
     assert!(
         tasks[1].resources[0]
             .target_path
-            .ends_with("Fixture Video/Fixture Video - P1 - P1 (1).video.m4s")
+            .ends_with("Fixture Video/P1 - P1 (1).video.m4s")
     );
+}
+
+#[test]
+fn plan_selected_parts_can_overwrite_existing_files_without_batch_path_collisions() {
+    let tree = fixture_tree(true);
+    let output_dir = unique_temp_dir();
+    let existing_output = output_dir.join("Fixture Video").join("P1 - P1.mp4");
+    fs::create_dir_all(existing_output.parent().expect("output should have parent"))
+        .expect("test output dir should be created");
+    fs::write(&existing_output, b"existing").expect("existing output should be written");
+    let mut options = DownloadOptions::new(output_dir.clone());
+    options.duplicate_naming_strategy = DuplicateNamingStrategy::OverwriteExisting;
+
+    let tasks = plan_selected_parts(
+        &tree,
+        &[
+            PartId("part:BV1:100".to_owned()),
+            PartId("part:BV1:100".to_owned()),
+        ],
+        &options,
+    )
+    .expect("overwrite mode should still plan duplicate selections");
+
+    assert_eq!(tasks[0].output_path, existing_output);
+    assert_eq!(
+        tasks[1].output_path,
+        output_dir.join("Fixture Video").join("P1 - P1 (1).mp4")
+    );
+
+    let _ = fs::remove_dir_all(output_dir);
+}
+
+#[test]
+fn plan_selected_parts_uses_configured_video_and_audio_quality() {
+    let mut tree = fixture_tree(true);
+    let part = fixture_part_mut(&mut tree);
+    part.streams.push(media_stream(
+        MediaKind::Video,
+        StreamQuality::Quality(64),
+        StreamCodec::Avc,
+        "https://example.invalid/video-64.m4s",
+    ));
+    part.streams.push(media_stream(
+        MediaKind::Audio,
+        StreamQuality::Quality(30216),
+        StreamCodec::Unknown,
+        "https://example.invalid/audio-30216.m4s",
+    ));
+    let mut options = DownloadOptions::new(PathBuf::from("downloads"));
+    options.video_quality = StreamPreference::Quality(64);
+    options.audio_quality = StreamPreference::Quality(30216);
+
+    let tasks = plan_selected_parts(&tree, &[PartId("part:BV1:100".to_owned())], &options)
+        .expect("configured stream qualities should plan");
+
+    assert_eq!(
+        tasks[0].resources[0].current_urls,
+        vec!["https://example.invalid/video-64.m4s"]
+    );
+    assert_eq!(
+        tasks[0].resources[1].current_urls,
+        vec!["https://example.invalid/audio-30216.m4s"]
+    );
+}
+
+#[test]
+fn plan_selected_parts_prefers_configured_video_codec_when_available() {
+    let mut tree = fixture_tree(true);
+    fixture_part_mut(&mut tree).streams.push(media_stream(
+        MediaKind::Video,
+        StreamQuality::Quality(80),
+        StreamCodec::Hevc,
+        "https://example.invalid/video-hevc.m4s",
+    ));
+    let mut options = DownloadOptions::new(PathBuf::from("downloads"));
+    options.video_codec = StreamCodec::Hevc;
+
+    let tasks = plan_selected_parts(&tree, &[PartId("part:BV1:100".to_owned())], &options)
+        .expect("configured codec should plan");
+
+    assert_eq!(
+        tasks[0].resources[0].current_urls,
+        vec!["https://example.invalid/video-hevc.m4s"]
+    );
+}
+
+#[test]
+fn plan_selected_parts_chooses_lower_quality_when_target_is_unavailable() {
+    let tree = fixture_tree(true);
+    let mut options = DownloadOptions::new(PathBuf::from("downloads"));
+    options.video_quality = StreamPreference::Quality(120);
+    options.missing_quality_policy = MissingQualityPolicy::Lower;
+
+    let tasks = plan_selected_parts(&tree, &[PartId("part:BV1:100".to_owned())], &options)
+        .expect("lower policy should choose available quality");
+
+    assert_eq!(
+        tasks[0].resources[0].current_urls,
+        vec!["https://example.invalid/video.m4s"]
+    );
+}
+
+#[test]
+fn plan_selected_parts_rejects_missing_quality_when_policy_requires_user_action() {
+    let tree = fixture_tree(true);
+    let mut options = DownloadOptions::new(PathBuf::from("downloads"));
+    options.video_quality = StreamPreference::Quality(120);
+    options.missing_quality_policy = MissingQualityPolicy::Ask;
+
+    let error = plan_selected_parts(&tree, &[PartId("part:BV1:100".to_owned())], &options)
+        .expect_err("ask policy should block missing target quality");
+
+    assert!(error.to_string().contains("没有 120"));
+    assert!(error.to_string().contains("需要用户确认"));
 }
 
 fn fixture_tree(include_audio: bool) -> NormalizedSourceTree {
@@ -215,4 +326,38 @@ fn fixture_tree(include_audio: bool) -> NormalizedSourceTree {
             page: None,
         }],
     }
+}
+
+fn media_stream(
+    kind: MediaKind,
+    quality: StreamQuality,
+    codec: StreamCodec,
+    url: &str,
+) -> MediaStream {
+    MediaStream {
+        id: format!("stream:{kind:?}:{url}"),
+        kind,
+        quality,
+        codec,
+        bandwidth: Some(1_000_000),
+        urls: vec![url.to_owned()],
+        headers: vec![HeaderPair {
+            name: "Referer".to_owned(),
+            value: "https://www.bilibili.com/".to_owned(),
+        }],
+        acquired_at: Utc::now(),
+    }
+}
+
+fn fixture_part_mut(tree: &mut NormalizedSourceTree) -> &mut NormalizedPart {
+    &mut tree.groups[0].items[0].parts[0]
+}
+
+fn unique_temp_dir() -> PathBuf {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock should be after unix epoch")
+        .as_nanos();
+
+    std::env::temp_dir().join(format!("bdl-planner-{nanos}"))
 }
