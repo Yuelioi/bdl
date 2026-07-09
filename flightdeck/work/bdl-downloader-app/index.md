@@ -133,6 +133,9 @@ Current:
 - P1 real transfer progress landed in commit `fd49836`.
 - The queue worker now forwards fetcher progress through `queue://progress-updated` events. The desktop queue store aggregates resource bytes per task, estimates per-task and global speed, derives ETA from known totals, uses byte progress when available, and shows downloaded/total size in the Transfer progress column instead of leaving active downloads at placeholder-only metrics.
 - Real progress verification passed: `cargo fmt --all --check`, `cargo test -p bdl-tauri commands`, `cargo check -p bdl-desktop`, and `pnpm --dir apps/desktop build`.
+- P1 segmented downloads landed in commit `70af626`.
+- `ReqwestFetcher` now honors `FetchConfig.segment_count` for fresh downloads with known content length, splits resources into bounded Range requests, merges segment files into the normal `.bdlpart` path, and keeps existing ranged resume behavior on already-started `.bdlpart` files. Settings now exposes `单任务分段数` with supported values 1/2/4/8.
+- Segmented download verification passed: `cargo fmt --all --check`, `cargo test -p bdl-core --test fetcher_resume --test settings`, `cargo test -p bdl-tauri commands`, `cargo check -p bdl-desktop`, `pnpm --dir apps/desktop build`, and `git diff --check`.
 
 Decisions:
 - Main navigation: `解析`, `传输`, `设置`; account lives in the top-right account button. Completed records live under Transfer's `已完成` filter, not a separate History page.
