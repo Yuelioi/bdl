@@ -145,6 +145,9 @@ Current:
 - P1 Transfer inspector diagnostics export landed in commit `ac15dad`.
 - The task inspector now exposes `导出诊断` in both the diagnosis tab and raw-log toolbar, reusing the existing backend diagnostics export command and surfacing the export path through a toast. Settings still keeps its existing diagnostics export action.
 - Transfer inspector diagnostics export verification passed: `pnpm --dir apps/desktop build` and `git diff --check`.
+- P1 diagnostic redaction hardening landed in commit `78d9bd0`.
+- Rust redaction now handles Cookie, Authorization, Proxy-Authorization, common Bilibili cookie/query keys, signed URL query strings, and oversized response bodies. Diagnostics export writes redacted task URLs, resource headers, and task logs instead of raw queue snapshots. Transfer inspector log redaction uses the same broader key set and truncates large messages.
+- Diagnostic redaction verification passed: `cargo fmt --all --check`, `cargo test -p bdl-core --test account --test storage`, `cargo test -p bdl-tauri commands`, `cargo check -p bdl-desktop`, `pnpm --dir apps/desktop build`, and `git diff --check`.
 
 Decisions:
 - Main navigation: `解析`, `传输`, `设置`; account lives in the top-right account button. Completed records live under Transfer's `已完成` filter, not a separate History page.
