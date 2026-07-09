@@ -1,11 +1,11 @@
 use std::path::{Path, PathBuf};
 
 use chrono::{Duration, Utc};
-use rusqlite::{Connection, Transaction, params};
+use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
-use crate::account::redact_sensitive;
+use crate::account::{AccountSummary, redact_sensitive};
 use crate::error::BdlResult;
 use crate::queue::{DownloadResource, DownloadTask, QueueLogEntry, QueueLogLevel};
 
@@ -228,6 +228,39 @@ impl TaskStorage {
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
+    pub fn save_account_summary(&mut self, account: &AccountSummary) -> BdlResult<()> {
+        self.conn.execute(
+            r#"
+            INSERT INTO account_summary (id, summary, updated_at)
+            VALUES (1, ?1, CURRENT_TIMESTAMP)
+            ON CONFLICT(id) DO UPDATE SET
+                summary = excluded.summary,
+                updated_at = CURRENT_TIMESTAMP
+            "#,
+            [serialize_json(account)?],
+        )?;
+        Ok(())
+    }
+
+    pub fn load_account_summary(&self) -> BdlResult<Option<AccountSummary>> {
+        let summary_json = self
+            .conn
+            .query_row(
+                "SELECT summary FROM account_summary WHERE id = 1",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?;
+
+        summary_json.as_deref().map(deserialize_json).transpose()
+    }
+
+    pub fn clear_account_summary(&mut self) -> BdlResult<()> {
+        self.conn
+            .execute("DELETE FROM account_summary WHERE id = 1", [])?;
+        Ok(())
+    }
+
     pub fn append_task_log(&mut self, entry: &QueueLogEntry) -> BdlResult<()> {
         self.conn.execute(
             r#"
@@ -431,6 +464,12 @@ fn run_migrations(conn: &Connection) -> BdlResult<()> {
             message TEXT NOT NULL,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS account_summary (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            summary TEXT NOT NULL,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
         "#,
     )?;

@@ -622,7 +622,7 @@ watch(
                 使用默认数据目录
               </UiButton>
             </div>
-            <p class="settings-note">数据目录影响任务库、账户 cookie 和维护文件，修改后下次启动生效。</p>
+            <p class="settings-note">数据目录影响任务库、账户摘要和维护文件，修改后下次启动生效。</p>
             <div class="settings-actions">
               <UiButton variant="secondary" :disabled="settings.loading || settings.saving" @click="settings.cleanupCache">
                 清理缓存

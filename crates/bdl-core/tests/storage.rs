@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use bdl_core::BdlResult;
+use bdl_core::account::AccountSummary;
 use bdl_core::model::HeaderPair;
 use bdl_core::queue::{
     DownloadResource, DownloadResourceIntent, DownloadResourceKind, DownloadTask,
@@ -23,6 +24,7 @@ fn task_storage_creates_expected_tables() -> BdlResult<()> {
     assert!(tables.contains(&"segments".to_owned()));
     assert!(tables.contains(&"history".to_owned()));
     assert!(tables.contains(&"task_logs".to_owned()));
+    assert!(tables.contains(&"account_summary".to_owned()));
     Ok(())
 }
 
@@ -214,6 +216,30 @@ fn task_storage_saves_completed_record_with_media_metadata() -> BdlResult<()> {
     assert!(summary.contains("error: Cookie: <redacted>"));
     assert!(!summary.contains("secret"));
     assert!(!summary.contains("abc"));
+    Ok(())
+}
+
+#[test]
+fn task_storage_persists_account_summary_without_cookie_material() -> BdlResult<()> {
+    let fixture = StorageFixture::new()?;
+    let account = AccountSummary {
+        logged_in: true,
+        name: Some("fixture user".to_owned()),
+        avatar_url: Some("https://example.test/avatar.jpg".to_owned()),
+        mid: Some("42".to_owned()),
+        vip_label: Some("年度大会员".to_owned()),
+    };
+
+    {
+        let mut storage = TaskStorage::open(&fixture.db_path)?;
+        storage.save_account_summary(&account)?;
+    }
+
+    let mut storage = TaskStorage::open(&fixture.db_path)?;
+    assert_eq!(storage.load_account_summary()?, Some(account));
+
+    storage.clear_account_summary()?;
+    assert_eq!(storage.load_account_summary()?, None);
     Ok(())
 }
 

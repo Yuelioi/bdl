@@ -77,9 +77,9 @@ impl AppState {
         if !startup_recovery.task_ids.is_empty() {
             storage.replace_tasks(&queue)?;
         }
-        let secure_store = SecureStore::new(data_dir.join("account.cookie"));
-        let persisted_cookie = secure_store.load_cookie()?;
-        let (account, account_cookie) = load_account_snapshot(&secure_store, persisted_cookie)?;
+        let secure_store = SecureStore::new();
+        let (account, account_cookie) =
+            load_account_snapshot(&mut storage, &secure_store, &data_dir)?;
 
         Ok(Self {
             parse_sources: Mutex::new(HashMap::new()),
@@ -515,6 +515,10 @@ impl AppState {
         let account = AccountSummary::from_imported_cookie(&imported_cookie);
 
         self.secure_store.save_cookie(imported_cookie.as_header())?;
+        self.storage
+            .lock()
+            .map_err(|_| state_poisoned("storage"))?
+            .save_account_summary(&account)?;
         *self
             .account_cookie
             .lock()
@@ -527,6 +531,10 @@ impl AppState {
 
     pub fn logout(&self) -> BdlResult<AccountSnapshot> {
         self.secure_store.clear_cookie()?;
+        self.storage
+            .lock()
+            .map_err(|_| state_poisoned("storage"))?
+            .clear_account_summary()?;
         *self
             .account_cookie
             .lock()
@@ -548,6 +556,10 @@ impl AppState {
 
         let imported_cookie = ImportedCookie::parse(raw_cookie)?;
         let account = AccountSummary::from_imported_cookie(&imported_cookie);
+        self.storage
+            .lock()
+            .map_err(|_| state_poisoned("storage"))?
+            .save_account_summary(&account)?;
         *self.account.lock().map_err(|_| state_poisoned("account"))? = account.clone();
         Ok(account)
     }
@@ -767,23 +779,53 @@ fn save_settings(path: &PathBuf, settings: &SettingsSnapshot) -> BdlResult<()> {
 }
 
 fn load_account_snapshot(
+    storage: &mut TaskStorage,
     secure_store: &SecureStore,
-    persisted_cookie: Option<String>,
+    data_dir: &std::path::Path,
 ) -> BdlResult<(AccountSnapshot, Option<String>)> {
+    let legacy_cookie_path = data_dir.join("account.cookie");
+    let persisted_cookie = match secure_store.load_cookie()? {
+        Some(cookie) => {
+            SecureStore::clear_legacy_cookie_file(&legacy_cookie_path)?;
+            Some(cookie)
+        }
+        None => secure_store.migrate_legacy_cookie_file(&legacy_cookie_path)?,
+    };
+
     let Some(raw_cookie) = persisted_cookie else {
+        storage.clear_account_summary()?;
         return Ok((AccountSnapshot::default(), None));
     };
 
     match ImportedCookie::parse(&raw_cookie) {
-        Ok(imported_cookie) => Ok((
-            AccountSummary::from_imported_cookie(&imported_cookie),
-            Some(raw_cookie),
-        )),
+        Ok(imported_cookie) => {
+            let account = stored_or_imported_account(storage, &imported_cookie)?;
+            storage.save_account_summary(&account)?;
+            Ok((account, Some(raw_cookie)))
+        }
         Err(_) => {
             secure_store.clear_cookie()?;
+            storage.clear_account_summary()?;
             Ok((AccountSnapshot::default(), None))
         }
     }
+}
+
+fn stored_or_imported_account(
+    storage: &TaskStorage,
+    imported_cookie: &ImportedCookie,
+) -> BdlResult<AccountSnapshot> {
+    let mut account = storage
+        .load_account_summary()?
+        .filter(|account| account.logged_in)
+        .unwrap_or_else(|| AccountSummary::from_imported_cookie(imported_cookie));
+
+    account.logged_in = true;
+    if account.mid.is_none() {
+        account.mid = imported_cookie.dede_user_id().map(str::to_owned);
+    }
+
+    Ok(account)
 }
 
 fn task_media_refresh_ids(task: &DownloadTask) -> BdlResult<TaskMediaRefreshIds> {
@@ -1357,10 +1399,13 @@ fn reset_interrupted_resources(resources: &mut [bdl_core::queue::DownloadResourc
 mod tests {
     use super::{
         PartHydrationRequest, append_new_tasks, append_source_page, dedupe_tasks_by_id,
-        hydrate_placeholder_part, next_page_request, prepare_startup_recovery,
-        remap_selected_part_ids, selected_hydration_requests, task_media_refresh_ids,
+        hydrate_placeholder_part, load_account_snapshot, next_page_request,
+        prepare_startup_recovery, remap_selected_part_ids, selected_hydration_requests,
+        task_media_refresh_ids,
     };
+    use crate::secure_store::SecureStore;
     use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     use bdl_core::ids::{GroupId, ItemId, PartId, SourceId};
     use bdl_core::input::ClassifiedInput;
@@ -1374,6 +1419,7 @@ mod tests {
         ResourceStatus, TaskStatus,
     };
     use bdl_core::resolver::paged::PageRequest;
+    use bdl_core::storage::TaskStorage;
 
     #[test]
     fn append_new_tasks_skips_existing_and_incoming_duplicate_ids() {
@@ -1432,6 +1478,49 @@ mod tests {
         assert!(snapshot.auto_recovery_enabled);
         assert_eq!(queue[0].status, TaskStatus::Waiting);
         assert_eq!(queue[1].status, TaskStatus::Paused);
+    }
+
+    #[test]
+    fn load_account_snapshot_migrates_legacy_cookie_and_persists_summary() {
+        let data_dir = temp_state_dir();
+        std::fs::create_dir_all(&data_dir).expect("temp data dir should be created");
+        let legacy_cookie_path = data_dir.join("account.cookie");
+        std::fs::write(
+            &legacy_cookie_path,
+            "DedeUserID=42; SESSDATA=session; bili_jct=csrf\n",
+        )
+        .expect("legacy cookie should be written");
+        let secure_store = SecureStore::in_memory();
+        let mut storage =
+            TaskStorage::open(data_dir.join("tasks.sqlite")).expect("storage should open");
+
+        let (account, cookie) =
+            load_account_snapshot(&mut storage, &secure_store, &data_dir).expect("load account");
+
+        assert!(account.logged_in);
+        assert_eq!(account.mid.as_deref(), Some("42"));
+        assert_eq!(
+            cookie.as_deref(),
+            Some("DedeUserID=42; SESSDATA=session; bili_jct=csrf")
+        );
+        assert_eq!(
+            secure_store
+                .load_cookie()
+                .expect("cookie should load")
+                .as_deref(),
+            Some("DedeUserID=42; SESSDATA=session; bili_jct=csrf")
+        );
+        assert_eq!(
+            storage
+                .load_account_summary()
+                .expect("summary should load")
+                .as_ref()
+                .and_then(|summary| summary.mid.as_deref()),
+            Some("42")
+        );
+        assert!(!legacy_cookie_path.exists());
+
+        let _ = std::fs::remove_dir_all(data_dir);
     }
 
     #[test]
@@ -1698,6 +1787,15 @@ mod tests {
 
     fn queue_ids(tasks: &[DownloadTask]) -> Vec<&str> {
         tasks.iter().map(|task| task.id.as_str()).collect()
+    }
+
+    fn temp_state_dir() -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .unwrap_or_default();
+
+        std::env::temp_dir().join(format!("bdl-state-{nanos}"))
     }
 
     fn uploader_tree() -> NormalizedSourceTree {
