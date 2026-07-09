@@ -1498,7 +1498,7 @@ git commit -m "feat: add transfer queue ui"
 - Test: `crates/bdl-core/tests/storage.rs`
 - Modify: `crates/bdl-tauri/src/state.rs`
 
-- [ ] **Step 1: Write SQLite migration tests**
+- [x] **Step 1: Write SQLite migration tests**
 
 Test:
 
@@ -1507,7 +1507,7 @@ Test:
 - Inserts a task with two resources.
 - Reloads it after reopening the connection.
 
-- [ ] **Step 2: Implement storage**
+- [x] **Step 2: Implement storage**
 
 Use `rusqlite`. Set:
 
@@ -1518,7 +1518,7 @@ PRAGMA foreign_keys=ON;
 
 Use one storage actor or one serialized storage handle to avoid concurrent write races.
 
-- [ ] **Step 3: Implement startup recovery**
+- [x] **Step 3: Implement startup recovery**
 
 Startup classifies persisted tasks:
 
@@ -1528,7 +1528,7 @@ Startup classifies persisted tasks:
 
 Default behavior: do not auto-resume. Expose resumable tasks in transfer UI.
 
-- [ ] **Step 4: Run storage tests**
+- [x] **Step 4: Run storage tests**
 
 Run:
 
@@ -1538,7 +1538,7 @@ cargo test -p bdl-core --test storage
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add crates/bdl-core crates/bdl-tauri

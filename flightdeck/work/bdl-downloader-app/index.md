@@ -2,11 +2,11 @@
 
 ## State
 
-Task 11 transfer queue UI is complete on branch `bdl-downloader-app`. The workspace has a Rust/Tauri/Vue scaffold, frontend-safe normalized DTOs, a pure Bilibili input classifier, a `bpi-rs` backed video resolver, a planner that turns selected normalized parts into backend-owned download tasks/resources, a resumable `reqwest` fetcher, an ffmpeg muxer, a CLI parse/download path, registered Tauri commands/events, a custom Vue UI kit, a parse page wired to Tauri commands, and a transfer page backed by queue state.
+Task 12 persistent storage and recovery is complete on branch `bdl-downloader-app`. The workspace has a Rust/Tauri/Vue scaffold, frontend-safe normalized DTOs, a pure Bilibili input classifier, a `bpi-rs` backed video resolver, a planner that turns selected normalized parts into backend-owned download tasks/resources, a resumable `reqwest` fetcher, an ffmpeg muxer, a CLI parse/download path, registered Tauri commands/events, a custom Vue UI kit, parse/transfer pages, and SQLite-backed queue persistence.
 
 ## Next
 
-Execute Task 12 in `plan.md`: add persistent task storage and startup recovery.
+Execute Task 13 in `plan.md`: add account persistence, cookie import, QR login, and login verification.
 
 ## Read now
 
@@ -67,6 +67,11 @@ Current:
 - Task 11 verification passed: `cargo check -p bdl-desktop`, `cargo test --workspace`, `cargo fmt --all --check`, and `pnpm --dir apps/desktop build`.
 - The transfer page now has filters `正在下载`, `队列中`, `已暂停`, `失败`, `已完成`, and `全部`, a Pinia queue store listening for queue events, task detail/log panels, and task row actions for pause/resume/cancel/retry/remove/open-file/open-dir.
 - Queue pause/resume/cancel/retry/remove now perform in-memory Tauri state transitions and emit `queue://task-updated`; file open commands still return typed `unsupported` until file actions are implemented.
+- Completed Task 12 persistent storage and recovery in commits `36981b3`, `7649de6`, and `b434c16`.
+- Task 12 verification passed: `cargo test --workspace`, `cargo check -p bdl-desktop`, `cargo fmt --all --check`, and `pnpm --dir apps/desktop build`.
+- `bdl-core::storage::TaskStorage` now creates `tasks.sqlite` with `tasks`, `resources`, `segments`, `history`, and `task_logs`, saves task/resource snapshots, and reloads them after reopening.
+- `AppState` now loads persisted queue tasks from `.bdl/tasks.sqlite` on startup and persists queue snapshots after create/pause/resume/cancel/retry/remove. It does not auto-resume tasks.
+- Settings snapshot moved into `bdl-core::settings::AppSettings`; Tauri keeps `SettingsSnapshot` as an alias.
 
 Decisions:
 - Main navigation: `解析`, `传输`, `历史`, `设置`; account lives in the top-right account button.
