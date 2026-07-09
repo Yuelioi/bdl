@@ -6,7 +6,7 @@ Task 14 is in progress on branch `bdl-downloader-app`. The workspace has a Rust/
 
 ## Next
 
-Continue Task 14 in `plan.md`: uploader video pages now work; remaining source resolvers are favorites, collections, series, bangumi, and courses.
+Continue Task 14 in `plan.md`: favorites and uploader video pages now work; remaining source resolvers are collections, series, bangumi, and courses.
 
 ## Read now
 
@@ -79,8 +79,9 @@ Current:
 - The account UI now uses `apps/desktop/src/stores/account.ts`, supports Cookie import, QR generation/polling, account event updates, and top-right logout. The Settings tab remains account-free.
 - Current account persistence is file-backed through `secure_store.rs`; replacing it with an OS credential-store backend remains a hardening follow-up.
 - Task 14 page-size policy landed in commit `4a88d3e`.
-- Task 14 uploader video parsing landed in commits `f2310f4`, `df916c0`, `751fb73`, and `57e981a`.
+- Task 14 favorite and uploader video parsing landed in commits `f2310f4`, `df916c0`, `751fb73`, `57e981a`, and `8ad66c2`.
 - Uploader source parsing now loads the first page through `bpi-rs user.uploaded_videos`, `parse_load_more` appends one page, and `parse_load_all` batches pages up to the current explicit/default limit of 100.
+- Favorite source parsing now loads video resources from `bpi-rs fav.list_detail` for links with `fid` or `media_id`, appends pages through the same `parse_load_more` path, and uses API `has_more` to avoid count issues when non-video resources are filtered out.
 - `下载已选择` now hydrates selected uploader placeholder parts through the video resolver before planning tasks, so multi-P videos selected from an uploader list expand to their real parts. List sources no longer default to all selected in the parse UI.
 
 Decisions:

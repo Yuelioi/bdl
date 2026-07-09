@@ -1647,16 +1647,15 @@ Known defaults:
 - Uploader videos: 30.
 - Collection/series: 10 or 20 depending on endpoint.
 
-- [ ] **Step 2: Add favorite and uploader parsing**
+- [x] **Step 2: Add favorite and uploader parsing**
 
-Uploader parsing is partially complete:
+Favorite and uploader parsing are complete for video resources:
 
 - `crates/bdl-core/src/resolver/uploader.rs` resolves uploader video pages through `bpi-rs user.uploaded_videos`.
-- `parse_load_more` appends one uploader page.
-- `parse_load_all` appends uploader pages up to an explicit/default limit of 100.
-- `下载已选择` hydrates selected uploader placeholders before planning downloads.
-
-Favorite parsing remains.
+- `crates/bdl-core/src/resolver/favorite.rs` resolves favorite video resource pages through `bpi-rs fav.list_detail`.
+- `parse_load_more` appends one uploader/favorite page.
+- `parse_load_all` appends uploader/favorite pages up to an explicit/default limit of 100.
+- `下载已选择` hydrates selected list placeholders before planning downloads.
 
 Requirements:
 
