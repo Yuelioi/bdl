@@ -118,6 +118,9 @@ Current:
 - P1 completed-record search/actions landed in commit `8aa13a9`.
 - Transfer `已完成` now has search by title, source id/link, and output path. Completed task actions include open file, open folder, re-download, copy source, remove record, and existing clear-completed bulk cleanup. Re-download of completed tasks resets all resources to pending so cleaned raw streams are fetched again.
 - Completed-record search/actions verification passed: `pnpm --dir apps/desktop build`, `cargo test -p bdl-tauri state`, `cargo check -p bdl-desktop`, and `cargo fmt --all --check`.
+- P1 completed-record metadata persistence landed in commit `38ead80`.
+- `DownloadTask` now carries a `media_selection` snapshot from the planner, including selected video quality, audio quality, codec, and output container. `TaskStorage` migrates existing SQLite databases, persists that task metadata, and writes durable `history` completed records with final output path, source id, completion time, and redacted warning/error summary when a task completes.
+- Completed-record metadata verification passed: `cargo fmt --all --check`, `cargo test -p bdl-core --test storage --test planner --test diagnostics`, `cargo test -p bdl-tauri state`, `cargo test -p bdl-tauri commands`, `cargo check -p bdl-desktop`, and `pnpm --dir apps/desktop build`.
 
 Decisions:
 - Main navigation: `解析`, `传输`, `设置`; account lives in the top-right account button. Completed records live under Transfer's `已完成` filter, not a separate History page.
