@@ -157,6 +157,9 @@ Current:
 - P2 startup account verification landed in commit `f818154`.
 - Startup now schedules a background account verification that calls `login.nav` through `bpi-rs`, refreshes the persisted `AccountSummary` from verified profile data, clears local account state only when Bilibili reports the session is logged out, and emits `account://updated` when verification completes. The frontend registers the account listener before the initial account load.
 - Startup account verification passed: `cargo fmt --all --check`, `cargo test -p bdl-core --test account`, `cargo test -p bdl-tauri state`, `cargo test -p bdl-tauri commands`, `cargo check -p bdl-desktop`, `pnpm --dir apps/desktop build`, and `git diff --check`.
+- P2 workspace check script landed in commit `f3c9475`.
+- `scripts/check.ps1` now runs Rust formatting, clippy with warnings as errors, the full Cargo workspace tests, the desktop frontend build, and `git diff --check`. The script explicitly checks native command exit codes so PowerShell cannot report a failed cargo command as success.
+- Workspace check verification passed by running `powershell -ExecutionPolicy Bypass -File .\scripts\check.ps1`; clippy cleanup was included for the warnings surfaced by that script.
 
 Decisions:
 - Main navigation: `解析`, `传输`, `设置`; account lives in the top-right account button. Completed records live under Transfer's `已完成` filter, not a separate History page.
