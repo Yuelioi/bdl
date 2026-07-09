@@ -136,6 +136,9 @@ Current:
 - P1 segmented downloads landed in commit `70af626`.
 - `ReqwestFetcher` now honors `FetchConfig.segment_count` for fresh downloads with known content length, splits resources into bounded Range requests, merges segment files into the normal `.bdlpart` path, and keeps existing ranged resume behavior on already-started `.bdlpart` files. Settings now exposes `单任务分段数` with supported values 1/2/4/8.
 - Segmented download verification passed: `cargo fmt --all --check`, `cargo test -p bdl-core --test fetcher_resume --test settings`, `cargo test -p bdl-tauri commands`, `cargo check -p bdl-desktop`, `pnpm --dir apps/desktop build`, and `git diff --check`.
+- P1 startup recovery prompt landed in commit `506ed7f`.
+- On startup, persisted `waiting` / `parsing` / `downloading` / `muxing` tasks are normalized into recoverable queue state. By default they are paused and surfaced through a global recovery prompt; when `启动时自动继续未完成任务` is enabled, the app resumes those tasks after loading the queue. `queue_list` no longer starts the worker implicitly.
+- Startup recovery verification passed: `cargo fmt --all --check`, `cargo test -p bdl-core --test settings`, `cargo test -p bdl-tauri state`, `cargo test -p bdl-tauri commands`, `cargo check -p bdl-desktop`, `pnpm --dir apps/desktop build`, and `git diff --check`.
 
 Decisions:
 - Main navigation: `解析`, `传输`, `设置`; account lives in the top-right account button. Completed records live under Transfer's `已完成` filter, not a separate History page.

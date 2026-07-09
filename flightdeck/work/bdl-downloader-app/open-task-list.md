@@ -78,7 +78,7 @@ Audited on 2026-07-09 from:
 - [x] Verify CDN consistency with length, ETag, or last-modified before continuing a ranged download.
 - [x] Add real size and speed reporting instead of `--`.
 - [x] Add segment count setting once the fetcher honors it.
-- [ ] Add startup auto-recovery setting and recovery prompt.
+- [x] Add startup auto-recovery setting and recovery prompt.
 
 ## P1 - Logs and Diagnostics
 
