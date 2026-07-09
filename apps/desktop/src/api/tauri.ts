@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 
-import type { DownloadTask, NormalizedSourceTree } from './dto'
+import type { DownloadTask, NormalizedSourceTree, QueueRemoveResponse } from './dto'
 
 export interface CommandErrorShape {
   code: string
@@ -48,6 +48,22 @@ export const parseRefreshSource = () => invokeCommand<void>('parse_refresh_sourc
 
 export const selectionCreateTasks = (request: SelectionCreateTasksRequest) =>
   invokeCommand<DownloadTask[]>('selection_create_tasks', { request })
+
+export const queueList = () => invokeCommand<DownloadTask[]>('queue_list')
+
+export const queuePause = (taskId: string) => invokeCommand<DownloadTask>('queue_pause', { taskId })
+
+export const queueResume = (taskId: string) => invokeCommand<DownloadTask>('queue_resume', { taskId })
+
+export const queueCancel = (taskId: string) => invokeCommand<DownloadTask>('queue_cancel', { taskId })
+
+export const queueRetry = (taskId: string) => invokeCommand<DownloadTask>('queue_retry', { taskId })
+
+export const queueRemove = (taskId: string) => invokeCommand<QueueRemoveResponse>('queue_remove', { taskId })
+
+export const queueOpenFile = (taskId: string) => invokeCommand<void>('queue_open_file', { taskId })
+
+export const queueOpenDir = (taskId: string) => invokeCommand<void>('queue_open_dir', { taskId })
 
 const invokeCommand = async <T>(command: string, args?: Record<string, unknown>): Promise<T> => {
   try {

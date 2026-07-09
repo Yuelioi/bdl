@@ -1,6 +1,6 @@
 <script setup lang="ts">
 const { status = 'ready' } = defineProps<{
-  status?: 'ready' | 'downloading' | 'queued' | 'done' | 'warning' | 'error'
+  status?: 'ready' | 'downloading' | 'queued' | 'done' | 'warning' | 'error' | 'paused'
 }>()
 </script>
 
@@ -43,6 +43,11 @@ const { status = 'ready' } = defineProps<{
 .status-warning {
   background: #fff4e6;
   color: var(--color-warning);
+}
+
+.status-paused {
+  background: #eef2ff;
+  color: #4254b7;
 }
 
 .status-error {

@@ -220,7 +220,6 @@ button:disabled {
   gap: var(--space-16);
 }
 
-.transfer-grid,
 .single-grid {
   grid-template-columns: minmax(0, 1fr);
 }

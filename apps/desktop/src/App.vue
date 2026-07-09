@@ -2,21 +2,19 @@
 import { computed, ref } from 'vue'
 
 import ParsePage from './pages/ParsePage.vue'
+import TransferPage from './pages/TransferPage.vue'
 import UiButton from './ui/Button.vue'
 import UiDialog from './ui/Dialog.vue'
 import UiDrawer from './ui/Drawer.vue'
 import UiIconButton from './ui/IconButton.vue'
-import UiProgressBar from './ui/ProgressBar.vue'
 import UiSelect from './ui/Select.vue'
 import UiTabs from './ui/Tabs.vue'
-import UiTaskRow from './ui/TaskRow.vue'
 import UiTextarea from './ui/Textarea.vue'
 import UiTextField from './ui/TextField.vue'
 import UiToastHost from './ui/ToastHost.vue'
 import { useUiStore, type AppTab } from './stores/ui'
 
 const ui = useUiStore()
-const transferTab = ref('downloading')
 const outputDir = ref('')
 const outputFormat = ref('mp4')
 const accountMenuOpen = ref(false)
@@ -99,28 +97,7 @@ const signOut = () => {
 
       <ParsePage v-if="ui.activeTab === 'parse'" />
 
-      <section v-else-if="ui.activeTab === 'transfer'" class="page-grid transfer-grid">
-        <section class="panel">
-          <UiTabs
-            v-model="transferTab"
-            :tabs="[
-              { label: '正在下载', value: 'downloading' },
-              { label: '队列中', value: 'queued' },
-              { label: '已完成', value: 'done' },
-            ]"
-          />
-          <div class="task-list">
-            <UiTaskRow
-              title="字幕君交流场所"
-              status="downloading"
-              :progress="42"
-              meta="1080P · AVC · 2.4 MB/s"
-              path="D:/Downloads/字幕君交流场所.mp4"
-            />
-            <UiProgressBar :value="42" />
-          </div>
-        </section>
-      </section>
+      <TransferPage v-else-if="ui.activeTab === 'transfer'" />
 
       <section v-else-if="ui.activeTab === 'history'" class="page-grid single-grid">
         <section class="panel empty-panel">

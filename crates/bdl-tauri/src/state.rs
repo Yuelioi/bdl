@@ -4,7 +4,7 @@ use std::sync::Mutex;
 use bdl_core::ids::SourceId;
 use bdl_core::input::classify_input;
 use bdl_core::model::NormalizedSourceTree;
-use bdl_core::queue::DownloadTask;
+use bdl_core::queue::{DownloadTask, TaskStatus};
 use bdl_core::resolver::video::VideoResolver;
 use bdl_core::resolver::{ResolveOptions, Resolver};
 use bdl_core::{BdlError, BdlResult};
@@ -72,6 +72,26 @@ impl AppState {
             .map_err(|_| state_poisoned("queue"))?
             .extend(tasks);
         Ok(())
+    }
+
+    pub fn update_task_status(&self, task_id: &str, status: TaskStatus) -> BdlResult<DownloadTask> {
+        let mut queue = self.queue.lock().map_err(|_| state_poisoned("queue"))?;
+        let task = queue
+            .iter_mut()
+            .find(|task| task.id == task_id)
+            .ok_or_else(|| BdlError::Planning {
+                message: format!("任务 `{task_id}` 不存在。"),
+            })?;
+
+        task.status = status;
+        Ok(task.clone())
+    }
+
+    pub fn remove_task(&self, task_id: &str) -> BdlResult<bool> {
+        let mut queue = self.queue.lock().map_err(|_| state_poisoned("queue"))?;
+        let original_len = queue.len();
+        queue.retain(|task| task.id != task_id);
+        Ok(queue.len() != original_len)
     }
 
     pub fn queue_snapshot(&self) -> BdlResult<Vec<DownloadTask>> {

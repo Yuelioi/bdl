@@ -125,3 +125,14 @@ export interface DownloadResource {
   temp_path: string
   status: ResourceStatus
 }
+
+export interface QueueRemoveResponse {
+  removed: boolean
+}
+
+export interface QueueLogEntry {
+  task_id: string
+  level: 'info' | 'warning' | 'error'
+  message: string
+  created_at: string
+}

@@ -4,7 +4,7 @@ use bdl_core::BdlError;
 use bdl_core::ids::{PartId, SourceId};
 use bdl_core::model::NormalizedSourceTree;
 use bdl_core::planner::{ArchiveMode, DownloadOptions, plan_selected_parts};
-use bdl_core::queue::DownloadTask;
+use bdl_core::queue::{DownloadTask, TaskStatus};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
 
@@ -37,6 +37,11 @@ pub struct ParseCreateSourceRequest {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ParseCloseSourceResponse {
+    pub removed: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct QueueRemoveResponse {
     pub removed: bool,
 }
 
@@ -130,37 +135,58 @@ pub fn queue_list(state: State<'_, AppState>) -> CommandResult<Vec<DownloadTask>
 }
 
 #[tauri::command]
-pub async fn queue_pause() -> CommandResult<()> {
-    unsupported("queue_pause")
+pub fn queue_pause(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    task_id: String,
+) -> CommandResult<DownloadTask> {
+    update_task_status(app, state, &task_id, TaskStatus::Paused)
 }
 
 #[tauri::command]
-pub async fn queue_resume() -> CommandResult<()> {
-    unsupported("queue_resume")
+pub fn queue_resume(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    task_id: String,
+) -> CommandResult<DownloadTask> {
+    update_task_status(app, state, &task_id, TaskStatus::Waiting)
 }
 
 #[tauri::command]
-pub async fn queue_cancel() -> CommandResult<()> {
-    unsupported("queue_cancel")
+pub fn queue_cancel(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    task_id: String,
+) -> CommandResult<DownloadTask> {
+    update_task_status(app, state, &task_id, TaskStatus::Cancelled)
 }
 
 #[tauri::command]
-pub async fn queue_retry() -> CommandResult<()> {
-    unsupported("queue_retry")
+pub fn queue_retry(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    task_id: String,
+) -> CommandResult<DownloadTask> {
+    update_task_status(app, state, &task_id, TaskStatus::Waiting)
 }
 
 #[tauri::command]
-pub async fn queue_remove() -> CommandResult<()> {
-    unsupported("queue_remove")
+pub fn queue_remove(
+    state: State<'_, AppState>,
+    task_id: String,
+) -> CommandResult<QueueRemoveResponse> {
+    Ok(QueueRemoveResponse {
+        removed: state.remove_task(&task_id)?,
+    })
 }
 
 #[tauri::command]
-pub async fn queue_open_file() -> CommandResult<()> {
+pub async fn queue_open_file(_task_id: String) -> CommandResult<()> {
     unsupported("queue_open_file")
 }
 
 #[tauri::command]
-pub async fn queue_open_dir() -> CommandResult<()> {
+pub async fn queue_open_dir(_task_id: String) -> CommandResult<()> {
     unsupported("queue_open_dir")
 }
 
@@ -215,6 +241,17 @@ fn unsupported<T>(command: &'static str) -> CommandResult<T> {
         code: "unsupported".to_owned(),
         message: format!("command `{command}` is not implemented in this phase"),
     })
+}
+
+fn update_task_status(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    task_id: &str,
+    status: TaskStatus,
+) -> CommandResult<DownloadTask> {
+    let task = state.update_task_status(task_id, status)?;
+    events::emit(&app, events::QUEUE_TASK_UPDATED, &task)?;
+    Ok(task)
 }
 
 fn parse_archive_mode(value: &str) -> CommandResult<ArchiveMode> {
