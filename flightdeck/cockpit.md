@@ -1,6 +1,6 @@
 # Cockpit — bdl
 
-Focus: BDL downloader  UI backlog is open.
+Focus: BDL downloader UI backlog is open.
 
 ## In Flight
 

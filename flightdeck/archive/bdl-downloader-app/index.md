@@ -19,8 +19,6 @@ No active implementation tasks remain in this topic. For future work, create a f
 ## Read if
 
 - E:/projects/tools/bpi-rs/docs/api-index.md - when mapping a supported source type to existing `bpi-rs` APIs.
-
-
 ## Progress
 
 Current:

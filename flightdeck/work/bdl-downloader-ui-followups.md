@@ -14,14 +14,6 @@ Started: 2026-07-09
 - Added Transfer list sorting by default order, name, progress, speed, and issue priority.
 - Confirmed per-batch download overrides live in the `下载已选择` settings dialog: media mode, video quality, audio quality, codec, container, and archive mode.
 
-## 
-
-
-
-``
-
-
-
 ## Follow-up Backlog
 
 1. Duplicate-task policy UI: skip, create anyway, or ask.
