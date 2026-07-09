@@ -2,6 +2,8 @@
 import { computed, ref, watch } from 'vue'
 
 import type { DownloadResource, DownloadTask, QueueLogEntry, ResourceStatus } from '../api/dto'
+import { diagnosticsExport } from '../api/tauri'
+import { useUiStore } from '../stores/ui'
 import {
   createTaskDiagnosticView,
   createTaskTimeline,
@@ -30,9 +32,11 @@ const emit = defineEmits<{
   refreshLogs: []
 }>()
 
+const ui = useUiStore()
 const selectedTab = ref('overview')
 const tabTouched = ref(false)
 const copied = ref(false)
+const exportingDiagnostics = ref(false)
 
 const tabs = computed(() => [
   { label: '诊断', value: 'diagnosis' },
@@ -128,6 +132,18 @@ const copyDiagnostics = async () => {
   }
 }
 
+const exportDiagnostics = async () => {
+  exportingDiagnostics.value = true
+  try {
+    const result = await diagnosticsExport()
+    ui.pushToast(`诊断已导出：${result.path}`, 'success')
+  } catch (error) {
+    ui.pushToast(errorMessage(error), 'danger')
+  } finally {
+    exportingDiagnostics.value = false
+  }
+}
+
 const formatEventTime = (value: string): string => {
   if (!value) {
     return '--:--'
@@ -184,6 +200,14 @@ const outputDir = (path: string | null): string => {
 
   const separatorIndex = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'))
   return separatorIndex >= 0 ? path.slice(0, separatorIndex) : '.'
+}
+
+const errorMessage = (error: unknown): string => {
+  if (error instanceof Error) {
+    return error.message
+  }
+
+  return String(error)
 }
 </script>
 
@@ -247,6 +271,9 @@ const outputDir = (path: string | null): string => {
         <div class="diagnosis-actions">
           <UiButton variant="secondary" @click="copyDiagnostics">
             {{ copied ? '已复制' : '复制诊断信息' }}
+          </UiButton>
+          <UiButton variant="secondary" :disabled="exportingDiagnostics" @click="exportDiagnostics">
+            {{ exportingDiagnostics ? '导出中' : '导出诊断' }}
           </UiButton>
         </div>
       </section>
@@ -322,6 +349,9 @@ const outputDir = (path: string | null): string => {
           <span>{{ redactedLogs.length }} 条原始日志</span>
           <div>
             <UiButton variant="ghost" @click="copyDiagnostics">{{ copied ? '已复制' : '复制诊断信息' }}</UiButton>
+            <UiButton variant="ghost" :disabled="exportingDiagnostics" @click="exportDiagnostics">
+              {{ exportingDiagnostics ? '导出中' : '导出诊断' }}
+            </UiButton>
             <UiButton variant="ghost" :disabled="logsLoading" @click="emit('refreshLogs')">刷新</UiButton>
           </div>
         </div>
