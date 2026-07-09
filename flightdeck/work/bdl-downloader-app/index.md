@@ -99,6 +99,10 @@ Current:
 - Task 15 naming verification passed: `cargo fmt --all --check`, `cargo test -p bdl-core --test naming --test planner`, `cargo test -p bdl-tauri state`, `cargo check -p bdl-desktop`, and `pnpm --dir apps/desktop build`.
 - Task 15 archive asset execution is partially implemented: complete archive cover resources download when URLs exist, NFO files are generated locally after muxing, and currently unavailable cover/subtitle/danmaku resources are completed with warning logs instead of remaining pending. Subtitle/danmaku API fetching and custom asset selection remain pending.
 - Task 15 archive execution verification passed: `cargo fmt --all --check`, `cargo test -p bdl-tauri commands`, and `cargo check -p bdl-desktop`.
+- P0 parse/settings continuation landed in commit `31e641e feat: complete parse and settings defaults`.
+- The parse page now supports multi-line input, text-file import, source refresh, retained-source cap prompts, and explicit `解析全部` confirmation. Settings now exposes backend-honored naming, duplicate-path, media, proxy, log, data directory, cleanup, and diagnostics controls. The planner honors video/audio quality, codec preference, missing-quality policy, duplicate naming strategy, custom ffmpeg path, proxy, and raw stream retention. Transfer now shows a side-nav badge after parse creates tasks.
+- P0 continuation verification passed: `cargo fmt --all --check`, `cargo test -p bdl-core --test settings --test fetcher_resume --test planner --test naming --test muxer`, `cargo test -p bdl-tauri state`, `cargo check -p bdl-desktop`, and `pnpm --dir apps/desktop build`.
+- Manual Transfer visual QA at `1365x768` and `1100x720` is still pending because the in-app browser backend was unavailable in this session (`agent.browsers.list()` returned no browsers).
 
 Decisions:
 - Main navigation: `解析`, `传输`, `设置`; account lives in the top-right account button. Completed records live under Transfer's `已完成` filter, not a separate History page.
