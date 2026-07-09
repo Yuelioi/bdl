@@ -1,3 +1,4 @@
+pub mod favorite;
 pub mod paged;
 pub mod uploader;
 pub mod video;

@@ -9,6 +9,7 @@ use bdl_core::model::{
     NormalizedItem, NormalizedPart, NormalizedSourceTree, PageState, SourceKind,
 };
 use bdl_core::queue::{DownloadTask, TaskStatus};
+use bdl_core::resolver::favorite::FavoriteResolver;
 use bdl_core::resolver::paged::PageRequest;
 use bdl_core::resolver::uploader::UploaderResolver;
 use bdl_core::resolver::video::VideoResolver;
@@ -66,6 +67,11 @@ impl AppState {
         let classified = classify_input(input)?;
         let options = ResolveOptions { fetch_streams };
         let tree = match classified.source_kind() {
+            SourceKind::Favorite => {
+                self.favorite_resolver()?
+                    .resolve(classified, options)
+                    .await?
+            }
             SourceKind::Uploader => {
                 self.uploader_resolver()?
                     .resolve(classified, options)
@@ -304,6 +310,15 @@ impl AppState {
 
     async fn append_next_page(&self, tree: &mut NormalizedSourceTree) -> BdlResult<()> {
         match tree.source.kind {
+            SourceKind::Favorite => {
+                let media_id = favorite_media_id(tree)?;
+                let request = next_page_request(tree)?;
+                let next_page = self
+                    .favorite_resolver()?
+                    .resolve_page(media_id, request)
+                    .await?;
+                append_source_page(tree, next_page)
+            }
             SourceKind::Uploader => {
                 let mid = uploader_mid(tree)?;
                 let request = next_page_request(tree)?;
@@ -337,6 +352,18 @@ impl AppState {
         {
             Some(cookie) => UploaderResolver::from_cookie(&cookie),
             None => UploaderResolver::new(),
+        }
+    }
+
+    fn favorite_resolver(&self) -> BdlResult<FavoriteResolver> {
+        match self
+            .account_cookie
+            .lock()
+            .map_err(|_| state_poisoned("account_cookie"))?
+            .clone()
+        {
+            Some(cookie) => FavoriteResolver::from_cookie(&cookie),
+            None => FavoriteResolver::new(),
         }
     }
 }
@@ -392,6 +419,17 @@ fn uploader_mid(tree: &NormalizedSourceTree) -> BdlResult<u64> {
             kind: source_kind_name(other.source_kind()).to_owned(),
         }),
     }
+}
+
+fn favorite_media_id(tree: &NormalizedSourceTree) -> BdlResult<u64> {
+    tree.source
+        .id
+        .0
+        .strip_prefix("favorite:")
+        .and_then(|value| value.parse::<u64>().ok())
+        .ok_or_else(|| BdlError::Planning {
+            message: format!("来源 `{}` 缺少收藏夹 ID。", tree.source.id.0),
+        })
 }
 
 fn next_page_request(tree: &NormalizedSourceTree) -> BdlResult<PageRequest> {
@@ -461,9 +499,10 @@ fn append_source_page(
     );
 
     let total_count = next_page.source.total_count.or(existing.source.total_count);
-    let has_more = total_count
-        .map(|total| group.items.len() < total)
-        .unwrap_or(next_page_state.loaded_count >= next_page_state.page_size as usize);
+    let has_more = next_page.source.has_more
+        && total_count
+            .map(|total| group.items.len() < total)
+            .unwrap_or(next_page_state.loaded_count >= next_page_state.page_size as usize);
     let page_state = PageState {
         page_number: next_page_state.page_number,
         page_size: next_page_state.page_size,
@@ -774,6 +813,24 @@ mod tests {
         assert_eq!(page.loaded_count, 2);
         assert_eq!(page.total_count, Some(45));
         assert!(page.has_more);
+    }
+
+    #[test]
+    fn append_source_page_stops_when_api_page_has_no_more() {
+        let mut tree = uploader_tree();
+        let mut next = next_uploader_tree();
+        next.source.has_more = false;
+
+        append_source_page(&mut tree, next).expect("page should append");
+
+        assert!(!tree.source.has_more);
+        assert!(
+            !tree.groups[0]
+                .page
+                .as_ref()
+                .expect("page state should exist")
+                .has_more
+        );
     }
 
     fn uploader_tree() -> NormalizedSourceTree {
