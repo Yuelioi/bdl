@@ -96,27 +96,35 @@ impl Fetcher for ReqwestFetcher {
         resource: &DownloadResource,
         progress: Option<ProgressSender>,
     ) -> BdlResult<FetchOutcome> {
-        let Some(url) = resource.current_urls.first() else {
+        let urls = resource
+            .current_urls
+            .iter()
+            .map(String::as_str)
+            .filter(|url| !url.trim().is_empty())
+            .collect::<Vec<_>>();
+        if urls.is_empty() {
             return Err(fetch_error("资源没有可用下载地址，请重新解析后再试。"));
-        };
+        }
 
         let mut last_error = None;
         let attempts = self.config.max_retries + 1;
-        for attempt_index in 0..attempts {
-            match self.fetch_once(resource, url, progress.clone()).await {
-                Ok(outcome) => return Ok(outcome),
-                Err(error) => {
-                    last_error = Some(error.to_string());
-                    if attempt_index + 1 == attempts {
-                        break;
+        let mut attempted = 0;
+        for _ in 0..attempts {
+            for url in &urls {
+                attempted += 1;
+                match self.fetch_once(resource, url, progress.clone()).await {
+                    Ok(outcome) => return Ok(outcome),
+                    Err(error) => {
+                        last_error = Some(error.to_string());
                     }
                 }
             }
         }
 
         Err(fetch_error(format!(
-            "下载 `{}` 失败，已尝试 {attempts} attempts: {}",
+            "下载 `{}` 失败，已尝试 {attempted} attempts across {} URLs: {}",
             resource.id,
+            urls.len(),
             last_error.unwrap_or_else(|| "unknown error".to_owned())
         )))
     }

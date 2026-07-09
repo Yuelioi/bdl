@@ -112,6 +112,32 @@ async fn fetcher_stops_after_configured_retry_count() {
 }
 
 #[tokio::test]
+async fn fetcher_uses_backup_url_before_exhausting_resource() {
+    let primary = TestServer::spawn(b"primary".to_vec(), 1).await;
+    let backup = TestServer::spawn(b"backup".to_vec(), 0).await;
+    let dir = temp_case_dir("backup-url").await;
+    let mut resource = resource(primary.url(), &dir, "backup.bin");
+    resource.current_urls.push(backup.url());
+    let fetcher = ReqwestFetcher::with_config(FetchConfig {
+        max_retries: 0,
+        proxy_url: None,
+    })
+    .expect("fetcher should be created");
+
+    fetcher
+        .fetch(&resource, None)
+        .await
+        .expect("backup URL should download");
+
+    assert_eq!(
+        tokio::fs::read(&resource.target_path).await.unwrap(),
+        b"backup"
+    );
+    assert_eq!(primary.get_count(), 1);
+    assert_eq!(backup.get_count(), 1);
+}
+
+#[tokio::test]
 async fn fetcher_restarts_when_content_length_changes_between_attempts() {
     let server = TestServer::spawn(b"abcdefghijkl".to_vec(), 0).await;
     let dir = temp_case_dir("changed-length").await;
