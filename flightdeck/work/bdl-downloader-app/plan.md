@@ -1038,7 +1038,7 @@ git commit -m "feat: plan selected parts into download tasks"
 - Create: `crates/bdl-core/src/fetcher.rs`
 - Test: `crates/bdl-core/tests/fetcher_resume.rs`
 
-- [ ] **Step 1: Write fetcher tests with a local HTTP server**
+- [x] **Step 1: Write fetcher tests with a local HTTP server**
 
 Use a test server that supports:
 
@@ -1053,7 +1053,7 @@ Tests:
 - Retry stops after configured retry count.
 - If content length changes between resume attempts, the fetcher restarts that resource instead of mixing segments.
 
-- [ ] **Step 2: Implement `Fetcher` trait and `ReqwestFetcher`**
+- [x] **Step 2: Implement `Fetcher` trait and `ReqwestFetcher`**
 
 Required behavior:
 
@@ -1063,7 +1063,7 @@ Required behavior:
 - Writes `.bdlpart` resource state beside the temp file.
 - Emits progress events through a callback or channel, not directly through Tauri.
 
-- [ ] **Step 3: Run fetcher tests**
+- [x] **Step 3: Run fetcher tests**
 
 Run:
 
@@ -1073,7 +1073,7 @@ cargo test -p bdl-core --test fetcher_resume
 
 Expected: PASS.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```powershell
 git add crates/bdl-core

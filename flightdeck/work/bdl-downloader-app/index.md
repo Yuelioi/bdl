@@ -2,11 +2,11 @@
 
 ## State
 
-Task 5 planning is complete on branch `bdl-downloader-app`. The workspace has a Rust/Tauri/Vue scaffold, frontend-safe normalized DTOs, a pure Bilibili input classifier, a `bpi-rs` backed video resolver, and a planner that turns selected normalized parts into backend-owned download tasks/resources.
+Task 6 fetching is complete on branch `bdl-downloader-app`. The workspace has a Rust/Tauri/Vue scaffold, frontend-safe normalized DTOs, a pure Bilibili input classifier, a `bpi-rs` backed video resolver, a planner that turns selected normalized parts into backend-owned download tasks/resources, and a resumable `reqwest` fetcher.
 
 ## Next
 
-Execute Task 6 in `plan.md`: add the resumable `reqwest` fetcher with resource-level segment state.
+Execute Task 7 in `plan.md`: add the ffmpeg muxer and CLI vertical slice.
 
 ## Read now
 
@@ -45,6 +45,9 @@ Current:
 - Completed Task 5 planner and task model in commit `61bbb0b`.
 - Task 5 verification passed: `cargo test -p bdl-core --test planner --test queue_state`, `cargo test -p bdl-core`, `cargo fmt --all --check`, and `cargo check --workspace`.
 - Planner creates stable task/resource IDs, plans only selected loaded parts, chooses video/audio media streams in fast mode, adds cover/subtitle/danmaku/NFO intents for complete archive mode, and returns actionable errors when required streams are missing.
+- Completed Task 6 resumable fetcher in commit `cb85078`.
+- Task 6 verification passed: `cargo test -p bdl-core --test fetcher_resume`, `cargo test -p bdl-core`, `cargo fmt --all --check`, and `cargo check --workspace`.
+- Fetcher writes to temp `.bdlpart` files first, stores progress in `<temp>.state`, resumes with `Range`, restarts when content length changes, forwards resource headers, retries failed GETs up to the configured limit, and emits progress through a channel.
 
 Decisions:
 - Main navigation: `解析`, `传输`, `历史`, `设置`; account lives in the top-right account button.
