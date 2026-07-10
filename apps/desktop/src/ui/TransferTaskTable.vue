@@ -5,6 +5,7 @@ import type { TaskActionKind, TransferTaskView } from '../stores/transferView'
 import UiIconButton from './IconButton.vue'
 import UiProgressBar from './ProgressBar.vue'
 import UiStatusBadge from './StatusBadge.vue'
+import UiCheckbox from './Checkbox.vue'
 import TaskActionMenu from './TaskActionMenu.vue'
 
 const { views, selectedTaskId, selectedTaskIds, loading = false } = defineProps<{
@@ -37,10 +38,13 @@ const toggleVisible = () => {
   <div class="transfer-table" role="table" aria-label="传输任务">
     <div class="transfer-table-row table-head" role="row">
       <div class="select-cell" role="columnheader">
-        <label class="row-check" title="选择当前筛选任务">
-          <input type="checkbox" :checked="allVisibleSelected" :disabled="!views.length" @change="toggleVisible" />
-          <span aria-hidden="true" />
-        </label>
+        <UiCheckbox
+          :model-value="allVisibleSelected"
+          label="选择当前筛选任务"
+          compact
+          :disabled="!views.length"
+          @update:model-value="toggleVisible"
+        />
       </div>
       <div role="columnheader">名称</div>
       <div role="columnheader">状态</div>
@@ -60,15 +64,13 @@ const toggleVisible = () => {
       @contextmenu.prevent="emit('openContextMenu', view.id, $event)"
     >
       <span class="select-cell" role="cell" @click.stop @keydown.stop>
-        <label class="row-check" :title="selectedSet.has(view.id) ? '取消选择' : '选择任务'">
-          <input
-            type="checkbox"
-            :checked="selectedSet.has(view.id)"
-            :disabled="loading"
-            @change="emit('toggleTaskSelection', view.id)"
-          />
-          <span aria-hidden="true" />
-        </label>
+        <UiCheckbox
+          :model-value="selectedSet.has(view.id)"
+          :label="selectedSet.has(view.id) ? '取消选择' : '选择任务'"
+          compact
+          :disabled="loading"
+          @update:model-value="emit('toggleTaskSelection', view.id)"
+        />
       </span>
 
       <span class="title-cell" role="cell">
@@ -116,8 +118,7 @@ const toggleVisible = () => {
   display: grid;
   align-content: start;
   gap: var(--space-4);
-  overflow-x: hidden;
-  overflow-y: auto;
+  overflow: hidden auto;
   padding-right: 2px;
 }
 
@@ -134,7 +135,7 @@ const toggleVisible = () => {
 .table-head {
   position: sticky;
   top: 0;
-  z-index: 5;
+  z-index: var(--z-sticky);
   min-height: 34px;
   padding: 0 var(--space-8);
   border: 1px solid var(--color-border);
@@ -173,49 +174,6 @@ const toggleVisible = () => {
 .select-cell {
   display: inline-grid;
   place-items: center;
-}
-
-.row-check {
-  width: 18px;
-  height: 18px;
-  display: inline-grid;
-  place-items: center;
-  cursor: pointer;
-}
-
-.row-check input {
-  position: absolute;
-  opacity: 0;
-  pointer-events: none;
-}
-
-.row-check span {
-  width: 16px;
-  height: 16px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-4);
-  background: var(--color-surface);
-}
-
-.row-check input:checked + span {
-  border-color: var(--color-accent);
-  background: var(--color-accent);
-}
-
-.row-check input:checked + span::after {
-  content: "";
-  display: block;
-  width: 8px;
-  height: 5px;
-  margin: 3px 0 0 3px;
-  border-left: 2px solid var(--color-on-accent);
-  border-bottom: 2px solid var(--color-on-accent);
-  transform: rotate(-45deg);
-}
-
-.row-check input:focus-visible + span {
-  outline: 2px solid var(--color-focus-outline);
-  outline-offset: 2px;
 }
 
 .title-cell,

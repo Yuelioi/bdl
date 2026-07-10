@@ -34,8 +34,7 @@
 .titlebar-brand strong {
   font-family: var(--font-display);
   font-size: var(--font-13);
-  font-variation-settings: "wdth" 92;
-  letter-spacing: 0.08em;
+  font-variation-settings: 'wdth' 92;
 }
 
 .titlebar-brand > span:last-child {
@@ -65,8 +64,12 @@
   background: var(--color-accent);
 }
 
-.titlebar-mark i:first-child { height: 7px; }
-.titlebar-mark i:last-child { height: 11px; }
+.titlebar-mark i:first-child {
+  height: 7px;
+}
+.titlebar-mark i:last-child {
+  height: 11px;
+}
 
 .titlebar-actions {
   height: 100%;
@@ -321,13 +324,15 @@
   height: 100%;
   display: block;
   background: var(--color-accent);
-  content: "";
+  content: '';
   animation: loading-track 900ms var(--ease-out) infinite alternate;
 }
 
 .workspace-enter-active,
 .workspace-leave-active {
-  transition: opacity var(--duration-base) var(--ease-out), transform var(--duration-base) var(--ease-out);
+  transition:
+    opacity var(--duration-base) var(--ease-out),
+    transform var(--duration-base) var(--ease-out);
 }
 
 .workspace-enter-from {
@@ -341,8 +346,12 @@
 }
 
 @keyframes loading-track {
-  from { transform: translateX(-100%); }
-  to { transform: translateX(200%); }
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(200%);
+  }
 }
 
 .qr-panel {
@@ -359,10 +368,7 @@
   place-items: center;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-8);
-  background:
-    linear-gradient(90deg, var(--color-grid-line) 12px, transparent 1%) center / 24px 24px,
-    linear-gradient(var(--color-grid-line) 12px, transparent 1%) center / 24px 24px,
-    var(--color-surface);
+  background: var(--color-inset);
   color: var(--color-muted);
   font-weight: 800;
 }

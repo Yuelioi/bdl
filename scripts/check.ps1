@@ -44,6 +44,14 @@ try {
         pnpm --dir apps/desktop build
     }
 
+    Invoke-Step "Desktop style lint" {
+        pnpm --dir apps/desktop lint:styles
+    }
+
+    Invoke-Step "Desktop style format" {
+        pnpm --dir apps/desktop format:styles:check
+    }
+
     Invoke-Step "Desktop frontend tests" {
         pnpm --dir apps/desktop test
     }

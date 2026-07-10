@@ -50,13 +50,13 @@ const sizeClass = computed(() => `size-${size}`)
   background: var(--color-surface);
 }
 
+.ui-button.variant-ghost {
+  color: var(--color-muted);
+}
+
 .ui-button.variant-secondary:hover:not(:disabled),
 .ui-button.variant-ghost:hover:not(:disabled) {
   background: var(--color-panel);
-}
-
-.ui-button.variant-ghost {
-  color: var(--color-muted);
 }
 
 .ui-button.variant-danger {

@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { useUiStore } from '../stores/ui'
+import UiButton from './Button.vue'
+import UiIconButton from './IconButton.vue'
 
 const ui = useUiStore()
 </script>
@@ -9,15 +11,15 @@ const ui = useUiStore()
     <div class="toast-host" aria-live="polite" aria-atomic="false">
       <div v-for="toast in ui.toasts" :key="toast.id" class="toast feedback-tone" :class="`tone-${toast.tone}`">
         <span>{{ toast.message }}</span>
-        <button
+        <UiButton
           v-if="toast.action"
-          class="toast-action"
-          type="button"
+          variant="ghost"
+          size="compact"
           @click="ui.setTab(toast.action.tab); ui.removeToast(toast.id)"
         >
           {{ toast.action.label }}
-        </button>
-        <button class="toast-close" type="button" aria-label="关闭通知" @click="ui.removeToast(toast.id)">x</button>
+        </UiButton>
+        <UiIconButton icon="x" label="关闭通知" variant="ghost" size="compact" @click="ui.removeToast(toast.id)" />
       </div>
     </div>
   </Teleport>
@@ -28,7 +30,7 @@ const ui = useUiStore()
   position: fixed;
   right: var(--space-16);
   top: calc(var(--height-topbar) + var(--space-12));
-  z-index: 50;
+  z-index: var(--z-toast);
   display: grid;
   gap: var(--space-8);
   width: min(360px, calc(100vw - 32px));
@@ -54,24 +56,7 @@ const ui = useUiStore()
   overflow-wrap: anywhere;
 }
 
-.toast button {
-  width: 28px;
-  height: 28px;
-  border: 0;
-  border-radius: var(--radius-6);
-  background: transparent;
-  color: var(--color-muted);
-}
-
-.toast-action {
-  width: auto !important;
-  padding: 0 var(--space-8);
-  color: var(--color-accent-strong) !important;
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-.toast-close {
-  justify-self: end;
+.toast :deep(.ui-button) {
+  color: var(--color-accent-strong);
 }
 </style>

@@ -1,8 +1,8 @@
-@import "tailwindcss";
-@import "@nuxt/ui";
+@import 'tailwindcss';
+@import '@nuxt/ui';
 
 @theme {
-  --font-sans: "Noto Sans SC Variable", sans-serif;
+  --font-sans: 'Noto Sans SC Variable', sans-serif;
 }
 
 :root {

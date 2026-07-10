@@ -1,5 +1,5 @@
-@import "../assets/fonts/archivo/wght.css";
-@import "../assets/fonts/noto-sans-sc/wght.css";
+@import '../assets/fonts/archivo/wght.css';
+@import '../assets/fonts/noto-sans-sc/wght.css';
 
 :root {
   color-scheme: light;
@@ -34,8 +34,6 @@
   --color-selected-surface: oklch(0.97 0.018 8);
   --color-hover-surface: oklch(0.98 0.003 260);
   --color-progress-track: oklch(0.91 0.004 260);
-  --color-grid-line: oklch(0.93 0.003 260);
-  --color-backdrop: oklch(0.16 0.006 260 / 28%);
   --color-nav: oklch(0.995 0.002 260);
   --color-nav-raised: oklch(0.955 0.004 260);
   --color-nav-text: oklch(0.25 0.008 260);
@@ -47,7 +45,6 @@
   --space-md: 16px;
   --space-lg: 24px;
   --space-xl: 32px;
-  --space-2xl: 48px;
 
   /* Compatibility aliases while components migrate to semantic spacing. */
   --space-4: var(--space-2xs);
@@ -56,8 +53,6 @@
   --space-10: 10px;
   --space-12: var(--space-sm);
   --space-16: var(--space-md);
-  --space-24: var(--space-lg);
-  --space-32: var(--space-xl);
 
   --radius-4: 4px;
   --radius-6: 6px;
@@ -70,23 +65,24 @@
   --font-16: 16px;
   --font-18: 18px;
   --font-22: 22px;
-  --font-28: 28px;
   --height-button: 34px;
   --height-input: 36px;
   --height-toolbar: 44px;
   --height-topbar: 64px;
-  --height-task-row: 64px;
   --shadow-panel: 0 1px 2px oklch(0.2 0.006 260 / 5%);
   --shadow-overlay: 0 18px 50px oklch(0.16 0.006 260 / 18%);
-  --focus-ring: 0 0 0 3px oklch(0.68 0.16 8 / 26%);
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --duration-fast: 140ms;
-  --duration-base: 220ms;
-  --font-body: "Noto Sans SC Variable", sans-serif;
-  --font-display: "Archivo Variable", "Noto Sans SC Variable", sans-serif;
+  --duration-base: 180ms;
+  --z-content: 1;
+  --z-sticky: 10;
+  --z-toast: 40;
+  --z-popover: 50;
+  --font-body: 'Noto Sans SC Variable', sans-serif;
+  --font-display: 'Archivo Variable', 'Noto Sans SC Variable', sans-serif;
 }
 
-:root[data-theme="dark"] {
+:root[data-theme='dark'] {
   color-scheme: dark;
 
   --color-background: oklch(0.14 0.004 260);
@@ -118,8 +114,6 @@
   --color-selected-surface: oklch(0.25 0.04 8);
   --color-hover-surface: oklch(0.235 0.008 260);
   --color-progress-track: oklch(0.29 0.008 260);
-  --color-grid-line: oklch(0.245 0.006 260);
-  --color-backdrop: oklch(0.08 0.004 260 / 66%);
   --color-nav: oklch(0.14 0.004 260);
   --color-nav-raised: oklch(0.18 0.006 260);
   --color-nav-text: oklch(0.9 0.006 260);
@@ -127,5 +121,4 @@
 
   --shadow-panel: 0 1px 2px oklch(0.04 0.004 260 / 28%), inset 0 1px oklch(1 0 0 / 3%);
   --shadow-overlay: 0 22px 60px oklch(0.04 0.004 260 / 56%), inset 0 1px oklch(1 0 0 / 5%);
-  --focus-ring: 0 0 0 3px oklch(0.72 0.15 8 / 32%);
 }

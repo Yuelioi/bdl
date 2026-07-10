@@ -122,7 +122,7 @@ const slots = useSlots()
   flex: 0 0 auto;
 }
 
-@media (max-width: 560px) {
+@media (width <= 560px) {
   .ui-empty-state {
     flex-direction: column;
     text-align: center;

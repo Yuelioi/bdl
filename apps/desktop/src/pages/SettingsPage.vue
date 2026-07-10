@@ -9,6 +9,7 @@ import {
 } from '../stores/settings'
 import UiButton from '../ui/Button.vue'
 import UiCheckbox from '../ui/Checkbox.vue'
+import UiDisclosure from '../ui/Disclosure.vue'
 import UiInlineNotice from '../ui/InlineNotice.vue'
 import UiSelect from '../ui/Select.vue'
 import UiTextField from '../ui/TextField.vue'
@@ -393,13 +394,7 @@ onMounted(async () => {
         </details>
       </section>
 
-      <details id="settings-media-advanced" class="settings-disclosure">
-        <summary>
-          <div>
-            <strong>媒体高级</strong>
-            <span>编码偏好、目标质量策略、FFmpeg 和分段</span>
-          </div>
-        </summary>
+      <UiDisclosure id="settings-media-advanced" title="媒体高级" description="编码偏好、目标质量策略、FFmpeg 和分段">
         <section class="settings-block disclosure-block">
           <div class="settings-inline-grid">
             <UiSelect
@@ -447,15 +442,9 @@ onMounted(async () => {
             编码是偏好而非硬性过滤；目标清晰度不存在时，默认会选择最接近的可用轨道。选择“提示后再处理”时，当前版本会阻止创建任务并显示原因。
           </p>
         </section>
-      </details>
+      </UiDisclosure>
 
-      <details id="settings-archive" class="settings-disclosure">
-        <summary>
-          <div>
-            <strong>附加内容</strong>
-            <span>按需下载封面、字幕、弹幕、NFO 和原始轨道</span>
-          </div>
-        </summary>
+      <UiDisclosure id="settings-archive" title="附加内容" description="按需下载封面、字幕、弹幕、NFO 和原始轨道">
         <section class="settings-block disclosure-block">
           <UiSelect
             v-model="settingsArchiveMode"
@@ -509,15 +498,9 @@ onMounted(async () => {
           </div>
           <p class="settings-note">{{ settingsArchiveDescription }}</p>
         </section>
-      </details>
+      </UiDisclosure>
 
-      <details id="settings-maintenance" class="settings-disclosure">
-        <summary>
-          <div>
-            <strong>网络和维护</strong>
-            <span>代理、日志、数据目录、缓存和诊断导出</span>
-          </div>
-        </summary>
+      <UiDisclosure id="settings-maintenance" title="网络和维护" description="代理、日志、数据目录、缓存和诊断导出">
         <section class="settings-block disclosure-block">
           <UiTextField v-model="settingsProxyUrl" label="代理地址" placeholder="例如 http://127.0.0.1:7890，留空为直连" />
           <UiSelect
@@ -554,7 +537,7 @@ onMounted(async () => {
             </UiButton>
           </div>
         </section>
-      </details>
+      </UiDisclosure>
 
       <p v-if="settings.error" class="settings-error">{{ settings.error }}</p>
         </div>

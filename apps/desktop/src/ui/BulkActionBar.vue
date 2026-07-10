@@ -133,7 +133,7 @@ const moreItems = computed(() => [[
   gap: var(--space-4);
 }
 
-@media (max-width: 1180px) {
+@media (width <= 1180px) {
   .bulk-action-bar.selected {
     align-items: flex-start;
     flex-direction: column;

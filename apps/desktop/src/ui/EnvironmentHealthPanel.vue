@@ -215,7 +215,7 @@ const ffmpegReady = computed(() => health?.ffmpeg.status === 'ready')
   justify-content: flex-start;
 }
 
-@media (max-width: 760px) {
+@media (width <= 760px) {
   .environment-components article {
     grid-template-columns: auto minmax(0, 1fr);
   }

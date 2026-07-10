@@ -6,6 +6,9 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "vue-tsc --noEmit && vite build",
+    "lint:styles": "stylelint \"src/**/*.{css,vue}\"",
+    "format:styles": "prettier --write \"src/**/*.css\"",
+    "format:styles:check": "prettier --check \"src/**/*.css\"",
     "test": "vitest run",
     "tauri": "tauri"
   },
@@ -24,6 +27,9 @@
     "@vitejs/plugin-vue": "^6.0.7",
     "@vue/test-utils": "^2.4.11",
     "happy-dom": "^20.10.6",
+    "prettier": "^3.9.4",
+    "stylelint": "^17.14.0",
+    "stylelint-config-standard-vue": "^1.0.0",
     "typescript": "5.9.3",
     "vite": "^8.1.4",
     "vitest": "^4.1.10",
