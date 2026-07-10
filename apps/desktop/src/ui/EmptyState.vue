@@ -5,6 +5,7 @@ const {
   tone = 'neutral',
   layout = 'inline',
   compact = false,
+  embedded = false,
   role,
 } = defineProps<{
   title: string
@@ -13,6 +14,7 @@ const {
   tone?: 'neutral' | 'warning' | 'danger'
   layout?: 'inline' | 'stacked'
   compact?: boolean
+  embedded?: boolean
   role?: 'status' | 'alert'
 }>()
 
@@ -22,7 +24,7 @@ const slots = useSlots()
 <template>
   <section
     class="ui-empty-state"
-    :class="[`layout-${layout}`, `tone-${tone}`, { compact }]"
+    :class="[`layout-${layout}`, `tone-${tone}`, { compact, embedded }]"
     :role
   >
     <div v-if="icon || slots.visual" class="empty-visual" aria-hidden="true">
@@ -57,6 +59,11 @@ const slots = useSlots()
 
 .ui-empty-state.compact {
   min-height: 120px;
+}
+
+.ui-empty-state.embedded {
+  border: 0;
+  background: transparent;
 }
 
 .layout-stacked {

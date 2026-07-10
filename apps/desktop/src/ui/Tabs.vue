@@ -25,17 +25,17 @@ const items = computed(() =>
   <UTabs
     :model-value="model"
     :items="items"
-    class="ui-tabs"
+    class="ui-tabs min-w-0"
     color="primary"
     variant="link"
     size="sm"
     :content="false"
     :ui="{
       root: 'w-full',
-      list: 'bg-transparent p-0 border-0 gap-0',
+      list: 'min-h-9 items-stretch gap-5 overflow-x-auto overflow-y-hidden border-b border-[var(--color-border)] bg-transparent p-0',
       indicator: 'hidden',
-      trigger: 'grow-0 justify-start',
-      trailingBadge: 'bg-transparent text-inherit ring-0',
+      trigger: 'relative min-w-fit grow-0 justify-start rounded-none px-1 py-0 text-[13px] font-bold',
+      trailingBadge: 'min-w-5 bg-[var(--color-panel)] px-1.5 text-[11px] tabular-nums text-[var(--color-muted)] ring-0',
     }"
     @update:model-value="(value: string | number) => (model = String(value))"
   />
@@ -44,48 +44,29 @@ const items = computed(() =>
 <style scoped>
 .ui-tabs {
   width: 100%;
-  min-height: var(--height-toolbar);
-  padding: 0;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-8);
-  background: var(--color-panel);
-  overflow: hidden;
-}
-
-.ui-tabs :deep([data-slot="list"]) {
-  min-height: calc(var(--height-toolbar) - 2px);
-  align-items: stretch;
 }
 
 .ui-tabs :deep([data-slot="trigger"]) {
-  min-width: 112px;
-  min-height: calc(var(--height-toolbar) - 2px);
-  border-right: 1px solid var(--color-border);
-  border-radius: 0;
+  min-height: 36px;
   color: var(--color-muted);
-  font-size: var(--font-13);
-  font-weight: 700;
-}
-
-.ui-tabs :deep([data-slot="trigger"]:last-child) {
-  border-right: 0;
 }
 
 .ui-tabs :deep([data-slot="trigger"][data-state="active"]) {
-  background: var(--color-selected-surface);
   color: var(--color-accent-strong);
 }
 
 .ui-tabs :deep([data-slot="trigger"][data-state="active"]::after) {
-  display: none;
+  position: absolute;
+  right: 4px;
+  bottom: -1px;
+  left: 4px;
+  height: 2px;
+  border-radius: 999px 999px 0 0;
+  background: var(--color-accent);
+  content: "";
 }
 
 .ui-tabs :deep([data-slot="trigger"]:hover:not(:disabled)) {
-  background: var(--color-hover-surface);
   color: var(--color-text);
-}
-
-.ui-tabs :deep([data-slot="indicator"]) {
-  display: none;
 }
 </style>
