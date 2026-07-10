@@ -66,6 +66,26 @@ describe('parse store', () => {
     expect(api.parseLoadAll).toHaveBeenCalledWith({ source_id: 'favorite:42' })
   })
 
+  it('loads only the next page when parsing more from a large source', async () => {
+    const firstPage = sourceTree('uploader:42', '大型 UP 主空间')
+    firstPage.source.kind = 'uploader'
+    firstPage.source.loaded_count = 50
+    firstPage.source.total_count = 20_000
+    firstPage.source.has_more = true
+    const secondPage = structuredClone(firstPage)
+    secondPage.source.loaded_count = 100
+    api.parseLoadMore.mockResolvedValue(secondPage)
+    const parse = useParseStore()
+    parse.upsertSource(firstPage)
+
+    await parse.loadMore('uploader:42')
+
+    expect(api.parseLoadMore).toHaveBeenCalledOnce()
+    expect(api.parseLoadMore).toHaveBeenCalledWith({ source_id: 'uploader:42' })
+    expect(parse.activeSource?.source.loaded_count).toBe(100)
+    expect(parse.notice?.message).toBe('已加载 100 / 20000 项')
+  })
+
   it('keeps initial parsing metadata-only so large multi-part videos stay fast', async () => {
     api.parseCreateSource.mockRejectedValue(new Error('request captured'))
     const parse = useParseStore()

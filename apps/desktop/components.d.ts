@@ -19,6 +19,7 @@ declare module 'vue' {
     UDropdownMenu: typeof import('./node_modules/.pnpm/@nuxt+ui@4.9.0_33aca8ad76f08ca22a4db96dae16f4f3/node_modules/@nuxt/ui/dist/runtime/components/DropdownMenu.vue')['default']
     UIcon: typeof import('./node_modules/.pnpm/@nuxt+ui@4.9.0_33aca8ad76f08ca22a4db96dae16f4f3/node_modules/@nuxt/ui/dist/runtime/vue/components/Icon.vue')['default']
     UModal: typeof import('./node_modules/.pnpm/@nuxt+ui@4.9.0_33aca8ad76f08ca22a4db96dae16f4f3/node_modules/@nuxt/ui/dist/runtime/components/Modal.vue')['default']
+    UPagination: typeof import('./node_modules/.pnpm/@nuxt+ui@4.9.0_33aca8ad76f08ca22a4db96dae16f4f3/node_modules/@nuxt/ui/dist/runtime/components/Pagination.vue')['default']
     USelect: typeof import('./node_modules/.pnpm/@nuxt+ui@4.9.0_33aca8ad76f08ca22a4db96dae16f4f3/node_modules/@nuxt/ui/dist/runtime/components/Select.vue')['default']
     UTabs: typeof import('./node_modules/.pnpm/@nuxt+ui@4.9.0_33aca8ad76f08ca22a4db96dae16f4f3/node_modules/@nuxt/ui/dist/runtime/components/Tabs.vue')['default']
   }

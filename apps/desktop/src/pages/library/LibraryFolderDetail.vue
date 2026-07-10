@@ -7,6 +7,7 @@ import UiButton from '../../ui/Button.vue'
 import UiCheckbox from '../../ui/Checkbox.vue'
 import UiEmptyState from '../../ui/EmptyState.vue'
 import UiInlineNotice from '../../ui/InlineNotice.vue'
+import UiPagination from '../../ui/Pagination.vue'
 
 const { folder } = defineProps<{ folder: AccountLibraryFolder }>()
 const emit = defineEmits<{ back: []; download: [] }>()
@@ -29,7 +30,7 @@ const selectedSet = computed(() => new Set(parse.activeSelection))
 const selectedCount = computed(() => parse.activeSelection.length)
 const loading = computed(() => Boolean(sourceId.value && parse.loadingBySource[sourceId.value]))
 const activeError = computed(() => (sourceId.value ? parse.errorsBySource[sourceId.value] : null))
-const allParsed = computed(() => !source.value?.source.has_more)
+const hasMore = computed(() => Boolean(source.value?.source.has_more))
 const loadedLabel = computed(() => `已加载 ${items.value.length} / ${totalCount.value}`)
 
 watch(sourceId, () => {
@@ -66,27 +67,25 @@ const downloadSelected = () => {
   if (selectedCount.value > 0) emit('download')
 }
 
-const parseAll = async () => {
-  if (sourceId.value && !allParsed.value) await parse.parseAll(sourceId.value)
+const parseMore = async () => {
+  if (sourceId.value && hasMore.value) await parse.loadMore(sourceId.value)
 }
 
 const downloadAll = async () => {
   if (!sourceId.value) return
-  await parseAll()
+  if (hasMore.value) await parse.parseAll(sourceId.value)
   parse.selectAllLoaded(sourceId.value)
   emit('download')
 }
 
-const goToPreviousPage = () => {
-  currentPage.value = Math.max(1, currentPage.value - 1)
-}
-
-const goToNextPage = async () => {
-  if (!sourceId.value || currentPage.value >= totalPages.value) return
-  const nextPage = currentPage.value + 1
+const goToPage = async (targetPage: number) => {
+  if (!sourceId.value) return
+  const nextPage = Math.min(Math.max(1, targetPage), totalPages.value)
   const nextStart = (nextPage - 1) * pageSize
-  if (nextStart >= items.value.length && source.value?.source.has_more) {
+  while (nextStart >= items.value.length && source.value?.source.has_more) {
+    const loadedBefore = items.value.length
     await parse.loadMore(sourceId.value)
+    if (items.value.length === loadedBefore) break
   }
   if (nextStart < items.value.length) currentPage.value = nextPage
 }
@@ -127,8 +126,8 @@ const formatDuration = (seconds: number | null): string => {
         </div>
       </div>
       <div class="flex shrink-0 items-center gap-2">
-        <UiButton size="compact" variant="secondary" :disabled="loading || allParsed" @click="parseAll">
-          {{ allParsed ? '已解析全部' : '解析全部' }}
+        <UiButton size="compact" variant="secondary" :disabled="loading || !hasMore" @click="parseMore">
+          {{ hasMore ? '解析更多' : '已全部加载' }}
         </UiButton>
         <UiButton size="compact" :disabled="loading || totalCount === 0" @click="downloadAll">下载全部</UiButton>
       </div>
@@ -197,15 +196,14 @@ const formatDuration = (seconds: number | null): string => {
     <UiEmptyState v-else title="这个集合暂时没有内容" icon="i-tabler-folder-open" layout="stacked" compact embedded />
 
     <footer class="flex min-w-0 items-center justify-between gap-4 border-t border-(--color-border) pt-3">
-      <div class="flex items-center gap-2">
-        <UiButton size="compact" variant="ghost" :disabled="currentPage <= 1 || loading" @click="goToPreviousPage"
-          >上一页</UiButton
-        >
-        <span class="text-xs tabular-nums text-(--color-muted)">{{ currentPage }} / {{ totalPages }}</span>
-        <UiButton size="compact" variant="ghost" :disabled="currentPage >= totalPages || loading" @click="goToNextPage"
-          >下一页</UiButton
-        >
-      </div>
+      <UiPagination
+        :page="currentPage"
+        :total="totalCount"
+        :items-per-page="pageSize"
+        :disabled="loading"
+        label="集合内容分页"
+        @update:page="goToPage"
+      />
       <div v-if="selectedCount > 0" class="flex items-center gap-2">
         <strong class="text-[13px] text-(--color-text)">已选 {{ selectedCount }} 个</strong>
         <UiButton size="compact" variant="ghost" :disabled="loading" @click="clearSelection">取消选择</UiButton>

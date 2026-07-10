@@ -48,6 +48,7 @@ const visiblePartEntries = computed(() => flattenVisibleParts(treeNodes.value))
 const visiblePartCount = computed(() => visiblePartEntries.value.length)
 const activeLoading = computed(() => Boolean(activeSource.value && parse.loadingBySource[activeSource.value.source.id]))
 const activeError = computed(() => (activeSource.value ? parse.errorsBySource[activeSource.value.source.id] : null))
+const hasMore = computed(() => Boolean(activeSource.value?.source.has_more))
 const hasResultQuery = computed(() => resultQuery.value.trim().length > 0)
 const canCreateTasks = computed(() => Boolean(activeSource.value && selectedCount.value > 0 && !activeLoading.value))
 const canSelectResults = computed(() =>
@@ -75,6 +76,10 @@ const clearSelection = () => {
 
 const refreshSource = () => {
   if (activeSource.value) void parse.refreshSource(activeSource.value.source.id)
+}
+
+const loadMore = () => {
+  if (activeSource.value?.source.has_more) void parse.loadMore(activeSource.value.source.id)
 }
 
 const closeSource = () => {
@@ -118,7 +123,13 @@ const selectRange = () => {
           </span>
         </div>
         <div class="flex flex-wrap items-center gap-3 text-xs text-(--color-muted)" aria-label="内容选择统计">
-          <span
+          <span v-if="hasMore"
+            >已加载 <b class="font-bold text-(--color-text)">{{ activeSource.source.loaded_count }}</b> 项</span
+          >
+          <span v-if="hasMore && activeSource.source.total_count !== null"
+            >共 <b class="font-bold text-(--color-text)">{{ activeSource.source.total_count }}</b> 项</span
+          >
+          <span v-if="!hasMore"
             >共 <b class="font-bold text-(--color-text)">{{ totalPartCount }}</b> 项</span
           >
           <span
@@ -134,6 +145,9 @@ const selectRange = () => {
         <UiButton size="compact" variant="ghost" :disabled="!canSelectResults" @click="selectAllResults">{{
           selectAllLabel
         }}</UiButton>
+        <UiButton v-if="hasMore" size="compact" variant="secondary" :disabled="activeLoading" @click="loadMore">
+          {{ activeLoading ? '解析中' : '解析更多' }}
+        </UiButton>
         <UiIconButton
           icon="refresh"
           label="刷新当前来源"

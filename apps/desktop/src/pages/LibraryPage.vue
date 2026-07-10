@@ -9,6 +9,7 @@ import { useUiStore } from '../stores/ui'
 import UiButton from '../ui/Button.vue'
 import UiEmptyState from '../ui/EmptyState.vue'
 import UiIconButton from '../ui/IconButton.vue'
+import UiPagination from '../ui/Pagination.vue'
 import UiTabs from '../ui/Tabs.vue'
 import LibraryFolderDetail from './library/LibraryFolderDetail.vue'
 import ParseDownloadPlanner from './parse/ParseDownloadPlanner.vue'
@@ -210,22 +211,15 @@ watch(
           >
         </UiEmptyState>
 
-        <footer v-if="page && page.total > page.page_size" class="library-pagination" aria-label="内容库分页">
-          <UiButton
-            variant="ghost"
-            :disabled="page.page <= 1 || library.loading"
-            @click="load(library.activeKind, page.page - 1)"
-          >
-            上一页
-          </UiButton>
-          <span>第 {{ page.page }} 页</span>
-          <UiButton
-            variant="ghost"
-            :disabled="!page.has_more || library.loading"
-            @click="load(library.activeKind, page.page + 1)"
-          >
-            下一页
-          </UiButton>
+        <footer v-if="page && page.total > page.page_size" class="library-pagination">
+          <UiPagination
+            :page="page.page"
+            :total="page.total"
+            :items-per-page="page.page_size"
+            :disabled="library.loading"
+            :label="`${activeCategory.label}分页`"
+            @update:page="load(library.activeKind, $event)"
+          />
         </footer>
       </section>
     </section>

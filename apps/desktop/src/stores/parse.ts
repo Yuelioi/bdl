@@ -227,7 +227,11 @@ export const useParseStore = defineStore('parse', {
       try {
         const tree = await parseLoadMore({ source_id: sourceId })
         this.upsertSource(tree)
-        this.setNotice('已解析更多', 'success')
+        const total = tree.source.total_count
+        this.setNotice(
+          total === null ? `已加载 ${tree.source.loaded_count} 项` : `已加载 ${tree.source.loaded_count} / ${total} 项`,
+          'success',
+        )
       } catch (error) {
         this.errorsBySource[sourceId] = errorMessage(error)
         ui.pushToast(errorMessage(error), 'danger')
