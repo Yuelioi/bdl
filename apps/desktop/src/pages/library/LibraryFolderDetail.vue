@@ -4,7 +4,6 @@ import { computed, ref, watch } from 'vue'
 import type { AccountLibraryFolder, NormalizedItem } from '../../api/dto'
 import { useParseStore } from '../../stores/parse'
 import UiButton from '../../ui/Button.vue'
-import UiCheckbox from '../../ui/Checkbox.vue'
 import UiEmptyState from '../../ui/EmptyState.vue'
 import UiInlineNotice from '../../ui/InlineNotice.vue'
 import UiPagination from '../../ui/Pagination.vue'
@@ -166,15 +165,25 @@ const formatDuration = (seconds: number | null): string => {
           <span v-else class="grid size-full place-items-center text-(--color-dimmed)" aria-hidden="true">
             <UIcon name="i-tabler-photo-off" class="size-6" />
           </span>
-          <span class="absolute top-2 left-2 rounded bg-(--color-surface-raised) p-1" @click.stop @keydown.stop>
-            <UiCheckbox
-              :model-value="itemSelected(item)"
-              :label="itemSelected(item) ? '取消选择' : '选择视频'"
-              compact
-              :disabled="loading"
-              @update:model-value="toggleItem(item)"
+          <button
+            type="button"
+            class="absolute top-2 left-2 grid size-7 place-items-center rounded-full border shadow-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-focus-outline) disabled:cursor-not-allowed disabled:opacity-55"
+            :class="
+              itemSelected(item)
+                ? 'border-(--color-accent) bg-(--color-accent) text-(--color-on-accent)'
+                : 'border-(--color-border-strong) bg-(--color-surface-raised) text-(--color-dimmed) hover:border-(--color-accent) hover:text-(--color-accent-strong)'
+            "
+            :aria-label="itemSelected(item) ? '取消选择' : '选择视频'"
+            :aria-pressed="itemSelected(item)"
+            :disabled="loading"
+            @click.stop="toggleItem(item)"
+          >
+            <UIcon
+              :name="itemSelected(item) ? 'i-tabler-check' : 'i-tabler-circle'"
+              class="size-4"
+              aria-hidden="true"
             />
-          </span>
+          </button>
           <span
             class="absolute right-1.5 bottom-1.5 rounded bg-black/70 px-1.5 py-0.5 text-[11px] font-bold text-white"
           >

@@ -152,10 +152,19 @@ const handleKeydown = (event: KeyboardEvent, node: FlatTreeNode, index: number) 
   align-items: center;
   gap: var(--space-8);
   padding-right: 10px;
+  border: 1px solid transparent;
   border-radius: var(--radius-6);
   color: var(--color-text);
   cursor: pointer;
   font-size: var(--font-13);
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out);
+}
+
+.tree-row:hover {
+  border-color: color-mix(in oklab, var(--color-accent) 30%, var(--color-border));
+  background: var(--color-hover-surface);
 }
 
 .tree-row:focus-visible {
@@ -164,11 +173,33 @@ const handleKeydown = (event: KeyboardEvent, node: FlatTreeNode, index: number) 
 }
 
 .tree-row.selected {
+  border-color: color-mix(in oklab, var(--color-accent) 62%, var(--color-border));
   background: color-mix(in oklab, var(--color-accent-faint) 38%, var(--color-surface));
 }
 
 .tree-row.partial {
+  border-color: color-mix(in oklab, var(--color-accent) 38%, var(--color-border));
   background: var(--color-hover-surface);
+}
+
+:global(:root[data-theme='dark']) .tree-row {
+  border-color: color-mix(in oklab, var(--color-accent) 24%, var(--color-border));
+  background: color-mix(in oklab, var(--color-accent-faint) 16%, var(--color-surface));
+}
+
+:global(:root[data-theme='dark']) .tree-row:hover {
+  border-color: color-mix(in oklab, var(--color-accent) 50%, var(--color-border));
+  background: color-mix(in oklab, var(--color-accent-faint) 34%, var(--color-surface));
+}
+
+:global(:root[data-theme='dark']) .tree-row.selected {
+  border-color: var(--color-accent);
+  background: color-mix(in oklab, var(--color-accent-faint) 68%, var(--color-surface));
+}
+
+:global(:root[data-theme='dark']) .tree-row.partial {
+  border-color: color-mix(in oklab, var(--color-accent) 58%, var(--color-border));
+  background: color-mix(in oklab, var(--color-accent-faint) 44%, var(--color-surface));
 }
 
 .tree-check {
