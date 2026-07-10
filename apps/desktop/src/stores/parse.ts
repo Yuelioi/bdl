@@ -24,8 +24,6 @@ import { useUiStore } from './ui'
 import type { InlineNotice, NoticeTone } from './feedback'
 import { NOTICE_CLEAR_DELAY } from './feedback'
 
-const MAX_PARSE_SOURCES = 20
-
 interface ParseState {
   input: string
   sources: Record<string, NormalizedSourceTree>
@@ -64,9 +62,6 @@ export const useParseStore = defineStore('parse', {
     noticeTimer: null,
   }),
   getters: {
-    orderedSources(state): NormalizedSourceTree[] {
-      return state.sourceOrder.map((id) => state.sources[id]).filter(Boolean)
-    },
     activeSource(state): NormalizedSourceTree | null {
       return state.activeSourceId ? (state.sources[state.activeSourceId] ?? null) : null
     },
@@ -75,19 +70,6 @@ export const useParseStore = defineStore('parse', {
     },
   },
   actions: {
-    setActiveSource(sourceId: string) {
-      if (this.sources[sourceId]) {
-        this.activeSourceId = sourceId
-      }
-    },
-    appendInput(value: string) {
-      const incoming = value.trim()
-      if (!incoming) {
-        return
-      }
-
-      this.input = [this.input.trim(), incoming].filter(Boolean).join('\n')
-    },
     setNotice(message: string, tone: NoticeTone = 'info', actionLabel?: string) {
       this.notice = { message, tone, actionLabel }
       if (this.noticeTimer !== null && typeof window !== 'undefined') {
@@ -118,35 +100,23 @@ export const useParseStore = defineStore('parse', {
         return
       }
 
-      if (!(await this.prepareSourceCapacity(inputs.length))) {
+      if (inputs.length > 1) {
+        this.setNotice('一次只能解析一个来源，请保留一个链接或编号', 'warning')
         return
       }
 
       this.loadingBySource.__create__ = true
-      const failures: Array<{ input: string; message: string }> = []
-      let created = 0
       try {
-        for (const sourceInput of inputs) {
-          try {
-            const tree = await parseCreateSource({ input: sourceInput, fetch_streams: false })
-            this.upsertSource(tree)
-            created += 1
-          } catch (error) {
-            failures.push({ input: sourceInput, message: errorMessage(error) })
-          }
+        const tree = await parseCreateSource({ input: inputs[0], fetch_streams: false })
+        const previousSourceIds = this.sourceOrder.filter((sourceId) => sourceId !== tree.source.id)
+        for (const sourceId of previousSourceIds) {
+          await this.removeSource(sourceId)
         }
-
-        if (created > 0) {
-          this.input = ''
-        }
-
-        if (created > 0 && failures.length === 0) {
-          this.setNotice(created === 1 ? '解析完成' : `已解析 ${created} 个来源`, 'success')
-        } else if (created > 0) {
-          this.setNotice(`已解析 ${created} 个来源，${failures.length} 个失败`, 'warning')
-        } else {
-          ui.pushToast(failures[0]?.message ?? '解析失败', 'danger')
-        }
+        this.upsertSource(tree)
+        this.input = ''
+        this.setNotice('解析完成', 'success')
+      } catch (error) {
+        ui.pushToast(errorMessage(error), 'danger')
       } finally {
         this.loadingBySource.__create__ = false
       }
@@ -196,26 +166,6 @@ export const useParseStore = defineStore('parse', {
       } finally {
         this.loadingBySource[sourceId] = false
       }
-    },
-    async prepareSourceCapacity(incomingCount: number): Promise<boolean> {
-      const overflow = this.sourceOrder.length + incomingCount - MAX_PARSE_SOURCES
-      if (overflow <= 0) {
-        return true
-      }
-
-      const shouldPrune = window.confirm(
-        `解析结果最多保留 ${MAX_PARSE_SOURCES} 个。继续会清理最早的 ${overflow} 个来源。`,
-      )
-      if (!shouldPrune) {
-        return false
-      }
-
-      const sourceIds = this.sourceOrder.slice(-overflow)
-      for (const sourceId of sourceIds) {
-        await this.removeSource(sourceId)
-      }
-
-      return true
     },
     async removeSource(sourceId: string) {
       try {

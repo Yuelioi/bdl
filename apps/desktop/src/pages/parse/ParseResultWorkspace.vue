@@ -53,7 +53,7 @@ const canSelectResults = computed(() => Boolean(activeSource.value && visiblePar
 const canSelectRange = computed(() => Boolean(activeSource.value && rangeExpression.value.trim() && visiblePartCount.value > 0 && !activeLoading.value))
 const createTaskLabel = computed(() => activeLoading.value
   ? '处理中'
-  : selectedCount.value > 0 ? `下载已选择 (${selectedCount.value})` : '先选择分集')
+  : selectedCount.value > 0 ? `下载所选 (${selectedCount.value})` : '请先选择')
 const selectAllLabel = computed(() => hasResultQuery.value ? `全选搜索结果 (${visiblePartCount.value})` : '全选全部')
 
 const selectAllResults = () => {
@@ -114,10 +114,8 @@ const selectRange = () => {
 
       <div class="flex flex-wrap justify-end gap-1 max-[840px]:justify-start">
         <UiButton size="compact" variant="ghost" :disabled="!canSelectResults" @click="selectAllResults">{{ selectAllLabel }}</UiButton>
-        <UiButton size="compact" variant="ghost" :disabled="selectedCount === 0" @click="clearSelection">清空选择</UiButton>
         <UiIconButton icon="refresh" label="刷新当前来源" variant="ghost" size="compact" :disabled="activeLoading" @click="refreshSource" />
-        <UiIconButton v-if="parse.sourceOrder.length > 1" icon="x" label="关闭当前结果" variant="ghost" size="compact" @click="closeSource" />
-        <UiButton :disabled="!canCreateTasks" @click="emit('download')">{{ createTaskLabel }}</UiButton>
+        <UiIconButton icon="x" label="关闭解析结果" variant="ghost" size="compact" @click="closeSource" />
       </div>
 
       <div class="col-span-full grid min-w-0 grid-cols-[minmax(180px,1fr)_minmax(150px,180px)_minmax(220px,280px)] items-end gap-2.5 max-[840px]:grid-cols-1">
@@ -131,7 +129,7 @@ const selectRange = () => {
       </div>
     </div>
 
-    <UiTree v-if="treeNodes.length" :nodes="treeNodes" :selected-ids="selectedIds" @toggle="toggleNode" />
+    <UiTree v-if="treeNodes.length" class="min-h-0 flex-1" :nodes="treeNodes" :selected-ids="selectedIds" @toggle="toggleNode" />
     <UiEmptyState
       v-else
       title="没有匹配结果"
@@ -142,6 +140,17 @@ const selectRange = () => {
       embedded
     />
     <UiInlineNotice v-if="activeError" tone="danger">{{ activeError }}</UiInlineNotice>
+
+    <footer class="flex min-w-0 items-center justify-between gap-4 border-t border-(--color-border) pt-3">
+      <p class="m-0 text-sm text-(--color-muted)">
+        <strong class="tabular-nums text-(--color-text)">{{ selectedCount }}</strong> 项已选
+        <span class="ml-2 text-xs">共 {{ totalPartCount }} 项</span>
+      </p>
+      <div class="flex items-center gap-2">
+        <UiButton variant="ghost" :disabled="selectedCount === 0 || activeLoading" @click="clearSelection">取消选择</UiButton>
+        <UiButton :disabled="!canCreateTasks" @click="emit('download')">{{ createTaskLabel }}</UiButton>
+      </div>
+    </footer>
   </section>
 
   <UiEmptyState
