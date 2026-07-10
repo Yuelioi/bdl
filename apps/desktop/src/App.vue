@@ -1,9 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
-import ParsePage from './pages/ParsePage.vue'
-import SettingsPage from './pages/SettingsPage.vue'
-import TransferPage from './pages/TransferPage.vue'
 import { useAccountStore } from './stores/account'
 import { useQueueStore } from './stores/queue'
 import { useUiStore, type AppTab } from './stores/ui'
@@ -15,6 +12,10 @@ import UiTabs from './ui/Tabs.vue'
 import UiTextarea from './ui/Textarea.vue'
 import UiToastHost from './ui/ToastHost.vue'
 
+const ParsePage = defineAsyncComponent(() => import('./pages/ParsePage.vue'))
+const TransferPage = defineAsyncComponent(() => import('./pages/TransferPage.vue'))
+const SettingsPage = defineAsyncComponent(() => import('./pages/SettingsPage.vue'))
+
 const ui = useUiStore()
 const account = useAccountStore()
 const queue = useQueueStore()
@@ -25,17 +26,33 @@ const startupRecoveryDialogOpen = ref(false)
 const loginMode = ref<'qr' | 'cookie'>('qr')
 const cookieText = ref('')
 
-const navItems: Array<{ value: AppTab; label: string }> = [
-  { value: 'parse', label: '解析' },
-  { value: 'transfer', label: '传输' },
-  { value: 'settings', label: '设置' },
+const navItems: Array<{ value: AppTab; label: string; description: string; icon: string; shortcut: string }> = [
+  { value: 'parse', label: '解析', description: '添加与选择', icon: 'i-tabler-link', shortcut: '1' },
+  { value: 'transfer', label: '传输', description: '队列与恢复', icon: 'i-tabler-transfer', shortcut: '2' },
+  { value: 'settings', label: '设置', description: '偏好与维护', icon: 'i-tabler-adjustments', shortcut: '3' },
 ]
 
 const activeTitle = computed(() => navItems.find((item) => item.value === ui.activeTab)?.label ?? '解析')
-const accountSubtitle = computed(() => `本地任务 · ${account.statusLabel}`)
+const activeDescription = computed(
+  () => navItems.find((item) => item.value === ui.activeTab)?.description ?? '添加与选择',
+)
+const activePageComponent = computed(() => {
+  if (ui.activeTab === 'transfer') return TransferPage
+  if (ui.activeTab === 'settings') return SettingsPage
+  return ParsePage
+})
 const transferBadgeCount = computed(() =>
   queue.tasks.filter((task) => task.status !== 'completed' && task.status !== 'cancelled').length,
 )
+const attentionCount = computed(
+  () => queue.tasks.filter((task) => task.status === 'failed' || task.status === 'cancelled').length,
+)
+const queueHealthLabel = computed(() => {
+  if (queue.loading) return '同步队列'
+  if (attentionCount.value > 0) return `${attentionCount.value} 项需处理`
+  if (transferBadgeCount.value > 0) return `${transferBadgeCount.value} 项进行中`
+  return '队列空闲'
+})
 const cookieSaveDisabled = computed(
   () => account.saving || account.qrLoading || (loginMode.value === 'cookie' && !cookieText.value.trim()),
 )
@@ -100,9 +117,27 @@ const dismissStartupRecovery = async () => {
   startupRecoveryDialogOpen.value = false
 }
 
+const handleAppShortcut = (event: KeyboardEvent) => {
+  if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return
+  if (event.key.toLowerCase() === 'l') {
+    event.preventDefault()
+    ui.setTab('parse')
+    void nextTick(() => document.querySelector<HTMLTextAreaElement>('.parse-form textarea')?.focus())
+    return
+  }
+  const tabByKey: Partial<Record<string, AppTab>> = { '1': 'parse', '2': 'transfer', '3': 'settings' }
+  const tab = tabByKey[event.key]
+  if (!tab) return
+  event.preventDefault()
+  ui.setTab(tab)
+}
+
 onMounted(() => {
   void initializeApp()
+  window.addEventListener('keydown', handleAppShortcut)
 })
+
+onBeforeUnmount(() => window.removeEventListener('keydown', handleAppShortcut))
 
 watch(loginDialogOpen, (open) => {
   if (!open) {
@@ -137,34 +172,59 @@ watch(
     <main class="app-shell">
       <aside class="side-nav" aria-label="主导航">
         <div class="brand-block">
-          <span class="brand-mark">BDL</span>
-          <span class="brand-name">Bilibili Downloader</span>
+          <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span class="brand-copy">
+            <strong>BDL</strong>
+            <small>Media transfer desk</small>
+          </span>
         </div>
 
-      <nav class="nav-list">
-        <button
-          v-for="item in navItems"
-          :key="item.value"
-          class="nav-item"
-          :class="{ active: ui.activeTab === item.value }"
-          type="button"
-          @click="ui.setTab(item.value)"
-        >
-          <span>{{ item.label }}</span>
-          <span v-if="item.value === 'transfer' && transferBadgeCount > 0" class="nav-badge">
-            {{ transferBadgeCount > 99 ? '99+' : transferBadgeCount }}
-          </span>
-        </button>
-      </nav>
-    </aside>
+        <nav class="nav-list">
+          <button
+            v-for="item in navItems"
+            :key="item.value"
+            class="nav-item"
+            :class="{ active: ui.activeTab === item.value }"
+            type="button"
+            :aria-current="ui.activeTab === item.value ? 'page' : undefined"
+            :title="`${item.label} · Ctrl+${item.shortcut}`"
+            @click="ui.setTab(item.value)"
+          >
+            <UIcon :name="item.icon" class="nav-icon" aria-hidden="true" />
+            <span class="nav-copy">
+              <strong>{{ item.label }}</strong>
+              <small>{{ item.description }}</small>
+            </span>
+            <span v-if="item.value === 'transfer' && transferBadgeCount > 0" class="nav-badge">
+              {{ transferBadgeCount > 99 ? '99+' : transferBadgeCount }}
+            </span>
+            <kbd v-else>⌘{{ item.shortcut }}</kbd>
+          </button>
+        </nav>
 
-    <section class="main-region">
+        <div class="nav-status">
+          <span class="status-beacon" :class="{ attention: attentionCount > 0 }" aria-hidden="true"></span>
+          <span>
+            <strong>{{ queueHealthLabel }}</strong>
+            <small>{{ account.statusLabel }} · 本地处理</small>
+          </span>
+        </div>
+      </aside>
+
+    <section class="main-region" :data-page="ui.activeTab">
       <header class="top-bar">
-        <div>
-          <h1>{{ activeTitle }}</h1>
-          <p>{{ accountSubtitle }}</p>
+        <div class="page-identity">
+          <span>工作区 / {{ activeTitle }}</span>
+          <div>
+            <h1>{{ activeTitle }}</h1>
+            <p>{{ activeDescription }}</p>
+          </div>
         </div>
         <div class="top-actions">
+          <button class="queue-health" type="button" @click="ui.setTab('transfer')">
+            <UIcon name="i-tabler-activity" aria-hidden="true" />
+            <span>{{ queueHealthLabel }}</span>
+          </button>
           <UiIconButton icon="help" label="帮助" @click="helpDrawerOpen = true" />
           <div class="account-split">
             <button class="account-button" type="button" @click="openLoginDialog">
@@ -195,11 +255,17 @@ watch(
         </div>
       </header>
 
-      <ParsePage v-if="ui.activeTab === 'parse'" />
-
-      <TransferPage v-else-if="ui.activeTab === 'transfer'" />
-
-      <SettingsPage v-else />
+      <Suspense>
+        <Transition name="workspace" mode="out-in">
+          <component :is="activePageComponent" :key="ui.activeTab" />
+        </Transition>
+        <template #fallback>
+          <div class="workspace-loading" role="status">
+            <span></span>
+            正在准备工作区
+          </div>
+        </template>
+      </Suspense>
     </section>
 
     <UiDialog v-model="loginDialogOpen" title="登录">

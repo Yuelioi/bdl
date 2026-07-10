@@ -15,6 +15,15 @@ import UiTextField from '../ui/TextField.vue'
 
 const settings = useSettingsStore()
 
+const settingsSections = [
+  { id: 'settings-download', label: '下载', icon: 'i-tabler-download' },
+  { id: 'settings-media', label: '默认媒体', icon: 'i-tabler-movie' },
+  { id: 'settings-naming', label: '命名', icon: 'i-tabler-file-text' },
+  { id: 'settings-media-advanced', label: '媒体高级', icon: 'i-tabler-adjustments-horizontal' },
+  { id: 'settings-archive', label: '归档和素材', icon: 'i-tabler-archive' },
+  { id: 'settings-maintenance', label: '网络和维护', icon: 'i-tabler-tool' },
+]
+
 const settingsDownloadDir = computed({
   get: () => settings.draft.download_dir ?? '',
   set: (value: string) => settings.setDownloadDir(value),
@@ -157,6 +166,10 @@ const resetNamingTemplate = () => {
 
 const formatNamingVariable = (name: string): string => `{${name}}`
 
+const scrollToSettingsSection = (id: string) => {
+  document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
 onMounted(() => {
   void settings.ensureLoaded()
 })
@@ -165,9 +178,13 @@ onMounted(() => {
 <template>
   <section class="page-grid settings-grid">
     <section class="panel settings-panel">
-      <div class="panel-heading">
-        <h2>设置</h2>
+      <div class="panel-heading settings-heading">
+        <div class="settings-heading-copy">
+          <span>CONFIGURATION</span>
+          <p>默认值只影响新建任务；当前队列保持原有配置。</p>
+        </div>
         <div class="settings-actions">
+          <span v-if="settings.changed" class="dirty-indicator">未保存更改</span>
           <UiButton variant="ghost" :disabled="settings.loading || settings.saving || !settings.changed" @click="settings.resetDraft">
             撤销
           </UiButton>
@@ -181,7 +198,21 @@ onMounted(() => {
         {{ settings.notice.message }}
       </UiInlineNotice>
 
-      <section class="settings-block">
+      <div class="settings-workspace">
+        <nav class="settings-section-nav" aria-label="设置分区">
+          <button
+            v-for="section in settingsSections"
+            :key="section.id"
+            type="button"
+            @click="scrollToSettingsSection(section.id)"
+          >
+            <UIcon :name="section.icon" aria-hidden="true" />
+            <span>{{ section.label }}</span>
+          </button>
+        </nav>
+
+        <div class="settings-content">
+      <section id="settings-download" class="settings-block">
         <div class="settings-block-heading">
           <h3>下载</h3>
           <span>默认保存位置和传输行为</span>
@@ -226,7 +257,7 @@ onMounted(() => {
         />
       </section>
 
-      <section class="settings-block">
+      <section id="settings-media" class="settings-block">
         <div class="settings-block-heading">
           <h3>默认媒体</h3>
           <span>新建任务默认使用的质量和封装</span>
@@ -268,7 +299,7 @@ onMounted(() => {
         />
       </section>
 
-      <section class="settings-block">
+      <section id="settings-naming" class="settings-block">
         <div class="settings-block-heading">
           <h3>命名</h3>
           <span>模板保存后用于新建任务</span>
@@ -310,7 +341,7 @@ onMounted(() => {
         </details>
       </section>
 
-      <details class="settings-disclosure">
+      <details id="settings-media-advanced" class="settings-disclosure">
         <summary>
           <div>
             <strong>媒体高级</strong>
@@ -366,7 +397,7 @@ onMounted(() => {
         </section>
       </details>
 
-      <details class="settings-disclosure">
+      <details id="settings-archive" class="settings-disclosure">
         <summary>
           <div>
             <strong>归档和素材</strong>
@@ -428,7 +459,7 @@ onMounted(() => {
         </section>
       </details>
 
-      <details class="settings-disclosure">
+      <details id="settings-maintenance" class="settings-disclosure">
         <summary>
           <div>
             <strong>网络和维护</strong>
@@ -474,6 +505,8 @@ onMounted(() => {
       </details>
 
       <p v-if="settings.error" class="settings-error">{{ settings.error }}</p>
+        </div>
+      </div>
     </section>
   </section>
 </template>

@@ -19,6 +19,7 @@ const emit = defineEmits<{
   toggleTaskSelection: [taskId: string]
   toggleVisibleSelection: [taskIds: string[], selected: boolean]
   taskAction: [taskId: string, action: Exclude<TaskActionKind, 'none'>]
+  openContextMenu: [taskId: string, event: MouseEvent]
 }>()
 
 const visibleIds = computed(() => views.map((view) => view.id))
@@ -56,6 +57,7 @@ const toggleVisible = () => {
       :class="{ selected: selectedTaskId === view.id }"
       role="row"
       :aria-selected="selectedTaskId === view.id"
+      @contextmenu.prevent="emit('openContextMenu', view.id, $event)"
     >
       <span class="select-cell" role="cell" @click.stop @keydown.stop>
         <label class="row-check" :title="selectedSet.has(view.id) ? '取消选择' : '选择任务'">

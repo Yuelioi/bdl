@@ -576,9 +576,15 @@ const errorMessage = (error: unknown): string => {
 
 <template>
   <section class="page-grid parse-page">
-    <section class="panel parse-input-panel">
+    <section class="panel parse-input-panel command-panel">
       <div class="panel-heading">
-        <h2>输入</h2>
+        <div class="command-heading">
+          <span class="command-index">01</span>
+          <div>
+            <h2>添加来源</h2>
+            <p>粘贴链接或编号，BDL 会识别类型并整理成可选择的分集。</p>
+          </div>
+        </div>
         <div class="parse-heading-tools">
           <div class="source-menu">
             <button
@@ -611,9 +617,17 @@ const errorMessage = (error: unknown): string => {
         </div>
       </div>
       <form class="parse-form" @submit.prevent="submitInput">
-        <UiTextarea v-model="parse.input" label="链接或 BV/AV" placeholder="BV1xx411c7mD&#10;https://www.bilibili.com/video/..." :rows="3" />
+        <div class="parse-input-stack">
+          <UiTextarea v-model="parse.input" label="链接、BV / AV 或多行列表" placeholder="BV1xx411c7mD&#10;https://www.bilibili.com/video/..." :rows="3" />
+          <div class="input-capabilities" aria-label="支持的输入">
+            <span>视频</span>
+            <span>合集 / 收藏夹</span>
+            <span>番剧 / 课程</span>
+            <kbd>Ctrl L 聚焦</kbd>
+          </div>
+        </div>
         <div class="parse-actions">
-          <UiButton type="submit" :disabled="createLoading">解析</UiButton>
+          <UiButton type="submit" :disabled="createLoading">{{ createLoading ? '识别中' : '开始解析' }}</UiButton>
           <UiButton type="button" variant="secondary" :disabled="createLoading" @click="importTextFile">导入文本</UiButton>
         </div>
         <input ref="input-file" class="visually-hidden-file" type="file" accept=".txt,.list,.csv,text/plain" @change="handleTextFile" />
@@ -668,8 +682,23 @@ const errorMessage = (error: unknown): string => {
       </div>
 
       <UiTree v-if="activeSource && treeNodes.length" :nodes="treeNodes" :selected-ids="selectedIds" @toggle="toggleNode" />
-      <div v-else-if="activeSource" class="empty-state">没有匹配结果</div>
-      <div v-else class="empty-state">暂无结果</div>
+      <div v-else-if="activeSource" class="empty-state parse-empty-state compact-empty">
+        <UIcon name="i-tabler-filter-off" aria-hidden="true" />
+        <strong>没有匹配结果</strong>
+        <p>换一个关键词，或清除搜索与范围条件。</p>
+      </div>
+      <div v-else class="empty-state parse-empty-state">
+        <div class="empty-signal" aria-hidden="true">
+          <span><UIcon name="i-tabler-link" /></span>
+          <i></i>
+          <span><UIcon name="i-tabler-list-tree" /></span>
+          <i></i>
+          <span><UIcon name="i-tabler-download" /></span>
+        </div>
+        <strong>从一个来源开始</strong>
+        <p>输入视频、合集、收藏夹、UP 主空间、番剧或课程链接。</p>
+        <small>解析结果只保留在当前会话；确认选择后才会创建下载任务。</small>
+      </div>
       <p v-if="activeError" class="inline-alert">{{ activeError }}</p>
     </section>
 
@@ -744,6 +773,57 @@ const errorMessage = (error: unknown): string => {
   grid-column: 1 / -1;
   z-index: 10;
   overflow: visible;
+}
+
+.command-panel {
+  position: relative;
+  border-color: color-mix(in oklab, var(--color-border) 84%, var(--color-accent));
+  background:
+    linear-gradient(110deg, var(--color-surface), color-mix(in oklab, var(--color-accent-faint) 58%, var(--color-surface)));
+}
+
+.command-panel::after {
+  position: absolute;
+  top: 0;
+  right: 24px;
+  width: 84px;
+  height: 3px;
+  background: repeating-linear-gradient(90deg, var(--color-accent) 0 14px, transparent 14px 20px);
+  content: "";
+}
+
+.command-heading {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
+}
+
+.command-index {
+  margin-top: 1px;
+  color: var(--color-accent-strong);
+  font-family: var(--font-display);
+  font-size: var(--font-11);
+  font-weight: 760;
+  letter-spacing: 0.08em;
+}
+
+.command-heading > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.command-heading h2,
+.command-heading p {
+  margin: 0;
+}
+
+.command-heading p {
+  max-width: 62ch;
+  color: var(--color-muted);
+  font-size: var(--font-12);
+  line-height: 1.5;
 }
 
 .parse-heading-tools {
@@ -848,6 +928,41 @@ const errorMessage = (error: unknown): string => {
   grid-template-columns: minmax(0, 1fr) 104px;
   align-items: start;
   gap: var(--space-12);
+}
+
+.parse-input-stack {
+  min-width: 0;
+  display: grid;
+  gap: var(--space-xs);
+}
+
+.input-capabilities {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.input-capabilities span,
+.input-capabilities kbd {
+  min-height: 22px;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-4);
+  background: color-mix(in oklab, var(--color-surface) 72%, transparent);
+  color: var(--color-muted);
+  padding: 0 var(--space-xs);
+  font-size: var(--font-11);
+  font-weight: 620;
+}
+
+.input-capabilities kbd {
+  margin-left: auto;
+  border-color: transparent;
+  background: transparent;
+  font-family: var(--font-display);
 }
 
 .parse-actions {
@@ -960,6 +1075,82 @@ const errorMessage = (error: unknown): string => {
 .empty-state {
   color: var(--color-muted);
   font-size: var(--font-12);
+}
+
+.parse-empty-state {
+  min-height: 240px;
+  align-content: center;
+  justify-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-xl);
+  border-style: solid;
+  background:
+    radial-gradient(circle at 50% 0%, var(--color-accent-faint), transparent 48%),
+    var(--color-panel);
+  text-align: center;
+}
+
+.parse-empty-state > strong {
+  color: var(--color-text-strong);
+  font-size: var(--font-16);
+  font-weight: 760;
+}
+
+.parse-empty-state > p,
+.parse-empty-state > small {
+  max-width: 60ch;
+  margin: 0;
+  line-height: 1.55;
+}
+
+.parse-empty-state > p {
+  color: var(--color-muted);
+  font-size: var(--font-13);
+}
+
+.parse-empty-state > small {
+  color: var(--color-dimmed);
+  font-size: var(--font-11);
+}
+
+.parse-empty-state > svg {
+  width: 24px;
+  height: 24px;
+  color: var(--color-muted);
+}
+
+.parse-empty-state.compact-empty {
+  min-height: 160px;
+}
+
+.empty-signal {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  margin-bottom: var(--space-sm);
+}
+
+.empty-signal span {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-6);
+  background: var(--color-surface);
+  color: var(--color-accent-strong);
+  box-shadow: var(--shadow-panel);
+}
+
+.empty-signal svg {
+  width: 18px;
+  height: 18px;
+}
+
+.empty-signal i {
+  width: 30px;
+  height: 1px;
+  background: repeating-linear-gradient(90deg, var(--color-border-strong) 0 4px, transparent 4px 7px);
 }
 
 .empty-state {
