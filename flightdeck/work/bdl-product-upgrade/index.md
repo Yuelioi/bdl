@@ -2,7 +2,7 @@
 
 ## State
 
-Stages 1–3 are complete and the first live visual-review corrections are implemented. The UI is quieter, queue metrics are no longer duplicated, field baselines/icons are aligned, and select menus no longer shift form layout.
+Stages 1–3 are complete and two live visual-review rounds are implemented. The UI is quieter and all transient menus now share correct outside-click, Escape, focus, and portal behavior.
 
 ## Next
 
@@ -22,6 +22,7 @@ Collect the maintainer's next visual review. Once accepted, start Stage 4 with b
 - legacy-ui-followups.md — if a staged change intersects an older backlog item
 - ../../knowledge/frontend/typescript-7-vue-tsc.md — if changing TypeScript/vue-tsc or the frontend build fails before type checking
 - ../../knowledge/frontend/nuxt-ui-select-portal.md — if a select popup shifts or clips form content
+- ../../knowledge/frontend/dropdown-dismissal.md — before adding or changing any transient popup menu
 
 ## Progress
 
@@ -44,6 +45,7 @@ Done:
 - Unified field label/control geometry and icon-button centering.
 - Re-enabled the Nuxt UI select portal so menus overlay without changing form layout.
 - Reduced header, panel, decorative-gradient, shadow, and motion intensity after live visual review.
+- Replaced the custom account/source popovers and native-details overflow menu with accessible Nuxt UI dropdowns.
 
 Current:
 - Stage 4 is not started; the recommended first slice is duplicate-task policy.
@@ -56,6 +58,7 @@ Verified:
 - `pnpm peers check` reports no peer dependency issues.
 - `pnpm run build` passes after the visual-review corrections.
 - Captured and inspected live Tauri screenshots for Parse, Transfer, Settings, and an open audio-quality menu; the menu no longer moves following fields.
+- Reproduced account and Transfer overflow dismissal in the live Tauri app; outside clicks now close both menus.
 
 ## Open questions
 

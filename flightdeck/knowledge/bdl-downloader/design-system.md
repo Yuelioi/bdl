@@ -18,6 +18,7 @@ BDL is a compact operations tool for Bilibili power users. It should feel calm, 
 - Preserve stable transfer columns and state-specific row actions.
 - Show queue totals in one place only. Transfer filter tabs own status counts; the sidebar footer may show aggregate speed and a short overall state, but the top bar and page must not repeat the same metrics.
 - Keep form labels and controls on shared vertical tokens so native fields and Nuxt UI selects align exactly.
+- Use the shared dropdown primitive for transient menus; native details are reserved for persistent inline disclosure content.
 - Adapt navigation and toolbars for narrow desktop windows instead of hiding critical actions.
 - Every custom interactive surface needs focus-visible styling, accessible naming, keyboard behavior, and a reduced-motion path.
 - Do not use gradient text, decorative glassmorphism, generic glow, or thick colored side stripes.

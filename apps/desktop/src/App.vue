@@ -19,7 +19,6 @@ const SettingsPage = defineAsyncComponent(() => import('./pages/SettingsPage.vue
 const ui = useUiStore()
 const account = useAccountStore()
 const queue = useQueueStore()
-const accountMenuOpen = ref(false)
 const loginDialogOpen = ref(false)
 const helpDrawerOpen = ref(false)
 const startupRecoveryDialogOpen = ref(false)
@@ -76,9 +75,20 @@ const loginActionLabel = computed(() => {
   return account.qrSession ? '刷新二维码' : '开始扫码'
 })
 const startupRecoveryCount = computed(() => queue.startupRecovery?.task_ids.length ?? 0)
+const accountMenuItems = computed(() => {
+  const accountAction = {
+    label: account.profile.logged_in ? '切换账号' : '登录',
+    icon: 'i-tabler-user',
+    onSelect: openLoginDialog,
+  }
+  if (!account.profile.logged_in) return [[accountAction]]
+  return [
+    [accountAction],
+    [{ label: '退出登录', icon: 'i-tabler-logout', onSelect: signOut }],
+  ]
+})
 
 const openLoginDialog = () => {
-  accountMenuOpen.value = false
   loginDialogOpen.value = true
 }
 
@@ -96,7 +106,6 @@ const saveLogin = async () => {
 }
 
 const signOut = async () => {
-  accountMenuOpen.value = false
   await account.logout()
 }
 
@@ -230,32 +239,20 @@ watch(
         </div>
         <div class="top-actions">
           <UiIconButton icon="help" label="帮助" @click="helpDrawerOpen = true" />
-          <div class="account-split">
-            <button class="account-button" type="button" @click="openLoginDialog">
+          <UDropdownMenu
+            :items="accountMenuItems"
+            :content="{ align: 'end', sideOffset: 6, collisionPadding: 12 }"
+            :ui="{ content: 'min-w-36' }"
+          >
+            <button class="account-button" type="button">
               <span class="account-avatar" aria-hidden="true">
                 <img v-if="account.profile.avatar_url" :src="account.profile.avatar_url" alt="" />
                 <span v-else>{{ account.avatarLabel }}</span>
               </span>
               <span>{{ account.displayName }}</span>
+              <UIcon name="i-tabler-chevron-down" class="account-chevron" aria-hidden="true" />
             </button>
-            <button
-              class="account-menu-button"
-              type="button"
-              aria-label="账户菜单"
-              :aria-expanded="accountMenuOpen"
-              @click="accountMenuOpen = !accountMenuOpen"
-            >
-              <svg aria-hidden="true" class="chevron-icon" viewBox="0 0 24 24">
-                <path d="M7 10l5 5 5-5" />
-              </svg>
-            </button>
-            <div v-if="accountMenuOpen" class="account-popover" role="menu">
-              <button type="button" role="menuitem" @click="openLoginDialog">
-                {{ account.profile.logged_in ? '切换账号' : '登录' }}
-              </button>
-              <button v-if="account.profile.logged_in" type="button" role="menuitem" @click="signOut">退出</button>
-            </div>
-          </div>
+          </UDropdownMenu>
         </div>
       </header>
 

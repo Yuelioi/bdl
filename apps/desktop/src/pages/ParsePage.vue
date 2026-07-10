@@ -52,7 +52,6 @@ const settings = useSettingsStore()
 const ui = useUiStore()
 const inputFile = useTemplateRef<HTMLInputElement>('input-file')
 const downloadDialogOpen = ref(false)
-const sourceMenuOpen = ref(false)
 const downloadDir = ref('')
 const archiveMode = ref<'fast' | 'complete_archive' | 'custom'>('fast')
 const outputExtension = ref<'mp4' | 'mkv'>('mp4')
@@ -287,14 +286,21 @@ const runNoticeAction = () => {
 }
 
 const closeSource = (sourceId: string) => {
-  sourceMenuOpen.value = false
   void parse.closeSource(sourceId)
 }
 
 const selectSource = (sourceId: string) => {
   parse.setActiveSource(sourceId)
-  sourceMenuOpen.value = false
 }
+
+const sourceMenuItems = computed(() => [
+  parse.orderedSources.map((tree) => ({
+    label: tree.source.title,
+    description: `${sourceLoadedLabel(tree)} · 已选 ${sourceSelectedCount(tree.source.id)}`,
+    icon: parse.activeSourceId === tree.source.id ? 'i-tabler-check' : 'i-tabler-link',
+    onSelect: () => selectSource(tree.source.id),
+  })),
+])
 
 const toggleNode = (nodeId: string) => {
   if (activeSource.value) {
@@ -587,29 +593,22 @@ const errorMessage = (error: unknown): string => {
         </div>
         <div class="parse-heading-tools">
           <div class="source-menu">
-            <button
-              class="source-menu-button"
-              type="button"
+            <UDropdownMenu
+              :items="sourceMenuItems"
               :disabled="parse.orderedSources.length === 0"
-              :aria-expanded="sourceMenuOpen"
-              @click="sourceMenuOpen = !sourceMenuOpen"
+              :content="{ align: 'end', sideOffset: 4, collisionPadding: 12 }"
+              :ui="{ content: 'w-96 max-w-[calc(100vw-4rem)]', itemDescription: 'truncate' }"
             >
-              <span>{{ sourceMenuLabel }}</span>
-              <small v-if="activeSource" :title="activeSourceTitle">{{ activeSourceTitle }}</small>
-            </button>
-            <div v-if="sourceMenuOpen && parse.orderedSources.length" class="source-menu-popover" role="menu">
               <button
-                v-for="tree in parse.orderedSources"
-                :key="tree.source.id"
+                class="source-menu-button"
                 type="button"
-                role="menuitem"
-                :class="{ active: parse.activeSourceId === tree.source.id }"
-                @click="selectSource(tree.source.id)"
+                :disabled="parse.orderedSources.length === 0"
               >
-                <span>{{ tree.source.title }}</span>
-                <small>{{ sourceLoadedLabel(tree) }} · 已选 {{ sourceSelectedCount(tree.source.id) }}</small>
+                <span>{{ sourceMenuLabel }}</span>
+                <small v-if="activeSource" :title="activeSourceTitle">{{ activeSourceTitle }}</small>
+                <UIcon name="i-tabler-chevron-down" aria-hidden="true" />
               </button>
-            </div>
+            </UDropdownMenu>
           </div>
           <UiStatusBadge :status="createLoading ? 'downloading' : 'ready'">
             {{ createLoading ? "解析中" : "就绪" }}
@@ -835,7 +834,7 @@ const errorMessage = (error: unknown): string => {
   max-width: 280px;
   height: 28px;
   display: inline-grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr) 14px;
   align-items: center;
   gap: var(--space-8);
   border: 1px solid var(--color-border);
@@ -845,6 +844,12 @@ const errorMessage = (error: unknown): string => {
   padding: 0 var(--space-10, 10px);
   font-size: var(--font-12);
   font-weight: 700;
+}
+
+.source-menu-button > svg {
+  width: 14px;
+  height: 14px;
+  color: var(--color-muted);
 }
 
 .source-menu-button:disabled {
@@ -860,59 +865,6 @@ const errorMessage = (error: unknown): string => {
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.source-menu-popover {
-  position: absolute;
-  top: calc(100% + var(--space-4));
-  right: 0;
-  z-index: 40;
-  width: min(420px, calc(100vw - 64px));
-  max-height: 260px;
-  display: grid;
-  gap: var(--space-4);
-  overflow-y: auto;
-  padding: var(--space-4);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-8);
-  background: var(--color-surface);
-  box-shadow: 0 12px 28px rgb(23 33 29 / 12%);
-}
-
-.source-menu-popover button {
-  min-width: 0;
-  min-height: 42px;
-  display: grid;
-  gap: var(--space-4);
-  border: 0;
-  border-radius: var(--radius-6);
-  background: transparent;
-  color: var(--color-text);
-  padding: var(--space-8);
-  text-align: left;
-}
-
-.source-menu-popover button:hover,
-.source-menu-popover button.active {
-  background: #e8f3ee;
-}
-
-.source-menu-popover span,
-.source-menu-popover small {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.source-menu-popover span {
-  font-size: var(--font-13);
-  font-weight: 700;
-}
-
-.source-menu-popover small {
-  color: var(--color-muted);
-  font-size: var(--font-12);
 }
 
 .parse-form {

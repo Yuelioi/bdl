@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { computed } from 'vue'
+
 const {
   selectedCount,
   completedCount,
@@ -31,6 +33,27 @@ const emit = defineEmits<{
   clearCompleted: []
   refresh: []
 }>()
+
+const moreItems = computed(() => [[
+  {
+    label: '暂停全部',
+    icon: 'i-tabler-player-pause',
+    disabled: loading || !canPause,
+    onSelect: () => emit('pause'),
+  },
+  {
+    label: '取消全部',
+    icon: 'i-tabler-x',
+    disabled: loading || !canCancel,
+    onSelect: () => emit('cancel'),
+  },
+  {
+    label: '继续全部',
+    icon: 'i-tabler-player-play',
+    disabled: loading || !canResume,
+    onSelect: () => emit('resume'),
+  },
+]])
 </script>
 
 <template>
@@ -55,14 +78,13 @@ const emit = defineEmits<{
         清理已完成
       </button>
       <button type="button" :disabled="loading" @click="emit('refresh')">刷新</button>
-      <details class="bulk-more">
-        <summary>更多</summary>
-        <div>
-          <button type="button" :disabled="loading || !canPause" @click="emit('pause')">暂停全部</button>
-          <button type="button" :disabled="loading || !canCancel" @click="emit('cancel')">取消全部</button>
-          <button type="button" :disabled="loading || !canResume" @click="emit('resume')">继续全部</button>
-        </div>
-      </details>
+      <UDropdownMenu
+        :items="moreItems"
+        :content="{ align: 'end', sideOffset: 4, collisionPadding: 12 }"
+        :ui="{ content: 'min-w-32' }"
+      >
+        <button class="bulk-menu-trigger" type="button" :disabled="loading">更多</button>
+      </UDropdownMenu>
     </div>
   </div>
 </template>
@@ -121,11 +143,7 @@ const emit = defineEmits<{
   white-space: nowrap;
 }
 
-.bulk-more {
-  position: relative;
-}
-
-.bulk-more summary {
+.bulk-menu-trigger {
   height: 28px;
   display: inline-flex;
   align-items: center;
@@ -138,36 +156,6 @@ const emit = defineEmits<{
   font-weight: 650;
   white-space: nowrap;
   cursor: pointer;
-  list-style: none;
-}
-
-.bulk-more summary::-webkit-details-marker {
-  display: none;
-}
-
-.bulk-more[open] summary {
-  background: var(--color-panel);
-}
-
-.bulk-more div {
-  position: absolute;
-  top: calc(100% + var(--space-4));
-  right: 0;
-  z-index: 20;
-  min-width: 120px;
-  display: grid;
-  gap: var(--space-4);
-  padding: var(--space-4);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-8);
-  background: var(--color-surface);
-  box-shadow: 0 12px 28px rgb(23 33 29 / 12%);
-}
-
-.bulk-more div button {
-  width: 100%;
-  justify-content: flex-start;
-  text-align: left;
 }
 
 .bulk-actions button:hover:not(:disabled) {
