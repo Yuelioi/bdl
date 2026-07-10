@@ -1070,7 +1070,7 @@ select:focus-visible {
 }
 
 .qr-box.active {
-  background: #ffffff;
+  background: var(--color-surface-raised);
 }
 
 .qr-box img {

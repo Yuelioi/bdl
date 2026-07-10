@@ -1,10 +1,10 @@
 # Cockpit — bdl
 
-Focus: Upgrade BDL into a polished, feature-complete open-source desktop downloader.
+Focus: BDL's product/UI foundation is upgraded; functional-depth follow-ups remain open.
 
 ## In Flight
 
-- [bdl-product-upgrade](work/bdl-product-upgrade/index.md) — auditing product gaps and UI quality before staged implementation.
+- [bdl-product-upgrade](work/bdl-product-upgrade/index.md) — product shell, core workflows, repository docs, and CI shipped; duplicate-task policy and environment health are next.
 
 ## Archived
 

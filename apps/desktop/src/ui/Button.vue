@@ -36,7 +36,7 @@ const toneClass = computed(() => `variant-${variant}`)
 
 .ui-button.variant-primary {
   background: var(--color-accent);
-  color: #ffffff;
+  color: var(--color-on-accent);
 }
 
 .ui-button.variant-primary:hover:not(:disabled) {
@@ -59,6 +59,6 @@ const toneClass = computed(() => `variant-${variant}`)
 
 .ui-button.variant-danger {
   background: var(--color-danger);
-  color: #ffffff;
+  color: var(--color-on-accent);
 }
 </style>

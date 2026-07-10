@@ -142,8 +142,8 @@ const partIdsForNode = (node: TreeNode): string[] => {
   content: "";
   width: 7px;
   height: 4px;
-  border-left: 2px solid #ffffff;
-  border-bottom: 2px solid #ffffff;
+  border-left: 2px solid var(--color-on-accent);
+  border-bottom: 2px solid var(--color-on-accent);
   transform: rotate(-45deg) translate(1px, -1px);
 }
 
@@ -152,7 +152,7 @@ const partIdsForNode = (node: TreeNode): string[] => {
   width: 8px;
   height: 2px;
   border-radius: 999px;
-  background: #ffffff;
+  background: var(--color-on-accent);
 }
 
 .tree-arrow {

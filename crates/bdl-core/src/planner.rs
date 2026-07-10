@@ -275,16 +275,7 @@ fn plan_part(
     } else {
         None
     };
-    let output_path = output_path_for(
-        tree,
-        item,
-        part,
-        selected,
-        video,
-        audio,
-        options,
-        reserved_paths,
-    )?;
+    let output_path = output_path_for(tree, &selected, video, audio, options, reserved_paths)?;
 
     let mut resources = Vec::with_capacity(2);
     if let Some(video) = video {
@@ -589,14 +580,14 @@ fn asset_resource(
 
 fn output_path_for(
     tree: &NormalizedSourceTree,
-    item: &NormalizedItem,
-    part: &NormalizedPart,
-    selected: SelectedPart<'_>,
+    selected: &SelectedPart<'_>,
     video: Option<&MediaStream>,
     audio: Option<&MediaStream>,
     options: &DownloadOptions,
     reserved_paths: &mut HashSet<PathBuf>,
 ) -> BdlResult<PathBuf> {
+    let item = selected.item;
+    let part = selected.part;
     let today = Utc::now().date_naive().to_string();
     let representative_stream = video.or(audio).ok_or_else(|| BdlError::Planning {
         message: format!("`{}` 没有可下载的媒体流。", part.title),

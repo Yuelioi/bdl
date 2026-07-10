@@ -207,8 +207,8 @@ const toggleVisible = () => {
   width: 8px;
   height: 5px;
   margin: 3px 0 0 3px;
-  border-left: 2px solid #ffffff;
-  border-bottom: 2px solid #ffffff;
+  border-left: 2px solid var(--color-on-accent);
+  border-bottom: 2px solid var(--color-on-accent);
   transform: rotate(-45deg);
 }
 

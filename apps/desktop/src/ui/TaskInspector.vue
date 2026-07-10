@@ -553,16 +553,19 @@ const errorMessage = (error: unknown): string => {
   grid-template-columns: 42px minmax(0, 1fr);
   gap: var(--space-8);
   padding: var(--space-8);
-  border-left: 2px solid var(--color-border);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-6);
   background: var(--color-panel);
 }
 
 .event-row.tone-danger {
-  border-left-color: var(--color-danger);
+  border-color: color-mix(in oklab, var(--color-danger) 34%, var(--color-border));
+  background: var(--color-danger-soft);
 }
 
 .event-row.tone-warning {
-  border-left-color: var(--color-warning);
+  border-color: color-mix(in oklab, var(--color-warning) 38%, var(--color-border));
+  background: var(--color-warning-soft);
 }
 
 .event-row time {

@@ -2,11 +2,11 @@
 
 ## State
 
-The product foundation and core-workflow UI uplift are implemented and pass the frontend production build. Open-source release documentation and final workspace verification remain.
+Stages 1–3 are complete: the product foundation, core-workflow UI uplift, and open-source release surface are implemented and verified. Stage 4 functional-depth slices remain available as follow-up work.
 
 ## Next
 
-Implement Stage 3: README, contribution/security guidance, CI, then run final frontend and Rust verification.
+Start Stage 4 with backend duplicate-task detection and its skip/create/ask UI, then add environment health checks as a separate vertical slice.
 
 ## Read now
 
@@ -37,15 +37,19 @@ Done:
 - Added Settings section navigation and persistent dirty-state feedback.
 - Split pages into async chunks; the largest JS chunk is now about 269 KB instead of a 590 KB monolith.
 - Kept the concurrent Pinia/Vite/plugin/vue-tsc upgrades and pinned TypeScript 5.9.3 to restore vue-tsc compatibility.
+- Added README, CONTRIBUTING, SECURITY, MIT license, and a Windows CI workflow backed by the repository check script.
+- Refactored the planner's internal output-path interface so strict Clippy passes without a lint suppression.
 
 Current:
-- Stage 3 open-source release surface.
+- Stage 4 is not started; the recommended first slice is duplicate-task policy.
 
 Verified:
 - Git was clean on `main` at preflight.
 - `pnpm run build` passes before implementation; the initial JS chunk is about 590 KB and triggers Vite's chunk-size warning.
 - `pnpm run build` passes after implementation on Vite 8.1.4; page chunks are emitted and no chunk-size warning remains.
+- `./scripts/check.ps1` passes: Rustfmt, strict workspace Clippy, 151 Rust tests, frontend type/build, and whitespace checks.
+- `pnpm peers check` reports no peer dependency issues.
 
 ## Open questions
 
-- Which license should the maintainer choose before public release?
+- None. The workspace already declared MIT, so the repository license file now matches that metadata.
