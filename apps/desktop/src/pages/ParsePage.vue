@@ -6,8 +6,9 @@ import { useUiStore } from '../stores/ui'
 import UiButton from '../ui/Button.vue'
 import UiInlineNotice from '../ui/InlineNotice.vue'
 import UiStatusBadge from '../ui/StatusBadge.vue'
-import UiTextField from '../ui/TextField.vue'
+import UiTextarea from '../ui/Textarea.vue'
 import ParseDownloadPlanner from './parse/ParseDownloadPlanner.vue'
+import ParseBatchWorkspace from './parse/ParseBatchWorkspace.vue'
 import ParseResultWorkspace from './parse/ParseResultWorkspace.vue'
 
 const parse = useParseStore()
@@ -49,10 +50,11 @@ const runNoticeAction = () => {
       </div>
 
       <form class="grid grid-cols-[minmax(0,1fr)_116px] items-end gap-3 max-[840px]:grid-cols-1" @submit.prevent="submitInput">
-        <UiTextField
+        <UiTextarea
           v-model="parse.input"
-          label="链接或 BV / AV"
-          placeholder="粘贴一个视频、合集、收藏夹、番剧或课程链接"
+          label="链接或 BV / AV（每行一个）"
+          :rows="hasResults ? 2 : 3"
+          placeholder="粘贴一个或多个视频链接；批量时每行作为一个视频"
           :disabled="createLoading"
         />
         <UiButton type="submit" :disabled="createLoading">{{ createLoading ? '解析中' : '开始解析' }}</UiButton>
@@ -66,7 +68,8 @@ const runNoticeAction = () => {
       >{{ parse.notice.message }}</UiInlineNotice>
     </section>
 
-    <ParseResultWorkspace @download="openDownloadSettings" />
+    <ParseBatchWorkspace v-if="parse.isBatch" @download="openDownloadSettings" />
+    <ParseResultWorkspace v-else @download="openDownloadSettings" />
     <ParseDownloadPlanner ref="download-planner" />
   </section>
 </template>

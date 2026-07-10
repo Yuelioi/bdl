@@ -23,6 +23,7 @@ const ui = useUiStore()
 const downloadDialogOpen = ref(false)
 const duplicateDialogOpen = ref(false)
 const duplicateMatches = ref<DuplicateTaskMatch[]>([])
+const duplicatePendingSourceIds = ref<string[]>([])
 const downloadDir = ref('')
 const archiveMode = ref<'fast' | 'complete_archive' | 'custom'>('fast')
 const outputExtension = ref<'mp4' | 'mkv'>('mp4')
@@ -63,8 +64,13 @@ const archiveModeOptions = [
 ]
 
 const activeSource = computed(() => parse.activeSource)
-const selectedCount = computed(() => parse.activeSelection.length)
-const activeLoading = computed(() => Boolean(activeSource.value && parse.loadingBySource[activeSource.value.source.id]))
+const selectedSourceIds = computed(() => parse.isBatch
+  ? parse.selectedSourceIds
+  : activeSource.value && parse.activeSelection.length > 0 ? [activeSource.value.source.id] : [])
+const selectedCount = computed(() => parse.isBatch ? parse.selectedBatchEntryIds.length : parse.activeSelection.length)
+const selectionUnit = computed(() => parse.isBatch ? '个视频' : '个分集')
+const selectionTitle = computed(() => parse.isBatch ? '批量链接' : activeSource.value?.source.title ?? '')
+const activeLoading = computed(() => selectedSourceIds.value.some((sourceId) => parse.loadingBySource[sourceId]))
 const includesVideo = computed(() => mediaMode.value !== 'audio_only')
 const includesAudio = computed(() => mediaMode.value !== 'video_only')
 const scheduleError = computed(() => scheduledLocalError(scheduledLocal.value, scheduleValidationNow.value))
@@ -85,8 +91,8 @@ const downloadSettingsSummary = computed(() => {
 })
 
 const openDialog = async () => {
-  if (!activeSource.value || selectedCount.value === 0) {
-    parse.setNotice('请选择要下载的分集', 'warning')
+  if (selectedSourceIds.value.length === 0 || selectedCount.value === 0) {
+    parse.setNotice('请选择要下载的内容', 'warning')
     return
   }
 
@@ -103,6 +109,8 @@ const openDialog = async () => {
   taskSpeedLimitMib.value = ''
   scheduleValidationNow.value = Date.now()
   scheduleMin.value = toDateTimeLocalValue(new Date(scheduleValidationNow.value + 60_000))
+  duplicateMatches.value = []
+  duplicatePendingSourceIds.value = []
   downloadDialogOpen.value = true
   await checkDownloadEnvironment()
 }
@@ -125,7 +133,8 @@ const createDownloadDirectory = () => settings.createDownloadDirectory({
 })
 
 const createTasks = async (duplicatePolicy: DuplicateTaskPolicy = 'ask') => {
-  if (!activeSource.value) return
+  const sourceIds = duplicatePolicy === 'ask' ? selectedSourceIds.value : duplicatePendingSourceIds.value
+  if (sourceIds.length === 0) return
   scheduleValidationNow.value = Date.now()
   if (scheduleError.value || taskSpeedLimitError.value) {
     parse.setNotice(scheduleError.value ?? taskSpeedLimitError.value ?? '请检查下载设置', 'warning')
@@ -136,7 +145,7 @@ const createTasks = async (duplicatePolicy: DuplicateTaskPolicy = 'ask') => {
     parse.setNotice('请先修复保存目录或 FFmpeg 环境', 'warning')
     return
   }
-  const result = await parse.createTasksForSelection(activeSource.value.source.id, {
+  const result = await parse.createTasksForSources(sourceIds, {
     downloadDir: downloadDir.value,
     archiveMode: archiveMode.value,
     outputExtension: outputExtension.value,
@@ -150,6 +159,7 @@ const createTasks = async (duplicatePolicy: DuplicateTaskPolicy = 'ask') => {
   })
   if (result?.requires_confirmation) {
     duplicateMatches.value = result.duplicates
+    duplicatePendingSourceIds.value = result.pendingSourceIds
     downloadDialogOpen.value = false
     duplicateDialogOpen.value = true
     return
@@ -158,6 +168,7 @@ const createTasks = async (duplicatePolicy: DuplicateTaskPolicy = 'ask') => {
   downloadDialogOpen.value = false
   duplicateDialogOpen.value = false
   duplicateMatches.value = []
+  duplicatePendingSourceIds.value = []
 }
 
 const chooseDownloadDir = async () => {
@@ -192,8 +203,8 @@ function optionLabel(options: Array<{ label: string; value: string }>, value: st
     <section class="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-3 rounded-lg border border-(--color-border) bg-(--color-accent-soft) p-3">
       <strong class="text-3xl leading-none text-(--color-accent-strong)">{{ selectedCount }}</strong>
       <div class="grid min-w-0 gap-1">
-        <span class="text-xs font-bold text-(--color-muted)">个分集将加入传输</span>
-        <p class="m-0 truncate text-[13px] font-bold text-(--color-text)">{{ activeSource?.source.title }}</p>
+        <span class="text-xs font-bold text-(--color-muted)">{{ selectionUnit }}将加入传输</span>
+        <p class="m-0 truncate text-[13px] font-bold text-(--color-text)">{{ selectionTitle }}</p>
       </div>
     </section>
 
@@ -246,7 +257,7 @@ function optionLabel(options: Array<{ label: string; value: string }>, value: st
     <template #footer>
       <UiButton variant="secondary" :disabled="activeLoading" @click="downloadDialogOpen = false">取消</UiButton>
       <UiButton
-        :disabled="!activeSource || Boolean(scheduleError) || Boolean(taskSpeedLimitError) || settings.environmentChecking || settings.environmentHealth?.ready === false"
+        :disabled="selectedSourceIds.length === 0 || Boolean(scheduleError) || Boolean(taskSpeedLimitError) || settings.environmentChecking || settings.environmentHealth?.ready === false"
         @click="createTasks()"
       >加入传输</UiButton>
     </template>
