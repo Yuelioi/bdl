@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, nextTick, ref, useTemplateRef, watch } from 'vue'
 
 export interface TreeNode {
   id: string
@@ -28,6 +28,8 @@ interface FlatTreeNode {
 }
 
 const selectedSet = computed(() => new Set(props.selectedIds ?? []))
+const activeIndex = ref(0)
+const rowElements = useTemplateRef<HTMLElement[]>('rows')
 
 const flatNodes = computed(() => {
   const rows: FlatTreeNode[] = []
@@ -62,22 +64,69 @@ const partIdsForNode = (node: TreeNode): string[] => {
 
   return node.children?.flatMap(partIdsForNode) ?? []
 }
+
+watch(
+  () => flatNodes.value.length,
+  (length) => {
+    activeIndex.value = Math.min(activeIndex.value, Math.max(0, length - 1))
+  },
+)
+
+const focusRow = async (index: number) => {
+  if (flatNodes.value.length === 0) return
+  const nextIndex = Math.min(Math.max(index, 0), flatNodes.value.length - 1)
+  activeIndex.value = nextIndex
+  await nextTick()
+  rowElements.value?.[nextIndex]?.focus()
+}
+
+const handleKeydown = (event: KeyboardEvent, node: FlatTreeNode, index: number) => {
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault()
+    emit('toggle', node.id)
+    return
+  }
+
+  let nextIndex: number | null = null
+  if (event.key === 'ArrowDown') nextIndex = index + 1
+  if (event.key === 'ArrowUp') nextIndex = index - 1
+  if (event.key === 'Home') nextIndex = 0
+  if (event.key === 'End') nextIndex = flatNodes.value.length - 1
+  if (event.key === 'ArrowRight' && node.hasChildren && flatNodes.value[index + 1]?.depth > node.depth) {
+    nextIndex = index + 1
+  }
+  if (event.key === 'ArrowLeft' && node.depth > 0) {
+    for (let parentIndex = index - 1; parentIndex >= 0; parentIndex -= 1) {
+      if (flatNodes.value[parentIndex]?.depth === node.depth - 1) {
+        nextIndex = parentIndex
+        break
+      }
+    }
+  }
+
+  if (nextIndex === null) return
+  event.preventDefault()
+  void focusRow(nextIndex)
+}
 </script>
 
 <template>
   <div class="tree-list" role="tree" aria-label="解析结果">
     <div
-      v-for="node in flatNodes"
+      v-for="(node, index) in flatNodes"
       :key="node.id"
+      ref="rows"
       class="tree-row"
       :class="{ selected: node.checkState === 'checked', partial: node.checkState === 'mixed' }"
       role="treeitem"
       :aria-checked="node.checkState === 'mixed' ? 'mixed' : node.checkState === 'checked'"
+      :aria-expanded="node.hasChildren ? true : undefined"
+      :aria-level="node.depth + 1"
       :style="{ paddingLeft: `${node.depth * 18 + 10}px` }"
-      tabindex="0"
+      :tabindex="index === activeIndex ? 0 : -1"
+      @focus="activeIndex = index"
       @click="emit('toggle', node.id)"
-      @keydown.enter.prevent="emit('toggle', node.id)"
-      @keydown.space.prevent="emit('toggle', node.id)"
+      @keydown="handleKeydown($event, node, index)"
     >
       <span class="tree-check" :class="node.checkState" aria-hidden="true"></span>
       <span class="tree-arrow" aria-hidden="true">{{ node.hasChildren ? ">" : "" }}</span>

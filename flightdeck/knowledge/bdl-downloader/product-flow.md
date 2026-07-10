@@ -109,6 +109,8 @@ Task creation uses an explicit duplicate policy:
 
 The duplicate dialog shows a short status-aware preview and offers cancel, skip duplicates, or create anyway. It must not silently choose on the user's behalf.
 
+The parsed-source tree uses one roving Tab stop. Arrow Up/Down and Home/End move through visible rows; Arrow Right enters an expanded group, Arrow Left returns to its parent, and Enter/Space toggles selection.
+
 ## Transfer Flow
 
 Transfer is a task manager, not a log viewer.

@@ -44,6 +44,10 @@ try {
         pnpm --dir apps/desktop build
     }
 
+    Invoke-Step "Desktop frontend tests" {
+        pnpm --dir apps/desktop test
+    }
+
     Invoke-Step "Git whitespace check" {
         git diff --check
     }

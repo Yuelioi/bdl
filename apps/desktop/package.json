@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "vue-tsc --noEmit && vite build",
+    "test": "vitest run",
     "tauri": "tauri"
   },
   "dependencies": {
@@ -21,8 +22,11 @@
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.4",
     "@vitejs/plugin-vue": "^6.0.7",
+    "@vue/test-utils": "^2.4.11",
+    "happy-dom": "^20.10.6",
     "typescript": "5.9.3",
     "vite": "^8.1.4",
+    "vitest": "^4.1.10",
     "vue-tsc": "^3.3.7"
   }
 }

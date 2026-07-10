@@ -34,14 +34,16 @@ const ffmpegReady = computed(() => health?.ffmpeg.status === 'ready')
 </script>
 
 <template>
-  <section class="environment-health" :class="{ compact }" aria-label="运行环境检查">
+  <section class="environment-health" :class="{ compact }" aria-label="运行环境检查" :aria-busy="checking">
     <header>
       <div>
         <strong>运行环境</strong>
         <span v-if="!compact">下载前检查保存目录和 FFmpeg</span>
       </div>
       <div class="environment-health-heading-actions">
-        <UiStatusBadge :status="overallBadge">{{ overallLabel }}</UiStatusBadge>
+        <span role="status" aria-live="polite" aria-atomic="true">
+          <UiStatusBadge :status="overallBadge">{{ overallLabel }}</UiStatusBadge>
+        </span>
         <UiButton variant="ghost" :disabled="checking" @click="emit('check')">重新检查</UiButton>
       </div>
     </header>
