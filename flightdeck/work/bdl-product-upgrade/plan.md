@@ -48,6 +48,7 @@ Verification: deterministic stalled-request cancellation test; task-state transi
 - One-time task scheduler (complete): persisted UTC schedules, restart-safe capacity-aware worker wakeups, create/modify/start-now controls, and inline time validation.
 - Download speed limits (complete): live global aggregate cap, persisted per-task overrides, shared multi-segment budgets, create/edit controls, and MiB/s validation.
 - Professional dark theme (complete): system/light/dark preference, pre-mount persistence, five-level surface ladder, semantic state colors, and a global appearance menu.
-- Evaluate account asset entry points next; keep the updater as the final product-depth slice.
+- Account asset entry points (first slice complete): authenticated created/collected favorite folders, pagination, filtering, multi-select, and direct handoff to the existing Parse flow.
+- Extend account assets to watch later/history/follows only after the first slice is exercised; keep the updater as the final product-depth slice.
 
 Verification: narrow Rust tests per feature, full core/Tauri clippy, frontend tests/build, and release QA.

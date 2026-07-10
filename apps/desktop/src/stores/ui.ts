@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 
-export type AppTab = 'parse' | 'transfer' | 'settings'
+export type AppTab = 'parse' | 'library' | 'transfer' | 'settings'
 
 export interface ToastMessage {
   id: number
@@ -21,10 +21,14 @@ export const useUiStore = defineStore('ui', {
     dialogOpen: false,
     toasts: [] as ToastMessage[],
     nextToastId: 1,
+    loginDialogOpen: false,
   }),
   actions: {
     setTab(tab: AppTab) {
       this.activeTab = tab
+    },
+    openLoginDialog() {
+      this.loginDialogOpen = true
     },
     pushToast(message: string, tone: ToastMessage['tone'] = 'info', action?: ToastAction) {
       const id = this.nextToastId

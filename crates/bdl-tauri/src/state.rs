@@ -2,9 +2,12 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
-use bdl_core::account::{AccountSummary, ImportedCookie, verify_cookie_session};
+use bdl_core::account::{
+    AccountLibraryFolderKind, AccountLibraryPage, AccountSummary, ImportedCookie,
+    account_library_page, verify_cookie_session,
+};
 use bdl_core::fetcher::FetchCancelToken;
 use bdl_core::ids::{PartId, SourceId};
 use bdl_core::input::{ClassifiedInput, classify_input};
@@ -48,6 +51,7 @@ pub struct AppState {
     data_dir: PathBuf,
     account: Mutex<AccountSnapshot>,
     account_cookie: Mutex<Option<String>>,
+    account_session_revision: AtomicU64,
     queue_worker_active: AtomicBool,
     queue_changed: Notify,
     queue_cancellations: Mutex<HashMap<String, FetchCancelToken>>,
@@ -111,6 +115,7 @@ impl AppState {
             data_dir,
             account: Mutex::new(account),
             account_cookie: Mutex::new(account_cookie),
+            account_session_revision: AtomicU64::new(0),
             queue_worker_active: AtomicBool::new(false),
             queue_changed: Notify::new(),
             queue_cancellations: Mutex::new(HashMap::new()),
@@ -743,6 +748,7 @@ impl AppState {
             .map_err(|_| state_poisoned("account_cookie"))? =
             Some(imported_cookie.as_header().to_owned());
         *self.account.lock().map_err(|_| state_poisoned("account"))? = account.clone();
+        self.account_session_revision.fetch_add(1, Ordering::SeqCst);
 
         Ok(account)
     }
@@ -774,6 +780,43 @@ impl AppState {
         self.clear_account_state()
     }
 
+    pub async fn account_library(
+        &self,
+        kind: AccountLibraryFolderKind,
+        page: u32,
+        page_size: u32,
+    ) -> BdlResult<AccountLibraryPage> {
+        if page == 0 || !(1..=50).contains(&page_size) {
+            return Err(BdlError::Account {
+                message: "内容库分页参数无效。".to_owned(),
+            });
+        }
+        let revision = self.account_session_revision.load(Ordering::SeqCst);
+        let cookie = self
+            .account_cookie
+            .lock()
+            .map_err(|_| state_poisoned("account_cookie"))?
+            .clone()
+            .ok_or_else(|| BdlError::Account {
+                message: "请先登录，再浏览账号内容。".to_owned(),
+            })?;
+        let mid = ImportedCookie::parse(cookie.clone())?
+            .dede_user_id()
+            .and_then(|value| value.parse::<u64>().ok())
+            .ok_or_else(|| BdlError::Account {
+                message: "账号信息尚未验证，请刷新登录状态后重试。".to_owned(),
+            })?;
+        if revision != self.account_session_revision.load(Ordering::SeqCst) {
+            return Err(account_session_changed());
+        }
+
+        let result = account_library_page(&cookie, mid, kind, page, page_size).await?;
+        if revision != self.account_session_revision.load(Ordering::SeqCst) {
+            return Err(account_session_changed());
+        }
+        Ok(result)
+    }
+
     fn clear_account_state(&self) -> BdlResult<AccountSnapshot> {
         self.secure_store.clear_cookie()?;
         self.storage
@@ -785,6 +828,7 @@ impl AppState {
             .lock()
             .map_err(|_| state_poisoned("account_cookie"))? = None;
         *self.account.lock().map_err(|_| state_poisoned("account"))? = AccountSnapshot::default();
+        self.account_session_revision.fetch_add(1, Ordering::SeqCst);
 
         self.account()
     }
@@ -986,6 +1030,12 @@ pub type AccountSnapshot = AccountSummary;
 fn state_poisoned(name: &'static str) -> BdlError {
     BdlError::Planning {
         message: format!("state lock `{name}` is poisoned"),
+    }
+}
+
+fn account_session_changed() -> BdlError {
+    BdlError::Account {
+        message: "账号已切换，请重新加载内容库。".to_owned(),
     }
 }
 
@@ -1766,7 +1816,7 @@ mod tests {
     use std::collections::HashMap;
     use std::path::PathBuf;
     use std::sync::Mutex;
-    use std::sync::atomic::AtomicBool;
+    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use bdl_core::account::AccountSummary;
@@ -1955,6 +2005,24 @@ mod tests {
         );
         assert!(!legacy_cookie_path.exists());
 
+        let _ = std::fs::remove_dir_all(data_dir);
+    }
+
+    #[test]
+    fn account_session_mutations_advance_the_library_revision() {
+        let data_dir = temp_state_dir();
+        let state = test_state_with_tasks(&data_dir, Vec::new());
+        let initial = state.account_session_revision.load(Ordering::SeqCst);
+
+        state
+            .import_cookie("DedeUserID=42; SESSDATA=session; bili_jct=csrf")
+            .expect("fixture account should import");
+        let imported = state.account_session_revision.load(Ordering::SeqCst);
+        state.logout().expect("fixture account should log out");
+        let logged_out = state.account_session_revision.load(Ordering::SeqCst);
+
+        assert!(imported > initial);
+        assert!(logged_out > imported);
         let _ = std::fs::remove_dir_all(data_dir);
     }
 
@@ -2609,6 +2677,7 @@ mod tests {
             data_dir: data_dir.to_path_buf(),
             account: Mutex::new(AccountSummary::default()),
             account_cookie: Mutex::new(None),
+            account_session_revision: AtomicU64::new(0),
             queue_worker_active: AtomicBool::new(false),
             queue_changed: Notify::new(),
             queue_cancellations: Mutex::new(HashMap::new()),

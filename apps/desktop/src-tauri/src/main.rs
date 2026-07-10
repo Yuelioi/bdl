@@ -47,6 +47,7 @@ fn main() {
             bdl_tauri::commands::account_import_cookie,
             bdl_tauri::commands::account_logout,
             bdl_tauri::commands::account_verify,
+            bdl_tauri::commands::account_library_list,
         ])
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())

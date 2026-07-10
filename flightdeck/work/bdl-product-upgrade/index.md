@@ -2,11 +2,11 @@
 
 ## State
 
-Stages 1–3, Stage 4.1 transfer reliability, duplicate-task policy, environment health, frontend test/keyboard navigation, one-time scheduling, speed limits, and the professional dark theme are complete.
+Stages 1–3, Stage 4.1 transfer reliability, duplicate-task policy, environment health, frontend test/keyboard navigation, one-time scheduling, speed limits, the professional dark theme, and the first account-library slice are complete.
 
 ## Next
 
-Have the maintainer exercise pause/resume, duplicate confirmation, environment repair, scheduled wakeup, speed limits, and all three appearance modes on real downloads. Continue with account asset entry points; keep the updater last.
+Have the maintainer exercise pause/resume, duplicate confirmation, environment repair, scheduled wakeup, speed limits, all three appearance modes, and account-library handoff on real downloads. Extend account assets only after this first slice is exercised; keep the updater last.
 
 ## Read now
 
@@ -57,7 +57,7 @@ Done:
 - Blocked task creation on unhealthy environments, with inline directory creation and Settings routing for persisted FFmpeg repair.
 
 Current:
-- Professional system/light/dark appearance is complete; account asset entry points are next and the updater remains last.
+- The first account-library slice is complete; real-world exercise and visual review are in progress. Watch later/history/follows remain later account slices, and the updater remains last.
 
 Verified:
 - Git was clean on `main` at preflight.
@@ -78,6 +78,7 @@ Verified:
 - Added persisted one-time schedules with restart-safe, capacity-aware worker wakeups, create/modify/start-now controls, UTC/local conversion tests, and live download-dialog validation.
 - Added aggregate global and per-task download limits with shared multi-segment budgets, persistence, live global updates, transfer editing, and real concurrent-fetch timing regressions.
 - Added a persisted system/light/dark appearance menu, pre-mount theme application, five-level dark surfaces, and semantic dark variants for controls, tables, overlays, notices, and status badges.
+- Added a top-level account library backed by real authenticated created/collected favorite-folder APIs, with pagination, filtering, multi-select, cover fallbacks, account-change cache clearing, and handoff into the existing multi-source Parse flow.
 - Moved toast notifications below the top bar after live review found that bottom-right notifications could cover modal primary actions.
 
 ## Open questions

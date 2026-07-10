@@ -9,6 +9,8 @@ READ WHEN: changing page structure, parse UX, transfer UX, settings, account UX,
 
 BDL is a downloader, not a media library, browser, player, or recommendation client.
 
+`内容库` is a narrow account-source picker, not a discovery feed or local-media catalog. It exposes only authenticated sources that can enter the existing parse flow.
+
 Primary user jobs:
 
 - paste one or many Bilibili inputs
@@ -32,10 +34,21 @@ Out of scope:
 Primary pages:
 
 - `解析`: input, parse source switching, result selection, download settings dialog
+- `内容库`: authenticated created/collected favorite folders, filtering, pagination, and handoff to Parse
 - `传输`: active/failed/completed task management
 - `设置`: download, media, archive, naming, advanced, diagnostics
 
 Account lives in the top-right account button. It must not be placed in settings.
+
+## Account Library Flow
+
+1. A verified account opens `内容库`.
+2. Backend reads created favorite folders or collected favorite folders through the authenticated Bilibili API.
+3. The UI filters only the loaded page and supports selecting one or more folders.
+4. `打开内容` or `解析所选` sends canonical favorite URLs into the existing multi-source Parse flow.
+5. Video-level selection and task creation remain in `解析`; account metadata is never treated as queue truth.
+
+Logged-out, loading, empty, API-error, pagination, cover-fallback, and narrow-window states are explicit. Cached account-library pages are cleared whenever the active account changes.
 
 ## Parse Flow
 

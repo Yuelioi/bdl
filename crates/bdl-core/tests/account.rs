@@ -1,5 +1,11 @@
 use bdl_core::BdlResult;
-use bdl_core::account::{AccountSummary, ImportedCookie, QrLoginStatus, redact_sensitive};
+use bdl_core::account::{
+    AccountLibraryFolderKind, AccountLibraryPage, AccountSummary, ImportedCookie, QrLoginStatus,
+    redact_sensitive,
+};
+use bpi_rs::fav::info::{
+    CollectedFolderItem, CollectedFolderUpper, CreatedFolderItem, CreatedFolderListData,
+};
 use bpi_rs::ids::Mid;
 use bpi_rs::login::{LoginNav, LoginWbiImg};
 
@@ -126,4 +132,87 @@ fn redact_sensitive_truncates_large_response_bodies() {
 
     assert!(redacted.len() < 4100);
     assert!(redacted.ends_with("...<truncated>"));
+}
+
+#[test]
+fn account_library_created_folders_are_paginated_and_linkable() {
+    let page = AccountLibraryPage::from_created(
+        CreatedFolderListData {
+            count: 3,
+            list: vec![
+                created_folder(11, "稍后整理"),
+                created_folder(12, "课程"),
+                created_folder(13, "音乐"),
+            ],
+        },
+        2,
+        2,
+    );
+
+    assert_eq!(page.total, 3);
+    assert_eq!(page.items.len(), 1);
+    assert_eq!(
+        page.items[0].kind,
+        AccountLibraryFolderKind::CreatedFavorite
+    );
+    assert_eq!(
+        page.items[0].source_url,
+        "https://space.bilibili.com/42/favlist?fid=13"
+    );
+    assert!(!page.has_more);
+}
+
+#[test]
+fn account_library_collected_folders_keep_cover_and_owner() {
+    let page = AccountLibraryPage::from_collected(
+        1,
+        20,
+        1,
+        vec![CollectedFolderItem {
+            id: 21,
+            fid: 22,
+            mid: 84,
+            attr: 0,
+            title: "动画短片集".to_owned(),
+            cover: "http://example.test/cover.jpg".to_owned(),
+            upper: CollectedFolderUpper {
+                mid: 84,
+                name: "创作者".to_owned(),
+                face: "https://example.test/avatar.jpg".to_owned(),
+            },
+            cover_type: 0,
+            intro: "精选短片".to_owned(),
+            ctime: 0,
+            mtime: 0,
+            state: 0,
+            fav_state: 1,
+            media_count: 8,
+        }],
+    );
+
+    assert_eq!(
+        page.items[0].kind,
+        AccountLibraryFolderKind::CollectedFavorite
+    );
+    assert_eq!(
+        page.items[0].cover_url.as_deref(),
+        Some("https://example.test/cover.jpg")
+    );
+    assert_eq!(page.items[0].owner_name.as_deref(), Some("创作者"));
+    assert_eq!(
+        page.items[0].source_url,
+        "https://space.bilibili.com/84/favlist?fid=21"
+    );
+}
+
+fn created_folder(id: u64, title: &str) -> CreatedFolderItem {
+    CreatedFolderItem {
+        id,
+        fid: id + 100,
+        mid: 42,
+        attr: 0,
+        title: title.to_owned(),
+        fav_state: 1,
+        media_count: 5,
+    }
 }

@@ -10,7 +10,7 @@ BDL is a compact operations tool for Bilibili power users. It should feel calm, 
 
 ## Standing rules
 
-- Keep Parse, Transfer, and Settings as the only primary pages; account remains global.
+- Keep Parse, Account Library, Transfer, and Settings as the only primary pages; account identity and login remain global in the top bar.
 - Put current status and the recommended action before logs or technical detail.
 - Use OKLCH semantic tokens and neutrals tinted toward the restrained green brand hue.
 - Support `system`, `light`, and `dark` appearance preferences. Persist the preference locally and apply it before Vue mounts to avoid a theme flash.

@@ -2,6 +2,8 @@ import { invoke } from '@tauri-apps/api/core'
 
 import type {
   AccountSummary,
+  AccountLibraryFolderKind,
+  AccountLibraryPage,
   BulkQueueResult,
   DiagnosticsExportResponse,
   DownloadTask,
@@ -76,6 +78,12 @@ export interface AccountImportCookieRequest {
 
 export interface AccountLoginQrPollRequest {
   qrcode_key: string
+}
+
+export interface AccountLibraryRequest {
+  kind: AccountLibraryFolderKind
+  page: number
+  page_size: number
 }
 
 export interface BulkQueueRequest {
@@ -176,6 +184,9 @@ export const accountImportCookie = (request: AccountImportCookieRequest) =>
 export const accountLogout = () => invokeCommand<AccountSummary>('account_logout')
 
 export const accountVerify = () => invokeCommand<AccountSummary>('account_verify')
+
+export const accountLibraryList = (request: AccountLibraryRequest) =>
+  invokeCommand<AccountLibraryPage>('account_library_list', { request })
 
 export const settingsGet = () => invokeCommand<SettingsSnapshot>('settings_get')
 

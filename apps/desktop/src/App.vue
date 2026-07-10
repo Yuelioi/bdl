@@ -3,6 +3,7 @@ import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, r
 
 import { useAccountStore } from './stores/account'
 import { useQueueStore } from './stores/queue'
+import { useLibraryStore } from './stores/library'
 import { useThemeStore } from './stores/theme'
 import { useUiStore, type AppTab } from './stores/ui'
 import UiButton from './ui/Button.vue'
@@ -15,28 +16,36 @@ import UiTextarea from './ui/Textarea.vue'
 import UiToastHost from './ui/ToastHost.vue'
 
 const ParsePage = defineAsyncComponent(() => import('./pages/ParsePage.vue'))
+const LibraryPage = defineAsyncComponent(() => import('./pages/LibraryPage.vue'))
 const TransferPage = defineAsyncComponent(() => import('./pages/TransferPage.vue'))
 const SettingsPage = defineAsyncComponent(() => import('./pages/SettingsPage.vue'))
 
 const ui = useUiStore()
 const account = useAccountStore()
 const queue = useQueueStore()
+const library = useLibraryStore()
 const theme = useThemeStore()
-const loginDialogOpen = ref(false)
+const loginDialogOpen = computed({
+  get: () => ui.loginDialogOpen,
+  set: (value: boolean) => { ui.loginDialogOpen = value },
+})
 const helpDrawerOpen = ref(false)
 const startupRecoveryDialogOpen = ref(false)
 const loginMode = ref<'qr' | 'cookie'>('qr')
 const cookieText = ref('')
+const avatarLoadFailed = ref(false)
 
 const navItems: Array<{ value: AppTab; label: string; description: string; icon: string; shortcut: string }> = [
   { value: 'parse', label: '解析', description: '添加与选择', icon: 'i-tabler-link', shortcut: '1' },
-  { value: 'transfer', label: '传输', description: '队列与恢复', icon: 'i-tabler-transfer', shortcut: '2' },
-  { value: 'settings', label: '设置', description: '偏好与维护', icon: 'i-tabler-adjustments', shortcut: '3' },
+  { value: 'library', label: '内容库', description: '收藏与订阅', icon: 'i-tabler-books', shortcut: '2' },
+  { value: 'transfer', label: '传输', description: '队列与恢复', icon: 'i-tabler-transfer', shortcut: '3' },
+  { value: 'settings', label: '设置', description: '偏好与维护', icon: 'i-tabler-adjustments', shortcut: '4' },
 ]
 
 const activeTitle = computed(() => navItems.find((item) => item.value === ui.activeTab)?.label ?? '解析')
 const activePageComponent = computed(() => {
   if (ui.activeTab === 'transfer') return TransferPage
+  if (ui.activeTab === 'library') return LibraryPage
   if (ui.activeTab === 'settings') return SettingsPage
   return ParsePage
 })
@@ -97,7 +106,7 @@ const accountMenuItems = computed(() => {
   ]
 })
 const openLoginDialog = () => {
-  loginDialogOpen.value = true
+  ui.openLoginDialog()
 }
 
 const saveLogin = async () => {
@@ -154,7 +163,7 @@ const handleAppShortcut = (event: KeyboardEvent) => {
     void nextTick(() => document.querySelector<HTMLTextAreaElement>('.parse-form textarea')?.focus())
     return
   }
-  const tabByKey: Partial<Record<string, AppTab>> = { '1': 'parse', '2': 'transfer', '3': 'settings' }
+  const tabByKey: Partial<Record<string, AppTab>> = { '1': 'parse', '2': 'library', '3': 'transfer', '4': 'settings' }
   const tab = tabByKey[event.key]
   if (!tab) return
   event.preventDefault()
@@ -188,6 +197,18 @@ watch(loginMode, (mode) => {
     account.resetQrLogin()
   }
 })
+
+watch(
+  () => account.profile.avatar_url,
+  () => { avatarLoadFailed.value = false },
+)
+
+watch(
+  () => account.profile.mid,
+  (mid, previousMid) => {
+    if (mid !== previousMid) library.clear()
+  },
+)
 
 watch(
   () => account.profile.logged_in,
@@ -258,7 +279,13 @@ watch(
           >
             <button class="account-button" type="button">
               <span class="account-avatar" aria-hidden="true">
-                <img v-if="account.profile.avatar_url" :src="account.profile.avatar_url" alt="" />
+                <img
+                  v-if="account.profile.avatar_url && !avatarLoadFailed"
+                  :src="account.profile.avatar_url"
+                  alt=""
+                  referrerpolicy="no-referrer"
+                  @error="avatarLoadFailed = true"
+                />
                 <span v-else>{{ account.avatarLabel }}</span>
               </span>
               <span>{{ account.displayName }}</span>

@@ -3,7 +3,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use bdl_core::account::{
-    QrLoginSession, QrLoginStatus, poll_qr_login, redact_sensitive, start_qr_login,
+    AccountLibraryFolderKind, AccountLibraryPage, QrLoginSession, QrLoginStatus, poll_qr_login,
+    redact_sensitive, start_qr_login,
 };
 use bdl_core::fetcher::{
     BandwidthLimiter, FetchCancelToken, FetchConfig, FetchProgress, ProgressSender, ReqwestFetcher,
@@ -203,6 +204,13 @@ pub struct AccountImportCookieRequest {
 #[derive(Debug, Clone, Deserialize)]
 pub struct AccountLoginQrPollRequest {
     pub qrcode_key: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct AccountLibraryRequest {
+    pub kind: AccountLibraryFolderKind,
+    pub page: u32,
+    pub page_size: u32,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1032,6 +1040,16 @@ pub async fn account_verify(
     let account = state.verify_account().await?;
     events::emit(&app, events::ACCOUNT_UPDATED, &account)?;
     Ok(account)
+}
+
+#[tauri::command]
+pub async fn account_library_list(
+    state: State<'_, AppState>,
+    request: AccountLibraryRequest,
+) -> CommandResult<AccountLibraryPage> {
+    Ok(state
+        .account_library(request.kind, request.page, request.page_size)
+        .await?)
 }
 
 pub fn start_account_startup_verification(app: &AppHandle) {

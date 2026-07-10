@@ -1,6 +1,9 @@
 use std::collections::BTreeMap;
 
 use bpi_rs::BpiClient;
+use bpi_rs::fav::info::{CollectedFolderItem, CreatedFolderItem, CreatedFolderListData};
+use bpi_rs::fav::{FavCollectedListParams, FavCreatedListParams};
+use bpi_rs::ids::Mid;
 use bpi_rs::login::LoginNav;
 use bpi_rs::login::LoginQrPollParams;
 use qrcode::QrCode;
@@ -43,6 +46,174 @@ pub struct AccountSummary {
     pub avatar_url: Option<String>,
     pub mid: Option<String>,
     pub vip_label: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AccountLibraryFolderKind {
+    CreatedFavorite,
+    CollectedFavorite,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AccountLibraryFolder {
+    pub kind: AccountLibraryFolderKind,
+    pub media_id: String,
+    pub title: String,
+    pub description: Option<String>,
+    pub cover_url: Option<String>,
+    pub owner_name: Option<String>,
+    pub media_count: u32,
+    pub source_url: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AccountLibraryPage {
+    pub items: Vec<AccountLibraryFolder>,
+    pub total: u32,
+    pub page: u32,
+    pub page_size: u32,
+    pub has_more: bool,
+}
+
+impl AccountLibraryPage {
+    pub fn from_created(data: CreatedFolderListData, page: u32, page_size: u32) -> Self {
+        let page = page.max(1);
+        let page_size = page_size.max(1);
+        let start = ((page - 1) as usize).saturating_mul(page_size as usize);
+        let items = data
+            .list
+            .into_iter()
+            .skip(start)
+            .take(page_size as usize)
+            .map(AccountLibraryFolder::from_created)
+            .collect::<Vec<_>>();
+        let loaded = start.saturating_add(items.len());
+
+        Self {
+            items,
+            total: data.count,
+            page,
+            page_size,
+            has_more: loaded < data.count as usize,
+        }
+    }
+
+    pub fn from_collected(
+        page: u32,
+        page_size: u32,
+        total: u32,
+        items: Vec<CollectedFolderItem>,
+    ) -> Self {
+        let page = page.max(1);
+        let page_size = page_size.max(1);
+        let loaded = ((page - 1) as usize)
+            .saturating_mul(page_size as usize)
+            .saturating_add(items.len());
+
+        Self {
+            items: items
+                .into_iter()
+                .map(AccountLibraryFolder::from_collected)
+                .collect(),
+            total,
+            page,
+            page_size,
+            has_more: loaded < total as usize,
+        }
+    }
+}
+
+impl AccountLibraryFolder {
+    fn from_created(folder: CreatedFolderItem) -> Self {
+        Self {
+            kind: AccountLibraryFolderKind::CreatedFavorite,
+            media_id: folder.id.to_string(),
+            title: folder.title,
+            description: None,
+            cover_url: None,
+            owner_name: None,
+            media_count: folder.media_count,
+            source_url: favorite_source_url(folder.mid, folder.id),
+        }
+    }
+
+    fn from_collected(folder: CollectedFolderItem) -> Self {
+        Self {
+            kind: AccountLibraryFolderKind::CollectedFavorite,
+            media_id: folder.id.to_string(),
+            title: folder.title,
+            description: non_blank(folder.intro),
+            cover_url: normalize_remote_url(folder.cover),
+            owner_name: non_blank(folder.upper.name),
+            media_count: folder.media_count,
+            source_url: favorite_source_url(folder.mid, folder.id),
+        }
+    }
+}
+
+pub async fn account_library_page(
+    cookie: &str,
+    mid: u64,
+    kind: AccountLibraryFolderKind,
+    page: u32,
+    page_size: u32,
+) -> BdlResult<AccountLibraryPage> {
+    let mid = Mid::new(mid).map_err(|error| BdlError::Account {
+        message: error.to_string(),
+    })?;
+    let client = BpiClient::builder()
+        .cookie(cookie)
+        .build()
+        .map_err(|error| BdlError::Bpi(error.to_string()))?;
+
+    match kind {
+        AccountLibraryFolderKind::CreatedFavorite => {
+            let data = client
+                .fav()
+                .created_list(FavCreatedListParams::new(mid))
+                .await
+                .map_err(|error| BdlError::Bpi(error.to_string()))?;
+            Ok(AccountLibraryPage::from_created(data, page, page_size))
+        }
+        AccountLibraryFolderKind::CollectedFavorite => {
+            let params = FavCollectedListParams::new(mid)
+                .with_page(page)
+                .and_then(|params| params.with_page_size(page_size))
+                .map_err(|error| BdlError::Account {
+                    message: error.to_string(),
+                })?;
+            let data = client
+                .fav()
+                .collected_list(params)
+                .await
+                .map_err(|error| BdlError::Bpi(error.to_string()))?;
+            Ok(AccountLibraryPage::from_collected(
+                page, page_size, data.count, data.list,
+            ))
+        }
+    }
+}
+
+fn favorite_source_url(mid: u64, media_id: u64) -> String {
+    format!("https://space.bilibili.com/{mid}/favlist?fid={media_id}")
+}
+
+fn non_blank(value: String) -> Option<String> {
+    (!value.trim().is_empty()).then_some(value)
+}
+
+fn normalize_remote_url(value: String) -> Option<String> {
+    let value = value.trim();
+    if value.is_empty() {
+        return None;
+    }
+
+    Some(
+        value
+            .strip_prefix("http://")
+            .map_or_else(|| value.to_owned(), |rest| format!("https://{rest}")),
+    )
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -101,7 +272,7 @@ impl AccountSummary {
         Self {
             logged_in: true,
             name: nav.uname.clone(),
-            avatar_url: nav.face.clone(),
+            avatar_url: nav.face.clone().and_then(normalize_remote_url),
             mid: nav.mid.map(|mid| mid.get().to_string()),
             vip_label: None,
         }

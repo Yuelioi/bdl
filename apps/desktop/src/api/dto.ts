@@ -282,6 +282,27 @@ export interface AccountSummary {
   vip_label: string | null
 }
 
+export type AccountLibraryFolderKind = 'created_favorite' | 'collected_favorite'
+
+export interface AccountLibraryFolder {
+  kind: AccountLibraryFolderKind
+  media_id: string
+  title: string
+  description: string | null
+  cover_url: string | null
+  owner_name: string | null
+  media_count: number
+  source_url: string
+}
+
+export interface AccountLibraryPage {
+  items: AccountLibraryFolder[]
+  total: number
+  page: number
+  page_size: number
+  has_more: boolean
+}
+
 export type QrLoginStatus = 'waiting' | 'scanned' | 'confirmed' | 'expired' | 'unknown'
 
 export interface QrLoginSession {
