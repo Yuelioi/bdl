@@ -189,11 +189,11 @@ function optionLabel(options: Array<{ label: string; value: string }>, value: st
 
 <template>
   <UiDialog v-model="downloadDialogOpen" title="下载设置">
-    <section class="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-3 rounded-lg border border-[color-mix(in_oklab,var(--color-accent)_30%,var(--color-border))] bg-[var(--color-accent-soft)] p-3">
-      <strong class="text-3xl leading-none text-[var(--color-accent-strong)]">{{ selectedCount }}</strong>
+    <section class="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-3 rounded-lg border border-(--color-border) bg-(--color-accent-soft) p-3">
+      <strong class="text-3xl leading-none text-(--color-accent-strong)">{{ selectedCount }}</strong>
       <div class="grid min-w-0 gap-1">
-        <span class="text-xs font-bold text-[var(--color-muted)]">个分集将加入传输</span>
-        <p class="m-0 truncate text-[13px] font-bold text-[var(--color-text)]">{{ activeSource?.source.title }}</p>
+        <span class="text-xs font-bold text-(--color-muted)">个分集将加入传输</span>
+        <p class="m-0 truncate text-[13px] font-bold text-(--color-text)">{{ activeSource?.source.title }}</p>
       </div>
     </section>
 
@@ -204,7 +204,7 @@ function optionLabel(options: Array<{ label: string; value: string }>, value: st
       </div>
 
       <section class="grid gap-2">
-        <h3 class="m-0 text-[13px] font-extrabold text-[var(--color-text)]">下载内容</h3>
+        <h3 class="m-0 text-[13px] font-extrabold text-(--color-text)">下载内容</h3>
         <div class="grid grid-cols-2 gap-3 max-[840px]:grid-cols-1">
           <UiSelect v-model="mediaMode" label="下载内容" :options="mediaModeOptions" />
           <UiSelect v-if="includesVideo" v-model="videoQuality" label="视频清晰度" :options="videoQualityOptions" />
@@ -213,7 +213,7 @@ function optionLabel(options: Array<{ label: string; value: string }>, value: st
       </section>
 
       <section class="grid gap-2">
-        <h3 class="m-0 text-[13px] font-extrabold text-[var(--color-text)]">开始方式</h3>
+        <h3 class="m-0 text-[13px] font-extrabold text-(--color-text)">开始方式</h3>
         <div class="grid grid-cols-2 gap-3 max-[840px]:grid-cols-1">
           <UiTextField v-model="scheduledLocal" type="datetime-local" label="开始时间（可选）" :min="scheduleMin" :error="scheduleError" helper="留空时立即加入下载队列" />
           <UiTextField v-model="taskSpeedLimitMib" label="单任务限速（MiB/s）" placeholder="留空时不单独限速" :error="taskSpeedLimitError ?? undefined" helper="留空时仅受全局限速影响" />
@@ -228,7 +228,7 @@ function optionLabel(options: Array<{ label: string; value: string }>, value: st
         </div>
       </UiDisclosure>
 
-      <p class="m-0 rounded-md border border-[var(--color-border)] bg-[var(--color-panel)] px-3 py-2 text-xs leading-5 text-[var(--color-muted)] [overflow-wrap:anywhere]">
+      <p class="m-0 wrap-anywhere rounded-md border border-(--color-border) bg-(--color-panel) px-3 py-2 text-xs leading-5 text-(--color-muted)">
         {{ downloadSettingsSummary }}
       </p>
       <UiEnvironmentHealthPanel
@@ -254,21 +254,21 @@ function optionLabel(options: Array<{ label: string; value: string }>, value: st
 
   <UiDialog v-model="duplicateDialogOpen" title="发现重复任务">
     <section class="flex items-start gap-3">
-      <span class="grid size-9 shrink-0 place-items-center rounded-lg border border-[var(--color-border)] bg-[var(--color-accent-soft)] text-[var(--color-accent-strong)]" aria-hidden="true">
+      <span class="grid size-9 shrink-0 place-items-center rounded-lg border border-(--color-border) bg-(--color-accent-soft) text-(--color-accent-strong)" aria-hidden="true">
         <UIcon class="size-4" name="i-tabler-copy" />
       </span>
       <div>
         <strong>{{ duplicateMatches.length }} 个分集已在传输记录中</strong>
-        <p class="mt-1 mb-0 text-[var(--color-muted)]">可以跳过这些分集，或创建使用独立文件名的新任务。</p>
+        <p class="mt-1 mb-0 text-(--color-muted)">可以跳过这些分集，或创建使用独立文件名的新任务。</p>
       </div>
     </section>
-    <ul class="m-0 max-h-60 list-none overflow-auto rounded-lg border border-[var(--color-border)] p-0" aria-label="重复任务">
-      <li v-for="match in duplicatePreview" :key="match.proposed_task_id" class="flex min-h-11 items-center justify-between gap-3 border-b border-[var(--color-border)] px-2.5 py-2 last:border-b-0">
+    <ul class="m-0 max-h-60 list-none overflow-auto rounded-lg border border-(--color-border) p-0" aria-label="重复任务">
+      <li v-for="match in duplicatePreview" :key="match.proposed_task_id" class="flex min-h-11 items-center justify-between gap-3 border-b border-(--color-border) px-2.5 py-2 last:border-b-0">
         <span class="truncate">{{ match.title }}</span>
         <UiStatusBadge :status="statusBadge(match.existing_status)">{{ statusLabel(match.existing_status) }}</UiStatusBadge>
       </li>
     </ul>
-    <p v-if="duplicateRemaining > 0" class="mt-1 mb-0 text-[var(--color-muted)]">另有 {{ duplicateRemaining }} 项未展开</p>
+    <p v-if="duplicateRemaining > 0" class="mt-1 mb-0 text-(--color-muted)">另有 {{ duplicateRemaining }} 项未展开</p>
     <template #footer>
       <UiButton variant="ghost" :disabled="activeLoading" @click="duplicateDialogOpen = false">取消</UiButton>
       <UiButton variant="secondary" :disabled="activeLoading" @click="createTasks('skip')">跳过重复项</UiButton>

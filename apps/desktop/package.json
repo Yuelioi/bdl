@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "vue-tsc --noEmit && vite build",
-    "lint:styles": "stylelint \"src/**/*.{css,vue}\"",
+    "lint:styles": "stylelint \"src/**/*.{css,vue}\" && pnpm lint:tailwind",
+    "lint:tailwind": "node scripts/check-tailwind-syntax.mjs",
     "format:styles": "prettier --write \"src/**/*.css\"",
     "format:styles:check": "prettier --check \"src/**/*.css\"",
     "test": "vitest run",

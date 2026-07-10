@@ -32,10 +32,10 @@ const items = computed(() =>
     :content="false"
     :ui="{
       root: 'w-full',
-      list: 'min-h-9 items-stretch gap-5 overflow-x-auto overflow-y-hidden border-b border-[var(--color-border)] bg-transparent p-0',
+      list: 'min-h-9 items-stretch gap-5 overflow-x-auto overflow-y-hidden border-b border-(--color-border) bg-transparent p-0',
       indicator: 'hidden',
       trigger: 'relative min-w-fit grow-0 justify-start rounded-none px-1 py-0 text-[13px] font-bold',
-      trailingBadge: 'min-w-5 bg-[var(--color-panel)] px-1.5 text-[11px] tabular-nums text-[var(--color-muted)] ring-0',
+      trailingBadge: 'min-w-5 bg-(--color-panel) px-1.5 text-[11px] tabular-nums text-(--color-muted) ring-0',
     }"
     @update:model-value="(value: string | number) => (model = String(value))"
   />

@@ -41,15 +41,15 @@ const runNoticeAction = () => {
 <template>
   <section class="page-grid grid-cols-1 grid-rows-[auto_minmax(0,1fr)]">
     <section
-      class="panel relative col-span-full overflow-visible bg-[var(--color-surface)]"
+      class="panel relative col-span-full overflow-visible bg-(--color-surface)"
       :class="hasResults ? 'gap-3 py-3' : ''"
     >
       <div class="panel-heading">
         <div class="flex min-w-0 items-start gap-3">
-          <span class="mt-px font-[var(--font-display)] text-[11px] font-bold text-[var(--color-accent-strong)]">01</span>
+          <span class="mt-px font-(--font-display) text-[11px] font-bold text-(--color-accent-strong)">01</span>
           <div class="grid min-w-0 gap-1">
             <h2 class="text-balance">添加来源</h2>
-            <p v-if="!hasResults" class="text-pretty m-0 max-w-[62ch] text-xs leading-5 text-[var(--color-muted)]">
+            <p v-if="!hasResults" class="text-pretty m-0 max-w-[62ch] text-xs leading-5 text-(--color-muted)">
               粘贴链接或编号，BDL 会识别类型并整理成可选择的分集。
             </p>
           </div>

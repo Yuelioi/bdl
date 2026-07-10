@@ -94,21 +94,21 @@ const selectRange = () => {
 <template>
   <section v-if="activeSource" class="panel min-h-0 overflow-hidden">
     <div
-      class="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-3 border-b border-[var(--color-border)] pb-3 max-[840px]:grid-cols-1"
+      class="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-3 border-b border-(--color-border) pb-3 max-[840px]:grid-cols-1"
     >
       <div class="grid min-w-0 gap-1">
         <div class="flex min-w-0 items-center gap-2">
-          <strong class="truncate text-base text-[var(--color-text)]" :title="activeSource.source.title">
+          <strong class="truncate text-base text-(--color-text)" :title="activeSource.source.title">
             {{ activeSource.source.title }}
           </strong>
-          <span class="shrink-0 text-[11px] font-bold text-[var(--color-muted)]">
+          <span class="shrink-0 text-[11px] font-bold text-(--color-muted)">
             {{ sourceKindLabels[activeSource.source.kind] }}
           </span>
         </div>
-        <div class="flex flex-wrap items-center gap-3 text-xs text-[var(--color-muted)]" aria-label="内容选择统计">
-          <span>共 <b class="font-bold text-[var(--color-text)]">{{ totalPartCount }}</b> 项</span>
-          <span>已选 <b class="font-bold text-[var(--color-text)]">{{ selectedCount }}</b> 项</span>
-          <span v-if="hasResultQuery">搜索找到 <b class="font-bold text-[var(--color-text)]">{{ visiblePartCount }}</b> 项</span>
+        <div class="flex flex-wrap items-center gap-3 text-xs text-(--color-muted)" aria-label="内容选择统计">
+          <span>共 <b class="font-bold text-(--color-text)">{{ totalPartCount }}</b> 项</span>
+          <span>已选 <b class="font-bold text-(--color-text)">{{ selectedCount }}</b> 项</span>
+          <span v-if="hasResultQuery">搜索找到 <b class="font-bold text-(--color-text)">{{ visiblePartCount }}</b> 项</span>
         </div>
       </div>
 
@@ -127,7 +127,7 @@ const selectRange = () => {
           <UiTextField v-model="rangeExpression" label="序号范围" placeholder="1-5,7,9-12" :disabled="activeLoading || visiblePartCount === 0" />
           <UiButton class="h-9" variant="secondary" :disabled="!canSelectRange" @click="selectRange">选中</UiButton>
         </div>
-        <p v-if="rangeError" class="col-span-full -mt-2 m-0 text-xs font-bold text-[var(--color-danger)]">{{ rangeError }}</p>
+        <p v-if="rangeError" class="col-span-full -mt-2 m-0 text-xs font-bold text-(--color-danger)">{{ rangeError }}</p>
       </div>
     </div>
 

@@ -22,7 +22,7 @@ const { label, disabled = false, compact = false } = defineProps<{
       container: 'h-4',
       base: 'size-4 rounded-[4px]',
       wrapper: 'ms-0',
-      label: compact ? 'sr-only' : 'text-[13px] leading-5 font-semibold text-[var(--color-text)]',
+      label: compact ? 'sr-only' : 'text-[13px] leading-5 font-semibold text-(--color-text)',
       icon: 'size-3',
     }"
   />
