@@ -22,15 +22,15 @@
   --ui-color-primary-800: oklch(0.38 0.12 8);
   --ui-color-primary-900: oklch(0.3 0.085 8);
   --ui-color-primary-950: oklch(0.21 0.055 8);
-  --ui-color-neutral-50: oklch(0.985 0.005 8);
-  --ui-color-neutral-100: oklch(0.955 0.009 8);
-  --ui-color-neutral-200: oklch(0.9 0.015 8);
-  --ui-color-neutral-300: oklch(0.82 0.02 8);
-  --ui-color-neutral-400: oklch(0.68 0.026 8);
-  --ui-color-neutral-500: oklch(0.55 0.03 8);
-  --ui-color-neutral-600: oklch(0.45 0.032 8);
-  --ui-color-neutral-700: oklch(0.36 0.032 8);
-  --ui-color-neutral-800: oklch(0.27 0.03 8);
-  --ui-color-neutral-900: oklch(0.21 0.028 8);
-  --ui-color-neutral-950: oklch(0.16 0.024 8);
+  --ui-color-neutral-50: oklch(0.985 0.003 260);
+  --ui-color-neutral-100: oklch(0.955 0.004 260);
+  --ui-color-neutral-200: oklch(0.9 0.005 260);
+  --ui-color-neutral-300: oklch(0.82 0.006 260);
+  --ui-color-neutral-400: oklch(0.68 0.007 260);
+  --ui-color-neutral-500: oklch(0.55 0.008 260);
+  --ui-color-neutral-600: oklch(0.45 0.009 260);
+  --ui-color-neutral-700: oklch(0.36 0.009 260);
+  --ui-color-neutral-800: oklch(0.27 0.008 260);
+  --ui-color-neutral-900: oklch(0.21 0.007 260);
+  --ui-color-neutral-950: oklch(0.16 0.006 260);
 }

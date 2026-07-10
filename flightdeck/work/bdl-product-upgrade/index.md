@@ -86,8 +86,9 @@ Verified:
 - Added per-part duration to the normalized model so multi-part rows display their own runtime instead of repeating the whole video's total.
 - Made initial parse and refresh exhaust every lightweight metadata page automatically and removed the Parse-page `解析更多` / `解析全部` controls.
 - Replaced native window decorations and the redundant page header with a slim custom title bar, removed the help button, and shifted both themes to a restrained Bilibili-pink token system.
-- Added a local, intentionally uncommitted `bpi-rs` compatibility patch that normalizes negative `last_play_time` / `last_play_cid` sentinels before unsigned decoding.
+- Added a local, intentionally uncommitted `bpi-rs` compatibility patch that models negative `last_play_time` / `last_play_cid` sentinels as `i64` across both play-url and player-info responses, preserving upstream semantics instead of coercing them to zero.
 - Restored custom-title-bar dragging by granting Tauri's `start-dragging` capability and verified a real window-coordinate move; simplified light mode to white chrome with pink used only as a signal color.
+- Removed pink contamination from structural neutrals in both themes: light mode now uses clean whites/cool grays and dark mode uses a five-step charcoal ladder, with pink retained as the only brand accent.
 
 ## Open questions
 
