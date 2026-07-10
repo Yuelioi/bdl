@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
+use url::Url;
 
 use crate::error::{BdlError, BdlResult};
 use crate::ids::PartId;
@@ -563,21 +564,40 @@ fn asset_resource(
 ) -> DownloadResource {
     let suffix = resource_suffix(intent);
     let asset = part_asset(part, intent);
-    let target_path = sibling_resource_path(
-        output_path,
-        suffix,
-        asset.and_then(|asset| asset.format.as_deref()),
-    );
+    let current_urls = asset_urls(item, asset, intent);
+    let inferred_format = asset
+        .and_then(|asset| asset.format.clone())
+        .or_else(|| infer_asset_extension(intent, &current_urls));
+    let target_path = sibling_resource_path(output_path, suffix, inferred_format.as_deref());
     DownloadResource {
         id: format!("{task_id}:resource:{suffix}"),
         kind: DownloadResourceKind::Asset,
         intent,
-        current_urls: asset_urls(item, asset, intent),
+        current_urls,
         headers: asset.map(|asset| asset.headers.clone()).unwrap_or_default(),
         temp_path: temp_path_for(&target_path),
         target_path,
         status: ResourceStatus::Pending,
     }
+}
+
+fn infer_asset_extension(intent: DownloadResourceIntent, urls: &[String]) -> Option<String> {
+    if intent != DownloadResourceIntent::Cover {
+        return None;
+    }
+
+    urls.iter().find_map(|value| {
+        let url = Url::parse(value).ok()?;
+        let extension = Path::new(url.path())
+            .extension()?
+            .to_str()?
+            .to_ascii_lowercase();
+        matches!(
+            extension.as_str(),
+            "jpg" | "jpeg" | "png" | "webp" | "avif" | "gif"
+        )
+        .then_some(extension)
+    })
 }
 
 fn output_path_for(

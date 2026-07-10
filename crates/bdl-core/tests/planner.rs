@@ -153,7 +153,12 @@ fn plan_selected_parts_complete_archive_uses_asset_urls_and_formats() {
     let cover = resource_by_intent(&tasks[0], DownloadResourceIntent::Cover);
     assert_eq!(
         cover.current_urls,
-        vec!["https://example.invalid/cover.jpg".to_owned()]
+        vec!["https://example.invalid/cover.jpg?token=fixture".to_owned()]
+    );
+    assert!(
+        cover
+            .target_path
+            .ends_with("Fixture Video/P1 - P1.cover.jpg")
     );
 
     let subtitle = resource_by_intent(&tasks[0], DownloadResourceIntent::Subtitle);
@@ -464,7 +469,7 @@ fn fixture_tree(include_audio: bool) -> NormalizedSourceTree {
                 id: ItemId("item:BV1".to_owned()),
                 title: "Fixture Video".to_owned(),
                 owner_name: Some("owner".to_owned()),
-                cover_url: Some("https://example.invalid/cover.jpg".to_owned()),
+                cover_url: Some("https://example.invalid/cover.jpg?token=fixture".to_owned()),
                 duration_seconds: Some(42),
                 parts: vec![NormalizedPart {
                     id: PartId("part:BV1:100".to_owned()),
