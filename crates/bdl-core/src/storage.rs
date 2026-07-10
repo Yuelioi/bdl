@@ -101,7 +101,7 @@ impl TaskStorage {
 
     pub fn load_tasks(&self) -> BdlResult<Vec<DownloadTask>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, title, source_id, status, output_path, refresh_intent, media_selection FROM tasks ORDER BY sort_order, rowid",
+            "SELECT id, title, source_id, status, output_path, refresh_intent, media_selection, scheduled_at FROM tasks ORDER BY sort_order, rowid",
         )?;
         let task_rows = stmt.query_map([], |row| {
             Ok(TaskRow {
@@ -112,6 +112,7 @@ impl TaskStorage {
                 output_path: row.get(4)?,
                 refresh_intent_json: row.get(5)?,
                 media_selection_json: row.get(6)?,
+                scheduled_at_json: row.get(7)?,
             })
         })?;
 
@@ -132,6 +133,11 @@ impl TaskStorage {
                     .map(deserialize_json)
                     .transpose()?,
                 media_selection: deserialize_json(&task_row.media_selection_json)?,
+                scheduled_at: task_row
+                    .scheduled_at_json
+                    .as_deref()
+                    .map(deserialize_json)
+                    .transpose()?,
             });
         }
 
@@ -382,6 +388,7 @@ struct TaskRow {
     output_path: String,
     refresh_intent_json: Option<String>,
     media_selection_json: String,
+    scheduled_at_json: Option<String>,
 }
 
 struct ResourceRow {
@@ -413,6 +420,7 @@ fn run_migrations(conn: &Connection) -> BdlResult<()> {
             output_path TEXT NOT NULL,
             refresh_intent TEXT,
             media_selection TEXT NOT NULL DEFAULT '{"video_quality":"unknown","audio_quality":"unknown","video_codec":"unknown","container":"unknown"}',
+            scheduled_at TEXT,
             sort_order INTEGER NOT NULL DEFAULT 0,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -480,6 +488,7 @@ fn run_migrations(conn: &Connection) -> BdlResult<()> {
         "media_selection TEXT NOT NULL DEFAULT '{\"video_quality\":\"unknown\",\"audio_quality\":\"unknown\",\"video_codec\":\"unknown\",\"container\":\"unknown\"}'",
     )?;
     add_column_if_missing(conn, "tasks", "refresh_intent", "refresh_intent TEXT")?;
+    add_column_if_missing(conn, "tasks", "scheduled_at", "scheduled_at TEXT")?;
     add_column_if_missing(
         conn,
         "history",
@@ -520,11 +529,12 @@ fn save_task_in_tx(tx: &Transaction<'_>, task: &DownloadTask, sort_order: usize)
         .as_ref()
         .map(serialize_json)
         .transpose()?;
+    let scheduled_at_json = task.scheduled_at.as_ref().map(serialize_json).transpose()?;
 
     tx.execute(
         r#"
-        INSERT INTO tasks (id, title, source_id, status, output_path, refresh_intent, media_selection, sort_order, updated_at)
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, CURRENT_TIMESTAMP)
+        INSERT INTO tasks (id, title, source_id, status, output_path, refresh_intent, media_selection, scheduled_at, sort_order, updated_at)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, CURRENT_TIMESTAMP)
         ON CONFLICT(id) DO UPDATE SET
             title = excluded.title,
             source_id = excluded.source_id,
@@ -532,6 +542,7 @@ fn save_task_in_tx(tx: &Transaction<'_>, task: &DownloadTask, sort_order: usize)
             output_path = excluded.output_path,
             refresh_intent = excluded.refresh_intent,
             media_selection = excluded.media_selection,
+            scheduled_at = excluded.scheduled_at,
             sort_order = excluded.sort_order,
             updated_at = CURRENT_TIMESTAMP
         "#,
@@ -543,6 +554,7 @@ fn save_task_in_tx(tx: &Transaction<'_>, task: &DownloadTask, sort_order: usize)
             path_to_string(&task.output_path),
             refresh_intent_json.as_deref(),
             serialize_json(&task.media_selection)?,
+            scheduled_at_json.as_deref(),
             sort_order as i64,
         ],
     )?;

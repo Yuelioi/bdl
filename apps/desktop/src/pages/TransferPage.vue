@@ -18,6 +18,7 @@ import UiTextField from '../ui/TextField.vue'
 import BulkActionBar from '../ui/BulkActionBar.vue'
 import TaskInspector from '../ui/TaskInspector.vue'
 import TransferTaskTable from '../ui/TransferTaskTable.vue'
+import { scheduledLocalError, toDateTimeLocalValue, toScheduledIso } from '../utils/schedule'
 
 type TransferSortMode = 'queue' | 'name_asc' | 'progress_desc' | 'speed_desc' | 'issue_first'
 
@@ -26,6 +27,11 @@ const ui = useUiStore()
 const completedSearch = ref('')
 const transferSort = ref<TransferSortMode>('queue')
 const taskDetailOpen = ref(false)
+const scheduleDialogOpen = ref(false)
+const scheduleTaskId = ref<string | null>(null)
+const scheduleLocal = ref('')
+const scheduleMin = ref('')
+const scheduleValidationNow = ref(Date.now())
 const contextMenu = ref<{ taskId: string; x: number; y: number } | null>(null)
 const queueFilter = computed({
   get: () => queue.activeFilter,
@@ -98,6 +104,9 @@ const resumableTaskIds = computed(() => bulkScopeTasks.value.filter((task) => ta
 const retryableTaskIds = computed(() => bulkScopeTasks.value.filter((task) => isRetryable(task.status)).map((task) => task.id))
 const removableTaskIds = computed(() => selectedTasks.value.map((task) => task.id))
 const selectedDetailTitle = computed(() => queue.selectedTask?.title ?? '任务详情')
+const scheduleError = computed(() => {
+  return scheduledLocalError(scheduleLocal.value, scheduleValidationNow.value, true)
+})
 const emptyTitle = computed(() => {
   if (queue.tasks.length === 0) {
     return '还没有传输任务'
@@ -142,6 +151,14 @@ const handleTaskAction = (taskId: string, action: Exclude<TaskActionKind, 'none'
     void queue.resume(taskId)
     return
   }
+  if (action === 'unschedule') {
+    void queue.unschedule(taskId)
+    return
+  }
+  if (action === 'schedule') {
+    openScheduleDialog(taskId)
+    return
+  }
   if (action === 'retry') {
     void queue.retry(taskId)
     return
@@ -174,6 +191,25 @@ const handleTaskAction = (taskId: string, action: Exclude<TaskActionKind, 'none'
 const openTaskDetail = (taskId: string) => {
   queue.selectTask(taskId)
   taskDetailOpen.value = true
+}
+
+const openScheduleDialog = (taskId: string) => {
+  const task = queue.tasks.find((task) => task.id === taskId)
+  scheduleValidationNow.value = Date.now()
+  const minimum = new Date(scheduleValidationNow.value + 60_000)
+  scheduleTaskId.value = taskId
+  scheduleMin.value = toDateTimeLocalValue(minimum)
+  scheduleLocal.value = toDateTimeLocalValue(task?.scheduled_at ? new Date(task.scheduled_at) : new Date(Date.now() + 300_000))
+  scheduleDialogOpen.value = true
+}
+
+const submitSchedule = async () => {
+  scheduleValidationNow.value = Date.now()
+  if (!scheduleTaskId.value || scheduleError.value) return
+  const updated = await queue.schedule(scheduleTaskId.value, toScheduledIso(scheduleLocal.value))
+  if (updated) {
+    scheduleDialogOpen.value = false
+  }
 }
 
 const openContextMenu = (taskId: string, event: MouseEvent) => {
@@ -379,6 +415,21 @@ const issueRank = (status: TaskStatus): number => {
           @refresh-logs="refreshSelectedLogs"
         />
       </div>
+    </UiDialog>
+
+    <UiDialog v-model="scheduleDialogOpen" title="设置开始时间">
+      <UiTextField
+        v-model="scheduleLocal"
+        type="datetime-local"
+        label="任务开始时间"
+        :min="scheduleMin"
+        :error="scheduleError"
+        helper="到点后应用会自动把任务加入下载队列"
+      />
+      <template #footer>
+        <UiButton variant="secondary" @click="scheduleDialogOpen = false">取消</UiButton>
+        <UiButton :disabled="Boolean(scheduleError) || queue.loading" @click="submitSchedule">保存定时</UiButton>
+      </template>
     </UiDialog>
 
     <Teleport to="body">

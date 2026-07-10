@@ -30,7 +30,9 @@ use bdl_core::resolver::{ResolveOptions, Resolver};
 use bdl_core::settings::AppSettings;
 use bdl_core::storage::TaskStorage;
 use bdl_core::{BdlError, BdlResult};
+use chrono::{DateTime, Utc};
 use serde::Serialize;
+use tokio::sync::Notify;
 
 use crate::secure_store::SecureStore;
 
@@ -47,6 +49,7 @@ pub struct AppState {
     account: Mutex<AccountSnapshot>,
     account_cookie: Mutex<Option<String>>,
     queue_worker_active: AtomicBool,
+    queue_changed: Notify,
     queue_cancellations: Mutex<HashMap<String, FetchCancelToken>>,
     startup_recovery: Mutex<StartupRecoverySnapshot>,
     secure_store: SecureStore,
@@ -109,6 +112,7 @@ impl AppState {
             account: Mutex::new(account),
             account_cookie: Mutex::new(account_cookie),
             queue_worker_active: AtomicBool::new(false),
+            queue_changed: Notify::new(),
             queue_cancellations: Mutex::new(HashMap::new()),
             startup_recovery: Mutex::new(startup_recovery),
             secure_store,
@@ -305,13 +309,29 @@ impl AppState {
         self.queue_worker_active.store(false, Ordering::SeqCst);
     }
 
+    pub fn notify_queue_changed(&self) {
+        self.queue_changed.notify_one();
+    }
+
+    pub async fn wait_for_queue_change(&self) {
+        self.queue_changed.notified().await;
+    }
+
     pub fn take_next_startable_task(&self) -> BdlResult<Option<DownloadTask>> {
+        self.take_next_startable_task_at(Utc::now())
+    }
+
+    pub fn take_next_startable_task_at(
+        &self,
+        now: DateTime<Utc>,
+    ) -> BdlResult<Option<DownloadTask>> {
         let mut queue = self.queue.lock().map_err(|_| state_poisoned("queue"))?;
-        let Some(task_index) = queue.iter().position(|task| task.status.can_start()) else {
+        let Some(task_index) = queue.iter().position(|task| task.can_start_at(now)) else {
             return Ok(None);
         };
 
         queue[task_index].status = TaskStatus::Downloading;
+        queue[task_index].scheduled_at = None;
         let task = queue[task_index].clone();
         self.persist_queue(&queue)?;
         Ok(Some(task))
@@ -323,7 +343,44 @@ impl AppState {
             .lock()
             .map_err(|_| state_poisoned("queue"))?
             .iter()
-            .any(|task| task.status.can_start()))
+            .any(|task| task.can_start_at(Utc::now())))
+    }
+
+    pub fn next_scheduled_at(&self) -> BdlResult<Option<DateTime<Utc>>> {
+        Ok(self
+            .queue
+            .lock()
+            .map_err(|_| state_poisoned("queue"))?
+            .iter()
+            .filter(|task| task.status == TaskStatus::Waiting)
+            .filter_map(|task| task.scheduled_at)
+            .min())
+    }
+
+    pub fn set_task_schedule(
+        &self,
+        task_id: &str,
+        scheduled_at: Option<DateTime<Utc>>,
+    ) -> BdlResult<DownloadTask> {
+        let mut queue = self.queue.lock().map_err(|_| state_poisoned("queue"))?;
+        let task = queue
+            .iter_mut()
+            .find(|task| task.id == task_id)
+            .ok_or_else(|| BdlError::Planning {
+                message: format!("任务 `{task_id}` 不存在。"),
+            })?;
+        if !matches!(task.status, TaskStatus::Waiting | TaskStatus::Paused) {
+            return Err(BdlError::Planning {
+                message: "只有排队中或已暂停的任务可以设置开始时间。".to_owned(),
+            });
+        }
+
+        task.status = TaskStatus::Waiting;
+        task.scheduled_at = scheduled_at;
+        reset_interrupted_resources(&mut task.resources);
+        let updated = task.clone();
+        self.persist_queue(&queue)?;
+        Ok(updated)
     }
 
     pub fn update_task_status(&self, task_id: &str, status: TaskStatus) -> BdlResult<DownloadTask> {
@@ -342,7 +399,10 @@ impl AppState {
 
         queue[task_index].status = status;
         if status.can_start() {
+            queue[task_index].scheduled_at = None;
             reset_interrupted_resources(&mut queue[task_index].resources);
+        } else if status == TaskStatus::Paused || status.is_terminal() {
+            queue[task_index].scheduled_at = None;
         }
         let task = queue[task_index].clone();
         self.persist_queue(&queue)?;
@@ -419,6 +479,7 @@ impl AppState {
 
         let should_redownload_all = queue[task_index].status == TaskStatus::Completed;
         queue[task_index].status = TaskStatus::Waiting;
+        queue[task_index].scheduled_at = None;
         for resource in &mut queue[task_index].resources {
             if should_redownload_all || resource.status != ResourceStatus::Completed {
                 resource.status = ResourceStatus::Pending;
@@ -625,6 +686,7 @@ impl AppState {
             .settings
             .lock()
             .map_err(|_| state_poisoned("settings"))? = settings;
+        self.notify_queue_changed();
         self.settings()
     }
 
@@ -1622,6 +1684,9 @@ fn prepare_startup_recovery(
 ) -> StartupRecoverySnapshot {
     let mut task_ids = Vec::new();
     for task in queue {
+        if task.status == TaskStatus::Waiting && task.scheduled_at.is_some() {
+            continue;
+        }
         if !needs_startup_recovery(task.status) {
             continue;
         }
@@ -1690,6 +1755,7 @@ mod tests {
     use bdl_core::resolver::paged::PageRequest;
     use bdl_core::settings::AppSettings;
     use bdl_core::storage::TaskStorage;
+    use tokio::sync::Notify;
 
     #[test]
     fn append_new_tasks_skips_existing_and_incoming_duplicate_ids() {
@@ -1804,6 +1870,20 @@ mod tests {
         assert!(snapshot.auto_recovery_enabled);
         assert_eq!(queue[0].status, TaskStatus::Waiting);
         assert_eq!(queue[1].status, TaskStatus::Paused);
+    }
+
+    #[test]
+    fn prepare_startup_recovery_preserves_scheduled_waiting_tasks() {
+        let mut scheduled = task_with_id("task:scheduled");
+        scheduled.status = TaskStatus::Waiting;
+        scheduled.scheduled_at = Some(Utc::now() + chrono::Duration::hours(1));
+        let mut queue = vec![scheduled];
+
+        let snapshot = prepare_startup_recovery(&mut queue, false);
+
+        assert!(snapshot.task_ids.is_empty());
+        assert_eq!(queue[0].status, TaskStatus::Waiting);
+        assert!(queue[0].scheduled_at.is_some());
     }
 
     #[test]
@@ -2019,6 +2099,88 @@ mod tests {
             ["https://cdn.example/new-audio.m4s"]
         );
 
+        let _ = std::fs::remove_dir_all(data_dir);
+    }
+
+    #[test]
+    fn queue_skips_future_scheduled_tasks_until_they_are_due() {
+        let data_dir = temp_state_dir();
+        let now = Utc::now();
+        let mut scheduled = task_with_id("task:scheduled");
+        scheduled.status = TaskStatus::Waiting;
+        scheduled.scheduled_at = Some(now + chrono::Duration::minutes(5));
+        let mut immediate = task_with_id("task:immediate");
+        immediate.status = TaskStatus::Waiting;
+        let state = test_state_with_tasks(&data_dir, vec![scheduled, immediate]);
+
+        let started = state
+            .take_next_startable_task_at(now)
+            .expect("queue lookup should succeed")
+            .expect("the immediate task should start");
+
+        assert_eq!(started.id, "task:immediate");
+        let due = state
+            .take_next_startable_task_at(now + chrono::Duration::minutes(5))
+            .expect("due queue lookup should succeed")
+            .expect("scheduled task should fill another worker slot");
+        assert_eq!(due.id, "task:scheduled");
+        let _ = std::fs::remove_dir_all(data_dir);
+    }
+
+    #[test]
+    fn pausing_a_scheduled_task_clears_its_schedule() {
+        let data_dir = temp_state_dir();
+        let mut task = task_with_id("task:scheduled");
+        task.status = TaskStatus::Waiting;
+        task.scheduled_at = Some(Utc::now() + chrono::Duration::minutes(5));
+        let state = test_state_with_tasks(&data_dir, vec![task]);
+
+        let paused = state
+            .update_task_status("task:scheduled", TaskStatus::Paused)
+            .expect("scheduled task should pause");
+
+        assert_eq!(paused.scheduled_at, None);
+        let _ = std::fs::remove_dir_all(data_dir);
+    }
+
+    #[test]
+    fn clearing_a_schedule_makes_the_task_startable_immediately() {
+        let data_dir = temp_state_dir();
+        let mut task = task_with_id("task:scheduled");
+        task.status = TaskStatus::Waiting;
+        task.scheduled_at = Some(Utc::now() + chrono::Duration::minutes(5));
+        let state = test_state_with_tasks(&data_dir, vec![task]);
+
+        let updated = state
+            .set_task_schedule("task:scheduled", None)
+            .expect("schedule should clear");
+
+        assert_eq!(updated.scheduled_at, None);
+        assert!(updated.can_start_at(Utc::now()));
+        let _ = std::fs::remove_dir_all(data_dir);
+    }
+
+    #[tokio::test]
+    async fn settings_update_wakes_a_waiting_worker_and_exposes_the_latest_snapshot() {
+        let data_dir = temp_state_dir();
+        let state = test_state_with_tasks(&data_dir, Vec::new());
+        let mut updated = state.settings().expect("settings should load");
+        updated.concurrent_tasks = 3;
+        updated.ffmpeg_path = Some("C:/tools/ffmpeg.exe".to_owned());
+
+        state
+            .update_settings(updated)
+            .expect("settings update should succeed");
+        tokio::time::timeout(
+            std::time::Duration::from_millis(100),
+            state.wait_for_queue_change(),
+        )
+        .await
+        .expect("a sleeping queue worker should be notified");
+
+        let latest = state.settings().expect("latest settings should load");
+        assert_eq!(latest.concurrent_tasks, 3);
+        assert_eq!(latest.ffmpeg_path.as_deref(), Some("C:/tools/ffmpeg.exe"));
         let _ = std::fs::remove_dir_all(data_dir);
     }
 
@@ -2301,6 +2463,7 @@ mod tests {
             output_path: PathBuf::from("downloads/fixture.mp4"),
             refresh_intent: None,
             media_selection: DownloadTaskMediaSelection::default(),
+            scheduled_at: None,
         }
     }
 
@@ -2387,6 +2550,7 @@ mod tests {
             account: Mutex::new(AccountSummary::default()),
             account_cookie: Mutex::new(None),
             queue_worker_active: AtomicBool::new(false),
+            queue_changed: Notify::new(),
             queue_cancellations: Mutex::new(HashMap::new()),
             startup_recovery: Mutex::new(StartupRecoverySnapshot::default()),
             secure_store: SecureStore::in_memory(),

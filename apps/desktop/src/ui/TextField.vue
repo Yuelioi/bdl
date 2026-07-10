@@ -2,20 +2,41 @@
 import { useId } from 'vue'
 
 const model = defineModel<string>({ default: '' })
-const { type = 'text', disabled = false } = defineProps<{
+const { type = 'text', disabled = false, error, helper, min } = defineProps<{
   label: string
   placeholder?: string
-  type?: 'text' | 'password' | 'url'
+  type?: 'text' | 'password' | 'url' | 'datetime-local'
   disabled?: boolean
+  error?: string
+  helper?: string
+  min?: string
 }>()
 
 const fieldId = useId()
+const messageId = `${fieldId}-message`
 </script>
 
 <template>
-  <label class="ui-field" :for="fieldId">
+  <label class="ui-field" :class="{ 'has-message': error || helper }" :for="fieldId">
     <span>{{ label }}</span>
-    <input :id="fieldId" v-model="model" :type :placeholder :disabled />
+    <input
+      :id="fieldId"
+      v-model="model"
+      :type
+      :placeholder
+      :disabled
+      :min
+      :aria-invalid="error ? true : undefined"
+      :aria-describedby="error || helper ? messageId : undefined"
+    />
+    <small
+      v-if="error || helper"
+      :id="messageId"
+      :class="{ error: Boolean(error) }"
+      :aria-live="error ? 'polite' : undefined"
+    >
+      {{ error || helper }}
+    </small>
   </label>
 </template>
 
@@ -33,6 +54,20 @@ const fieldId = useId()
   display: flex;
   align-items: center;
   line-height: 18px;
+}
+
+.ui-field.has-message {
+  grid-template-rows: 18px var(--height-input) auto;
+}
+
+.ui-field small {
+  color: var(--color-text-muted);
+  font-size: var(--font-11);
+  font-weight: 500;
+}
+
+.ui-field small.error {
+  color: var(--color-danger);
 }
 
 input {

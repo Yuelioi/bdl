@@ -57,6 +57,7 @@ Important invariants:
 - stable task id and source id
 - title and output path
 - task status
+- optional UTC `scheduled_at` start time
 - resource list
 - media selection snapshot
 - refresh intent for expiring media URLs
@@ -118,6 +119,8 @@ Successful muxing is a commit point. Muxing/completed tasks ignore late pause or
 
 SQLite persists tasks, resources, completed transfer records, task logs, and account summaries. Settings are JSON. Cookies are stored in the OS credential store, not SQLite or settings JSON.
 
+Scheduled tasks remain backend-owned waiting tasks. `AppState` excludes future schedules from worker pickup and startup recovery, persists the UTC start time, and notifies a capacity-aware Tokio worker when schedules, queue state, or settings change. The worker races active-task completion against the next due time so a scheduled task can fill an available concurrency slot without waiting for the current batch to finish. It re-reads settings before filling worker slots, ensuring a long-sleeping schedule uses the latest concurrency, network, FFmpeg, and archive configuration. The frontend only submits local time as RFC 3339 and renders backend task state.
+
 Files:
 
 ```text
@@ -170,6 +173,8 @@ queue_dismiss_startup_recovery
 queue_logs
 queue_pause
 queue_resume
+queue_schedule
+queue_unschedule
 queue_cancel
 queue_retry
 queue_refresh_urls_and_retry

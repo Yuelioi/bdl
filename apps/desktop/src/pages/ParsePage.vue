@@ -24,6 +24,7 @@ import { useParseStore } from '../stores/parse'
 import { useSettingsStore } from '../stores/settings'
 import { useUiStore } from '../stores/ui'
 import { statusBadge, statusLabel } from '../stores/transferView'
+import { scheduledLocalError, toDateTimeLocalValue, toScheduledIso } from '../utils/schedule'
 
 interface PageTreeNode {
   id: string
@@ -72,6 +73,9 @@ const mediaMode = ref<DownloadMediaMode>('audio_video')
 const videoQuality = ref('best')
 const audioQuality = ref('best')
 const videoCodec = ref<VideoCodecPreference>('auto')
+const scheduledLocal = ref('')
+const scheduleMin = ref('')
+const scheduleValidationNow = ref(Date.now())
 const resultQuery = ref('')
 const resultSort = ref<ResultSortMode>('source')
 const rangeExpression = ref('')
@@ -141,6 +145,9 @@ const canLoadMore = computed(() => Boolean(activeSource.value?.source.has_more &
 const hasResultQuery = computed(() => resultQuery.value.trim().length > 0)
 const canSelectVisible = computed(() => Boolean(activeSource.value && visiblePartCount.value > 0 && !activeLoading.value))
 const canSelectRange = computed(() => Boolean(activeSource.value && rangeExpression.value.trim() && visiblePartCount.value > 0 && !activeLoading.value))
+const scheduleError = computed(() => {
+  return scheduledLocalError(scheduledLocal.value, scheduleValidationNow.value)
+})
 const createTaskLabel = computed(() => {
   if (activeLoading.value) {
     return '处理中'
@@ -174,7 +181,10 @@ const downloadSettingsSummary = computed(() => {
       : archiveMode.value === 'custom'
         ? '使用设置页自定义素材'
         : '仅最终媒体'
-  return `${content} · ${video} · ${audio} · ${codec} · ${outputExtension.value.toUpperCase()} · ${dir} · ${archive}`
+  const schedule = scheduledLocal.value
+    ? `定时 ${new Date(scheduledLocal.value).toLocaleString('zh-CN', { dateStyle: 'short', timeStyle: 'short' })}`
+    : '立即开始'
+  return `${content} · ${video} · ${audio} · ${codec} · ${outputExtension.value.toUpperCase()} · ${dir} · ${archive} · ${schedule}`
 })
 const downloadAdvancedSummary = computed(() => {
   const codec = includesVideo.value ? optionLabel(codecOptions, videoCodec.value) : '无视频编码'
@@ -216,6 +226,9 @@ const openDownloadSettings = async () => {
   videoQuality.value = defaults.quality
   audioQuality.value = defaults.audio_quality
   videoCodec.value = defaults.codec
+  scheduledLocal.value = ''
+  scheduleValidationNow.value = Date.now()
+  scheduleMin.value = toDateTimeLocalValue(new Date(scheduleValidationNow.value + 60_000))
   downloadDialogOpen.value = true
   await checkDownloadEnvironment()
 }
@@ -241,6 +254,11 @@ const createDownloadDirectory = () => {
 
 const createTasks = async (duplicatePolicy: DuplicateTaskPolicy = 'ask') => {
   if (activeSource.value) {
+    scheduleValidationNow.value = Date.now()
+    if (scheduleError.value) {
+      parse.setNotice(scheduleError.value, 'warning')
+      return
+    }
     const health = await checkDownloadEnvironment()
     if (!health?.ready) {
       parse.setNotice('请先修复保存目录或 FFmpeg 环境', 'warning')
@@ -255,6 +273,7 @@ const createTasks = async (duplicatePolicy: DuplicateTaskPolicy = 'ask') => {
       audioQuality: audioQuality.value,
       codec: videoCodec.value,
       duplicatePolicy,
+      scheduledAt: scheduledLocal.value ? toScheduledIso(scheduledLocal.value) : undefined,
     })
     if (result?.requires_confirmation) {
       duplicateMatches.value = result.duplicates
@@ -793,6 +812,17 @@ const errorMessage = (error: unknown): string => {
             <UiSelect v-if="includesAudio" v-model="audioQuality" label="音频质量" :options="audioQualityOptions" />
           </div>
         </section>
+        <section class="download-settings-section">
+          <h3>开始方式</h3>
+          <UiTextField
+            v-model="scheduledLocal"
+            type="datetime-local"
+            label="开始时间（可选）"
+            :min="scheduleMin"
+            :error="scheduleError"
+            helper="留空时立即加入下载队列"
+          />
+        </section>
         <details class="download-settings-more">
           <summary>
             <div>
@@ -832,7 +862,7 @@ const errorMessage = (error: unknown): string => {
       <template #footer>
         <UiButton variant="secondary" :disabled="activeLoading" @click="downloadDialogOpen = false">取消</UiButton>
         <UiButton
-          :disabled="!canCreateTasks || settings.environmentChecking || settings.environmentHealth?.ready === false"
+          :disabled="!canCreateTasks || Boolean(scheduleError) || settings.environmentChecking || settings.environmentHealth?.ready === false"
           @click="createTasks()"
         >
           加入传输

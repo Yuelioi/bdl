@@ -330,6 +330,7 @@ fn plan_part(
             video_codec: video.map(stream_codec_label).unwrap_or("none").to_owned(),
             container: options.output_extension.clone(),
         },
+        scheduled_at: None,
     })
 }
 

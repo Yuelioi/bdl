@@ -343,6 +343,7 @@ fn sample_task() -> DownloadTask {
             video_codec: "avc".to_owned(),
             container: "mp4".to_owned(),
         },
+        scheduled_at: Some(Utc::now() + Duration::minutes(30)),
     }
 }
 

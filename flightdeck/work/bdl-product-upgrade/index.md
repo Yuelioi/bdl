@@ -2,11 +2,11 @@
 
 ## State
 
-Stages 1–3, Stage 4.1 transfer reliability, duplicate-task policy, environment health, and the first frontend test/keyboard-navigation slice are complete.
+Stages 1–3, Stage 4.1 transfer reliability, duplicate-task policy, environment health, frontend test/keyboard navigation, and one-time task scheduling are complete.
 
 ## Next
 
-Have the maintainer exercise pause/resume, duplicate confirmation, and environment repair on real downloads. Then evaluate scheduler controls, speed limits, updater, dark theme, and account asset entry points as separate vertical slices.
+Have the maintainer exercise pause/resume, duplicate confirmation, environment repair, and scheduled wakeup on real downloads. Then continue with speed limits as the next product-depth slice.
 
 ## Read now
 
@@ -57,7 +57,7 @@ Done:
 - Blocked task creation on unhealthy environments, with inline directory creation and Settings routing for persisted FFmpeg repair.
 
 Current:
-- Frontend component/store tests and parsed-tree keyboard navigation are complete; select the next product-depth slice from scheduler controls, speed limits, updater, dark theme, or account asset entry points.
+- One-time task scheduling is complete; the next product-depth slice is speed limiting.
 
 Verified:
 - Git was clean on `main` at preflight.
@@ -75,6 +75,8 @@ Verified:
 - Added FFmpeg probe and directory-state regressions; captured the live Settings health panel showing the writable project download directory and system FFmpeg 7.1.1.
 - Review-hardened environment repair: non-FFmpeg executables are rejected, edited batch paths cannot reuse stale health, and older async checks cannot overwrite newer results.
 - Added Vitest to the repository gate with Store race regressions, environment-health interaction/announcement coverage, and roving-focus tree keyboard tests.
+- Added persisted one-time schedules with restart-safe, capacity-aware worker wakeups, create/modify/start-now controls, UTC/local conversion tests, and live download-dialog validation.
+- Moved toast notifications below the top bar after live review found that bottom-right notifications could cover modal primary actions.
 
 ## Open questions
 

@@ -43,9 +43,15 @@ const transferBadgeCount = computed(() =>
 const attentionCount = computed(
   () => queue.tasks.filter((task) => task.status === 'failed' || task.status === 'cancelled').length,
 )
+const scheduledTaskCount = computed(
+  () => queue.tasks.filter((task) => task.status === 'waiting' && task.scheduled_at && Date.parse(task.scheduled_at) > Date.now()).length,
+)
 const queueHealthLabel = computed(() => {
   if (queue.loading) return '同步队列'
   if (attentionCount.value > 0) return `${attentionCount.value} 项需处理`
+  if (scheduledTaskCount.value === transferBadgeCount.value && scheduledTaskCount.value > 0) {
+    return `${scheduledTaskCount.value} 项已定时`
+  }
   if (transferBadgeCount.value > 0) return `${transferBadgeCount.value} 项进行中`
   return '队列空闲'
 })

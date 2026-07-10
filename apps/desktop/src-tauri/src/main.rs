@@ -18,6 +18,8 @@ fn main() {
             bdl_tauri::commands::queue_logs,
             bdl_tauri::commands::queue_pause,
             bdl_tauri::commands::queue_resume,
+            bdl_tauri::commands::queue_schedule,
+            bdl_tauri::commands::queue_unschedule,
             bdl_tauri::commands::queue_cancel,
             bdl_tauri::commands::queue_retry,
             bdl_tauri::commands::queue_refresh_urls_and_retry,

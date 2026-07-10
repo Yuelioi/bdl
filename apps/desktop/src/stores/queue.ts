@@ -26,8 +26,10 @@ import {
   queueRefreshUrlsAndRetry,
   queueRemove,
   queueResume,
+  queueSchedule,
   queueRetry,
   queueStartupRecovery,
+  queueUnschedule,
 } from '../api/tauri'
 import { useUiStore } from './ui'
 import type { InlineNotice, NoticeTone } from './feedback'
@@ -341,6 +343,12 @@ export const useQueueStore = defineStore('queue', {
     async resume(taskId: string) {
       await this.runTaskCommand(() => queueResume(taskId), '已恢复到队列')
     },
+    async unschedule(taskId: string) {
+      await this.runTaskCommand(() => queueUnschedule(taskId), '已取消定时并恢复到队列')
+    },
+    async schedule(taskId: string, scheduledAt: string): Promise<boolean> {
+      return this.runTaskCommand(() => queueSchedule(taskId, scheduledAt), '已更新任务开始时间')
+    },
     async cancel(taskId: string) {
       await this.runTaskCommand(() => queueCancel(taskId), '已取消')
     },
@@ -424,14 +432,16 @@ export const useQueueStore = defineStore('queue', {
         this.logsLoadingByTask[taskId] = false
       }
     },
-    async runTaskCommand(command: () => Promise<DownloadTask>, successMessage: string) {
+    async runTaskCommand(command: () => Promise<DownloadTask>, successMessage: string): Promise<boolean> {
       const ui = useUiStore()
       try {
         const task = await command()
         this.upsertTask(task)
         this.setNotice(successMessage, 'success')
+        return true
       } catch (error) {
         ui.pushToast(errorMessage(error), 'danger')
+        return false
       }
     },
     async runBulkCommand(command: () => Promise<BulkQueueResult>, actionLabel: string) {

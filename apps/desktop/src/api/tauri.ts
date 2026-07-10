@@ -66,6 +66,7 @@ export interface SelectionCreateTasksRequest {
   audio_quality?: string
   codec?: VideoCodecPreference
   duplicate_policy?: DuplicateTaskPolicy
+  scheduled_at?: string
 }
 
 export interface AccountImportCookieRequest {
@@ -116,6 +117,12 @@ export const queueLogs = (taskId: string, limit = 200) =>
 export const queuePause = (taskId: string) => invokeCommand<DownloadTask>('queue_pause', { taskId })
 
 export const queueResume = (taskId: string) => invokeCommand<DownloadTask>('queue_resume', { taskId })
+
+export const queueSchedule = (taskId: string, scheduledAt: string) =>
+  invokeCommand<DownloadTask>('queue_schedule', { request: { task_id: taskId, scheduled_at: scheduledAt } })
+
+export const queueUnschedule = (taskId: string) =>
+  invokeCommand<DownloadTask>('queue_unschedule', { taskId })
 
 export const queueCancel = (taskId: string) => invokeCommand<DownloadTask>('queue_cancel', { taskId })
 

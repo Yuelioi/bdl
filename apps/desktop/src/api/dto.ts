@@ -117,6 +117,7 @@ export interface DownloadTask {
   output_path: string
   refresh_intent: DownloadTaskRefreshIntent | null
   media_selection: DownloadTaskMediaSelection
+  scheduled_at: string | null
 }
 
 export type DuplicateTaskPolicy = 'skip' | 'create' | 'ask'

@@ -22,8 +22,8 @@ use bdl_core::queue::{
     QueueLogLevel, ResourceStatus, TaskStatus,
 };
 use bdl_core::{BdlError, BdlResult};
-use chrono::Utc;
-use futures::future::join_all;
+use chrono::{DateTime, Utc};
+use futures::stream::{FuturesUnordered, StreamExt};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_opener::OpenerExt;
@@ -115,6 +115,12 @@ pub struct BulkQueueRequest {
     pub task_ids: Vec<String>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct ScheduleTaskRequest {
+    pub task_id: String,
+    pub scheduled_at: String,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct BulkQueueFailure {
     pub task_id: String,
@@ -159,6 +165,7 @@ pub struct SelectionCreateTasksRequest {
     pub quality: Option<String>,
     pub audio_quality: Option<String>,
     pub codec: Option<String>,
+    pub scheduled_at: Option<String>,
     #[serde(default)]
     pub duplicate_policy: DuplicateTaskPolicy,
 }
@@ -283,6 +290,26 @@ impl From<&SettingsSnapshot> for DownloadRuntimeOptions {
     }
 }
 
+struct QueueTaskLaunchContext {
+    settings: SettingsSnapshot,
+    fetch_config: FetchConfig,
+    runtime_options: DownloadRuntimeOptions,
+}
+
+fn queue_task_launch_context(settings: SettingsSnapshot) -> QueueTaskLaunchContext {
+    let fetch_config = FetchConfig {
+        max_retries: retry_count(&settings),
+        proxy_url: settings.proxy_url.clone(),
+        segment_count: segment_count(&settings),
+    };
+    let runtime_options = DownloadRuntimeOptions::from(&settings);
+    QueueTaskLaunchContext {
+        settings,
+        fetch_config,
+        runtime_options,
+    }
+}
+
 #[tauri::command]
 pub async fn parse_create_source(
     app: AppHandle,
@@ -348,6 +375,7 @@ pub async fn selection_create_tasks(
 ) -> CommandResult<SelectionCreateTasksResult> {
     let source_id = SourceId(request.source_id);
     let duplicate_policy = request.duplicate_policy;
+    let scheduled_at = parse_future_schedule(request.scheduled_at.as_deref(), Utc::now())?;
     let settings = state.settings()?;
     let selected_part_ids = request.part_ids.into_iter().map(PartId).collect::<Vec<_>>();
 
@@ -392,7 +420,10 @@ pub async fn selection_create_tasks(
     let prepared = state
         .prepare_selection(&source_id, &selected_part_ids)
         .await?;
-    let planned_tasks = plan_selected_parts(&prepared.tree, &prepared.part_ids, &options)?;
+    let mut planned_tasks = plan_selected_parts(&prepared.tree, &prepared.part_ids, &options)?;
+    for task in &mut planned_tasks {
+        task.scheduled_at = scheduled_at;
+    }
 
     if prepared.tree_updated {
         events::emit(&app, events::PARSE_SOURCE_UPDATED, &prepared.tree)?;
@@ -426,8 +457,10 @@ pub async fn selection_create_tasks(
 }
 
 #[tauri::command]
-pub fn queue_list(state: State<'_, AppState>) -> CommandResult<Vec<DownloadTask>> {
-    Ok(state.queue_snapshot()?)
+pub fn queue_list(app: AppHandle, state: State<'_, AppState>) -> CommandResult<Vec<DownloadTask>> {
+    let tasks = state.queue_snapshot()?;
+    start_queue_worker(&app);
+    Ok(tasks)
 }
 
 #[tauri::command]
@@ -470,6 +503,50 @@ pub fn queue_resume(
     task_id: String,
 ) -> CommandResult<DownloadTask> {
     update_task_status(app, state, &task_id, TaskStatus::Waiting)
+}
+
+#[tauri::command]
+pub fn queue_schedule(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    request: ScheduleTaskRequest,
+) -> CommandResult<DownloadTask> {
+    let scheduled_at =
+        parse_future_schedule(Some(&request.scheduled_at), Utc::now())?.ok_or_else(|| {
+            BdlError::Planning {
+                message: "请选择任务开始时间。".to_owned(),
+            }
+        })?;
+    let task = state.set_task_schedule(&request.task_id, Some(scheduled_at))?;
+    events::emit(&app, events::QUEUE_TASK_UPDATED, &task)?;
+    emit_queue_log(
+        &app,
+        state.inner(),
+        &task.id,
+        QueueLogLevel::Info,
+        &format!("任务已定时至 {}", scheduled_at.to_rfc3339()),
+    )?;
+    start_queue_worker(&app);
+    Ok(task)
+}
+
+#[tauri::command]
+pub fn queue_unschedule(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    task_id: String,
+) -> CommandResult<DownloadTask> {
+    let task = state.set_task_schedule(&task_id, None)?;
+    events::emit(&app, events::QUEUE_TASK_UPDATED, &task)?;
+    emit_queue_log(
+        &app,
+        state.inner(),
+        &task.id,
+        QueueLogLevel::Info,
+        "已取消定时，任务恢复到队列",
+    )?;
+    start_queue_worker(&app);
+    Ok(task)
 }
 
 #[tauri::command]
@@ -979,6 +1056,26 @@ fn resolve_download_directory(configured: Option<&str>) -> BdlResult<PathBuf> {
     }
 }
 
+fn parse_future_schedule(
+    value: Option<&str>,
+    now: DateTime<Utc>,
+) -> BdlResult<Option<DateTime<Utc>>> {
+    let Some(value) = value.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+    let scheduled_at = DateTime::parse_from_rfc3339(value)
+        .map_err(|_| BdlError::Planning {
+            message: "开始时间格式无效，请重新选择。".to_owned(),
+        })?
+        .with_timezone(&Utc);
+    if scheduled_at <= now {
+        return Err(BdlError::Planning {
+            message: "开始时间必须晚于当前时间。".to_owned(),
+        });
+    }
+    Ok(Some(scheduled_at))
+}
+
 async fn check_download_directory(path: PathBuf) -> DownloadDirectoryHealth {
     let display_path = path.to_string_lossy().into_owned();
     let metadata = match fs::metadata(&path).await {
@@ -1105,6 +1202,7 @@ fn start_queue_worker(app: &AppHandle) {
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         let state = app.state::<AppState>();
+        state.notify_queue_changed();
         if !state.try_start_queue_worker() {
             return;
         }
@@ -1116,99 +1214,147 @@ fn start_queue_worker(app: &AppHandle) {
             tracing::error!("queue worker failed: {}", error.message);
         }
 
-        if matches!(state.has_startable_task(), Ok(true)) {
+        let should_restart = matches!(state.has_startable_task(), Ok(true))
+            || matches!(state.next_scheduled_at(), Ok(Some(_)));
+        if should_restart {
             start_queue_worker(&app);
         }
     });
 }
 
 async fn run_queue_worker(app: &AppHandle, state: &AppState) -> CommandResult<()> {
-    loop {
-        let settings = state.settings()?;
-        let fetcher = ReqwestFetcher::with_config(FetchConfig {
-            max_retries: retry_count(&settings),
-            proxy_url: settings.proxy_url.clone(),
-            segment_count: segment_count(&settings),
-        })?;
-        let concurrent_tasks = concurrent_tasks(&settings);
-        let runtime_options = DownloadRuntimeOptions::from(&settings);
-        let mut tasks = Vec::with_capacity(concurrent_tasks);
+    let mut running = FuturesUnordered::new();
 
-        for _ in 0..concurrent_tasks {
+    loop {
+        let concurrent_tasks = concurrent_tasks(&state.settings()?);
+        while running.len() < concurrent_tasks {
+            let launch = queue_task_launch_context(state.settings()?);
+            let fetcher = ReqwestFetcher::with_config(launch.fetch_config)?;
             let Some(task) = state.take_next_startable_task()? else {
                 break;
             };
 
             events::emit(app, events::QUEUE_TASK_UPDATED, &task)?;
             emit_queue_log(app, state, &task.id, QueueLogLevel::Info, "开始下载任务")?;
-            tasks.push(task);
+            running.push(run_download_task_with_identity(
+                app,
+                state,
+                fetcher,
+                task,
+                launch.runtime_options,
+                launch.settings,
+            ));
         }
 
-        if tasks.is_empty() {
-            break;
+        if running.is_empty() {
+            let Some(scheduled_at) = state.next_scheduled_at()? else {
+                break;
+            };
+            wait_for_schedule_or_queue_change(state, scheduled_at).await;
+            continue;
         }
 
-        let outcomes =
-            join_all(tasks.iter().cloned().map(|task| {
-                run_download_task(app, state, &fetcher, task, runtime_options.clone())
-            }))
-            .await;
+        let completed = if let Some(scheduled_at) = state.next_scheduled_at()? {
+            tokio::select! {
+                completed = running.next() => completed,
+                () = wait_for_schedule_or_queue_change(state, scheduled_at) => None,
+            }
+        } else {
+            tokio::select! {
+                completed = running.next() => completed,
+                () = state.wait_for_queue_change() => None,
+            }
+        };
 
-        for (task, outcome) in tasks.into_iter().zip(outcomes) {
-            if let Err(error) = outcome {
-                match state.task_status(&task.id) {
-                    Ok(TaskStatus::Paused | TaskStatus::Cancelled) => {
-                        emit_queue_log(app, state, &task.id, QueueLogLevel::Warning, "任务已停止")?;
+        if let Some((task, settings, outcome)) = completed {
+            handle_download_outcome(app, state, &settings, &task, outcome).await?;
+        }
+    }
+
+    Ok(())
+}
+
+async fn run_download_task_with_identity(
+    app: &AppHandle,
+    state: &AppState,
+    fetcher: ReqwestFetcher,
+    task: DownloadTask,
+    runtime_options: DownloadRuntimeOptions,
+    settings: SettingsSnapshot,
+) -> (DownloadTask, SettingsSnapshot, CommandResult<()>) {
+    let outcome = run_download_task(app, state, &fetcher, task.clone(), runtime_options).await;
+    (task, settings, outcome)
+}
+
+async fn wait_for_schedule_or_queue_change(state: &AppState, scheduled_at: DateTime<Utc>) {
+    let delay = (scheduled_at - Utc::now())
+        .to_std()
+        .unwrap_or(std::time::Duration::ZERO);
+    tokio::select! {
+        () = tokio::time::sleep(delay) => {},
+        () = state.wait_for_queue_change() => {},
+    }
+}
+
+async fn handle_download_outcome(
+    app: &AppHandle,
+    state: &AppState,
+    settings: &SettingsSnapshot,
+    task: &DownloadTask,
+    outcome: CommandResult<()>,
+) -> CommandResult<()> {
+    let Err(error) = outcome else {
+        return Ok(());
+    };
+    match state.task_status(&task.id) {
+        Ok(TaskStatus::Paused | TaskStatus::Cancelled) => {
+            emit_queue_log(app, state, &task.id, QueueLogLevel::Warning, "任务已停止")?;
+        }
+        Ok(TaskStatus::Completed) => {
+            emit_queue_log(
+                app,
+                state,
+                &task.id,
+                QueueLogLevel::Warning,
+                &format!("成品已生成，但收尾处理未完全完成：{}", error.message),
+            )?;
+        }
+        _ => {
+            if settings.auto_refresh_expired_urls
+                && is_expired_url_error(&error.message)
+                && !already_auto_refreshed(state, &task.id)
+            {
+                emit_queue_log(
+                    app,
+                    state,
+                    &task.id,
+                    QueueLogLevel::Warning,
+                    "自动刷新过期链接",
+                )?;
+
+                match state.refresh_task_media_urls(&task.id).await {
+                    Ok(_) => {
+                        let retried = state.retry_task(&task.id)?;
+                        events::emit(app, events::QUEUE_TASK_UPDATED, &retried)?;
+                        return Ok(());
                     }
-                    Ok(TaskStatus::Completed) => {
+                    Err(refresh_error) => {
                         emit_queue_log(
                             app,
                             state,
                             &task.id,
-                            QueueLogLevel::Warning,
-                            &format!("成品已生成，但收尾处理未完全完成：{}", error.message),
+                            QueueLogLevel::Error,
+                            &format!("自动刷新过期链接失败：{refresh_error}"),
                         )?;
-                    }
-                    _ => {
-                        if settings.auto_refresh_expired_urls
-                            && is_expired_url_error(&error.message)
-                            && !already_auto_refreshed(state, &task.id)
-                        {
-                            emit_queue_log(
-                                app,
-                                state,
-                                &task.id,
-                                QueueLogLevel::Warning,
-                                "自动刷新过期链接",
-                            )?;
-
-                            match state.refresh_task_media_urls(&task.id).await {
-                                Ok(_) => {
-                                    let retried = state.retry_task(&task.id)?;
-                                    events::emit(app, events::QUEUE_TASK_UPDATED, &retried)?;
-                                    continue;
-                                }
-                                Err(refresh_error) => {
-                                    emit_queue_log(
-                                        app,
-                                        state,
-                                        &task.id,
-                                        QueueLogLevel::Error,
-                                        &format!("自动刷新过期链接失败：{refresh_error}"),
-                                    )?;
-                                }
-                            }
-                        }
-
-                        let failed = state.update_task_status(&task.id, TaskStatus::Failed)?;
-                        events::emit(app, events::QUEUE_TASK_UPDATED, &failed)?;
-                        emit_queue_log(app, state, &task.id, QueueLogLevel::Error, &error.message)?;
                     }
                 }
             }
+
+            let failed = state.update_task_status(&task.id, TaskStatus::Failed)?;
+            events::emit(app, events::QUEUE_TASK_UPDATED, &failed)?;
+            emit_queue_log(app, state, &task.id, QueueLogLevel::Error, &error.message)?;
         }
     }
-
     Ok(())
 }
 
@@ -1902,8 +2048,9 @@ fn parse_archive_mode(value: &str) -> CommandResult<ArchiveMode> {
 #[cfg(test)]
 mod tests {
     use super::{
-        has_recoverable_completed_output, nfo_content, redact_log_for_diagnostics,
-        redact_task_for_diagnostics, should_fetch,
+        has_recoverable_completed_output, nfo_content, parse_future_schedule,
+        queue_task_launch_context, redact_log_for_diagnostics, redact_task_for_diagnostics,
+        should_fetch,
     };
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -1915,6 +2062,61 @@ mod tests {
         DownloadResource, DownloadResourceIntent, DownloadResourceKind, DownloadTask,
         DownloadTaskMediaSelection, QueueLogEntry, QueueLogLevel, ResourceStatus, TaskStatus,
     };
+    use chrono::{TimeZone, Utc};
+
+    #[test]
+    fn future_schedule_parses_and_normalizes_to_utc() {
+        let now = Utc.with_ymd_and_hms(2026, 7, 10, 10, 0, 0).unwrap();
+
+        let scheduled = parse_future_schedule(Some("2026-07-10T20:00:00+08:00"), now)
+            .expect("future schedule should parse")
+            .expect("schedule should be present");
+
+        assert_eq!(
+            scheduled,
+            Utc.with_ymd_and_hms(2026, 7, 10, 12, 0, 0).unwrap()
+        );
+    }
+
+    #[test]
+    fn past_schedule_is_rejected() {
+        let now = Utc.with_ymd_and_hms(2026, 7, 10, 12, 0, 0).unwrap();
+
+        let result = parse_future_schedule(Some("2026-07-10T19:00:00+08:00"), now);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn task_launch_context_uses_the_supplied_latest_settings() {
+        let settings = super::SettingsSnapshot {
+            proxy_url: Some("http://127.0.0.1:7890".to_owned()),
+            retry_count: 5,
+            segment_count: 8,
+            ffmpeg_path: Some("C:/tools/ffmpeg.exe".to_owned()),
+            retain_raw_streams: true,
+            embed_cover: true,
+            embed_subtitles: true,
+            ..Default::default()
+        };
+
+        let launch = queue_task_launch_context(settings.clone());
+
+        assert_eq!(launch.settings, settings);
+        assert_eq!(launch.fetch_config.max_retries, 5);
+        assert_eq!(
+            launch.fetch_config.proxy_url.as_deref(),
+            Some("http://127.0.0.1:7890")
+        );
+        assert_eq!(launch.fetch_config.segment_count, 8);
+        assert_eq!(
+            launch.runtime_options.ffmpeg_path.as_deref(),
+            Some(std::path::Path::new("C:/tools/ffmpeg.exe"))
+        );
+        assert!(launch.runtime_options.retain_raw_streams);
+        assert!(launch.runtime_options.embed_cover);
+        assert!(launch.runtime_options.embed_subtitles);
+    }
 
     #[test]
     fn nfo_content_escapes_xml_sensitive_fields() {
@@ -1927,6 +2129,7 @@ mod tests {
             output_path: PathBuf::from("downloads/A&B <C>.mp4"),
             refresh_intent: None,
             media_selection: DownloadTaskMediaSelection::default(),
+            scheduled_at: None,
         };
 
         let nfo = nfo_content(&task);
@@ -1982,6 +2185,7 @@ mod tests {
             output_path,
             refresh_intent: None,
             media_selection: DownloadTaskMediaSelection::default(),
+            scheduled_at: None,
         };
 
         assert!(
@@ -2069,6 +2273,7 @@ mod tests {
             output_path: PathBuf::from("downloads/fixture.mp4"),
             refresh_intent: None,
             media_selection: DownloadTaskMediaSelection::default(),
+            scheduled_at: None,
         };
 
         task = redact_task_for_diagnostics(task);

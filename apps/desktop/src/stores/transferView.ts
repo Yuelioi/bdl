@@ -12,6 +12,8 @@ export type TaskActionKind =
   | 'open_file'
   | 'open_dir'
   | 'copy_source'
+  | 'unschedule'
+  | 'schedule'
   | 'none'
 
 export interface TaskActionDescriptor {
@@ -79,17 +81,18 @@ export const createTransferTaskView = (
   const issue = classifyTaskIssue(task, logs)
   const primaryAction = primaryActionForTask(task, issue)
   const completedWithWarnings = task.status === 'completed' && hasWarningLogs(logs)
+  const scheduled = isScheduledTask(task)
 
   return {
     id: task.id,
     displayTitle: titleParts.displayTitle,
     subtitle: titleParts.subtitle,
-    statusLabel: completedWithWarnings ? '已完成 · 有警告' : statusLabel(task.status),
+    statusLabel: completedWithWarnings ? '已完成 · 有警告' : scheduled ? '已定时' : statusLabel(task.status),
     statusBadge: completedWithWarnings ? 'warning' : statusBadge(task.status),
     progressValue: progress,
     progressLabel: `${progress}%`,
     speedLabel: transferProgress ? formatSpeedLabel(transferProgress.speedBytesPerSecond) : '--',
-    etaLabel: transferProgress ? etaLabel(transferProgress) : '--',
+    etaLabel: scheduled ? scheduleLabel(task.scheduled_at) : transferProgress ? etaLabel(transferProgress) : '--',
     sizeLabel: transferProgress ? sizeLabel(transferProgress) : '--',
     issueLabel: issue.label,
     shortLocation: shortLocation(task.output_path),
@@ -165,6 +168,17 @@ export const createTaskDiagnosticView = (task: DownloadTask, logs: QueueLogEntry
   const completedCount = task.resources.filter((resource) => resource.status === 'completed').length
   const trackImpact = `轨道 ${task.resources.length} 个 · 已完成 ${completedCount} · 失败 ${failedCount}`
   const warningLogs = logs.filter((log) => log.level === 'warning')
+
+  if (isScheduledTask(task)) {
+    return {
+      summary: '任务已定时',
+      detail: `将在 ${scheduleLabel(task.scheduled_at, true)} 自动进入下载队列。`,
+      impact: trackImpact,
+      recommendedAction: 'unschedule',
+      recommendedActionLabel: actionLabel('unschedule'),
+      tone: 'normal',
+    }
+  }
 
   if (task.status === 'completed' && warningLogs.length > 0) {
     return {
@@ -521,6 +535,9 @@ const classifyTaskIssue = (task: DownloadTask, logs: QueueLogEntry[]): Classifie
 const hasWarningLogs = (logs: QueueLogEntry[]): boolean => logs.some((log) => log.level === 'warning')
 
 const primaryActionForTask = (task: DownloadTask, issue: ClassifiedIssue): TaskActionKind => {
+  if (isScheduledTask(task)) {
+    return 'unschedule'
+  }
   if (task.status === 'completed') {
     return 'open_file'
   }
@@ -547,6 +564,11 @@ const primaryActionForTask = (task: DownloadTask, issue: ClassifiedIssue): TaskA
 const secondaryActionsForTask = (task: DownloadTask, primaryAction: TaskActionKind): TaskActionDescriptor[] => {
   const actions: TaskActionDescriptor[] = []
 
+  if (isScheduledTask(task)) {
+    actions.push(actionDescriptor('schedule', '修改时间'), actionDescriptor('cancel'))
+    return actions
+  }
+
   if (task.status === 'completed') {
     actions.push(
       actionDescriptor('open_dir'),
@@ -563,7 +585,7 @@ const secondaryActionsForTask = (task: DownloadTask, primaryAction: TaskActionKi
   }
 
   if (task.status === 'paused') {
-    actions.push(actionDescriptor('cancel'), actionDescriptor('remove'))
+    actions.push(actionDescriptor('schedule'), actionDescriptor('cancel'), actionDescriptor('remove'))
     return actions.filter((action) => action.kind !== primaryAction)
   }
 
@@ -608,6 +630,8 @@ const actionLabel = (action: TaskActionKind): string => {
     open_file: '打开文件',
     open_dir: '打开文件夹',
     copy_source: '复制来源',
+    unschedule: '立即开始',
+    schedule: '定时开始',
     none: '',
   }
 
@@ -625,10 +649,26 @@ const actionIcon = (action: TaskActionKind): string => {
     open_file: 'file',
     open_dir: 'folder',
     copy_source: 'copy',
+    unschedule: 'play',
+    schedule: 'clock',
     none: 'more',
   }
 
   return icons[action]
+}
+
+const isScheduledTask = (task: DownloadTask): boolean =>
+  task.status === 'waiting'
+  && Boolean(task.scheduled_at)
+  && Date.parse(task.scheduled_at ?? '') > Date.now()
+
+const scheduleLabel = (scheduledAt: string | null, includeDate = false): string => {
+  if (!scheduledAt) return '--'
+  return new Intl.DateTimeFormat('zh-CN', {
+    ...(includeDate ? { month: 'numeric', day: 'numeric' } : {}),
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(scheduledAt))
 }
 
 const shortLocation = (path: string): string => {

@@ -101,6 +101,8 @@ Do not show all archive/diagnostic internals in the first view.
 
 Before task creation, the same environment health contract used by Settings checks the effective batch download directory and the persisted FFmpeg configuration. Task creation is blocked while either component is unhealthy. A missing directory can be created inline; FFmpeg repair routes to Settings so the chosen executable is saved before the queue worker uses it.
 
+The download dialog optionally accepts a one-time local start time. The backend stores it in UTC, keeps future tasks out of the worker, and restores the wakeup after restart. Transfer rows label scheduled work explicitly and offer `立即开始` plus `修改时间`; paused tasks can also be scheduled. Invalid or past times are shown inline beside the native datetime input.
+
 Task creation uses an explicit duplicate policy:
 
 - `ask` is the default and is atomic: if any selected logical task already exists, create nothing and return the matches for confirmation.

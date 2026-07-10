@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::error::{BdlError, BdlResult};
@@ -101,9 +102,19 @@ pub struct DownloadTask {
     pub refresh_intent: Option<DownloadTaskRefreshIntent>,
     #[serde(default)]
     pub media_selection: DownloadTaskMediaSelection,
+    #[serde(default)]
+    pub scheduled_at: Option<DateTime<Utc>>,
 }
 
 impl DownloadTask {
+    pub fn can_start_at(&self, now: DateTime<Utc>) -> bool {
+        self.status.can_start()
+            && self
+                .scheduled_at
+                .as_ref()
+                .is_none_or(|scheduled_at| scheduled_at <= &now)
+    }
+
     pub fn logical_id(&self) -> &str {
         logical_task_id(&self.id)
     }

@@ -47,6 +47,7 @@ export interface CreateTaskOptions {
   audioQuality?: string
   codec?: SettingsSnapshot['codec']
   duplicatePolicy?: DuplicateTaskPolicy
+  scheduledAt?: string
 }
 
 export const useParseStore = defineStore('parse', {
@@ -318,6 +319,7 @@ export const useParseStore = defineStore('parse', {
           audio_quality: options.audioQuality ?? settings.saved.audio_quality,
           codec: options.codec ?? settings.saved.codec,
           duplicate_policy: options.duplicatePolicy ?? 'ask',
+          scheduled_at: options.scheduledAt,
         })
         this.errorsBySource[sourceId] = null
         if (result.requires_confirmation) {

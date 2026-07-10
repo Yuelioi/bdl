@@ -27,7 +27,7 @@ const ui = useUiStore()
 .toast-host {
   position: fixed;
   right: var(--space-16);
-  bottom: var(--space-16);
+  top: calc(var(--height-topbar) + var(--space-12));
   z-index: 50;
   display: grid;
   gap: var(--space-8);

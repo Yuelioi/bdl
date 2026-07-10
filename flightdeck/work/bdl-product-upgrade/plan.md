@@ -45,6 +45,7 @@ Verification: deterministic stalled-request cancellation test; task-state transi
 - Duplicate-task policy (complete): backend `ask`/`skip`/`create`, atomic confirmation, safe copy IDs, queue-path reservation, and a status-aware confirmation dialog.
 - Environment health (complete): writable-directory probe, real FFmpeg version probe, shared Settings/download-dialog health panel, inline directory creation, and persisted FFmpeg repair routing.
 - Frontend component/store tests and keyboard-navigation tests (complete): Vitest repository gate, environment health/repair regressions, and roving-focus parsed-tree navigation.
-- Evaluate scheduler, speed limits, updater, dark theme, and account asset entry points as separate vertical slices.
+- One-time task scheduler (complete): persisted UTC schedules, restart-safe capacity-aware worker wakeups, create/modify/start-now controls, and inline time validation.
+- Evaluate speed limits, updater, dark theme, and account asset entry points as separate vertical slices.
 
 Verification: narrow Rust tests per feature, full core/Tauri clippy, frontend tests/build, and release QA.

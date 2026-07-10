@@ -121,6 +121,7 @@ fn failed_task(audio_status: ResourceStatus) -> DownloadTask {
         output_path: PathBuf::from("downloads/example.mp4"),
         refresh_intent: None,
         media_selection: DownloadTaskMediaSelection::default(),
+        scheduled_at: None,
         resources: vec![
             resource(
                 "resource:video",
