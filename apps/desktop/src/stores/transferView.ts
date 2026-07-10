@@ -225,11 +225,11 @@ export const createTaskDiagnosticView = (task: DownloadTask, logs: QueueLogEntry
     summary: statusLabel(task.status),
     detail: '任务正在按队列流程执行。速度、剩余时间和大小会在下载引擎提供数据后显示。',
     impact: trackImpact,
-    recommendedAction: task.status === 'waiting' || task.status === 'parsing' || task.status === 'downloading' || task.status === 'muxing'
+    recommendedAction: task.status === 'waiting' || task.status === 'parsing' || task.status === 'downloading'
       ? 'pause'
       : null,
     recommendedActionLabel:
-      task.status === 'waiting' || task.status === 'parsing' || task.status === 'downloading' || task.status === 'muxing'
+      task.status === 'waiting' || task.status === 'parsing' || task.status === 'downloading'
         ? actionLabel('pause')
         : '',
     tone: 'normal',
@@ -533,8 +533,12 @@ const primaryActionForTask = (task: DownloadTask, issue: ClassifiedIssue): TaskA
   if (task.status === 'cancelled') {
     return 'retry'
   }
-  if (task.status === 'waiting' || task.status === 'parsing' || task.status === 'downloading' || task.status === 'muxing') {
+  if (task.status === 'waiting' || task.status === 'parsing' || task.status === 'downloading') {
     return 'pause'
+  }
+
+  if (task.status === 'muxing') {
+    return 'none'
   }
 
   return 'none'
@@ -561,6 +565,10 @@ const secondaryActionsForTask = (task: DownloadTask, primaryAction: TaskActionKi
   if (task.status === 'paused') {
     actions.push(actionDescriptor('cancel'), actionDescriptor('remove'))
     return actions.filter((action) => action.kind !== primaryAction)
+  }
+
+  if (task.status === 'muxing') {
+    return actions
   }
 
   actions.push(actionDescriptor('cancel'))

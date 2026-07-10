@@ -67,7 +67,16 @@ interface ResourceProgressState {
 
 interface QueueTaskProgressState extends TransferProgressSnapshot {
   resources: Record<string, ResourceProgressState>
+  speedSamples: SpeedSample[]
 }
+
+interface SpeedSample {
+  downloadedBytes: number
+  at: number
+}
+
+const SPEED_SAMPLE_WINDOW_MS = 5_000
+const MIN_SPEED_SAMPLE_INTERVAL_MS = 150
 
 export const useQueueStore = defineStore('queue', {
   state: (): QueueState => ({
@@ -271,16 +280,21 @@ export const useQueueStore = defineStore('queue', {
       const totalBytes = sumKnownTotalBytes(resources)
       const updatedAt = parseEventTime(entry.created_at)
       const previousDownloaded = existing?.downloadedBytes ?? downloadedBytes
-      const previousAt = existing?.updatedAt ?? updatedAt
-      const elapsedSeconds = Math.max((updatedAt - previousAt) / 1000, 0)
-      const downloadedDelta = downloadedBytes - previousDownloaded
-      const speedBytesPerSecond =
-        elapsedSeconds > 0 && downloadedDelta >= 0
-          ? downloadedDelta / elapsedSeconds
-          : existing?.speedBytesPerSecond ?? 0
+      const previousSamples = downloadedBytes < previousDownloaded ? [] : (existing?.speedSamples ?? [])
+      const speedSamples = [
+        ...previousSamples.filter((sample) => sample.at >= updatedAt - SPEED_SAMPLE_WINDOW_MS),
+        { downloadedBytes, at: updatedAt },
+      ]
+      const baseline = speedSamples.find((sample) => updatedAt - sample.at >= MIN_SPEED_SAMPLE_INTERVAL_MS)
+      const elapsedSeconds = baseline ? (updatedAt - baseline.at) / 1000 : 0
+      const downloadedDelta = baseline ? downloadedBytes - baseline.downloadedBytes : 0
+      const speedBytesPerSecond = elapsedSeconds > 0 && downloadedDelta >= 0
+        ? downloadedDelta / elapsedSeconds
+        : existing?.speedBytesPerSecond ?? 0
 
       this.progressByTask[entry.task_id] = {
         resources,
+        speedSamples,
         downloadedBytes,
         totalBytes,
         speedBytesPerSecond,

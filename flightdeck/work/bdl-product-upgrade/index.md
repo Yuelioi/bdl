@@ -2,11 +2,11 @@
 
 ## State
 
-Stages 1–3 are complete and two live visual-review rounds are implemented. The UI is quieter and all transient menus now share correct outside-click, Escape, focus, and portal behavior.
+Stages 1–3 and the Stage 4.1 transfer-reliability slice are complete. The UI is quieter, transient menus dismiss correctly, pause is wakeable during network waits, progress events are bounded, segmented downloads resume, and mux completion cannot regress to a false failure.
 
 ## Next
 
-Collect the maintainer's next visual review. Once accepted, start Stage 4 with backend duplicate-task detection and its skip/create/ask UI.
+Have the maintainer exercise pause/resume on a fresh real download and compare throughput. Then continue Stage 4.2 with backend duplicate-task detection and its skip/create/ask UI.
 
 ## Read now
 
@@ -46,9 +46,14 @@ Done:
 - Re-enabled the Nuxt UI select portal so menus overlay without changing form layout.
 - Reduced header, panel, decorative-gradient, shadow, and motion intensity after live visual review.
 - Replaced the custom account/source popovers and native-details overflow menu with accessible Nuxt UI dropdowns.
+- Made fetch cancellation wake stalled metadata, request, and response-stream waits immediately.
+- Coalesced chunk progress to five UI updates per second and changed speed display to a five-second rolling byte window.
+- Changed new/default downloads to four resumable range segments and preserved partial segment files across pause/resume.
+- Made successful muxing an irreversible completion commit and prevented muxing/completed tasks from accepting late pause/cancel transitions.
+- Added recovery for the exact `missing media input` case where the final MP4 exists and raw media inputs were already cleaned.
 
 Current:
-- Stage 4 is not started; the recommended first slice is duplicate-task policy.
+- Stage 4.1 is complete; the recommended next slice is duplicate-task policy.
 
 Verified:
 - Git was clean on `main` at preflight.
@@ -59,6 +64,9 @@ Verified:
 - `pnpm run build` passes after the visual-review corrections.
 - Captured and inspected live Tauri screenshots for Parse, Transfer, Settings, and an open audio-quality menu; the menu no longer moves following fields.
 - Reproduced account and Transfer overflow dismissal in the live Tauri app; outside clicks now close both menus.
+- Added deterministic regressions for cancellation of a stalled GET, resumable segment parts, terminal task transitions, and completed-output recovery.
+- `./scripts/check.ps1` passes after the transfer reliability changes: Rustfmt, strict workspace Clippy, all Rust tests, frontend type/build, and whitespace checks.
+- Restarted and inspected the live Tauri app after the backend changes; the existing 100%-progress failed task remains available for the maintainer to retry into the new completed-output recovery path.
 
 ## Open questions
 

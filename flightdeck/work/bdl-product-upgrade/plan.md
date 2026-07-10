@@ -28,10 +28,23 @@ Verification: documented commands match repository scripts and workspace paths.
 
 ## Stage 4 — Functional depth after the UI foundation
 
+### Stage 4.1 — Transfer reliability (current)
+
+- Make pause wake stalled metadata, request, and response-stream waits immediately.
+- Treat successful muxing as a commit point that cannot be overwritten by pause/cancel races.
+- Recover legacy tasks when a non-empty final output exists and cleaned raw media inputs are gone.
+- Replace adjacent-event speed estimates with a stable rolling byte window.
+- Coalesce chunk-level progress into a bounded UI event cadence while preserving the final update.
+- Use four resumable range segments by default so CDN single-connection throttling does not cap throughput.
+- Keep pause/cancel actions unavailable during the non-interruptible mux commit phase.
+
+Verification: deterministic stalled-request cancellation test; task-state transition regression; fetcher resume suite; Tauri state tests; frontend type check/build; full repository check.
+
+### Stage 4.2 — Product depth
+
 - Add backend duplicate-task detection with skip/create/ask policy.
 - Add a download-directory/FFmpeg environment health command and inline repair actions.
 - Add frontend component/store tests and keyboard-navigation tests.
 - Evaluate scheduler, speed limits, updater, dark theme, and account asset entry points as separate vertical slices.
 
 Verification: narrow Rust tests per feature, full core/Tauri clippy, frontend tests/build, and release QA.
-

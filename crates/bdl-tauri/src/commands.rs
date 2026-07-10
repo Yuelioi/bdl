@@ -906,6 +906,15 @@ async fn run_queue_worker(app: &AppHandle, state: &AppState) -> CommandResult<()
                     Ok(TaskStatus::Paused | TaskStatus::Cancelled) => {
                         emit_queue_log(app, state, &task.id, QueueLogLevel::Warning, "任务已停止")?;
                     }
+                    Ok(TaskStatus::Completed) => {
+                        emit_queue_log(
+                            app,
+                            state,
+                            &task.id,
+                            QueueLogLevel::Warning,
+                            &format!("成品已生成，但收尾处理未完全完成：{}", error.message),
+                        )?;
+                    }
                     _ => {
                         if settings.auto_refresh_expired_urls
                             && is_expired_url_error(&error.message)
@@ -956,6 +965,22 @@ async fn run_download_task(
     task: DownloadTask,
     runtime_options: DownloadRuntimeOptions,
 ) -> CommandResult<()> {
+    if has_recoverable_completed_output(&task).await? {
+        let completed = state.update_task_status(&task.id, TaskStatus::Completed)?;
+        events::emit(app, events::QUEUE_TASK_UPDATED, &completed)?;
+        emit_queue_log(
+            app,
+            state,
+            &task.id,
+            QueueLogLevel::Info,
+            "检测到已生成的成品，任务已恢复为完成状态",
+        )?;
+        if let Err(error) = state.record_completed_task(&completed) {
+            tracing::warn!("failed to save recovered completed task record: {error}");
+        }
+        return Ok(());
+    }
+
     let task_id = task.id.clone();
     let cancel_token = state.register_task_cancel_token(&task_id)?;
     let outcome =
@@ -1057,6 +1082,9 @@ async fn run_download_task_inner(
     }
 
     let muxing = state.update_task_status(&task.id, TaskStatus::Muxing)?;
+    if muxing.status != TaskStatus::Muxing {
+        return Ok(());
+    }
     events::emit(app, events::QUEUE_TASK_UPDATED, &muxing)?;
     emit_queue_log(
         app,
@@ -1094,26 +1122,16 @@ async fn run_download_task_inner(
         .await
         .map_err(BdlError::from)?;
 
+    let completed = state.update_task_status(&task.id, TaskStatus::Completed)?;
+    events::emit(app, events::QUEUE_TASK_UPDATED, &completed)?;
+    emit_queue_log(app, state, &task.id, QueueLogLevel::Info, "下载完成")?;
+
     if !runtime_options.retain_raw_streams {
         cleanup_raw_streams(app, state, &task).await?;
     }
 
     finalize_archive_assets(app, state, &task).await?;
 
-    if !task_should_continue(state, &task.id)? {
-        emit_queue_log(
-            app,
-            state,
-            &task.id,
-            QueueLogLevel::Warning,
-            "任务已暂停或取消",
-        )?;
-        return Ok(());
-    }
-
-    let completed = state.update_task_status(&task.id, TaskStatus::Completed)?;
-    events::emit(app, events::QUEUE_TASK_UPDATED, &completed)?;
-    emit_queue_log(app, state, &task.id, QueueLogLevel::Info, "下载完成")?;
     if let Err(error) = state.record_completed_task(&completed) {
         tracing::warn!("failed to save completed task record: {error}");
         let _ = emit_queue_log(
@@ -1126,6 +1144,34 @@ async fn run_download_task_inner(
     }
 
     Ok(())
+}
+
+async fn has_recoverable_completed_output(task: &DownloadTask) -> CommandResult<bool> {
+    let media_resources = task.resources.iter().filter(|resource| {
+        matches!(
+            resource.intent,
+            DownloadResourceIntent::Video | DownloadResourceIntent::Audio
+        )
+    });
+    let media_resources = media_resources.collect::<Vec<_>>();
+    if media_resources.is_empty()
+        || media_resources
+            .iter()
+            .any(|resource| resource.status != ResourceStatus::Completed)
+    {
+        return Ok(false);
+    }
+
+    let Ok(output_metadata) = fs::metadata(&task.output_path).await else {
+        return Ok(false);
+    };
+    if output_metadata.len() == 0 {
+        return Ok(false);
+    }
+
+    Ok(media_resources
+        .iter()
+        .all(|resource| !resource.target_path.is_file()))
 }
 
 fn should_fetch(resource: &DownloadResource) -> bool {
@@ -1145,21 +1191,44 @@ fn progress_sender(app: &AppHandle, task_id: &str) -> ProgressSender {
     let task_id = task_id.to_owned();
 
     tauri::async_runtime::spawn(async move {
-        while let Some(progress) = receiver.recv().await {
-            let entry = QueueProgressEntry {
-                task_id: task_id.clone(),
-                resource_id: progress.resource_id,
-                downloaded_bytes: progress.downloaded_bytes,
-                total_bytes: progress.total_bytes,
-                created_at: Utc::now().to_rfc3339(),
-            };
-            if let Err(error) = events::emit(&app, events::QUEUE_PROGRESS_UPDATED, &entry) {
-                tracing::warn!("failed to emit queue progress: {}", error.message);
+        let mut interval = tokio::time::interval(std::time::Duration::from_millis(200));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        let mut latest = None;
+
+        loop {
+            tokio::select! {
+                progress = receiver.recv() => match progress {
+                    Some(progress) => latest = Some(progress),
+                    None => {
+                        if let Some(progress) = latest.take() {
+                            emit_progress(&app, &task_id, progress);
+                        }
+                        break;
+                    }
+                },
+                _ = interval.tick() => {
+                    if let Some(progress) = latest.take() {
+                        emit_progress(&app, &task_id, progress);
+                    }
+                }
             }
         }
     });
 
     sender
+}
+
+fn emit_progress(app: &AppHandle, task_id: &str, progress: FetchProgress) {
+    let entry = QueueProgressEntry {
+        task_id: task_id.to_owned(),
+        resource_id: progress.resource_id,
+        downloaded_bytes: progress.downloaded_bytes,
+        total_bytes: progress.total_bytes,
+        created_at: Utc::now().to_rfc3339(),
+    };
+    if let Err(error) = events::emit(app, events::QUEUE_PROGRESS_UPDATED, &entry) {
+        tracing::warn!("failed to emit queue progress: {}", error.message);
+    }
 }
 
 struct MuxAttachmentSelection {
@@ -1579,9 +1648,11 @@ fn parse_archive_mode(value: &str) -> CommandResult<ArchiveMode> {
 #[cfg(test)]
 mod tests {
     use super::{
-        nfo_content, redact_log_for_diagnostics, redact_task_for_diagnostics, should_fetch,
+        has_recoverable_completed_output, nfo_content, redact_log_for_diagnostics,
+        redact_task_for_diagnostics, should_fetch,
     };
     use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     use bdl_core::BdlError;
     use bdl_core::model::HeaderPair;
@@ -1630,6 +1701,42 @@ mod tests {
 
         assert!(should_fetch(&subtitle));
         assert!(should_fetch(&danmaku));
+    }
+
+    #[tokio::test]
+    async fn completed_output_with_cleaned_media_inputs_is_recoverable() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock should follow Unix epoch")
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("bdl-recover-output-{nonce}"));
+        std::fs::create_dir_all(&dir).expect("test directory should be created");
+        let output_path = dir.join("finished.mp4");
+        std::fs::write(&output_path, b"muxed-output").expect("output fixture should be written");
+        let mut video = resource(
+            DownloadResourceIntent::Video,
+            vec!["https://example.invalid/video".to_owned()],
+        );
+        video.status = ResourceStatus::Completed;
+        video.target_path = dir.join("cleaned-video.m4s");
+        let task = DownloadTask {
+            id: "task:recover".to_owned(),
+            title: "recover".to_owned(),
+            source_id: "video:recover".to_owned(),
+            status: TaskStatus::Paused,
+            resources: vec![video],
+            output_path,
+            refresh_intent: None,
+            media_selection: DownloadTaskMediaSelection::default(),
+        };
+
+        assert!(
+            has_recoverable_completed_output(&task)
+                .await
+                .expect("recovery check should succeed")
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]

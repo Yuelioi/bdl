@@ -4,7 +4,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use bdl_core::fetcher::{
-    FetchConfig, FetchState, Fetcher, ReqwestFetcher, state_path_for, write_fetch_state,
+    FetchCancelToken, FetchConfig, FetchState, Fetcher, ReqwestFetcher, state_path_for,
+    write_fetch_state,
 };
 use bdl_core::model::HeaderPair;
 use bdl_core::queue::{
@@ -13,6 +14,8 @@ use bdl_core::queue::{
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Mutex;
+use tokio::sync::oneshot;
+use tokio::time::{Duration, timeout};
 use uuid::Uuid;
 
 #[tokio::test]
@@ -172,6 +175,54 @@ async fn fetcher_downloads_segments_with_configured_segment_count() {
 }
 
 #[tokio::test]
+async fn fetcher_resumes_existing_segment_parts() {
+    let server = TestServer::spawn(b"abcdefgh".to_vec(), 0).await;
+    let dir = temp_case_dir("segment-resume").await;
+    let resource = resource(server.url(), &dir, "segment-resume.bin");
+    tokio::fs::write(segment_path(&resource.temp_path, 0), b"ab")
+        .await
+        .unwrap();
+    tokio::fs::write(segment_path(&resource.temp_path, 1), b"c")
+        .await
+        .unwrap();
+    write_fetch_state(
+        &resource.temp_path,
+        &FetchState {
+            total_bytes: Some(8),
+            downloaded_bytes: 0,
+            etag: None,
+            last_modified: None,
+        },
+    )
+    .await
+    .unwrap();
+    let fetcher = ReqwestFetcher::with_config(FetchConfig {
+        max_retries: 0,
+        segment_count: 4,
+        ..FetchConfig::default()
+    })
+    .expect("fetcher should be created");
+
+    fetcher
+        .fetch(&resource, None)
+        .await
+        .expect("existing segment parts should resume");
+
+    assert_eq!(
+        tokio::fs::read(&resource.target_path).await.unwrap(),
+        b"abcdefgh"
+    );
+    assert_eq!(
+        sorted_range_headers(server.ranges().await),
+        vec![
+            "bytes=3-3".to_owned(),
+            "bytes=4-5".to_owned(),
+            "bytes=6-7".to_owned(),
+        ]
+    );
+}
+
+#[tokio::test]
 async fn fetcher_restarts_when_content_length_changes_between_attempts() {
     let server = TestServer::spawn(b"abcdefghijkl".to_vec(), 0).await;
     let dir = temp_case_dir("changed-length").await;
@@ -246,6 +297,42 @@ async fn fetcher_restarts_when_saved_etag_differs_from_remote_etag() {
     assert_eq!(server.ranges().await, vec![None]);
 }
 
+#[tokio::test]
+async fn cancellation_interrupts_a_stalled_download_request() {
+    let (url, request_started) = spawn_stalled_get_server().await;
+    let dir = temp_case_dir("cancel-stalled").await;
+    let resource = resource(url, &dir, "cancel-stalled.bin");
+    let fetcher = ReqwestFetcher::with_config(FetchConfig {
+        max_retries: 0,
+        ..FetchConfig::default()
+    })
+    .expect("fetcher should be created");
+    let cancel_token = FetchCancelToken::new();
+    let fetch_cancel_token = cancel_token.clone();
+
+    let fetch = tokio::spawn(async move {
+        fetcher
+            .fetch_cancelable(&resource, None, fetch_cancel_token)
+            .await
+    });
+    request_started
+        .await
+        .expect("download request should reach the server");
+
+    cancel_token.cancel();
+    let result = timeout(Duration::from_millis(250), fetch)
+        .await
+        .expect("cancellation should wake a stalled request")
+        .expect("fetch task should not panic");
+
+    assert!(
+        result
+            .expect_err("cancelled fetch should stop")
+            .to_string()
+            .contains("暂停")
+    );
+}
+
 fn resource(url: String, dir: &Path, file_name: &str) -> DownloadResource {
     let target_path = dir.join(file_name);
     DownloadResource {
@@ -281,10 +368,52 @@ fn sorted_range_headers(ranges: Vec<Option<String>>) -> Vec<String> {
     ranges
 }
 
+fn segment_path(temp_path: &Path, index: usize) -> PathBuf {
+    PathBuf::from(format!("{}.seg{index}", temp_path.display()))
+}
+
 async fn temp_case_dir(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("bdl-{name}-{}", Uuid::new_v4()));
     tokio::fs::create_dir_all(&dir).await.unwrap();
     dir
+}
+
+async fn spawn_stalled_get_server() -> (String, oneshot::Receiver<()>) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let (started_tx, started_rx) = oneshot::channel();
+
+    tokio::spawn(async move {
+        let mut started_tx = Some(started_tx);
+        loop {
+            let Ok((mut stream, _)) = listener.accept().await else {
+                return;
+            };
+            let mut buffer = vec![0_u8; 4096];
+            let Ok(read) = stream.read(&mut buffer).await else {
+                return;
+            };
+            let request = String::from_utf8_lossy(&buffer[..read]);
+            if request.starts_with("HEAD ") {
+                write_response(
+                    &mut stream,
+                    200,
+                    "OK",
+                    &[("Content-Length", "1024".to_owned())],
+                    b"",
+                )
+                .await;
+                continue;
+            }
+
+            if let Some(sender) = started_tx.take() {
+                let _ = sender.send(());
+            }
+            std::future::pending::<()>().await;
+        }
+    });
+
+    (format!("http://{addr}/file"), started_rx)
 }
 
 struct TestServer {

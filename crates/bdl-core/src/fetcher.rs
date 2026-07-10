@@ -14,8 +14,8 @@ use reqwest::{Client, Proxy, StatusCode};
 use serde::{Deserialize, Serialize};
 use tokio::fs::{self, OpenOptions};
 use tokio::io::AsyncWriteExt;
-use tokio::sync::Mutex;
 use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::{Mutex, Notify};
 
 use crate::error::{BdlError, BdlResult};
 use crate::queue::DownloadResource;
@@ -65,21 +65,36 @@ pub type ProgressSender = UnboundedSender<FetchProgress>;
 #[derive(Debug, Clone)]
 pub struct FetchCancelToken {
     cancelled: Arc<AtomicBool>,
+    notify: Arc<Notify>,
 }
 
 impl FetchCancelToken {
     pub fn new() -> Self {
         Self {
             cancelled: Arc::new(AtomicBool::new(false)),
+            notify: Arc::new(Notify::new()),
         }
     }
 
     pub fn cancel(&self) {
         self.cancelled.store(true, Ordering::SeqCst);
+        self.notify.notify_waiters();
     }
 
     pub fn is_cancelled(&self) -> bool {
         self.cancelled.load(Ordering::SeqCst)
+    }
+
+    pub async fn cancelled(&self) {
+        if self.is_cancelled() {
+            return;
+        }
+
+        let notified = self.notify.notified();
+        if self.is_cancelled() {
+            return;
+        }
+        notified.await;
     }
 }
 
@@ -225,7 +240,9 @@ impl ReqwestFetcher {
         ensure_parent_dir(&resource.temp_path).await?;
 
         let headers = request_headers(resource)?;
-        let metadata = self.resource_metadata(url, headers.clone()).await?;
+        let metadata = self
+            .resource_metadata(url, headers.clone(), &cancel_token)
+            .await?;
         ensure_not_cancelled(&cancel_token)?;
         let resume_from = resume_offset(&resource.temp_path, &metadata).await?;
         if should_fetch_segmented(&metadata, resume_from, self.config.segment_count) {
@@ -240,10 +257,11 @@ impl ReqwestFetcher {
             request = request.header(RANGE, format!("bytes={resume_from}-"));
         }
 
-        let response = request
-            .send()
-            .await
-            .map_err(|error| fetch_error(format!("请求下载地址失败: {error}")))?;
+        let response = tokio::select! {
+            _ = cancel_token.cancelled() => return Err(cancelled_error()),
+            response = request.send() => response
+                .map_err(|error| fetch_error(format!("请求下载地址失败: {error}")))?,
+        };
 
         validate_get_status(response.status(), resume_from)?;
 
@@ -257,8 +275,12 @@ impl ReqwestFetcher {
 
         let mut downloaded_bytes = resume_from;
         let mut stream = response.bytes_stream();
-        while let Some(chunk) = stream.next().await {
-            ensure_not_cancelled(&cancel_token)?;
+        loop {
+            let chunk = tokio::select! {
+                _ = cancel_token.cancelled() => return Err(cancelled_error()),
+                chunk = stream.next() => chunk,
+            };
+            let Some(chunk) = chunk else { break };
             let chunk = chunk.map_err(|error| fetch_error(format!("读取响应失败: {error}")))?;
             file.write_all(&chunk).await?;
             downloaded_bytes += chunk.len() as u64;
@@ -308,13 +330,29 @@ impl ReqwestFetcher {
             .total_bytes
             .expect("segmented fetch requires content length");
         let ranges = segment_ranges(total_bytes, self.config.segment_count);
-        let progress_by_segment = Arc::new(Mutex::new(vec![0_u64; ranges.len()]));
+        let can_resume_segments = segmented_resume_is_valid(&resource.temp_path, &metadata).await?;
+        let mut resumed_by_segment = Vec::with_capacity(ranges.len());
+        for (index, (start, end)) in ranges.iter().enumerate() {
+            let expected_len = end - start + 1;
+            let segment_path = segment_path_for(&resource.temp_path, index);
+            if !can_resume_segments {
+                remove_if_exists(&segment_path).await?;
+            }
+            let existing_len = fs::metadata(&segment_path)
+                .await
+                .map(|metadata| metadata.len())
+                .unwrap_or(0);
+            if existing_len > expected_len {
+                remove_if_exists(&segment_path).await?;
+                resumed_by_segment.push(0);
+            } else {
+                resumed_by_segment.push(existing_len);
+            }
+        }
+        let progress_by_segment = Arc::new(Mutex::new(resumed_by_segment));
 
         remove_if_exists(&resource.temp_path).await?;
-        remove_if_exists(&state_path_for(&resource.temp_path)).await?;
-        for index in 0..ranges.len() {
-            remove_if_exists(&segment_path_for(&resource.temp_path, index)).await?;
-        }
+        persist_fetch_progress(&resource.temp_path, &metadata, 0).await?;
 
         try_join_all(ranges.iter().enumerate().map(|(index, (start, end))| {
             self.fetch_segment(SegmentFetchRequest {
@@ -376,14 +414,24 @@ impl ReqwestFetcher {
         ensure_not_cancelled(&cancel_token)?;
         let segment_path = segment_path_for(&resource.temp_path, segment.index);
         let expected_len = segment.end - segment.start + 1;
-        let response = self
+        let resume_from = fs::metadata(&segment_path)
+            .await
+            .map(|metadata| metadata.len())
+            .unwrap_or(0);
+        if resume_from == expected_len {
+            return Ok(());
+        }
+        let request_start = segment.start + resume_from;
+        let request = self
             .client
             .get(url)
             .headers(headers)
-            .header(RANGE, format!("bytes={}-{}", segment.start, segment.end))
-            .send()
-            .await
-            .map_err(|error| fetch_error(format!("请求分段下载地址失败: {error}")))?;
+            .header(RANGE, format!("bytes={request_start}-{}", segment.end));
+        let response = tokio::select! {
+            _ = cancel_token.cancelled() => return Err(cancelled_error()),
+            response = request.send() => response
+                .map_err(|error| fetch_error(format!("请求分段下载地址失败: {error}")))?,
+        };
 
         if response.status() != StatusCode::PARTIAL_CONTENT {
             return Err(fetch_error(format!(
@@ -395,13 +443,18 @@ impl ReqwestFetcher {
         let mut file = OpenOptions::new()
             .create(true)
             .write(true)
-            .truncate(true)
+            .append(resume_from > 0)
+            .truncate(resume_from == 0)
             .open(&segment_path)
             .await?;
-        let mut downloaded_bytes = 0_u64;
+        let mut downloaded_bytes = resume_from;
         let mut stream = response.bytes_stream();
-        while let Some(chunk) = stream.next().await {
-            ensure_not_cancelled(&cancel_token)?;
+        loop {
+            let chunk = tokio::select! {
+                _ = cancel_token.cancelled() => return Err(cancelled_error()),
+                chunk = stream.next() => chunk,
+            };
+            let Some(chunk) = chunk else { break };
             let chunk = chunk.map_err(|error| fetch_error(format!("读取分段响应失败: {error}")))?;
             file.write_all(&chunk).await?;
             downloaded_bytes += chunk.len() as u64;
@@ -428,14 +481,14 @@ impl ReqwestFetcher {
         &self,
         url: &str,
         headers: HeaderMap,
+        cancel_token: &FetchCancelToken,
     ) -> BdlResult<RemoteResourceMetadata> {
-        let response = self
-            .client
-            .head(url)
-            .headers(headers)
-            .send()
-            .await
-            .map_err(|error| fetch_error(format!("请求资源长度失败: {error}")))?;
+        let request = self.client.head(url).headers(headers);
+        let response = tokio::select! {
+            _ = cancel_token.cancelled() => return Err(cancelled_error()),
+            response = request.send() => response
+                .map_err(|error| fetch_error(format!("请求资源长度失败: {error}")))?,
+        };
 
         if !response.status().is_success() {
             return Err(fetch_error(format!(
@@ -507,10 +560,14 @@ fn send_progress(
 
 fn ensure_not_cancelled(cancel_token: &FetchCancelToken) -> BdlResult<()> {
     if cancel_token.is_cancelled() {
-        return Err(fetch_error("下载已暂停或取消。"));
+        return Err(cancelled_error());
     }
 
     Ok(())
+}
+
+fn cancelled_error() -> BdlError {
+    fetch_error("下载已暂停或取消。")
 }
 
 pub fn state_path_for(temp_path: &Path) -> PathBuf {
@@ -529,6 +586,21 @@ fn should_fetch_segmented(
         && metadata
             .total_bytes
             .is_some_and(|total_bytes| total_bytes > 1)
+}
+
+async fn segmented_resume_is_valid(
+    temp_path: &Path,
+    metadata: &RemoteResourceMetadata,
+) -> BdlResult<bool> {
+    let state_path = state_path_for(temp_path);
+    if !state_path.exists() {
+        return Ok(false);
+    }
+
+    let state = read_fetch_state(&state_path).await?;
+    Ok(state.total_bytes == metadata.total_bytes
+        && validator_matches(&state.etag, &metadata.etag)
+        && validator_matches(&state.last_modified, &metadata.last_modified))
 }
 
 fn segment_ranges(total_bytes: u64, segment_count: usize) -> Vec<(u64, u64)> {

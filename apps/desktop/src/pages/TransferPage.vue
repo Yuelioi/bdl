@@ -249,10 +249,10 @@ const runClearCompleted = () => {
 }
 
 const isPausable = (status: TaskStatus): boolean =>
-  status === 'waiting' || status === 'parsing' || status === 'downloading' || status === 'muxing'
+  status === 'waiting' || status === 'parsing' || status === 'downloading'
 
 const isCancellable = (status: TaskStatus): boolean =>
-  status === 'waiting' || status === 'parsing' || status === 'downloading' || status === 'muxing' || status === 'paused'
+  status === 'waiting' || status === 'parsing' || status === 'downloading' || status === 'paused'
 
 const isRetryable = (status: TaskStatus): boolean => status === 'failed' || status === 'cancelled' || status === 'completed'
 

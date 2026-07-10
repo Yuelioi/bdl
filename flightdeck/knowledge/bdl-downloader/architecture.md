@@ -75,12 +75,14 @@ Retry skips completed resources and resumes incomplete resources from `.bdlpart`
 `ReqwestFetcher` is the current fetcher. It supports:
 
 - range resume for existing `.bdlpart` files
-- segmented downloads for fresh resources when `segment_count` is 2/4/8
+- resumable segmented downloads when `segment_count` is 2/4/8; the product default is 4
 - CDN fallback through current URL lists
 - size/metadata checks with ETag or last-modified when available
-- cooperative cancellation through `FetchCancelToken`
+- wakeable cancellation through `FetchCancelToken`; metadata requests, GET requests, and response streams race their waits against cancellation
 
 Pause and cancel are not just queue-state changes. They must cancel the running fetch stream, persist resource status, and allow resume/retry to rebuild pending resource state.
+
+Chunk progress is coalesced by the Tauri layer to a bounded UI cadence (currently 200 ms) with a final flush. The frontend derives displayed speed from a rolling cumulative-byte window, not one adjacent event pair. This keeps high-throughput downloads from flooding Vue and makes the speed label resistant to burst timing.
 
 ## URL Refresh
 
@@ -107,6 +109,8 @@ Do not mix byte ranges from different URLs unless resource consistency is verifi
 - capture exit code and stderr summary
 
 Final output must exist and be non-empty before the task is marked completed.
+
+Successful muxing is a commit point. Muxing/completed tasks ignore late pause or cancel transitions, completion is persisted before optional raw-stream cleanup, and post-processing errors must not downgrade a valid final output. For older interrupted tasks, a non-empty final output plus completed-but-cleaned media resources is sufficient to reconcile the task to completed instead of attempting another mux with missing inputs.
 
 ## Persistence
 

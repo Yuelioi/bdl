@@ -284,6 +284,11 @@ impl AppState {
                 message: format!("任务 `{task_id}` 不存在。"),
             })?;
 
+        let current = queue[task_index].status;
+        if ignores_status_transition(current, status) {
+            return Ok(queue[task_index].clone());
+        }
+
         queue[task_index].status = status;
         if status.can_start() {
             reset_interrupted_resources(&mut queue[task_index].resources);
@@ -805,6 +810,19 @@ impl AppState {
             None => CheeseResolver::new(),
         }
     }
+}
+
+fn ignores_status_transition(current: TaskStatus, next: TaskStatus) -> bool {
+    matches!(
+        (current, next),
+        (
+            TaskStatus::Muxing | TaskStatus::Completed,
+            TaskStatus::Paused | TaskStatus::Cancelled
+        ) | (
+            TaskStatus::Paused | TaskStatus::Cancelled,
+            TaskStatus::Muxing
+        )
+    )
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1728,15 +1746,28 @@ mod tests {
         let mut remove = task_with_id("task:remove");
         remove.status = TaskStatus::Paused;
 
+        let mut muxing = task_with_id("task:muxing");
+        muxing.status = TaskStatus::Muxing;
+
         let state = test_state_with_tasks(
             &data_dir,
-            vec![waiting, paused, failed, refresh, completed, remove],
+            vec![waiting, paused, failed, refresh, completed, remove, muxing],
         );
 
         let paused_task = state
             .update_task_status("task:waiting", TaskStatus::Paused)
             .expect("waiting task should pause");
         assert_eq!(paused_task.status, TaskStatus::Paused);
+
+        let muxing_task = state
+            .update_task_status("task:muxing", TaskStatus::Paused)
+            .expect("a committed mux should ignore pause");
+        assert_eq!(muxing_task.status, TaskStatus::Muxing);
+
+        let completed_task = state
+            .update_task_status("task:completed", TaskStatus::Paused)
+            .expect("a completed task should ignore pause");
+        assert_eq!(completed_task.status, TaskStatus::Completed);
 
         let resumed_task = state
             .update_task_status("task:paused", TaskStatus::Waiting)

@@ -58,7 +58,7 @@ impl Default for AppSettings {
             data_dir: None,
             concurrent_tasks: 1,
             retry_count: 3,
-            segment_count: 1,
+            segment_count: 4,
             startup_auto_recovery: false,
             auto_refresh_expired_urls: true,
         }
