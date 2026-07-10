@@ -243,6 +243,30 @@ export interface MaintenanceResult {
   path: string
 }
 
+export type DownloadDirectoryStatus = 'ready' | 'missing' | 'not_directory' | 'unwritable'
+export type FfmpegStatus = 'ready' | 'missing' | 'invalid'
+export type FfmpegSource = 'configured' | 'system'
+
+export interface DownloadDirectoryHealth {
+  status: DownloadDirectoryStatus
+  path: string
+  message: string
+}
+
+export interface FfmpegHealth {
+  status: FfmpegStatus
+  source: FfmpegSource
+  path: string | null
+  version: string | null
+  message: string
+}
+
+export interface EnvironmentHealthSnapshot {
+  ready: boolean
+  download_directory: DownloadDirectoryHealth
+  ffmpeg: FfmpegHealth
+}
+
 export interface DiagnosticsExportResponse {
   path: string
 }

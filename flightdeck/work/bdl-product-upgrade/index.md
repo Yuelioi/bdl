@@ -2,11 +2,11 @@
 
 ## State
 
-Stages 1–3, Stage 4.1 transfer reliability, and the Stage 4.2 duplicate-task policy slice are complete. Duplicate selections now use an explicit atomic ask/skip/create flow with safe copy IDs and output paths.
+Stages 1–3, Stage 4.1 transfer reliability, duplicate-task policy, and environment health are complete. Download creation now checks the effective save directory and persisted FFmpeg before queueing work.
 
 ## Next
 
-Have the maintainer exercise pause/resume and the duplicate confirmation flow on real downloads. Then continue Stage 4.2 with the download-directory/FFmpeg environment health command and inline repair actions.
+Have the maintainer exercise pause/resume, duplicate confirmation, and environment repair on real downloads. Then continue Stage 4.2 with frontend component/store tests and keyboard-navigation coverage.
 
 ## Read now
 
@@ -53,9 +53,11 @@ Done:
 - Added recovery for the exact `missing media input` case where the final MP4 exists and raw media inputs were already cleaned.
 - Replaced silent duplicate-task skipping with an atomic ask/skip/create contract and status-aware confirmation dialog.
 - Reserved active queue output paths and generated safe `:copy:<n>` task/resource identities for create-anyway.
+- Added a shared environment health panel backed by writable-directory probes and a real `ffmpeg -version` check.
+- Blocked task creation on unhealthy environments, with inline directory creation and Settings routing for persisted FFmpeg repair.
 
 Current:
-- The duplicate-task policy slice is complete; the recommended next slice is environment health and inline repair.
+- Environment health is complete; the recommended next slice is frontend component/store and keyboard-navigation tests.
 
 Verified:
 - Git was clean on `main` at preflight.
@@ -70,6 +72,8 @@ Verified:
 - `./scripts/check.ps1` passes after the transfer reliability changes: Rustfmt, strict workspace Clippy, all Rust tests, frontend type/build, and whitespace checks.
 - Restarted and inspected the live Tauri app after the backend changes; the existing 100%-progress failed task remains available for the maintainer to retry into the new completed-output recovery path.
 - Added atomic AppState regressions for ask-without-partial-insertion and create-anyway path/ID reservation; the full repository check passes.
+- Added FFmpeg probe and directory-state regressions; captured the live Settings health panel showing the writable project download directory and system FFmpeg 7.1.1.
+- Review-hardened environment repair: non-FFmpeg executables are rejected, edited batch paths cannot reuse stale health, and older async checks cannot overwrite newer results.
 
 ## Open questions
 

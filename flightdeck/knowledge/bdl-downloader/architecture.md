@@ -161,6 +161,9 @@ parse_close_source
 parse_refresh_source
 selection_create_tasks
 
+environment_health
+environment_create_download_directory
+
 queue_list
 queue_startup_recovery
 queue_dismiss_startup_recovery

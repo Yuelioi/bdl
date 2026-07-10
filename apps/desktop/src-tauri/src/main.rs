@@ -33,6 +33,8 @@ fn main() {
             bdl_tauri::commands::queue_open_dir,
             bdl_tauri::commands::settings_get,
             bdl_tauri::commands::settings_update,
+            bdl_tauri::commands::environment_health,
+            bdl_tauri::commands::environment_create_download_directory,
             bdl_tauri::commands::maintenance_cleanup_cache,
             bdl_tauri::commands::maintenance_cleanup_temp,
             bdl_tauri::commands::diagnostics_export,

@@ -1,9 +1,11 @@
 import { open } from '@tauri-apps/plugin-dialog'
 import { defineStore } from 'pinia'
 
-import type { SettingsSnapshot } from '../api/dto'
+import type { EnvironmentHealthSnapshot, SettingsSnapshot } from '../api/dto'
 import {
   diagnosticsExport,
+  environmentCreateDownloadDirectory,
+  environmentHealth,
   maintenanceCleanupCache,
   maintenanceCleanupTemp,
   settingsGet,
@@ -100,6 +102,14 @@ interface SettingsState {
   error: string | null
   notice: InlineNotice | null
   noticeTimer: number | null
+  environmentHealth: EnvironmentHealthSnapshot | null
+  environmentChecking: boolean
+  environmentCheckId: number
+}
+
+interface EnvironmentCheckOverrides {
+  downloadDir?: string | null
+  ffmpegPath?: string | null
 }
 
 export const useSettingsStore = defineStore('settings', {
@@ -112,6 +122,9 @@ export const useSettingsStore = defineStore('settings', {
     error: null,
     notice: null,
     noticeTimer: null,
+    environmentHealth: null,
+    environmentChecking: false,
+    environmentCheckId: 0,
   }),
   getters: {
     changed(state): boolean {
@@ -178,6 +191,7 @@ export const useSettingsStore = defineStore('settings', {
       try {
         this.apply(await settingsUpdate(normalizeSettings(this.draft)))
         this.setNotice('设置已保存', 'success')
+        void this.checkEnvironment()
       } catch (error) {
         this.error = errorMessage(error)
         ui.pushToast(this.error, 'danger')
@@ -197,6 +211,7 @@ export const useSettingsStore = defineStore('settings', {
 
         if (typeof selected === 'string') {
           this.setDownloadDir(selected)
+          void this.checkEnvironment()
         }
       } catch (error) {
         this.error = errorMessage(error)
@@ -215,6 +230,7 @@ export const useSettingsStore = defineStore('settings', {
 
         if (typeof selected === 'string') {
           this.setFfmpegPath(selected)
+          void this.checkEnvironment()
         }
       } catch (error) {
         this.error = errorMessage(error)
@@ -248,6 +264,66 @@ export const useSettingsStore = defineStore('settings', {
         ui.pushToast(errorMessage(error), 'danger')
       }
     },
+    async checkEnvironment(overrides: EnvironmentCheckOverrides = {}): Promise<EnvironmentHealthSnapshot | null> {
+      const ui = useUiStore()
+      const checkId = ++this.environmentCheckId
+      this.environmentChecking = true
+      try {
+        const health = await environmentHealth({
+          download_dir: overrides.downloadDir !== undefined ? overrides.downloadDir : this.draft.download_dir,
+          ffmpeg_path: overrides.ffmpegPath !== undefined ? overrides.ffmpegPath : this.draft.ffmpeg_path,
+        })
+        if (checkId !== this.environmentCheckId) {
+          return null
+        }
+        this.environmentHealth = health
+        return health
+      } catch (error) {
+        if (checkId === this.environmentCheckId) {
+          ui.pushToast(errorMessage(error), 'danger')
+        }
+        return null
+      } finally {
+        if (checkId === this.environmentCheckId) {
+          this.environmentChecking = false
+        }
+      }
+    },
+    async createDownloadDirectory(overrides: EnvironmentCheckOverrides = {}): Promise<boolean> {
+      const ui = useUiStore()
+      const health = await this.checkEnvironment(overrides)
+      if (!health) {
+        return false
+      }
+      if (health.download_directory.status !== 'missing') {
+        return health.download_directory.status === 'ready'
+      }
+
+      const checkId = ++this.environmentCheckId
+      this.environmentChecking = true
+      try {
+        const downloadDirectory = await environmentCreateDownloadDirectory(health.download_directory.path)
+        if (checkId !== this.environmentCheckId) {
+          return false
+        }
+        this.environmentHealth = {
+          ...health,
+          download_directory: downloadDirectory,
+          ready: downloadDirectory.status === 'ready' && health.ffmpeg.status === 'ready',
+        }
+        this.setNotice('保存目录已创建', 'success')
+        return downloadDirectory.status === 'ready'
+      } catch (error) {
+        if (checkId === this.environmentCheckId) {
+          ui.pushToast(errorMessage(error), 'danger')
+        }
+        return false
+      } finally {
+        if (checkId === this.environmentCheckId) {
+          this.environmentChecking = false
+        }
+      }
+    },
     async cleanupTemp() {
       const ui = useUiStore()
       try {
@@ -268,10 +344,18 @@ export const useSettingsStore = defineStore('settings', {
     },
     resetDraft() {
       this.draft = cloneSettings(this.saved)
+      this.invalidateEnvironmentHealth()
+      void this.checkEnvironment()
+    },
+    invalidateEnvironmentHealth() {
+      this.environmentCheckId += 1
+      this.environmentHealth = null
+      this.environmentChecking = false
     },
     setDownloadDir(value: string) {
       const trimmed = value.trim()
       this.draft.download_dir = trimmed ? trimmed : null
+      this.invalidateEnvironmentHealth()
     },
     setNamingTemplate(value: string) {
       this.draft.naming_template = value
@@ -354,9 +438,12 @@ export const useSettingsStore = defineStore('settings', {
     setFfmpegPath(value: string) {
       const trimmed = value.trim()
       this.draft.ffmpeg_path = trimmed ? trimmed : null
+      this.invalidateEnvironmentHealth()
     },
     clearFfmpegPath() {
       this.draft.ffmpeg_path = null
+      this.invalidateEnvironmentHealth()
+      void this.checkEnvironment()
     },
     setRetainRawStreams(value: boolean) {
       this.draft.retain_raw_streams = value

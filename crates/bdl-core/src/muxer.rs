@@ -39,6 +39,12 @@ pub struct MediaMuxer {
     ffmpeg_path: PathBuf,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FfmpegProbe {
+    pub path: PathBuf,
+    pub version: String,
+}
+
 impl MediaMuxer {
     pub fn new(config: MediaMuxerConfig) -> Result<Self, MuxError> {
         let ffmpeg_path = match config.ffmpeg_path {
@@ -55,6 +61,40 @@ impl MediaMuxer {
 
     pub fn ffmpeg_path(&self) -> &Path {
         &self.ffmpeg_path
+    }
+
+    pub async fn probe(&self) -> Result<FfmpegProbe, MuxError> {
+        let ffmpeg_path = ensure_executable(self.ffmpeg_path.clone())?;
+        let output = Command::new(&ffmpeg_path).arg("-version").output().await?;
+        if !output.status.success() {
+            return Err(MuxError::CommandFailed {
+                code: output.status.code(),
+                stderr: stderr_summary(&output.stderr),
+            });
+        }
+
+        let version = String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .next()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .ok_or_else(|| MuxError::CommandFailed {
+                code: output.status.code(),
+                stderr: "ffmpeg returned no version information".to_owned(),
+            })?
+            .to_owned();
+
+        if !version.to_ascii_lowercase().starts_with("ffmpeg version") {
+            return Err(MuxError::CommandFailed {
+                code: output.status.code(),
+                stderr: format!("unexpected FFmpeg version banner: {version}"),
+            });
+        }
+
+        Ok(FfmpegProbe {
+            path: ffmpeg_path,
+            version,
+        })
     }
 
     pub async fn mux(&self, request: &MuxRequest) -> Result<(), MuxError> {

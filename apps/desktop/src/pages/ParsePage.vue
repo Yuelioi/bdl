@@ -19,6 +19,7 @@ import UiStatusBadge from '../ui/StatusBadge.vue'
 import UiTextarea from '../ui/Textarea.vue'
 import UiTextField from '../ui/TextField.vue'
 import UiTree from '../ui/Tree.vue'
+import UiEnvironmentHealthPanel from '../ui/EnvironmentHealthPanel.vue'
 import { useParseStore } from '../stores/parse'
 import { useSettingsStore } from '../stores/settings'
 import { useUiStore } from '../stores/ui'
@@ -216,10 +217,35 @@ const openDownloadSettings = async () => {
   audioQuality.value = defaults.audio_quality
   videoCodec.value = defaults.codec
   downloadDialogOpen.value = true
+  await checkDownloadEnvironment()
+}
+
+const checkDownloadEnvironment = () => {
+  return settings.checkEnvironment({
+    downloadDir: downloadDir.value.trim() || null,
+    ffmpegPath: settings.saved.ffmpeg_path,
+  })
+}
+
+const updateDownloadDir = (value: string) => {
+  downloadDir.value = value
+  settings.invalidateEnvironmentHealth()
+}
+
+const createDownloadDirectory = () => {
+  return settings.createDownloadDirectory({
+    downloadDir: downloadDir.value.trim() || null,
+    ffmpegPath: settings.saved.ffmpeg_path,
+  })
 }
 
 const createTasks = async (duplicatePolicy: DuplicateTaskPolicy = 'ask') => {
   if (activeSource.value) {
+    const health = await checkDownloadEnvironment()
+    if (!health?.ready) {
+      parse.setNotice('请先修复保存目录或 FFmpeg 环境', 'warning')
+      return
+    }
     const result = await parse.createTasksForSelection(activeSource.value.source.id, {
       downloadDir: downloadDir.value,
       archiveMode: archiveMode.value,
@@ -260,10 +286,16 @@ const chooseDownloadDir = async () => {
 
     if (typeof selected === 'string') {
       downloadDir.value = selected
+      await checkDownloadEnvironment()
     }
   } catch (error) {
     parse.setNotice(errorMessage(error), 'warning')
   }
+}
+
+const openEnvironmentSettings = () => {
+  downloadDialogOpen.value = false
+  ui.setTab('settings')
 }
 
 const loadMore = () => {
@@ -740,7 +772,12 @@ const errorMessage = (error: unknown): string => {
 
       <div class="download-settings-form">
         <div class="directory-row">
-          <UiTextField v-model="downloadDir" label="保存目录" placeholder="留空时使用 downloads" />
+          <UiTextField
+            :model-value="downloadDir"
+            label="保存目录"
+            placeholder="留空时使用 downloads"
+            @update:model-value="updateDownloadDir"
+          />
           <UiButton variant="secondary" :disabled="activeLoading" @click="chooseDownloadDir">选择</UiButton>
         </div>
         <section class="download-settings-section">
@@ -780,11 +817,26 @@ const errorMessage = (error: unknown): string => {
           </section>
         </details>
         <p class="download-settings-note">{{ downloadSettingsSummary }}</p>
+        <UiEnvironmentHealthPanel
+          compact
+          :health="settings.environmentHealth"
+          :checking="settings.environmentChecking"
+          @check="checkDownloadEnvironment"
+          @create-directory="createDownloadDirectory"
+          @choose-directory="chooseDownloadDir"
+          @choose-ffmpeg="openEnvironmentSettings"
+          @use-system-ffmpeg="openEnvironmentSettings"
+        />
       </div>
 
       <template #footer>
         <UiButton variant="secondary" :disabled="activeLoading" @click="downloadDialogOpen = false">取消</UiButton>
-        <UiButton :disabled="!canCreateTasks" @click="createTasks()">加入传输</UiButton>
+        <UiButton
+          :disabled="!canCreateTasks || settings.environmentChecking || settings.environmentHealth?.ready === false"
+          @click="createTasks()"
+        >
+          加入传输
+        </UiButton>
       </template>
     </UiDialog>
 

@@ -12,6 +12,7 @@ import UiCheckbox from '../ui/Checkbox.vue'
 import UiInlineNotice from '../ui/InlineNotice.vue'
 import UiSelect from '../ui/Select.vue'
 import UiTextField from '../ui/TextField.vue'
+import UiEnvironmentHealthPanel from '../ui/EnvironmentHealthPanel.vue'
 
 const settings = useSettingsStore()
 
@@ -170,8 +171,9 @@ const scrollToSettingsSection = (id: string) => {
   document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
-onMounted(() => {
-  void settings.ensureLoaded()
+onMounted(async () => {
+  await settings.ensureLoaded()
+  await settings.checkEnvironment()
 })
 </script>
 
@@ -212,6 +214,15 @@ onMounted(() => {
         </nav>
 
         <div class="settings-content">
+      <UiEnvironmentHealthPanel
+        :health="settings.environmentHealth"
+        :checking="settings.environmentChecking"
+        @check="settings.checkEnvironment"
+        @create-directory="settings.createDownloadDirectory"
+        @choose-directory="settings.chooseDownloadDir"
+        @choose-ffmpeg="settings.chooseFfmpegPath"
+        @use-system-ffmpeg="settings.clearFfmpegPath"
+      />
       <section id="settings-download" class="settings-block">
         <div class="settings-block-heading">
           <h3>下载</h3>

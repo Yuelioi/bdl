@@ -43,7 +43,7 @@ Verification: deterministic stalled-request cancellation test; task-state transi
 ### Stage 4.2 — Product depth
 
 - Duplicate-task policy (complete): backend `ask`/`skip`/`create`, atomic confirmation, safe copy IDs, queue-path reservation, and a status-aware confirmation dialog.
-- Add a download-directory/FFmpeg environment health command and inline repair actions.
+- Environment health (complete): writable-directory probe, real FFmpeg version probe, shared Settings/download-dialog health panel, inline directory creation, and persisted FFmpeg repair routing.
 - Add frontend component/store tests and keyboard-navigation tests.
 - Evaluate scheduler, speed limits, updater, dark theme, and account asset entry points as separate vertical slices.
 

@@ -5,8 +5,10 @@ import type {
   BulkQueueResult,
   DiagnosticsExportResponse,
   DownloadTask,
+  DownloadDirectoryHealth,
   DuplicateTaskPolicy,
   MaintenanceResult,
+  EnvironmentHealthSnapshot,
   NormalizedSourceTree,
   QrLoginPollResponse,
   QrLoginSession,
@@ -76,6 +78,11 @@ export interface AccountLoginQrPollRequest {
 
 export interface BulkQueueRequest {
   task_ids: string[]
+}
+
+export interface EnvironmentHealthRequest {
+  download_dir: string | null
+  ffmpeg_path: string | null
 }
 
 export const parseCreateSource = (request: ParseCreateSourceRequest) =>
@@ -161,6 +168,12 @@ export const settingsGet = () => invokeCommand<SettingsSnapshot>('settings_get')
 
 export const settingsUpdate = (settings: SettingsSnapshot) =>
   invokeCommand<SettingsSnapshot>('settings_update', { settings })
+
+export const environmentHealth = (request: EnvironmentHealthRequest) =>
+  invokeCommand<EnvironmentHealthSnapshot>('environment_health', { request })
+
+export const environmentCreateDownloadDirectory = (path: string) =>
+  invokeCommand<DownloadDirectoryHealth>('environment_create_download_directory', { request: { path } })
 
 export const maintenanceCleanupCache = () => invokeCommand<MaintenanceResult>('maintenance_cleanup_cache')
 

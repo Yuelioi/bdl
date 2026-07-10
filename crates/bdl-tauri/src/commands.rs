@@ -28,6 +28,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_opener::OpenerExt;
 use tokio::fs;
+use tokio::io::AsyncWriteExt;
 use tokio::sync::mpsc::unbounded_channel;
 
 use crate::events;
@@ -198,6 +199,64 @@ pub struct AccountLoginQrPollResponse {
 pub struct MaintenanceResult {
     pub removed_files: usize,
     pub path: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct EnvironmentHealthRequest {
+    pub download_dir: Option<String>,
+    pub ffmpeg_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CreateDownloadDirectoryRequest {
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DownloadDirectoryStatus {
+    Ready,
+    Missing,
+    NotDirectory,
+    Unwritable,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct DownloadDirectoryHealth {
+    pub status: DownloadDirectoryStatus,
+    pub path: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FfmpegStatus {
+    Ready,
+    Missing,
+    Invalid,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FfmpegSource {
+    Configured,
+    System,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct FfmpegHealth {
+    pub status: FfmpegStatus,
+    pub source: FfmpegSource,
+    pub path: Option<String>,
+    pub version: Option<String>,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct EnvironmentHealthSnapshot {
+    pub ready: bool,
+    pub download_directory: DownloadDirectoryHealth,
+    pub ffmpeg: FfmpegHealth,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -676,6 +735,32 @@ pub fn settings_update(
 }
 
 #[tauri::command]
+pub async fn environment_health(
+    request: EnvironmentHealthRequest,
+) -> CommandResult<EnvironmentHealthSnapshot> {
+    let download_path = resolve_download_directory(request.download_dir.as_deref())?;
+    let download_directory = check_download_directory(download_path).await;
+    let ffmpeg = check_ffmpeg(request.ffmpeg_path.as_deref()).await;
+    let ready = download_directory.status == DownloadDirectoryStatus::Ready
+        && ffmpeg.status == FfmpegStatus::Ready;
+
+    Ok(EnvironmentHealthSnapshot {
+        ready,
+        download_directory,
+        ffmpeg,
+    })
+}
+
+#[tauri::command]
+pub async fn environment_create_download_directory(
+    request: CreateDownloadDirectoryRequest,
+) -> CommandResult<DownloadDirectoryHealth> {
+    let path = resolve_download_directory(Some(&request.path))?;
+    fs::create_dir_all(&path).await.map_err(BdlError::from)?;
+    Ok(check_download_directory(path).await)
+}
+
+#[tauri::command]
 pub async fn maintenance_cleanup_cache(
     state: State<'_, AppState>,
 ) -> CommandResult<MaintenanceResult> {
@@ -879,6 +964,141 @@ fn update_task_status(
         start_queue_worker(&app);
     }
     Ok(task)
+}
+
+fn resolve_download_directory(configured: Option<&str>) -> BdlResult<PathBuf> {
+    let candidate = configured
+        .map(str::trim)
+        .filter(|path| !path.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("downloads"));
+    if candidate.is_absolute() {
+        Ok(candidate)
+    } else {
+        Ok(std::env::current_dir()?.join(candidate))
+    }
+}
+
+async fn check_download_directory(path: PathBuf) -> DownloadDirectoryHealth {
+    let display_path = path.to_string_lossy().into_owned();
+    let metadata = match fs::metadata(&path).await {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == ErrorKind::NotFound => {
+            return DownloadDirectoryHealth {
+                status: DownloadDirectoryStatus::Missing,
+                path: display_path,
+                message: "保存目录尚未创建。".to_owned(),
+            };
+        }
+        Err(error) => {
+            return DownloadDirectoryHealth {
+                status: DownloadDirectoryStatus::Unwritable,
+                path: display_path,
+                message: format!("无法访问保存目录：{error}"),
+            };
+        }
+    };
+
+    if !metadata.is_dir() {
+        return DownloadDirectoryHealth {
+            status: DownloadDirectoryStatus::NotDirectory,
+            path: display_path,
+            message: "保存路径指向文件，不是目录。".to_owned(),
+        };
+    }
+
+    let probe_path = path.join(format!(
+        ".bdl-write-probe-{}-{}",
+        std::process::id(),
+        Utc::now().timestamp_nanos_opt().unwrap_or_default()
+    ));
+    let probe_result = async {
+        let mut file = fs::OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&probe_path)
+            .await?;
+        file.write_all(b"bdl").await?;
+        file.flush().await?;
+        drop(file);
+        fs::remove_file(&probe_path).await
+    }
+    .await;
+
+    match probe_result {
+        Ok(()) => DownloadDirectoryHealth {
+            status: DownloadDirectoryStatus::Ready,
+            path: display_path,
+            message: "保存目录可写。".to_owned(),
+        },
+        Err(error) => {
+            let _ = fs::remove_file(&probe_path).await;
+            DownloadDirectoryHealth {
+                status: DownloadDirectoryStatus::Unwritable,
+                path: display_path,
+                message: format!("保存目录不可写：{error}"),
+            }
+        }
+    }
+}
+
+async fn check_ffmpeg(configured: Option<&str>) -> FfmpegHealth {
+    let configured_path = configured
+        .map(str::trim)
+        .filter(|path| !path.is_empty())
+        .map(PathBuf::from);
+    let source = if configured_path.is_some() {
+        FfmpegSource::Configured
+    } else {
+        FfmpegSource::System
+    };
+    let muxer = match MediaMuxer::new(MediaMuxerConfig {
+        ffmpeg_path: configured_path,
+    }) {
+        Ok(muxer) => muxer,
+        Err(MuxError::FfmpegNotFound { path }) => {
+            return FfmpegHealth {
+                status: FfmpegStatus::Missing,
+                source,
+                path: Some(path),
+                version: None,
+                message: "未找到可用的 FFmpeg。".to_owned(),
+            };
+        }
+        Err(error) => {
+            return FfmpegHealth {
+                status: FfmpegStatus::Invalid,
+                source,
+                path: None,
+                version: None,
+                message: format!("FFmpeg 配置无效：{error}"),
+            };
+        }
+    };
+
+    match tokio::time::timeout(std::time::Duration::from_secs(3), muxer.probe()).await {
+        Ok(Ok(probe)) => FfmpegHealth {
+            status: FfmpegStatus::Ready,
+            source,
+            path: Some(probe.path.to_string_lossy().into_owned()),
+            version: Some(probe.version),
+            message: "FFmpeg 可用。".to_owned(),
+        },
+        Ok(Err(error)) => FfmpegHealth {
+            status: FfmpegStatus::Invalid,
+            source,
+            path: Some(muxer.ffmpeg_path().to_string_lossy().into_owned()),
+            version: None,
+            message: format!("FFmpeg 无法运行：{error}"),
+        },
+        Err(_) => FfmpegHealth {
+            status: FfmpegStatus::Invalid,
+            source,
+            path: Some(muxer.ffmpeg_path().to_string_lossy().into_owned()),
+            version: None,
+            message: "FFmpeg 检查超时。".to_owned(),
+        },
+    }
 }
 
 fn start_queue_worker(app: &AppHandle) {
@@ -1771,6 +1991,51 @@ mod tests {
         );
 
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn download_directory_health_reports_missing_path_without_creating_it() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock should follow Unix epoch")
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("bdl-health-missing-{nonce}"));
+
+        let health = super::check_download_directory(path.clone()).await;
+
+        assert_eq!(health.status, super::DownloadDirectoryStatus::Missing);
+        assert!(!path.exists());
+    }
+
+    #[tokio::test]
+    async fn download_directory_health_rejects_file_path() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock should follow Unix epoch")
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("bdl-health-file-{nonce}"));
+        std::fs::write(&path, b"not a directory").expect("fixture file should be written");
+
+        let health = super::check_download_directory(path.clone()).await;
+
+        assert_eq!(health.status, super::DownloadDirectoryStatus::NotDirectory);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[tokio::test]
+    async fn download_directory_health_accepts_writable_directory_and_cleans_probe() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock should follow Unix epoch")
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("bdl-health-ready-{nonce}"));
+        std::fs::create_dir_all(&path).expect("fixture directory should be created");
+
+        let health = super::check_download_directory(path.clone()).await;
+
+        assert_eq!(health.status, super::DownloadDirectoryStatus::Ready);
+        assert_eq!(std::fs::read_dir(&path).unwrap().count(), 0);
+        let _ = std::fs::remove_dir_all(path);
     }
 
     #[test]

@@ -44,6 +44,40 @@ async fn media_muxer_uses_configured_ffmpeg_path() {
 }
 
 #[tokio::test]
+async fn media_muxer_probe_reports_path_and_version() {
+    let dir = temp_case_dir("probe").await;
+    let record_path = dir.join("args.txt");
+    let ffmpeg = fake_ffmpeg(&dir, &record_path, 0, "").await;
+    let muxer = MediaMuxer::new(MediaMuxerConfig {
+        ffmpeg_path: Some(ffmpeg.clone()),
+    })
+    .expect("configured fake ffmpeg should be accepted");
+
+    let probe = muxer.probe().await.expect("fake ffmpeg should be probed");
+
+    assert_eq!(probe.path, ffmpeg);
+    assert_eq!(probe.version, "ffmpeg version bdl-test");
+}
+
+#[tokio::test]
+async fn media_muxer_probe_rejects_non_ffmpeg_executable() {
+    let dir = temp_case_dir("probe-impostor").await;
+    let executable = fake_version_program(&dir, "not-ffmpeg version 1.0").await;
+    let muxer = MediaMuxer::with_ffmpeg_path(executable);
+
+    let error = muxer
+        .probe()
+        .await
+        .expect_err("a successful non-FFmpeg executable must be rejected");
+
+    assert!(matches!(
+        error,
+        MuxError::CommandFailed { stderr, .. }
+            if stderr.contains("unexpected FFmpeg version banner")
+    ));
+}
+
+#[tokio::test]
 async fn media_muxer_supports_video_only_output() {
     let dir = temp_case_dir("video-only").await;
     let record_path = dir.join("args.txt");
@@ -184,10 +218,18 @@ async fn fake_ffmpeg(dir: &Path, record_path: &Path, exit_code: i32, stderr: &st
         format!("echo {stderr} 1>&2\r\n")
     };
     let script = format!(
-        "@echo off\r\necho %* > \"{}\"\r\n{}exit /B {exit_code}\r\n",
+        "@echo off\r\necho %* > \"{}\"\r\necho ffmpeg version bdl-test\r\n{}exit /B {exit_code}\r\n",
         record_path.display(),
         stderr_line
     );
+    tokio::fs::write(&path, script).await.unwrap();
+    path
+}
+
+#[cfg(windows)]
+async fn fake_version_program(dir: &Path, banner: &str) -> PathBuf {
+    let path = dir.join("version-program.cmd");
+    let script = format!("@echo off\r\necho {banner}\r\nexit /B 0\r\n");
     tokio::fs::write(&path, script).await.unwrap();
     path
 }
@@ -198,10 +240,25 @@ async fn fake_ffmpeg(dir: &Path, record_path: &Path, exit_code: i32, stderr: &st
 
     let path = dir.join("ffmpeg");
     let script = format!(
-        "#!/bin/sh\nprintf '%s\\n' \"$*\" > '{}'\nprintf '%s\\n' '{}' >&2\nexit {exit_code}\n",
+        "#!/bin/sh\nprintf '%s\\n' \"$*\" > '{}'\nprintf '%s\\n' 'ffmpeg version bdl-test'\nprintf '%s\\n' '{}' >&2\nexit {exit_code}\n",
         record_path.display(),
         stderr
     );
+    tokio::fs::write(&path, script).await.unwrap();
+    let mut permissions = tokio::fs::metadata(&path).await.unwrap().permissions();
+    permissions.set_mode(0o755);
+    tokio::fs::set_permissions(&path, permissions)
+        .await
+        .unwrap();
+    path
+}
+
+#[cfg(not(windows))]
+async fn fake_version_program(dir: &Path, banner: &str) -> PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+
+    let path = dir.join("version-program");
+    let script = format!("#!/bin/sh\nprintf '%s\\n' '{banner}'\nexit 0\n");
     tokio::fs::write(&path, script).await.unwrap();
     let mut permissions = tokio::fs::metadata(&path).await.unwrap().permissions();
     permissions.set_mode(0o755);
