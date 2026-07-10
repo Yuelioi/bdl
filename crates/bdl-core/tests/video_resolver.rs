@@ -7,12 +7,61 @@ use bdl_core::resolver::video::{
     ResolvedVideo, ResolvedVideoPage, VideoApi, VideoInputId, VideoResolver,
 };
 use bdl_core::resolver::{ResolveOptions, Resolver};
+use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Clone)]
 struct FakeVideoApi {
     video: ResolvedVideo,
     play_url: ResolvedPlayUrl,
     player_info: ResolvedPlayerInfo,
+}
+
+#[derive(Debug, Clone)]
+struct CountingVideoApi {
+    calls: Arc<Mutex<Vec<(&'static str, u64)>>>,
+}
+
+#[async_trait]
+impl VideoApi for CountingVideoApi {
+    async fn view(&self, _id: &VideoInputId) -> Result<ResolvedVideo, BdlError> {
+        Ok(ResolvedVideo {
+            aid: 170001,
+            bvid: "BV1xx411c7mD".to_owned(),
+            default_cid: 62131,
+            title: "large fixture".to_owned(),
+            owner_name: None,
+            cover_url: None,
+            pages: (62131..62321)
+                .enumerate()
+                .map(|(index, cid)| ResolvedVideoPage {
+                    cid,
+                    index: index as u32 + 1,
+                    title: format!("P{}", index + 1),
+                    duration_seconds: Some(30),
+                })
+                .collect(),
+        })
+    }
+
+    async fn play_url(&self, _id: &VideoInputId, cid: u64) -> Result<ResolvedPlayUrl, BdlError> {
+        self.calls
+            .lock()
+            .expect("calls should lock")
+            .push(("play", cid));
+        Ok(ResolvedPlayUrl::default())
+    }
+
+    async fn player_info(
+        &self,
+        _id: &VideoInputId,
+        cid: u64,
+    ) -> Result<ResolvedPlayerInfo, BdlError> {
+        self.calls
+            .lock()
+            .expect("calls should lock")
+            .push(("player", cid));
+        Ok(ResolvedPlayerInfo::default())
+    }
 }
 
 #[async_trait]
@@ -126,6 +175,28 @@ async fn video_resolver_maps_dash_streams_when_requested() -> Result<(), BdlErro
     assert_eq!(audio.codec, StreamCodec::Unknown);
     assert_eq!(audio.bandwidth, Some(192_000));
 
+    Ok(())
+}
+
+#[tokio::test]
+async fn video_resolver_hydrates_only_the_selected_cid() -> Result<(), BdlError> {
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let resolver = VideoResolver::with_api(CountingVideoApi {
+        calls: Arc::clone(&calls),
+    });
+
+    let tree = resolver
+        .resolve_target_streams(ClassifiedInput::VideoBvid("BV1xx411c7mD".to_owned()), 62132)
+        .await?;
+
+    assert_eq!(
+        calls.lock().expect("calls should lock").as_slice(),
+        &[("play", 62132), ("player", 62132)]
+    );
+    let parts = &tree.groups[0].items[0].parts;
+    assert_eq!(parts.len(), 190);
+    assert!(parts[0].streams.is_empty());
+    assert!(parts[2].streams.is_empty());
     Ok(())
 }
 

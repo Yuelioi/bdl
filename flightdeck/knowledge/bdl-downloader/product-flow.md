@@ -53,12 +53,14 @@ Logged-out, loading, empty, API-error, pagination, cover-fallback, and narrow-wi
 ## Parse Flow
 
 1. User enters BV/AV, URL, short link, or multi-line text.
-2. Backend classifies input and resolves it into a normalized tree.
+2. Backend classifies input and resolves only the metadata needed for the normalized tree. Initial parsing must not fetch playable stream URLs for every visible part.
 3. UI keeps parsed sources in a source switcher instead of replacing all previous results.
 4. User searches, sorts, range-selects, or manually toggles visible results.
 5. User clicks `下载已选择`.
 6. A download settings dialog opens with task-level overrides.
 7. Creating tasks stays on `解析`; show inline notice with `查看传输` action.
+
+Playable stream URLs, codecs, and quality profiles are hydrated when tasks are created, and only for the selected CID when the source already exposes one. Hydrating one selected part must preserve streams already hydrated for sibling parts.
 
 Current parse controls:
 

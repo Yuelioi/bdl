@@ -28,4 +28,16 @@ describe('parse store', () => {
 
     expect(api.parseLoadAll).toHaveBeenCalledWith({ source_id: 'favorite:42' })
   })
+
+  it('keeps initial parsing metadata-only so large multi-part videos stay fast', async () => {
+    api.parseCreateSource.mockRejectedValue(new Error('request captured'))
+    const parse = useParseStore()
+
+    await parse.createSource('https://www.bilibili.com/video/av807178613/')
+
+    expect(api.parseCreateSource).toHaveBeenCalledWith({
+      input: 'https://www.bilibili.com/video/av807178613/',
+      fetch_streams: false,
+    })
+  })
 })

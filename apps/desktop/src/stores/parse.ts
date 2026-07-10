@@ -128,7 +128,7 @@ export const useParseStore = defineStore('parse', {
       try {
         for (const sourceInput of inputs) {
           try {
-            const tree = await parseCreateSource({ input: sourceInput, fetch_streams: true })
+            const tree = await parseCreateSource({ input: sourceInput, fetch_streams: false })
             this.upsertSource(tree)
             created += 1
           } catch (error) {

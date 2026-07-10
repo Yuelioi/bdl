@@ -131,15 +131,24 @@ impl<A> VideoResolver<A> {
     }
 }
 
-#[async_trait]
-impl<A> Resolver for VideoResolver<A>
+impl<A> VideoResolver<A>
 where
     A: VideoApi,
 {
-    async fn resolve(
+    pub async fn resolve_target_streams(
         &self,
         input: ClassifiedInput,
-        options: ResolveOptions,
+        target_cid: u64,
+    ) -> BdlResult<NormalizedSourceTree> {
+        self.resolve_with_stream_target(input, true, Some(target_cid))
+            .await
+    }
+
+    async fn resolve_with_stream_target(
+        &self,
+        input: ClassifiedInput,
+        fetch_streams: bool,
+        target_cid: Option<u64>,
     ) -> BdlResult<NormalizedSourceTree> {
         let input_id = VideoInputId::from_classified(input)?;
         let input_label = input_id.input_label();
@@ -150,7 +159,9 @@ where
         let mut parts = Vec::with_capacity(pages.len());
         for page in pages {
             let part_key = format!("{canonical_key}:{}", page.cid);
-            let (streams, player_info) = if options.fetch_streams {
+            let should_fetch_streams =
+                fetch_streams && target_cid.is_none_or(|cid| cid == page.cid);
+            let (streams, player_info) = if should_fetch_streams {
                 let play_url = self.api.play_url(&input_id, page.cid).await?;
                 let player_info = self.api.player_info(&input_id, page.cid).await?;
                 (map_play_url(&part_key, play_url, Utc::now()), player_info)
@@ -196,6 +207,21 @@ where
                 page: None,
             }],
         })
+    }
+}
+
+#[async_trait]
+impl<A> Resolver for VideoResolver<A>
+where
+    A: VideoApi,
+{
+    async fn resolve(
+        &self,
+        input: ClassifiedInput,
+        options: ResolveOptions,
+    ) -> BdlResult<NormalizedSourceTree> {
+        self.resolve_with_stream_target(input, options.fetch_streams, None)
+            .await
     }
 }
 

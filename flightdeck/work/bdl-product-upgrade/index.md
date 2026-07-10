@@ -81,6 +81,8 @@ Verified:
 - Added a top-level account library backed by real authenticated created/collected favorite-folder APIs, with pagination, filtering, multi-select, cover fallbacks, account-change cache clearing, and handoff into the existing multi-source Parse flow.
 - Fixed `解析全部` to exhaust paged sources until `has_more = false`; removed the legacy 100-item cap from the backend, store, confirmation copy, and frontend request contract.
 - Moved toast notifications below the top bar after live review found that bottom-right notifications could cover modal primary actions.
+- Changed initial video parsing to metadata-only resolution and moved stream/profile hydration to task creation; repeated live checks of a 190-part AV input now resolve its complete visible tree in under half a second instead of issuing two extra stream requests per part.
+- Added CID-targeted video hydration so selecting one part fetches only that part's play/player data, while preserving streams already hydrated for sibling selections.
 
 ## Open questions
 

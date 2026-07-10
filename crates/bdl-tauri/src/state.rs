@@ -231,7 +231,7 @@ impl AppState {
 
         for request in requests {
             let hydrated = self
-                .resolve_media_input_with_streams(request.input.clone())
+                .resolve_media_input_with_streams(request.input.clone(), request.target_cid)
                 .await?;
             let hydrated_part_ids = hydrate_placeholder_part(
                 &mut tree,
@@ -522,7 +522,7 @@ impl AppState {
         let task = self.task_snapshot(task_id)?;
         let refresh_ids = task_media_refresh_ids(&task)?;
         let refreshed = self
-            .resolve_media_input_with_streams(refresh_ids.input)
+            .resolve_media_input_with_streams(refresh_ids.input, Some(refresh_ids.cid))
             .await?;
         let part =
             find_part_by_cid(&refreshed, refresh_ids.cid).ok_or_else(|| BdlError::Planning {
@@ -891,13 +891,21 @@ impl AppState {
     async fn resolve_media_input_with_streams(
         &self,
         input: ClassifiedInput,
+        target_cid: Option<u64>,
     ) -> BdlResult<NormalizedSourceTree> {
         let options = ResolveOptions {
             fetch_streams: true,
         };
 
         match input.source_kind() {
-            SourceKind::Video => self.video_resolver()?.resolve(input, options).await,
+            SourceKind::Video => match target_cid {
+                Some(cid) => {
+                    self.video_resolver()?
+                        .resolve_target_streams(input, cid)
+                        .await
+                }
+                None => self.video_resolver()?.resolve(input, options).await,
+            },
             SourceKind::Bangumi => self.bangumi_resolver()?.resolve(input, options).await,
             SourceKind::Cheese => self.cheese_resolver()?.resolve(input, options).await,
             kind => Err(BdlError::UnsupportedSource {
@@ -1573,10 +1581,32 @@ fn hydrate_placeholder_part(
             continue;
         };
 
-        let existing_item = &group.items[item_index];
+        let existing_item = &mut group.items[item_index];
+        if let Some(target_cid) = target_cid {
+            if let Some(existing_part_index) = existing_item
+                .parts
+                .iter()
+                .position(|part| part.cid == Some(target_cid))
+            {
+                let hydrated_part_index = hydrated_item
+                    .parts
+                    .iter()
+                    .position(|part| part.cid == Some(target_cid))
+                    .ok_or_else(|| BdlError::Planning {
+                        message: format!("视频解析结果缺少 CID `{target_cid}`，无法创建下载任务。"),
+                    })?;
+                let mut hydrated_part = hydrated_item.parts.swap_remove(hydrated_part_index);
+                let existing_part_id = existing_item.parts[existing_part_index].id.clone();
+                hydrated_part.id = existing_part_id.clone();
+                merge_missing_item_metadata(existing_item, &hydrated_item);
+                existing_item.parts[existing_part_index] = hydrated_part;
+                return Ok(vec![existing_part_id]);
+            }
+        }
+
         hydrated_item.id = existing_item.id.clone();
         merge_missing_item_metadata(&mut hydrated_item, existing_item);
-        group.items[item_index] = hydrated_item;
+        *existing_item = hydrated_item;
         return Ok(hydrated_part_ids);
     }
 
@@ -2401,6 +2431,38 @@ mod tests {
         assert_eq!(
             hydrated_ids,
             vec![PartId("part:BV1xx411c7mD:62132".to_owned())]
+        );
+    }
+
+    #[test]
+    fn hydrate_known_part_preserves_streams_for_previously_hydrated_parts() {
+        let mut tree = video_tree();
+        tree.groups[0].items[0].parts[0].streams = vec![media_stream(
+            MediaKind::Video,
+            "https://cdn.example/p1-video.m4s",
+        )];
+        let selected_part = tree.groups[0].items[0].parts[1].id.clone();
+
+        let mut hydrated = video_tree();
+        hydrated.groups[0].items[0].parts[1].streams = vec![media_stream(
+            MediaKind::Video,
+            "https://cdn.example/p2-video.m4s",
+        )];
+
+        hydrate_placeholder_part(&mut tree, &selected_part, Some(62132), hydrated)
+            .expect("known part should hydrate without replacing its siblings");
+
+        let streams = tree.groups[0].items[0]
+            .parts
+            .iter()
+            .map(|part| part.streams.first().map(|stream| stream.urls[0].as_str()))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            streams,
+            vec![
+                Some("https://cdn.example/p1-video.m4s"),
+                Some("https://cdn.example/p2-video.m4s"),
+            ]
         );
     }
 
