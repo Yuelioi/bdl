@@ -16,6 +16,8 @@ BDL is a compact operations tool for Bilibili power users. It should feel calm, 
 - Use the bundled Chinese UI face for product text and a separate mechanical display face for the brand/compact labels.
 - Use small radii, crisp outlines, selective elevation, and varied spacing rhythm. Do not wrap every region in a floating card.
 - Preserve stable transfer columns and state-specific row actions.
+- Show queue totals in one place only. Transfer filter tabs own status counts; the sidebar footer may show aggregate speed and a short overall state, but the top bar and page must not repeat the same metrics.
+- Keep form labels and controls on shared vertical tokens so native fields and Nuxt UI selects align exactly.
 - Adapt navigation and toolbars for narrow desktop windows instead of hiding critical actions.
 - Every custom interactive surface needs focus-visible styling, accessible naming, keyboard behavior, and a reduced-motion path.
 - Do not use gradient text, decorative glassmorphism, generic glow, or thick colored side stripes.
@@ -23,4 +25,3 @@ BDL is a compact operations tool for Bilibili power users. It should feel calm, 
 ## Product boundary
 
 Visual work must not move download truth into Vue. Rust continues to own resolution, planning, task state, fetching, persistence, recovery, diagnostics, and account storage.
-

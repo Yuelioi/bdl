@@ -26,9 +26,14 @@ const { label, options, disabled = false } = defineProps<{
       :disabled
       trailing-icon="i-tabler-chevron-down"
       selected-icon="i-tabler-check"
-      :portal="false"
-      :content="{ side: 'bottom', sideOffset: 4, collisionPadding: 12, position: 'popper', avoidCollisions: false }"
-      :ui="{ content: 'z-50 !max-h-44 shadow-lg', item: 'font-medium' }"
+      :portal="true"
+      :content="{ side: 'bottom', align: 'start', sideOffset: 4, collisionPadding: 12, position: 'popper' }"
+      :ui="{
+        base: 'h-9 min-h-9 py-0',
+        trailingIcon: 'size-4',
+        content: 'z-50 !max-h-44 shadow-md',
+        item: 'font-medium',
+      }"
       class="ui-select"
     />
   </label>
@@ -37,10 +42,17 @@ const { label, options, disabled = false } = defineProps<{
 <style scoped>
 .ui-field {
   display: grid;
-  gap: var(--space-8);
+  grid-template-rows: 18px var(--height-input);
+  gap: var(--space-6);
   color: var(--color-muted);
   font-size: var(--font-13);
   font-weight: 600;
+}
+
+.ui-field > span {
+  display: flex;
+  align-items: center;
+  line-height: 18px;
 }
 
 .ui-select {
@@ -48,6 +60,7 @@ const { label, options, disabled = false } = defineProps<{
 }
 
 .ui-field :deep(button) {
+  height: var(--height-input);
   min-height: var(--height-input);
   font-weight: 650;
 }

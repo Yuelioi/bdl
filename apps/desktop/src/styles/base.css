@@ -175,18 +175,13 @@ select:focus-visible {
   transition:
     background-color var(--duration-fast) var(--ease-out),
     border-color var(--duration-fast) var(--ease-out),
-    color var(--duration-fast) var(--ease-out),
-    transform var(--duration-fast) var(--ease-out);
+    color var(--duration-fast) var(--ease-out);
 }
 
 .nav-item:hover {
   border-color: color-mix(in oklab, var(--color-nav-text) 10%, transparent);
   background: color-mix(in oklab, var(--color-nav-raised) 76%, transparent);
   color: var(--color-nav-text);
-}
-
-.nav-item:active {
-  transform: translateY(1px);
 }
 
 .nav-icon {
@@ -307,7 +302,7 @@ select:focus-visible {
   min-width: 0;
   min-height: 0;
   display: grid;
-  grid-template-rows: 76px minmax(0, 1fr);
+  grid-template-rows: 64px minmax(0, 1fr);
   overflow: hidden;
 }
 
@@ -324,25 +319,8 @@ select:focus-visible {
 
 .page-identity {
   min-width: 0;
-  display: grid;
-  gap: 4px;
-}
-
-.page-identity > span {
-  color: var(--color-muted);
-  font-family: var(--font-display);
-  font-size: 10px;
-  font-variation-settings: "wdth" 92;
-  font-weight: 650;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-}
-
-.page-identity > div {
-  min-width: 0;
   display: flex;
-  align-items: baseline;
-  gap: var(--space-xs);
+  align-items: center;
 }
 
 .top-bar h1,
@@ -372,32 +350,6 @@ select:focus-visible {
 
 .top-actions {
   flex-shrink: 0;
-}
-
-.queue-health {
-  height: var(--height-button);
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-xs);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-6);
-  background: var(--color-panel);
-  color: var(--color-muted);
-  padding: 0 var(--space-sm);
-  font-size: var(--font-12);
-  font-weight: 680;
-}
-
-.queue-health:hover {
-  border-color: var(--color-border-strong);
-  background: var(--color-surface);
-  color: var(--color-text);
-}
-
-.queue-health svg {
-  width: 16px;
-  height: 16px;
-  color: var(--color-accent);
 }
 
 .account-split {
@@ -915,7 +867,7 @@ select:focus-visible {
   gap: var(--space-16);
   padding: var(--space-16);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-12);
+  border-radius: var(--radius-8);
   background: var(--color-surface);
   box-shadow: var(--shadow-panel);
   overflow: hidden;
@@ -1003,24 +955,16 @@ select:focus-visible {
 
 @media (max-width: 720px) {
   .main-region {
-    grid-template-rows: 68px minmax(0, 1fr);
+    grid-template-rows: 60px minmax(0, 1fr);
   }
 
   .top-bar {
     padding-inline: var(--space-md);
   }
 
-  .page-identity > span,
   .page-identity p,
-  .queue-health span,
   .account-button > span:last-child {
     display: none;
-  }
-
-  .queue-health {
-    width: var(--height-button);
-    justify-content: center;
-    padding: 0;
   }
 
   .account-button {

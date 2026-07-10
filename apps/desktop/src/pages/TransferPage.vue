@@ -5,7 +5,6 @@ import type { TaskStatus } from '../api/dto'
 import { sourceReference, useQueueStore, type QueueFilter } from '../stores/queue'
 import {
   createTransferTaskView,
-  formatSpeedLabel,
   type TaskActionDescriptor,
   type TaskActionKind,
 } from '../stores/transferView'
@@ -69,16 +68,7 @@ const taskViews = computed(() =>
     ),
   ),
 )
-const activeTaskCount = computed(
-  () => queue.tasks.filter((task) => ['waiting', 'parsing', 'downloading', 'muxing'].includes(task.status)).length,
-)
-const attentionTaskCount = computed(
-  () => queue.tasks.filter((task) => task.status === 'failed' || task.status === 'cancelled').length,
-)
 const completedTaskCount = computed(() => queue.tasks.filter((task) => task.status === 'completed').length)
-const aggregateSpeed = computed(() =>
-  queue.tasks.reduce((total, task) => total + (queue.taskTransferProgress(task.id)?.speedBytesPerSecond ?? 0), 0),
-)
 const contextTaskView = computed(() => taskViews.value.find((view) => view.id === contextMenu.value?.taskId) ?? null)
 const contextActions = computed<TaskActionDescriptor[]>(() => {
   const view = contextTaskView.value
@@ -323,25 +313,6 @@ const issueRank = (status: TaskStatus): number => {
         {{ queue.notice.message }}
       </UiInlineNotice>
 
-      <div class="transfer-health-strip" aria-label="队列状态概览">
-        <div>
-          <UIcon name="i-tabler-player-play" aria-hidden="true" />
-          <span>进行中 <strong>{{ activeTaskCount }}</strong></span>
-        </div>
-        <div :class="{ attention: attentionTaskCount > 0 }">
-          <UIcon name="i-tabler-alert-triangle" aria-hidden="true" />
-          <span>需处理 <strong>{{ attentionTaskCount }}</strong></span>
-        </div>
-        <div>
-          <UIcon name="i-tabler-circle-check" aria-hidden="true" />
-          <span>已完成 <strong>{{ completedTaskCount }}</strong></span>
-        </div>
-        <div class="speed-signal">
-          <span>总速率</span>
-          <strong>{{ formatSpeedLabel(aggregateSpeed) }}</strong>
-        </div>
-      </div>
-
       <div class="transfer-toolbar">
         <UiTabs v-model="queueFilter" :tabs="tabs" />
         <BulkActionBar
@@ -452,56 +423,6 @@ const issueRank = (status: TaskStatus): number => {
 
 .transfer-main {
   overflow: hidden;
-}
-
-.transfer-health-strip {
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 0;
-  overflow-x: auto;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-8);
-  background: var(--color-panel);
-}
-
-.transfer-health-strip > div {
-  min-width: max-content;
-  height: 38px;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-xs);
-  padding: 0 var(--space-sm);
-  color: var(--color-muted);
-  font-size: var(--font-11);
-  font-weight: 620;
-}
-
-.transfer-health-strip > div + div {
-  border-left: 1px solid var(--color-border);
-}
-
-.transfer-health-strip svg {
-  width: 15px;
-  height: 15px;
-  color: var(--color-accent-strong);
-}
-
-.transfer-health-strip strong {
-  color: var(--color-text-strong);
-  font-family: var(--font-display);
-  font-size: var(--font-13);
-  font-weight: 720;
-}
-
-.transfer-health-strip .attention svg,
-.transfer-health-strip .attention strong {
-  color: var(--color-warning);
-}
-
-.transfer-health-strip .speed-signal {
-  margin-left: auto;
-  background: var(--color-surface);
 }
 
 .transfer-list-tools {

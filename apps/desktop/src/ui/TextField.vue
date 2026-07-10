@@ -22,10 +22,17 @@ const fieldId = useId()
 <style scoped>
 .ui-field {
   display: grid;
-  gap: var(--space-8);
+  grid-template-rows: 18px var(--height-input);
+  gap: var(--space-6);
   color: var(--color-muted);
   font-size: var(--font-13);
   font-weight: 600;
+}
+
+.ui-field > span {
+  display: flex;
+  align-items: center;
+  line-height: 18px;
 }
 
 input {

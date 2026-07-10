@@ -65,7 +65,7 @@
   --height-input: 36px;
   --height-toolbar: 44px;
   --height-task-row: 64px;
-  --shadow-panel: 0 1px 1px oklch(0.2 0.02 156 / 4%), 0 8px 24px oklch(0.2 0.02 156 / 5%);
+  --shadow-panel: 0 1px 2px oklch(0.2 0.02 156 / 5%);
   --shadow-overlay: 0 18px 50px oklch(0.16 0.025 156 / 18%);
   --focus-ring: 0 0 0 3px oklch(0.68 0.11 158 / 28%);
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);

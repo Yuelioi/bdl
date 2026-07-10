@@ -777,19 +777,11 @@ const errorMessage = (error: unknown): string => {
 
 .command-panel {
   position: relative;
-  border-color: color-mix(in oklab, var(--color-border) 84%, var(--color-accent));
-  background:
-    linear-gradient(110deg, var(--color-surface), color-mix(in oklab, var(--color-accent-faint) 58%, var(--color-surface)));
+  background: var(--color-surface);
 }
 
 .command-panel::after {
-  position: absolute;
-  top: 0;
-  right: 24px;
-  width: 84px;
-  height: 3px;
-  background: repeating-linear-gradient(90deg, var(--color-accent) 0 14px, transparent 14px 20px);
-  content: "";
+  content: none;
 }
 
 .command-heading {
@@ -1084,9 +1076,7 @@ const errorMessage = (error: unknown): string => {
   gap: var(--space-xs);
   padding: var(--space-xl);
   border-style: solid;
-  background:
-    radial-gradient(circle at 50% 0%, var(--color-accent-faint), transparent 48%),
-    var(--color-panel);
+  background: var(--color-panel);
   text-align: center;
 }
 

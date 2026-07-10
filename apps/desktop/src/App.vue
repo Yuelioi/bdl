@@ -33,9 +33,6 @@ const navItems: Array<{ value: AppTab; label: string; description: string; icon:
 ]
 
 const activeTitle = computed(() => navItems.find((item) => item.value === ui.activeTab)?.label ?? '解析')
-const activeDescription = computed(
-  () => navItems.find((item) => item.value === ui.activeTab)?.description ?? '添加与选择',
-)
 const activePageComponent = computed(() => {
   if (ui.activeTab === 'transfer') return TransferPage
   if (ui.activeTab === 'settings') return SettingsPage
@@ -52,6 +49,21 @@ const queueHealthLabel = computed(() => {
   if (attentionCount.value > 0) return `${attentionCount.value} 项需处理`
   if (transferBadgeCount.value > 0) return `${transferBadgeCount.value} 项进行中`
   return '队列空闲'
+})
+const aggregateSpeedLabel = computed(() => {
+  const bytesPerSecond = queue.tasks.reduce(
+    (total, task) => total + (queue.taskTransferProgress(task.id)?.speedBytesPerSecond ?? 0),
+    0,
+  )
+  if (bytesPerSecond <= 0 || !Number.isFinite(bytesPerSecond)) return '0 B/s'
+  const units = ['B/s', 'KB/s', 'MB/s', 'GB/s']
+  let value = bytesPerSecond
+  let unitIndex = 0
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024
+    unitIndex += 1
+  }
+  return `${value >= 100 || unitIndex === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[unitIndex]}`
 })
 const cookieSaveDisabled = computed(
   () => account.saving || account.qrLoading || (loginMode.value === 'cookie' && !cookieText.value.trim()),
@@ -206,7 +218,7 @@ watch(
           <span class="status-beacon" :class="{ attention: attentionCount > 0 }" aria-hidden="true"></span>
           <span>
             <strong>{{ queueHealthLabel }}</strong>
-            <small>{{ account.statusLabel }} · 本地处理</small>
+            <small>{{ aggregateSpeedLabel }} · {{ account.statusLabel }}</small>
           </span>
         </div>
       </aside>
@@ -214,17 +226,9 @@ watch(
     <section class="main-region" :data-page="ui.activeTab">
       <header class="top-bar">
         <div class="page-identity">
-          <span>工作区 / {{ activeTitle }}</span>
-          <div>
-            <h1>{{ activeTitle }}</h1>
-            <p>{{ activeDescription }}</p>
-          </div>
+          <h1>{{ activeTitle }}</h1>
         </div>
         <div class="top-actions">
-          <button class="queue-health" type="button" @click="ui.setTab('transfer')">
-            <UIcon name="i-tabler-activity" aria-hidden="true" />
-            <span>{{ queueHealthLabel }}</span>
-          </button>
           <UiIconButton icon="help" label="帮助" @click="helpDrawerOpen = true" />
           <div class="account-split">
             <button class="account-button" type="button" @click="openLoginDialog">

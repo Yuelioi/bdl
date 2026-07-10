@@ -88,5 +88,13 @@ const tablerIcon = (icon: string): string => {
 .task-action-menu :deep(.ui-icon-button) {
   width: 28px;
   height: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0;
+}
+
+.task-action-menu :deep(.ui-icon-button svg) {
+  width: 15px;
+  height: 15px;
 }
 </style>

@@ -54,6 +54,7 @@ const uiVariant = computed(() => (props.variant === 'secondary' ? 'outline' : pr
     :disabled="props.disabled"
     :aria-label="props.label"
     :title="props.label"
+    :ui="{ base: 'p-0 justify-center', leadingIcon: 'size-4' }"
   />
 </template>
 
@@ -61,5 +62,17 @@ const uiVariant = computed(() => (props.variant === 'secondary' ? 'outline' : pr
 .ui-icon-button {
   width: var(--height-button);
   height: var(--height-button);
+  min-width: var(--height-button);
+  min-height: var(--height-button);
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  line-height: 1;
+}
+
+.ui-icon-button :deep(svg) {
+  width: 16px;
+  height: 16px;
+  margin: 0;
 }
 </style>
