@@ -68,12 +68,12 @@ const emit = defineEmits<{
 }
 
 .inline-notice button:hover {
-  background: #eef8f3;
+  background: var(--color-selected-surface);
 }
 
 .tone-success {
-  border-color: rgb(43 138 62 / 24%);
-  background: #f5fbf6;
+  border-color: color-mix(in oklab, var(--color-success) 34%, var(--color-border));
+  background: var(--color-success-soft);
 }
 
 .tone-success .notice-dot {
@@ -81,8 +81,8 @@ const emit = defineEmits<{
 }
 
 .tone-warning {
-  border-color: rgb(230 119 0 / 28%);
-  background: #fff8ef;
+  border-color: color-mix(in oklab, var(--color-warning) 38%, var(--color-border));
+  background: var(--color-warning-soft);
 }
 
 .tone-warning .notice-dot {
@@ -90,8 +90,8 @@ const emit = defineEmits<{
 }
 
 .tone-danger {
-  border-color: rgb(201 42 42 / 24%);
-  background: #fffafa;
+  border-color: color-mix(in oklab, var(--color-danger) 34%, var(--color-border));
+  background: var(--color-danger-soft);
 }
 
 .tone-danger .notice-dot {

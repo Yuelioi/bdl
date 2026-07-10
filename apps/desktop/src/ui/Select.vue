@@ -63,5 +63,6 @@ const { label, options, disabled = false } = defineProps<{
   height: var(--height-input);
   min-height: var(--height-input);
   font-weight: 650;
+  background: var(--color-inset);
 }
 </style>

@@ -47,6 +47,7 @@ Verification: deterministic stalled-request cancellation test; task-state transi
 - Frontend component/store tests and keyboard-navigation tests (complete): Vitest repository gate, environment health/repair regressions, and roving-focus parsed-tree navigation.
 - One-time task scheduler (complete): persisted UTC schedules, restart-safe capacity-aware worker wakeups, create/modify/start-now controls, and inline time validation.
 - Download speed limits (complete): live global aggregate cap, persisted per-task overrides, shared multi-segment budgets, create/edit controls, and MiB/s validation.
-- Evaluate updater, dark theme, and account asset entry points as separate vertical slices.
+- Professional dark theme (complete): system/light/dark preference, pre-mount persistence, five-level surface ladder, semantic state colors, and a global appearance menu.
+- Evaluate account asset entry points next; keep the updater as the final product-depth slice.
 
 Verification: narrow Rust tests per feature, full core/Tauri clippy, frontend tests/build, and release QA.

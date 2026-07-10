@@ -13,6 +13,9 @@ BDL is a compact operations tool for Bilibili power users. It should feel calm, 
 - Keep Parse, Transfer, and Settings as the only primary pages; account remains global.
 - Put current status and the recommended action before logs or technical detail.
 - Use OKLCH semantic tokens and neutrals tinted toward the restrained green brand hue.
+- Support `system`, `light`, and `dark` appearance preferences. Persist the preference locally and apply it before Vue mounts to avoid a theme flash.
+- Dark mode uses five distinct layers: page, region, card, inset/control, and overlay. It never uses pure black or relies on shadows alone for separation.
+- Hard-coded light status fills are not allowed; selected, success, warning, danger, info, progress, backdrop, and grid treatments must resolve through semantic tokens.
 - Use the bundled Chinese UI face for product text and a separate mechanical display face for the brand/compact labels.
 - Use small radii, crisp outlines, selective elevation, and varied spacing rhythm. Do not wrap every region in a floating card.
 - Preserve stable transfer columns and state-specific row actions.

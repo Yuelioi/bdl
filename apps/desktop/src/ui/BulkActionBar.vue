@@ -105,8 +105,8 @@ const moreItems = computed(() => [[
   padding: var(--space-8) var(--space-12);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-8);
-  border-color: rgb(8 127 91 / 28%);
-  background: #f8fcfa;
+  border-color: color-mix(in oklab, var(--color-accent) 38%, var(--color-border));
+  background: var(--color-selected-surface);
 }
 
 .bulk-copy {
@@ -163,7 +163,7 @@ const moreItems = computed(() => [[
 }
 
 .bulk-actions button:focus-visible {
-  outline: 2px solid rgb(8 127 91 / 30%);
+  outline: 2px solid var(--color-focus-outline);
   outline-offset: 2px;
 }
 
@@ -172,7 +172,7 @@ const moreItems = computed(() => [[
 }
 
 .bulk-actions button.danger {
-  border-color: rgb(201 42 42 / 28%);
+  border-color: color-mix(in oklab, var(--color-danger) 38%, var(--color-border));
   color: var(--color-danger);
 }
 

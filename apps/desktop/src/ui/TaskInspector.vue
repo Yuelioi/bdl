@@ -386,8 +386,8 @@ const errorMessage = (error: unknown): string => {
 }
 
 .diagnosis-block.tone-danger {
-  border-color: rgb(201 42 42 / 24%);
-  background: #fffafa;
+  border-color: color-mix(in oklab, var(--color-danger) 34%, var(--color-border));
+  background: var(--color-danger-soft);
 }
 
 .diagnosis-block.tone-danger span {
@@ -395,8 +395,8 @@ const errorMessage = (error: unknown): string => {
 }
 
 .diagnosis-block.tone-success {
-  border-color: rgb(26 127 55 / 20%);
-  background: #f8fff9;
+  border-color: color-mix(in oklab, var(--color-success) 30%, var(--color-border));
+  background: var(--color-success-soft);
 }
 
 .diagnosis-facts,
@@ -503,8 +503,8 @@ const errorMessage = (error: unknown): string => {
 }
 
 .track-row.failed {
-  border-color: rgb(201 42 42 / 26%);
-  background: #fffafa;
+  border-color: color-mix(in oklab, var(--color-danger) 36%, var(--color-border));
+  background: var(--color-danger-soft);
 }
 
 .track-copy {

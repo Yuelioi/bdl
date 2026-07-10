@@ -1316,9 +1316,9 @@ const errorMessage = (error: unknown): string => {
 .inline-alert {
   margin: 0;
   padding: var(--space-8) var(--space-12);
-  border: 1px solid rgb(201 42 42 / 20%);
+  border: 1px solid color-mix(in oklab, var(--color-danger) 30%, var(--color-border));
   border-radius: var(--radius-6);
-  background: #fffafa;
+  background: var(--color-danger-soft);
   color: var(--color-danger);
   font-size: var(--font-12);
   line-height: 1.5;
@@ -1332,9 +1332,9 @@ const errorMessage = (error: unknown): string => {
   align-items: center;
   gap: var(--space-12);
   padding: var(--space-12);
-  border: 1px solid rgb(8 127 91 / 20%);
+  border: 1px solid color-mix(in oklab, var(--color-accent) 30%, var(--color-border));
   border-radius: var(--radius-8);
-  background: #eef8f3;
+  background: var(--color-accent-soft);
 }
 
 .download-dialog-summary > strong {

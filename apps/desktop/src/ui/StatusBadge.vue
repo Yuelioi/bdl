@@ -26,32 +26,32 @@ const { status = 'ready' } = defineProps<{
 
 .status-ready,
 .status-queued {
-  background: #edf1ef;
+  background: var(--color-panel-strong);
   color: var(--color-muted);
 }
 
 .status-downloading {
-  background: #e8f3ee;
+  background: var(--color-accent-soft);
   color: var(--color-accent-strong);
 }
 
 .status-done {
-  background: #eaf5eb;
+  background: var(--color-success-soft);
   color: var(--color-success);
 }
 
 .status-warning {
-  background: #fff4e6;
+  background: var(--color-warning-soft);
   color: var(--color-warning);
 }
 
 .status-paused {
-  background: #eef2ff;
-  color: #4254b7;
+  background: var(--color-info-soft);
+  color: var(--color-info);
 }
 
 .status-error {
-  background: #fff0f0;
+  background: var(--color-danger-soft);
   color: var(--color-danger);
 }
 </style>

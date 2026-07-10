@@ -75,7 +75,7 @@ input {
   height: var(--height-input);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-6);
-  background: var(--color-surface);
+  background: var(--color-inset);
   color: var(--color-text);
   padding: 0 var(--space-12);
   font-size: var(--font-14);
@@ -83,7 +83,7 @@ input {
 
 input:focus {
   border-color: var(--color-accent);
-  outline: 2px solid rgb(8 127 91 / 16%);
+  outline: 2px solid var(--color-focus-outline);
   outline-offset: 0;
 }
 

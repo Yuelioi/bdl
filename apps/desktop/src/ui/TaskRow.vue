@@ -105,8 +105,8 @@ const canRetry = computed(() => props.status === 'failed' || props.status === 'c
 }
 
 .task-row.selected {
-  border-color: rgb(8 127 91 / 46%);
-  background: #fbfdfc;
+  border-color: color-mix(in oklab, var(--color-accent) 58%, var(--color-border));
+  background: var(--color-selected-surface);
 }
 
 .task-main {

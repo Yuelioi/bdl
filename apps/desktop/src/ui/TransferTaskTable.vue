@@ -160,12 +160,12 @@ const toggleVisible = () => {
 }
 
 .task-table-row.selected {
-  border-color: rgb(8 127 91 / 46%);
-  background: #fbfdfc;
+  border-color: color-mix(in oklab, var(--color-accent) 58%, var(--color-border));
+  background: var(--color-selected-surface);
 }
 
 .task-table-row:focus-visible {
-  outline: 2px solid rgb(8 127 91 / 30%);
+  outline: 2px solid var(--color-focus-outline);
   outline-offset: 2px;
 }
 
@@ -213,7 +213,7 @@ const toggleVisible = () => {
 }
 
 .row-check input:focus-visible + span {
-  outline: 2px solid rgb(8 127 91 / 30%);
+  outline: 2px solid var(--color-focus-outline);
   outline-offset: 2px;
 }
 

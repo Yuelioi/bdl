@@ -72,7 +72,7 @@ const items = computed(() =>
 }
 
 .ui-tabs :deep([data-slot="trigger"][data-state="active"]) {
-  background: var(--color-surface);
+  background: var(--color-selected-surface);
   color: var(--color-accent-strong);
 }
 
@@ -81,7 +81,7 @@ const items = computed(() =>
 }
 
 .ui-tabs :deep([data-slot="trigger"]:hover:not(:disabled)) {
-  background: var(--color-surface);
+  background: var(--color-hover-surface);
   color: var(--color-text);
 }
 

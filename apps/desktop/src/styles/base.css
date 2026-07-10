@@ -64,13 +64,24 @@ button:disabled {
   cursor: not-allowed;
 }
 
+input::placeholder,
+textarea::placeholder {
+  color: var(--color-dimmed);
+  opacity: 1;
+}
+
+::selection {
+  background: var(--color-accent-soft);
+  color: var(--color-text-strong);
+}
+
 button:focus-visible,
 a:focus-visible,
 [tabindex]:focus-visible,
 input:focus-visible,
 textarea:focus-visible,
 select:focus-visible {
-  outline: 2px solid var(--color-accent);
+  outline: 2px solid var(--color-focus-outline);
   outline-offset: 2px;
 }
 
@@ -216,7 +227,7 @@ select:focus-visible {
 .nav-item.active {
   border-color: color-mix(in oklab, var(--color-accent) 38%, var(--color-nav));
   background: color-mix(in oklab, var(--color-accent) 20%, var(--color-nav));
-  color: var(--color-on-accent);
+  color: var(--color-nav-text);
 }
 
 .nav-item.active::before {
@@ -266,13 +277,13 @@ select:focus-visible {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: oklch(0.72 0.13 158);
-  box-shadow: 0 0 0 4px color-mix(in oklab, oklch(0.72 0.13 158) 12%, transparent);
+  background: var(--color-success);
+  box-shadow: 0 0 0 4px color-mix(in oklab, var(--color-success) 16%, transparent);
 }
 
 .status-beacon.attention {
-  background: oklch(0.72 0.15 66);
-  box-shadow: 0 0 0 4px color-mix(in oklab, oklch(0.72 0.15 66) 12%, transparent);
+  background: var(--color-warning);
+  box-shadow: 0 0 0 4px color-mix(in oklab, var(--color-warning) 16%, transparent);
 }
 
 .nav-status > span:last-child {
@@ -699,8 +710,8 @@ select:focus-visible {
 }
 
 .archive-option-grid .ui-checkbox:has([data-state="checked"]) {
-  border-color: rgb(8 127 91 / 28%);
-  background: #eef8f3;
+  border-color: color-mix(in oklab, var(--color-accent) 42%, var(--color-border));
+  background: var(--color-selected-surface);
 }
 
 .archive-single-grid {
@@ -722,9 +733,9 @@ select:focus-visible {
 .settings-error {
   margin: 0;
   padding: var(--space-8) var(--space-12);
-  border: 1px solid rgb(201 42 42 / 24%);
+  border: 1px solid color-mix(in oklab, var(--color-danger) 34%, var(--color-border));
   border-radius: var(--radius-6);
-  background: #fffafa;
+  background: var(--color-danger-soft);
   color: var(--color-danger);
   font-size: var(--font-13);
   line-height: 1.5;
@@ -964,8 +975,8 @@ select:focus-visible {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-8);
   background:
-    linear-gradient(90deg, #eef2ef 12px, transparent 1%) center / 24px 24px,
-    linear-gradient(#eef2ef 12px, transparent 1%) center / 24px 24px,
+    linear-gradient(90deg, var(--color-grid-line) 12px, transparent 1%) center / 24px 24px,
+    linear-gradient(var(--color-grid-line) 12px, transparent 1%) center / 24px 24px,
     var(--color-surface);
   color: var(--color-muted);
   font-weight: 800;

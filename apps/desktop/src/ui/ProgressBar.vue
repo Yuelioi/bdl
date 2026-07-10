@@ -26,7 +26,7 @@ const percent = computed(() => {
   height: 8px;
   overflow: hidden;
   border-radius: 999px;
-  background: #e3e8e5;
+  background: var(--color-progress-track);
 }
 
 .progress-track span {

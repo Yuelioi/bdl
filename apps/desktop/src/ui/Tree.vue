@@ -159,16 +159,16 @@ const handleKeydown = (event: KeyboardEvent, node: FlatTreeNode, index: number) 
 }
 
 .tree-row:focus-visible {
-  outline: 2px solid rgb(8 127 91 / 30%);
+  outline: 2px solid var(--color-focus-outline);
   outline-offset: 2px;
 }
 
 .tree-row.selected {
-  background: #e8f3ee;
+  background: var(--color-accent-soft);
 }
 
 .tree-row.partial {
-  background: #f1f7f4;
+  background: var(--color-hover-surface);
 }
 
 .tree-check {

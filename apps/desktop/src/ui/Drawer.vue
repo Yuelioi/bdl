@@ -11,7 +11,9 @@ defineProps<{
       <aside class="drawer-panel" aria-modal="true" role="dialog" :aria-label="title">
         <header>
           <h2>{{ title }}</h2>
-          <button type="button" aria-label="关闭" @click="model = false">x</button>
+          <button type="button" aria-label="关闭" @click="model = false">
+            <UIcon name="i-tabler-x" aria-hidden="true" />
+          </button>
         </header>
         <div class="drawer-body">
           <slot />
@@ -28,7 +30,7 @@ defineProps<{
   z-index: 30;
   display: flex;
   justify-content: flex-end;
-  background: rgb(23 33 29 / 28%);
+  background: var(--color-backdrop);
 }
 
 .drawer-panel {
@@ -38,8 +40,8 @@ defineProps<{
   display: grid;
   grid-template-rows: 64px 1fr;
   border-left: 1px solid var(--color-border);
-  background: var(--color-surface);
-  box-shadow: -16px 0 40px rgb(23 33 29 / 12%);
+  background: var(--color-surface-raised);
+  box-shadow: var(--shadow-overlay);
 }
 
 header {
@@ -61,8 +63,13 @@ button {
   height: var(--height-button);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-6);
-  background: var(--color-surface);
+  background: var(--color-inset);
   color: var(--color-muted);
+}
+
+button svg {
+  width: 16px;
+  height: 16px;
 }
 
 .drawer-body {

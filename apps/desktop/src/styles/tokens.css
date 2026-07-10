@@ -7,6 +7,7 @@
   --color-background: oklch(0.965 0.007 156);
   --color-surface: oklch(0.992 0.004 156);
   --color-surface-raised: oklch(0.998 0.002 156);
+  --color-inset: oklch(0.982 0.005 156);
   --color-panel: oklch(0.948 0.009 156);
   --color-panel-strong: oklch(0.92 0.014 156);
   --color-border: oklch(0.855 0.014 156);
@@ -14,11 +15,13 @@
   --color-text: oklch(0.245 0.025 156);
   --color-text-strong: oklch(0.17 0.026 156);
   --color-muted: oklch(0.49 0.025 156);
+  --color-text-muted: var(--color-muted);
   --color-dimmed: oklch(0.62 0.02 156);
   --color-accent: oklch(0.49 0.115 158);
   --color-accent-strong: oklch(0.39 0.102 158);
   --color-accent-soft: oklch(0.92 0.035 158);
   --color-accent-faint: oklch(0.965 0.017 158);
+  --color-focus-outline: oklch(0.49 0.115 158);
   --color-on-accent: oklch(0.985 0.004 156);
   --color-danger: oklch(0.54 0.19 27);
   --color-danger-soft: oklch(0.955 0.024 27);
@@ -26,6 +29,13 @@
   --color-warning-soft: oklch(0.96 0.035 78);
   --color-success: oklch(0.51 0.135 143);
   --color-success-soft: oklch(0.955 0.028 143);
+  --color-info: oklch(0.5 0.12 265);
+  --color-info-soft: oklch(0.95 0.025 265);
+  --color-selected-surface: oklch(0.965 0.018 158);
+  --color-hover-surface: oklch(0.975 0.009 156);
+  --color-progress-track: oklch(0.9 0.01 156);
+  --color-grid-line: oklch(0.925 0.008 156);
+  --color-backdrop: oklch(0.16 0.025 156 / 28%);
   --color-nav: oklch(0.205 0.025 156);
   --color-nav-raised: oklch(0.25 0.029 156);
   --color-nav-text: oklch(0.91 0.012 156);
@@ -74,4 +84,48 @@
   --duration-base: 220ms;
   --font-body: "Noto Sans SC Variable", sans-serif;
   --font-display: "Archivo Variable", "Noto Sans SC Variable", sans-serif;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --color-background: oklch(0.155 0.012 156);
+  --color-panel: oklch(0.185 0.014 156);
+  --color-surface: oklch(0.215 0.015 156);
+  --color-inset: oklch(0.17 0.012 156);
+  --color-surface-raised: oklch(0.255 0.017 156);
+  --color-panel-strong: oklch(0.265 0.019 156);
+  --color-border: oklch(0.32 0.018 156);
+  --color-border-strong: oklch(0.43 0.025 156);
+  --color-text: oklch(0.88 0.012 156);
+  --color-text-strong: oklch(0.96 0.008 156);
+  --color-muted: oklch(0.69 0.018 156);
+  --color-dimmed: oklch(0.56 0.018 156);
+  --color-accent: oklch(0.66 0.105 158);
+  --color-accent-strong: oklch(0.78 0.09 158);
+  --color-accent-soft: oklch(0.28 0.045 158);
+  --color-accent-faint: oklch(0.225 0.025 158);
+  --color-focus-outline: oklch(0.78 0.09 158);
+  --color-on-accent: oklch(0.15 0.018 156);
+  --color-danger: oklch(0.7 0.16 27);
+  --color-danger-soft: oklch(0.255 0.048 27);
+  --color-warning: oklch(0.76 0.125 72);
+  --color-warning-soft: oklch(0.27 0.045 72);
+  --color-success: oklch(0.69 0.115 143);
+  --color-success-soft: oklch(0.255 0.042 143);
+  --color-info: oklch(0.72 0.105 265);
+  --color-info-soft: oklch(0.255 0.04 265);
+  --color-selected-surface: oklch(0.265 0.038 158);
+  --color-hover-surface: oklch(0.245 0.019 156);
+  --color-progress-track: oklch(0.29 0.018 156);
+  --color-grid-line: oklch(0.245 0.014 156);
+  --color-backdrop: oklch(0.08 0.012 156 / 66%);
+  --color-nav: oklch(0.125 0.014 156);
+  --color-nav-raised: oklch(0.17 0.018 156);
+  --color-nav-text: oklch(0.9 0.012 156);
+  --color-nav-muted: oklch(0.64 0.018 156);
+
+  --shadow-panel: 0 1px 2px oklch(0.04 0.01 156 / 28%), inset 0 1px oklch(1 0 0 / 3%);
+  --shadow-overlay: 0 22px 60px oklch(0.04 0.01 156 / 56%), inset 0 1px oklch(1 0 0 / 5%);
+  --focus-ring: 0 0 0 3px oklch(0.72 0.1 158 / 32%);
 }

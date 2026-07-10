@@ -3,8 +3,10 @@ import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, r
 
 import { useAccountStore } from './stores/account'
 import { useQueueStore } from './stores/queue'
+import { useThemeStore } from './stores/theme'
 import { useUiStore, type AppTab } from './stores/ui'
 import UiButton from './ui/Button.vue'
+import AppearanceMenu from './ui/AppearanceMenu.vue'
 import UiDialog from './ui/Dialog.vue'
 import UiDrawer from './ui/Drawer.vue'
 import UiIconButton from './ui/IconButton.vue'
@@ -19,6 +21,7 @@ const SettingsPage = defineAsyncComponent(() => import('./pages/SettingsPage.vue
 const ui = useUiStore()
 const account = useAccountStore()
 const queue = useQueueStore()
+const theme = useThemeStore()
 const loginDialogOpen = ref(false)
 const helpDrawerOpen = ref(false)
 const startupRecoveryDialogOpen = ref(false)
@@ -93,7 +96,6 @@ const accountMenuItems = computed(() => {
     [{ label: '退出登录', icon: 'i-tabler-logout', onSelect: signOut }],
   ]
 })
-
 const openLoginDialog = () => {
   loginDialogOpen.value = true
 }
@@ -164,7 +166,10 @@ onMounted(() => {
   window.addEventListener('keydown', handleAppShortcut)
 })
 
-onBeforeUnmount(() => window.removeEventListener('keydown', handleAppShortcut))
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', handleAppShortcut)
+  theme.dispose()
+})
 
 watch(loginDialogOpen, (open) => {
   if (!open) {
@@ -244,6 +249,7 @@ watch(
           <h1>{{ activeTitle }}</h1>
         </div>
         <div class="top-actions">
+          <AppearanceMenu />
           <UiIconButton icon="help" label="帮助" @click="helpDrawerOpen = true" />
           <UDropdownMenu
             :items="accountMenuItems"

@@ -261,4 +261,5 @@ Logs and diagnostics must redact cookies, sensitive headers, and long signed URL
 - Long titles and paths truncate with tooltip or move to inspector.
 - Controls use Nuxt UI/local wrappers and Tabler icons consistently.
 - Theme remains quiet, compact, and task-focused with restrained dark-green accent.
+- The global appearance menu offers system, light, and dark modes. System mode reacts to operating-system changes; explicit choices persist locally. Theme changes affect presentation only and never alter downloader state.
 - Do not add a separate History page unless the product becomes a media library.

@@ -4,17 +4,22 @@ import { createApp } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
 import App from './App.vue'
+import { useThemeStore } from './stores/theme'
 import './styles/nuxt-ui.css'
 import './styles/tokens.css'
 import './styles/base.css'
 
 const app = createApp(App)
+const pinia = createPinia()
 const router = createRouter({
   history: createMemoryHistory(),
-  routes: [],
+  routes: [{ path: '/', component: { render: () => null } }],
 })
 
-app.use(createPinia())
+app.use(pinia)
 app.use(router)
 app.use(ui)
+const theme = useThemeStore(pinia)
+theme.initialize()
+if (import.meta.hot) import.meta.hot.dispose(() => theme.dispose())
 app.mount('#app')

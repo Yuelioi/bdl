@@ -1,8 +1,26 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f1f5f2" />
+    <script>
+      (() => {
+        let stored = null
+        try {
+          stored = localStorage.getItem('bdl.theme')
+        } catch {
+          // Storage may be unavailable in restricted webviews.
+        }
+        const preference = stored === 'light' || stored === 'dark' ? stored : 'system'
+        const theme = preference === 'system'
+          ? (typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+          : preference
+        document.documentElement.dataset.theme = theme
+        document.documentElement.classList.toggle('dark', theme === 'dark')
+        document.documentElement.style.colorScheme = theme
+      })()
+    </script>
     <title>BDL</title>
   </head>
   <body>

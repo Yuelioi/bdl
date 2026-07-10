@@ -44,7 +44,7 @@ const ui = useUiStore()
   border: 1px solid var(--color-border);
   border-radius: var(--radius-8);
   background: var(--color-surface);
-  box-shadow: 0 12px 28px rgb(23 33 29 / 12%);
+  box-shadow: var(--shadow-overlay);
   color: var(--color-text);
   font-size: var(--font-13);
 }
@@ -72,23 +72,23 @@ const ui = useUiStore()
 }
 
 .tone-info {
-  border-color: rgb(8 127 91 / 24%);
-  background: #fbfdfc;
+  border-color: color-mix(in oklab, var(--color-accent) 34%, var(--color-border));
+  background: var(--color-accent-faint);
 }
 
 .tone-success {
-  border-color: rgb(43 138 62 / 24%);
-  background: #f5fbf6;
+  border-color: color-mix(in oklab, var(--color-success) 34%, var(--color-border));
+  background: var(--color-success-soft);
 }
 
 .tone-warning {
-  border-color: rgb(230 119 0 / 28%);
-  background: #fff8ef;
+  border-color: color-mix(in oklab, var(--color-warning) 38%, var(--color-border));
+  background: var(--color-warning-soft);
 }
 
 .tone-danger {
-  border-color: rgb(201 42 42 / 28%);
-  background: #fffafa;
+  border-color: color-mix(in oklab, var(--color-danger) 38%, var(--color-border));
+  background: var(--color-danger-soft);
 }
 
 .toast-close {
