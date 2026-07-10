@@ -7,6 +7,8 @@ import App from './App.vue'
 import { useThemeStore } from './stores/theme'
 import './styles/nuxt-ui.css'
 import './styles/tokens.css'
+import './styles/feedback.css'
+import './styles/forms.css'
 import './styles/base.css'
 
 const app = createApp(App)

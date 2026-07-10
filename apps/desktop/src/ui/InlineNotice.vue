@@ -18,7 +18,7 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <div class="inline-notice" :class="`tone-${props.tone}`" role="status">
+  <div class="inline-notice feedback-tone" :class="`tone-${props.tone}`" role="status">
     <span class="notice-dot" aria-hidden="true"></span>
     <p><slot /></p>
     <UiButton v-if="props.actionLabel" size="compact" variant="secondary" @click="emit('action')">
@@ -35,9 +35,9 @@ const emit = defineEmits<{
   align-items: center;
   gap: var(--space-8);
   padding: var(--space-8) var(--space-12);
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--feedback-border);
   border-radius: var(--radius-6);
-  background: var(--color-panel);
+  background: var(--feedback-background);
   color: var(--color-text);
   font-size: var(--font-12);
   line-height: 1.45;
@@ -47,7 +47,7 @@ const emit = defineEmits<{
   width: 8px;
   height: 8px;
   border-radius: 999px;
-  background: var(--color-accent);
+  background: var(--feedback-accent);
 }
 
 .inline-notice p {
@@ -56,30 +56,4 @@ const emit = defineEmits<{
   overflow-wrap: anywhere;
 }
 
-.tone-success {
-  border-color: color-mix(in oklab, var(--color-success) 34%, var(--color-border));
-  background: var(--color-success-soft);
-}
-
-.tone-success .notice-dot {
-  background: var(--color-success);
-}
-
-.tone-warning {
-  border-color: color-mix(in oklab, var(--color-warning) 38%, var(--color-border));
-  background: var(--color-warning-soft);
-}
-
-.tone-warning .notice-dot {
-  background: var(--color-warning);
-}
-
-.tone-danger {
-  border-color: color-mix(in oklab, var(--color-danger) 34%, var(--color-border));
-  background: var(--color-danger-soft);
-}
-
-.tone-danger .notice-dot {
-  background: var(--color-danger);
-}
 </style>

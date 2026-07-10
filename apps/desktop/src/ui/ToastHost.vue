@@ -7,7 +7,7 @@ const ui = useUiStore()
 <template>
   <Teleport to="body">
     <div class="toast-host" aria-live="polite" aria-atomic="false">
-      <div v-for="toast in ui.toasts" :key="toast.id" class="toast" :class="`tone-${toast.tone}`">
+      <div v-for="toast in ui.toasts" :key="toast.id" class="toast feedback-tone" :class="`tone-${toast.tone}`">
         <span>{{ toast.message }}</span>
         <button
           v-if="toast.action"
@@ -41,9 +41,9 @@ const ui = useUiStore()
   gap: var(--space-8);
   min-height: 44px;
   padding: var(--space-8) var(--space-12);
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--feedback-border);
   border-radius: var(--radius-8);
-  background: var(--color-surface);
+  background: var(--feedback-background);
   box-shadow: var(--shadow-overlay);
   color: var(--color-text);
   font-size: var(--font-13);
@@ -69,26 +69,6 @@ const ui = useUiStore()
   color: var(--color-accent-strong) !important;
   font-weight: 700;
   white-space: nowrap;
-}
-
-.tone-info {
-  border-color: color-mix(in oklab, var(--color-accent) 34%, var(--color-border));
-  background: var(--color-accent-faint);
-}
-
-.tone-success {
-  border-color: color-mix(in oklab, var(--color-success) 34%, var(--color-border));
-  background: var(--color-success-soft);
-}
-
-.tone-warning {
-  border-color: color-mix(in oklab, var(--color-warning) 38%, var(--color-border));
-  background: var(--color-warning-soft);
-}
-
-.tone-danger {
-  border-color: color-mix(in oklab, var(--color-danger) 38%, var(--color-border));
-  background: var(--color-danger-soft);
 }
 
 .toast-close {

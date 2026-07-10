@@ -17,6 +17,7 @@ const { type = 'text', disabled = false, error, helper, min } = defineProps<{
 <template>
   <UiFormField v-slot="{ fieldId, describedBy, invalid }" :label :error :helper>
     <input
+      class="ui-native-control input-control"
       :id="fieldId"
       v-model="model"
       :type
@@ -28,26 +29,3 @@ const { type = 'text', disabled = false, error, helper, min } = defineProps<{
     />
   </UiFormField>
 </template>
-
-<style scoped>
-input {
-  width: 100%;
-  height: var(--height-input);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-6);
-  background: var(--color-inset);
-  color: var(--color-text);
-  padding: 0 var(--space-12);
-  font-size: var(--font-14);
-}
-
-input:focus {
-  border-color: var(--color-accent);
-  outline: 0;
-  box-shadow: inset 0 0 0 1px var(--color-focus-outline);
-}
-
-input:disabled {
-  background: var(--color-panel);
-}
-</style>

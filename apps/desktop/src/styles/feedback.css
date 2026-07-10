@@ -1,0 +1,29 @@
+.feedback-tone {
+  --feedback-border: color-mix(in oklab, var(--color-accent) 34%, var(--color-border));
+  --feedback-background: var(--color-accent-faint);
+  --feedback-accent: var(--color-accent-strong);
+}
+
+.feedback-tone.tone-normal {
+  --feedback-border: var(--color-border);
+  --feedback-background: var(--color-panel);
+  --feedback-accent: var(--color-muted);
+}
+
+.feedback-tone.tone-success {
+  --feedback-border: color-mix(in oklab, var(--color-success) 34%, var(--color-border));
+  --feedback-background: var(--color-success-soft);
+  --feedback-accent: var(--color-success);
+}
+
+.feedback-tone.tone-warning {
+  --feedback-border: color-mix(in oklab, var(--color-warning) 38%, var(--color-border));
+  --feedback-background: var(--color-warning-soft);
+  --feedback-accent: var(--color-warning);
+}
+
+.feedback-tone.tone-danger {
+  --feedback-border: color-mix(in oklab, var(--color-danger) 34%, var(--color-border));
+  --feedback-background: var(--color-danger-soft);
+  --feedback-accent: var(--color-danger);
+}

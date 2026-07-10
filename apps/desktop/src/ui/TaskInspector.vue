@@ -12,7 +12,10 @@ import {
   statusLabel,
 } from '../stores/transferView'
 import UiButton from './Button.vue'
+import UiDefinitionList from './DefinitionList.vue'
+import UiEmptyState from './EmptyState.vue'
 import UiInlineNotice from './InlineNotice.vue'
+import UiSectionToolbar from './SectionToolbar.vue'
 import UiStatusBadge from './StatusBadge.vue'
 import UiTabs from './Tabs.vue'
 
@@ -50,6 +53,15 @@ const completedTrackCount = computed(
   () => task?.resources.filter((resource) => resource.status === 'completed').length ?? 0,
 )
 const outputDirectory = computed(() => outputDir(task?.output_path ?? null))
+const diagnosticFacts = computed(() => [
+  { label: '影响范围', value: diagnostic.value?.impact ?? '--' },
+  { label: '输出位置', value: outputDirectory.value },
+])
+const overviewFacts = computed(() => [
+  { label: '保存目录', value: outputDirectory.value },
+  { label: '输出文件', value: task?.output_path ?? '--' },
+  { label: '任务 ID', value: task?.id ?? '--' },
+])
 const redactedLogs = computed(() =>
   logs.map((log) => ({
     ...log,
@@ -208,21 +220,12 @@ const errorMessage = (error: unknown): string => {
       <UiTabs :model-value="selectedTab" :tabs="tabs" @update:model-value="setTab" />
 
       <section v-if="selectedTab === 'diagnosis'" class="tab-panel diagnosis-panel">
-        <div class="diagnosis-block" :class="`tone-${diagnostic.tone}`">
+        <div class="diagnosis-block feedback-tone" :class="`tone-${diagnostic.tone}`">
           <span>{{ statusLabel(task.status) }}</span>
           <h3>{{ diagnostic.summary }}</h3>
           <p>{{ diagnostic.detail }}</p>
         </div>
-        <dl class="diagnosis-facts">
-          <div>
-            <dt>影响范围</dt>
-            <dd>{{ diagnostic.impact }}</dd>
-          </div>
-          <div>
-            <dt>输出位置</dt>
-            <dd>{{ outputDirectory }}</dd>
-          </div>
-        </dl>
+        <UiDefinitionList :items="diagnosticFacts" />
         <div class="diagnosis-actions">
           <UiButton variant="secondary" @click="copyDiagnostics">
             {{ copied ? '已复制' : '复制诊断信息' }}
@@ -249,20 +252,7 @@ const errorMessage = (error: unknown): string => {
             <span>失败轨道</span>
           </div>
         </div>
-        <dl class="overview-list">
-          <div>
-            <dt>保存目录</dt>
-            <dd>{{ outputDirectory }}</dd>
-          </div>
-          <div>
-            <dt>输出文件</dt>
-            <dd>{{ task.output_path }}</dd>
-          </div>
-          <div>
-            <dt>任务 ID</dt>
-            <dd>{{ task.id }}</dd>
-          </div>
-        </dl>
+        <UiDefinitionList :items="overviewFacts" />
       </section>
 
       <section v-else-if="selectedTab === 'tracks'" class="tab-panel tracks-panel">
@@ -285,12 +275,13 @@ const errorMessage = (error: unknown): string => {
       </section>
 
       <section v-else-if="selectedTab === 'events'" class="tab-panel events-panel">
-        <div class="events-toolbar">
-          <span>{{ timeline.length }} 条事件</span>
-          <UiButton variant="ghost" :disabled="logsLoading" @click="emit('refreshLogs')">刷新</UiButton>
-        </div>
+        <UiSectionToolbar :label="`${timeline.length} 条事件`">
+          <template #actions>
+            <UiButton variant="ghost" :disabled="logsLoading" @click="emit('refreshLogs')">刷新</UiButton>
+          </template>
+        </UiSectionToolbar>
         <div class="event-list">
-          <div v-for="event in timeline" :key="event.id" class="event-row" :class="`tone-${event.tone}`">
+          <div v-for="event in timeline" :key="event.id" class="event-row feedback-tone" :class="`tone-${event.tone}`">
             <time>{{ formatEventTime(event.time) }}</time>
             <div>
               <strong>{{ event.title }}</strong>
@@ -301,28 +292,27 @@ const errorMessage = (error: unknown): string => {
       </section>
 
       <section v-else class="tab-panel raw-panel">
-        <div class="logs-toolbar">
-          <span>{{ redactedLogs.length }} 条原始日志</span>
-          <div>
+        <UiSectionToolbar :label="`${redactedLogs.length} 条原始日志`">
+          <template #actions>
             <UiButton variant="ghost" @click="copyDiagnostics">{{ copied ? '已复制' : '复制诊断信息' }}</UiButton>
             <UiButton variant="ghost" :disabled="exportingDiagnostics" @click="exportDiagnostics">
               {{ exportingDiagnostics ? '导出中' : '导出诊断' }}
             </UiButton>
             <UiButton variant="ghost" :disabled="logsLoading" @click="emit('refreshLogs')">刷新</UiButton>
-          </div>
-        </div>
+          </template>
+        </UiSectionToolbar>
         <div class="log-list">
           <UiInlineNotice v-if="exportNotice" tone="success">{{ exportNotice }}</UiInlineNotice>
           <div v-for="log in redactedLogs" :key="`${log.created_at}-${log.message}`" class="log-row">
             <span :class="`level-${log.level}`">{{ log.level }}</span>
             <p>{{ log.message }}</p>
           </div>
-          <div v-if="logsLoading && !redactedLogs.length" class="empty-state compact">日志加载中</div>
-          <div v-else-if="!redactedLogs.length" class="empty-state compact">暂无日志</div>
+          <UiEmptyState v-if="logsLoading && !redactedLogs.length" class="inspector-empty" title="日志加载中" layout="stacked" compact />
+          <UiEmptyState v-else-if="!redactedLogs.length" class="inspector-empty" title="暂无日志" layout="stacked" compact />
         </div>
       </section>
     </template>
-    <div v-else class="empty-state">未选择任务</div>
+    <UiEmptyState v-else title="未选择任务" layout="stacked" compact />
   </div>
 </template>
 
@@ -357,13 +347,13 @@ const errorMessage = (error: unknown): string => {
   display: grid;
   gap: var(--space-6, 6px);
   padding: var(--space-12);
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--feedback-border);
   border-radius: var(--radius-8);
-  background: var(--color-panel);
+  background: var(--feedback-background);
 }
 
 .diagnosis-block span {
-  color: var(--color-muted);
+  color: var(--feedback-accent);
   font-size: var(--font-12);
   font-weight: 700;
 }
@@ -385,56 +375,10 @@ const errorMessage = (error: unknown): string => {
   line-height: 1.55;
 }
 
-.diagnosis-block.tone-danger {
-  border-color: color-mix(in oklab, var(--color-danger) 34%, var(--color-border));
-  background: var(--color-danger-soft);
-}
-
-.diagnosis-block.tone-danger span {
-  color: var(--color-danger);
-}
-
-.diagnosis-block.tone-success {
-  border-color: color-mix(in oklab, var(--color-success) 30%, var(--color-border));
-  background: var(--color-success-soft);
-}
-
-.diagnosis-facts,
-.overview-list {
-  display: grid;
-  gap: var(--space-12);
-}
-
 .diagnosis-actions {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-8);
-}
-
-.diagnosis-facts div,
-.overview-list div {
-  min-width: 0;
-  display: grid;
-  gap: var(--space-4);
-}
-
-.diagnosis-facts dt,
-.overview-list dt,
-.events-toolbar span,
-.logs-toolbar span {
-  color: var(--color-muted);
-  font-size: var(--font-12);
-  font-weight: 700;
-}
-
-.diagnosis-facts dd,
-.overview-list dd {
-  margin: 0;
-  min-width: 0;
-  overflow-wrap: anywhere;
-  color: var(--color-text);
-  font-size: var(--font-12);
-  line-height: 1.55;
 }
 
 .overview-strip {
@@ -532,40 +476,15 @@ const errorMessage = (error: unknown): string => {
   grid-template-rows: auto minmax(0, 1fr);
 }
 
-.events-toolbar,
-.logs-toolbar {
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-8);
-}
-
-.logs-toolbar > div {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-4);
-}
-
 .event-row {
   min-width: 0;
   display: grid;
   grid-template-columns: 42px minmax(0, 1fr);
   gap: var(--space-8);
   padding: var(--space-8);
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--feedback-border);
   border-radius: var(--radius-6);
-  background: var(--color-panel);
-}
-
-.event-row.tone-danger {
-  border-color: color-mix(in oklab, var(--color-danger) 34%, var(--color-border));
-  background: var(--color-danger-soft);
-}
-
-.event-row.tone-warning {
-  border-color: color-mix(in oklab, var(--color-warning) 38%, var(--color-border));
-  background: var(--color-warning-soft);
+  background: var(--feedback-background);
 }
 
 .event-row time {
@@ -630,18 +549,7 @@ const errorMessage = (error: unknown): string => {
   line-height: 1.5;
 }
 
-.empty-state {
-  min-height: 120px;
-  display: grid;
-  place-items: center;
-  border: 1px dashed var(--color-border);
-  border-radius: var(--radius-8);
-  background: var(--color-panel);
-  color: var(--color-muted);
-  font-size: var(--font-12);
-}
-
-.empty-state.compact {
+.inspector-empty {
   min-height: 72px;
 }
 
