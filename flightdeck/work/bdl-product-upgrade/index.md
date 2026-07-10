@@ -2,36 +2,41 @@
 
 ## State
 
-The project-wide product and UI upgrade is active. Existing downloader flows work, but the current feature depth, interaction quality, visual language, and open-source presentation need a full audit before implementation.
+Audit and targeted external research are complete. The Quiet Control Room direction and staged execution plan are settled; Stage 1 implementation is next.
 
 ## Next
 
-Audit the current Rust/Tauri/Vue product, research mature desktop task-manager patterns, and write the staged upgrade plan before changing production UI.
+Implement Stage 1: product tokens, bundled typography, adaptive application shell, keyboard navigation, and bundle splitting.
 
 ## Read now
 
-- ../../../knowledge/bdl-downloader/architecture.md
-- ../../../knowledge/bdl-downloader/product-flow.md
+- ../../knowledge/bdl-downloader/architecture.md
+- ../../knowledge/bdl-downloader/product-flow.md
+- ../../knowledge/bdl-downloader/design-system.md
+- design.md
+- plan.md
 - legacy-ui-followups.md
 
 ## Read if
 
-- design.md — after the audit settles the new product and visual direction
-- plan.md — once implementation begins
+- legacy-ui-followups.md — if a staged change intersects an older backlog item
 
 ## Progress
 
 Done:
 - Loaded the existing design context and durable BDL architecture/product-flow constraints.
 - Migrated the old standalone UI follow-up backlog into this topic package.
+- Audited the Rust/Tauri/Vue product, frontend structure, repository surface, and baseline build.
+- Researched official desktop navigation, data-table, accessibility, and reduced-motion guidance plus mature open-source download managers.
+- Settled the Quiet Control Room design direction and four-stage execution plan.
 
 Current:
-- Repository, product-flow, UI-system, and feature-gap audit.
+- Stage 1 product-foundation implementation.
 
 Verified:
 - Git was clean on `main` at preflight.
+- `pnpm run build` passes before implementation; the initial JS chunk is about 590 KB and triggers Vite's chunk-size warning.
 
 ## Open questions
 
-- Which improvements deliver the strongest first release without destabilizing the downloader core?
-
+- Which license should the maintainer choose before public release?
