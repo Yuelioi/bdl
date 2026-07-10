@@ -90,7 +90,7 @@ export const createTransferTaskView = (
     id: task.id,
     displayTitle: titleParts.displayTitle,
     subtitle: titleParts.subtitle,
-    statusLabel: completedWithWarnings ? '已完成 · 部分失败' : scheduled ? '已定时' : statusLabel(task.status),
+    statusLabel: completedWithWarnings ? '部分失败' : scheduled ? '已定时' : statusLabel(task.status),
     statusBadge: completedWithWarnings ? 'warning' : statusBadge(task.status),
     progressValue: progress,
     progressLabel: `${progress}%`,

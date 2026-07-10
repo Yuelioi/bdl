@@ -59,6 +59,35 @@ describe('scheduled transfer task view', () => {
 })
 
 describe('completed transfer task warnings', () => {
+  it('uses a compact status label when optional resources fail', () => {
+    const task = scheduledTask()
+    task.status = 'completed'
+    task.scheduled_at = null
+    task.resources = [
+      {
+        id: 'resource:cover',
+        kind: 'asset',
+        intent: 'cover',
+        current_urls: [],
+        headers: [],
+        status: 'failed',
+        target_path: 'downloads/cover.jpg',
+        temp_path: 'downloads/cover.jpg.part',
+      },
+    ]
+
+    const view = createTransferTaskView(task, 100, [
+      {
+        task_id: task.id,
+        level: 'warning',
+        message: '附加内容失败',
+        created_at: '2026-07-10T12:01:00Z',
+      },
+    ])
+
+    expect(view.statusLabel).toBe('部分失败')
+  })
+
   it('does not present historical pause logs as an archive warning', () => {
     const task = scheduledTask()
     task.status = 'completed'
