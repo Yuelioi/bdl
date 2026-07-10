@@ -89,6 +89,7 @@ Verified:
 - Added a local, intentionally uncommitted `bpi-rs` compatibility patch that models negative `last_play_time` / `last_play_cid` sentinels as `i64` across both play-url and player-info responses, preserving upstream semantics instead of coercing them to zero.
 - Restored custom-title-bar dragging by granting Tauri's `start-dragging` capability and verified a real window-coordinate move; simplified light mode to white chrome with pink used only as a signal color.
 - Removed pink contamination from structural neutrals in both themes: light mode now uses clean whites/cool grays and dark mode uses a five-step charcoal ladder, with pink retained as the only brand accent.
+- Fixed completed tasks inheriting warning status from historical pause/resume logs, added raw-deflate compatibility for Bilibili XML danmaku downloads, and polished clipped field focus plus task-row action borders. Replayed the persisted failed danmaku task through the real desktop UI and verified it completed cleanly.
 
 ## Open questions
 

@@ -119,6 +119,8 @@ Final output must exist and be non-empty before the task is marked completed.
 
 Successful muxing is a commit point. Muxing/completed tasks ignore late pause or cancel transitions, completion is persisted before optional raw-stream cleanup, and post-processing errors must not downgrade a valid final output. For older interrupted tasks, a non-empty final output plus completed-but-cleaned media resources is sufficient to reconcile the task to completed instead of attempting another mux with missing inputs.
 
+The generic fetcher disables Reqwest's automatic `deflate` decoder and handles `Content-Encoding: deflate` itself, accepting both zlib-wrapped and raw-deflate bodies. Bilibili's legacy XML danmaku endpoint advertises `deflate` while returning raw-deflate through some CDN paths; decoding must preserve cancellation, wire-byte progress, and final decoded XML output.
+
 ## Persistence
 
 SQLite persists tasks, resources, completed transfer records, task logs, and account summaries. Settings are JSON. Cookies are stored in the OS credential store, not SQLite or settings JSON.

@@ -83,8 +83,8 @@ input {
 
 input:focus {
   border-color: var(--color-accent);
-  outline: 2px solid var(--color-focus-outline);
-  outline-offset: 0;
+  outline: 0;
+  box-shadow: inset 0 0 0 1px var(--color-focus-outline);
 }
 
 input:disabled {

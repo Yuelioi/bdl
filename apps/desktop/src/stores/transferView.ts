@@ -172,7 +172,7 @@ export const createTaskDiagnosticView = (task: DownloadTask, logs: QueueLogEntry
     ? ` · 限速 ${formatSpeedLimit(task.speed_limit_bytes_per_second)}`
     : ''
   const trackImpact = `轨道 ${task.resources.length} 个 · 已完成 ${completedCount} · 失败 ${failedCount}${taskLimit}`
-  const warningLogs = logs.filter((log) => log.level === 'warning')
+  const warningLogs = completionWarningLogs(logs)
 
   if (isScheduledTask(task)) {
     return {
@@ -403,7 +403,7 @@ const classifyTaskIssue = (task: DownloadTask, logs: QueueLogEntry[]): Classifie
     }
   }
 
-  const warningLogs = logs.filter((log) => log.level === 'warning')
+  const warningLogs = completionWarningLogs(logs)
   if (task.status === 'completed' && warningLogs.length > 0) {
     return {
       label: '归档有警告',
@@ -537,7 +537,16 @@ const classifyTaskIssue = (task: DownloadTask, logs: QueueLogEntry[]): Classifie
   }
 }
 
-const hasWarningLogs = (logs: QueueLogEntry[]): boolean => logs.some((log) => log.level === 'warning')
+const transientWarningMessages = new Set([
+  '任务已停止',
+  '任务已暂停或取消',
+  '自动刷新过期链接',
+])
+
+const completionWarningLogs = (logs: QueueLogEntry[]): QueueLogEntry[] =>
+  logs.filter((log) => log.level === 'warning' && !transientWarningMessages.has(log.message.trim()))
+
+const hasWarningLogs = (logs: QueueLogEntry[]): boolean => completionWarningLogs(logs).length > 0
 
 const primaryActionForTask = (task: DownloadTask, issue: ClassifiedIssue): TaskActionKind => {
   if (isScheduledTask(task)) {

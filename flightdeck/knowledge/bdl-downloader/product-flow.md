@@ -159,6 +159,7 @@ Transfer controls:
 - row actions are state-specific
 - details open in a modal inspector
 - bulk actions support pause, cancel, resume, retry, refresh links and retry, remove, clear completed
+- A completed task only shows `有警告` for completion or archive warnings. Historical control-flow notices such as pause, cancel, and automatic URL refresh remain in the timeline but do not contaminate the final status.
 - list sorting supports default, name, progress, speed, and issue priority
 - completed records support search by title, source, or output path
 
@@ -274,6 +275,7 @@ Logs and diagnostics must redact cookies, sensitive headers, and long signed URL
 - No page-level horizontal scrolling at 1100px wide.
 - Long titles and paths truncate with tooltip or move to inspector.
 - Controls use Nuxt UI/local wrappers and Tabler icons consistently.
+- Compact task-row actions use one border treatment: secondary icon actions remain borderless inside the row, and focus indicators render inside clipped scroll regions so no edge is cut off.
 - Theme remains quiet, compact, and task-focused. Both modes use achromatic cool-neutral structure: clean white/gray chrome in light mode and a charcoal surface ladder in dark mode. Bilibili pink is the sole brand accent; other hues appear only for semantic warning, danger, and success states.
 - The desktop uses a frameless Tauri window with one custom title bar containing appearance, account, minimize, maximize/restore, and close controls.
 - The global appearance menu offers system, light, and dark modes. System mode reacts to operating-system changes; explicit choices persist locally. Theme changes affect presentation only and never alter downloader state.

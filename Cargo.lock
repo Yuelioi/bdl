@@ -284,6 +284,7 @@ dependencies = [
  "bpi-rs",
  "bytes",
  "chrono",
+ "flate2",
  "futures",
  "qrcode",
  "reqwest 0.12.28",

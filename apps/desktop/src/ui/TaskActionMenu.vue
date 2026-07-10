@@ -60,7 +60,7 @@ const tablerIcon = (icon: string): string => {
       class="primary-action"
       :icon="view.primaryActionIcon"
       :label="view.primaryActionLabel"
-      variant="secondary"
+      variant="ghost"
       :disabled
       @click.stop="runPrimary"
     />

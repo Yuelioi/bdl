@@ -1,4 +1,5 @@
 use std::ffi::OsString;
+use std::io::Read as _;
 use std::path::{Path, PathBuf};
 use std::sync::{
     Arc,
@@ -6,9 +7,11 @@ use std::sync::{
 };
 
 use async_trait::async_trait;
+use flate2::read::{DeflateDecoder, ZlibDecoder};
 use futures::{StreamExt, future::try_join_all};
 use reqwest::header::{
-    CONTENT_LENGTH, ETAG, HeaderMap, HeaderName, HeaderValue, LAST_MODIFIED, RANGE,
+    CONTENT_ENCODING, CONTENT_LENGTH, ETAG, HeaderMap, HeaderName, HeaderValue, LAST_MODIFIED,
+    RANGE,
 };
 use reqwest::{Client, Proxy, StatusCode};
 use serde::{Deserialize, Serialize};
@@ -185,6 +188,7 @@ struct RemoteResourceMetadata {
     total_bytes: Option<u64>,
     etag: Option<String>,
     last_modified: Option<String>,
+    content_encoding: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -254,6 +258,7 @@ impl ReqwestFetcher {
         }
 
         let client = client
+            .no_deflate()
             .build()
             .map_err(|error| fetch_error(format!("创建下载客户端失败: {error}")))?;
 
@@ -346,7 +351,13 @@ impl ReqwestFetcher {
             .resource_metadata(url, headers.clone(), &cancel_token)
             .await?;
         ensure_not_cancelled(&cancel_token)?;
-        let resume_from = resume_offset(&resource.temp_path, &metadata).await?;
+        let resume_from = if metadata.content_encoding.as_deref() == Some("deflate") {
+            remove_if_exists(&resource.temp_path).await?;
+            remove_if_exists(&state_path_for(&resource.temp_path)).await?;
+            0
+        } else {
+            resume_offset(&resource.temp_path, &metadata).await?
+        };
         if should_fetch_segmented(&metadata, resume_from, self.config.segment_count) {
             return self
                 .fetch_segmented(resource, url, headers, metadata, progress, cancel_token)
@@ -366,6 +377,12 @@ impl ReqwestFetcher {
         };
 
         validate_get_status(response.status(), resume_from)?;
+
+        if response_uses_deflate(&response, &metadata) {
+            return self
+                .fetch_deflate_response(resource, response, metadata, progress, cancel_token)
+                .await;
+        }
 
         let mut file = OpenOptions::new()
             .create(true)
@@ -416,6 +433,53 @@ impl ReqwestFetcher {
 
         Ok(FetchOutcome {
             bytes_written: downloaded_bytes,
+            target_path: resource.target_path.clone(),
+        })
+    }
+
+    async fn fetch_deflate_response(
+        &self,
+        resource: &DownloadResource,
+        response: reqwest::Response,
+        metadata: RemoteResourceMetadata,
+        progress: Option<ProgressSender>,
+        cancel_token: FetchCancelToken,
+    ) -> BdlResult<FetchOutcome> {
+        let mut encoded = Vec::new();
+        let mut downloaded_bytes = 0_u64;
+        let mut stream = response.bytes_stream();
+        loop {
+            let chunk = tokio::select! {
+                _ = cancel_token.cancelled() => return Err(cancelled_error()),
+                chunk = stream.next() => chunk,
+            };
+            let Some(chunk) = chunk else { break };
+            let chunk = chunk.map_err(|error| fetch_error(format!("读取压缩响应失败: {error}")))?;
+            self.wait_for_bandwidth(chunk.len() as u64, &cancel_token)
+                .await?;
+            encoded.extend_from_slice(&chunk);
+            downloaded_bytes += chunk.len() as u64;
+            send_progress(&progress, resource, metadata.total_bytes, downloaded_bytes);
+        }
+
+        if let Some(total_bytes) = metadata.total_bytes
+            && downloaded_bytes != total_bytes
+        {
+            return Err(fetch_error(format!(
+                "下载长度不完整: expected {total_bytes}, got {downloaded_bytes}"
+            )));
+        }
+
+        let decoded = decode_deflate_body(&encoded)?;
+        fs::write(&resource.temp_path, &decoded).await?;
+        if resource.target_path.exists() {
+            fs::remove_file(&resource.target_path).await?;
+        }
+        fs::rename(&resource.temp_path, &resource.target_path).await?;
+        remove_if_exists(&state_path_for(&resource.temp_path)).await?;
+
+        Ok(FetchOutcome {
+            bytes_written: decoded.len() as u64,
             target_path: resource.target_path.clone(),
         })
     }
@@ -640,6 +704,8 @@ impl ReqwestFetcher {
             total_bytes,
             etag: header_to_string(headers, ETAG)?,
             last_modified: header_to_string(headers, LAST_MODIFIED)?,
+            content_encoding: header_to_string(headers, CONTENT_ENCODING)?
+                .map(|value| value.to_ascii_lowercase()),
         })
     }
 }
@@ -708,11 +774,37 @@ fn should_fetch_segmented(
     resume_from: u64,
     segment_count: usize,
 ) -> bool {
-    resume_from == 0
+    metadata.content_encoding.is_none()
+        && resume_from == 0
         && segment_count > 1
         && metadata
             .total_bytes
             .is_some_and(|total_bytes| total_bytes > 1)
+}
+
+fn response_uses_deflate(response: &reqwest::Response, metadata: &RemoteResourceMetadata) -> bool {
+    metadata.content_encoding.as_deref() == Some("deflate")
+        || response
+            .headers()
+            .get(CONTENT_ENCODING)
+            .and_then(|value| value.to_str().ok())
+            .is_some_and(|value| value.eq_ignore_ascii_case("deflate"))
+}
+
+fn decode_deflate_body(encoded: &[u8]) -> BdlResult<Vec<u8>> {
+    let mut zlib_decoded = Vec::new();
+    if ZlibDecoder::new(encoded)
+        .read_to_end(&mut zlib_decoded)
+        .is_ok()
+    {
+        return Ok(zlib_decoded);
+    }
+
+    let mut raw_decoded = Vec::new();
+    DeflateDecoder::new(encoded)
+        .read_to_end(&mut raw_decoded)
+        .map_err(|error| fetch_error(format!("解压 deflate 响应失败: {error}")))?;
+    Ok(raw_decoded)
 }
 
 async fn segmented_resume_is_valid(

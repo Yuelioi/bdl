@@ -57,3 +57,34 @@ describe('scheduled transfer task view', () => {
     expect(diagnostic.impact).toContain('限速 2 MiB/s')
   })
 })
+
+describe('completed transfer task warnings', () => {
+  it('does not present historical pause logs as an archive warning', () => {
+    const task = scheduledTask()
+    task.status = 'completed'
+    task.scheduled_at = null
+    const logs = [
+      {
+        task_id: task.id,
+        level: 'warning' as const,
+        message: '任务已暂停或取消',
+        created_at: '2026-07-10T12:00:00Z',
+      },
+      {
+        task_id: task.id,
+        level: 'info' as const,
+        message: '下载完成',
+        created_at: '2026-07-10T12:01:00Z',
+      },
+    ]
+
+    const view = createTransferTaskView(task, 100, logs)
+    const diagnostic = createTaskDiagnosticView(task, logs)
+
+    expect(view.statusLabel).toBe('已完成')
+    expect(view.statusBadge).toBe('done')
+    expect(view.issueLabel).toBe('-')
+    expect(diagnostic.summary).toBe('任务已完成')
+    expect(diagnostic.tone).toBe('success')
+  })
+})

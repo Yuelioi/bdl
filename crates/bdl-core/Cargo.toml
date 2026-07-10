@@ -12,6 +12,7 @@ bpi-rs.workspace = true
 bytes.workspace = true
 chrono.workspace = true
 futures.workspace = true
+flate2.workspace = true
 qrcode.workspace = true
 reqwest.workspace = true
 rusqlite.workspace = true

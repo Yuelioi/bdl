@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -11,6 +12,8 @@ use bdl_core::model::HeaderPair;
 use bdl_core::queue::{
     DownloadResource, DownloadResourceIntent, DownloadResourceKind, ResourceStatus,
 };
+use flate2::Compression;
+use flate2::write::DeflateEncoder;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Mutex;
@@ -56,6 +59,31 @@ async fn fetcher_downloads_full_resource_and_sends_headers() {
         headers.get("cookie").map(String::as_str),
         Some("SESSDATA=test")
     );
+}
+
+#[tokio::test]
+async fn fetcher_downloads_raw_deflate_response() {
+    let xml = br#"<?xml version="1.0" encoding="UTF-8"?><i><chatid>39092555045</chatid></i>"#;
+    let mut encoder = DeflateEncoder::new(Vec::new(), Compression::default());
+    encoder.write_all(xml).unwrap();
+    let compressed = encoder.finish().unwrap();
+    let server = TestServer::spawn_encoded(compressed, "deflate").await;
+    let dir = temp_case_dir("raw-deflate").await;
+    let mut resource = resource(server.url(), &dir, "danmaku.xml");
+    resource.kind = DownloadResourceKind::Asset;
+    resource.intent = DownloadResourceIntent::Danmaku;
+    let fetcher = ReqwestFetcher::with_config(FetchConfig {
+        max_retries: 0,
+        ..FetchConfig::default()
+    })
+    .expect("fetcher should be created");
+
+    fetcher
+        .fetch(&resource, None)
+        .await
+        .expect("raw-deflate danmaku should download");
+
+    assert_eq!(tokio::fs::read(&resource.target_path).await.unwrap(), xml);
 }
 
 #[tokio::test]
@@ -486,11 +514,16 @@ struct TestServerState {
     headers: Mutex<Vec<HashMap<String, String>>>,
     etag: Option<String>,
     last_modified: Option<String>,
+    content_encoding: Option<String>,
 }
 
 impl TestServer {
     async fn spawn(data: Vec<u8>, fail_gets: usize) -> Self {
-        Self::spawn_with_validators(data, fail_gets, None, None).await
+        Self::spawn_with_options(data, fail_gets, None, None, None).await
+    }
+
+    async fn spawn_encoded(data: Vec<u8>, content_encoding: &str) -> Self {
+        Self::spawn_with_options(data, 0, None, None, Some(content_encoding)).await
     }
 
     async fn spawn_with_validators(
@@ -498,6 +531,16 @@ impl TestServer {
         fail_gets: usize,
         etag: Option<&str>,
         last_modified: Option<&str>,
+    ) -> Self {
+        Self::spawn_with_options(data, fail_gets, etag, last_modified, None).await
+    }
+
+    async fn spawn_with_options(
+        data: Vec<u8>,
+        fail_gets: usize,
+        etag: Option<&str>,
+        last_modified: Option<&str>,
+        content_encoding: Option<&str>,
     ) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
@@ -509,6 +552,7 @@ impl TestServer {
             headers: Mutex::new(Vec::new()),
             etag: etag.map(str::to_owned),
             last_modified: last_modified.map(str::to_owned),
+            content_encoding: content_encoding.map(str::to_owned),
         });
         let server_state = state.clone();
 
@@ -657,6 +701,9 @@ fn response_headers(state: &TestServerState, content_length: usize) -> Vec<(&'st
     }
     if let Some(last_modified) = &state.last_modified {
         headers.push(("Last-Modified", last_modified.clone()));
+    }
+    if let Some(content_encoding) = &state.content_encoding {
+        headers.push(("Content-Encoding", content_encoding.clone()));
     }
 
     headers
