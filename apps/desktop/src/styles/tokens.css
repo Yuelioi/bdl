@@ -31,15 +31,15 @@
   --color-success-soft: oklch(0.955 0.028 143);
   --color-info: oklch(0.5 0.12 265);
   --color-info-soft: oklch(0.95 0.025 265);
-  --color-selected-surface: oklch(0.95 0.035 8);
-  --color-hover-surface: oklch(0.975 0.012 8);
+  --color-selected-surface: oklch(0.968 0.02 8);
+  --color-hover-surface: oklch(0.976 0.008 8);
   --color-progress-track: oklch(0.9 0.014 8);
   --color-grid-line: oklch(0.925 0.01 8);
   --color-backdrop: oklch(0.16 0.028 8 / 28%);
-  --color-nav: oklch(0.2 0.025 8);
-  --color-nav-raised: oklch(0.245 0.035 8);
-  --color-nav-text: oklch(0.92 0.014 8);
-  --color-nav-muted: oklch(0.7 0.025 8);
+  --color-nav: oklch(0.988 0.004 8);
+  --color-nav-raised: oklch(0.955 0.012 8);
+  --color-nav-text: oklch(0.25 0.025 8);
+  --color-nav-muted: oklch(0.52 0.025 8);
 
   --space-2xs: 4px;
   --space-xs: 8px;

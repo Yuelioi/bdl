@@ -87,6 +87,7 @@ Verified:
 - Made initial parse and refresh exhaust every lightweight metadata page automatically and removed the Parse-page `解析更多` / `解析全部` controls.
 - Replaced native window decorations and the redundant page header with a slim custom title bar, removed the help button, and shifted both themes to a restrained Bilibili-pink token system.
 - Added a local, intentionally uncommitted `bpi-rs` compatibility patch that normalizes negative `last_play_time` / `last_play_cid` sentinels before unsigned decoding.
+- Restored custom-title-bar dragging by granting Tauri's `start-dragging` capability and verified a real window-coordinate move; simplified light mode to white chrome with pink used only as a signal color.
 
 ## Open questions
 
