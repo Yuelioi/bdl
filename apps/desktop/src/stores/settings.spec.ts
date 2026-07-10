@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { DownloadDirectoryHealth, EnvironmentHealthSnapshot } from '../api/dto'
 import { environmentCreateDownloadDirectory, environmentHealth } from '../api/tauri'
-import { useSettingsStore } from './settings'
+import { embeddingContainerError, useSettingsStore } from './settings'
 
 vi.mock('../api/tauri', () => ({
   diagnosticsExport: vi.fn(),
@@ -75,5 +75,27 @@ describe('settings environment health', () => {
     await repairPromise
 
     expect(store.environmentHealth?.download_directory.path).toBe('C:\\second')
+  })
+})
+
+describe('settings media compatibility', () => {
+  it('rejects embedding when the output container is MP4', () => {
+    const error = embeddingContainerError({
+      output_extension: 'mp4',
+      embed_cover: true,
+      embed_subtitles: false,
+    })
+
+    expect(error).toContain('仅支持 MKV')
+  })
+
+  it('accepts embedding when the output container is MKV', () => {
+    const error = embeddingContainerError({
+      output_extension: 'mkv',
+      embed_cover: true,
+      embed_subtitles: true,
+    })
+
+    expect(error).toBeNull()
   })
 })

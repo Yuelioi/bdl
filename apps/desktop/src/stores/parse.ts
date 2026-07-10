@@ -54,6 +54,7 @@ export interface CreateTaskOptions {
   downloadDir?: string | null
   archiveMode?: SettingsSnapshot['archive_mode']
   outputExtension?: SettingsSnapshot['output_extension']
+  namingTemplate?: string
   mediaMode?: DownloadMediaMode
   quality?: string
   audioQuality?: string
@@ -432,6 +433,7 @@ export const useParseStore = defineStore('parse', {
               output_dir: downloadDir || undefined,
               archive_mode: options.archiveMode ?? settings.saved.archive_mode,
               output_extension: options.outputExtension ?? settings.saved.output_extension,
+              naming_template: options.namingTemplate,
               media_mode: options.mediaMode ?? 'audio_video',
               quality: options.quality ?? settings.saved.quality,
               audio_quality: options.audioQuality ?? settings.saved.audio_quality,

@@ -11,6 +11,7 @@ import UiButton from '../../ui/Button.vue'
 import UiDialog from '../../ui/Dialog.vue'
 import UiDisclosure from '../../ui/Disclosure.vue'
 import UiEnvironmentHealthPanel from '../../ui/EnvironmentHealthPanel.vue'
+import UiInlineNotice from '../../ui/InlineNotice.vue'
 import UiSelect from '../../ui/Select.vue'
 import UiStatusBadge from '../../ui/StatusBadge.vue'
 import UiTextField from '../../ui/TextField.vue'
@@ -33,6 +34,7 @@ const audioQuality = ref('best')
 const videoCodec = ref<VideoCodecPreference>('auto')
 const scheduledLocal = ref('')
 const taskSpeedLimitMib = ref('')
+const saveLayout = ref<'title_folder' | 'download_root'>('title_folder')
 const scheduleMin = ref('')
 const scheduleValidationNow = ref(Date.now())
 
@@ -62,6 +64,11 @@ const archiveModeOptions = [
   { label: '下载全部附加内容', value: 'complete_archive' },
   { label: '使用设置中的附加内容', value: 'custom' },
 ]
+const saveLayoutOptions = [
+  { label: '按标题建立子文件夹', value: 'title_folder' },
+  { label: '直接保存到下载目录', value: 'download_root' },
+]
+const directDownloadNamingTemplate = '{title} - P{part_index} - {part_title}.{ext}'
 
 const activeSource = computed(() => parse.activeSource)
 const selectedSourceIds = computed(() => parse.isBatch
@@ -75,11 +82,16 @@ const includesVideo = computed(() => mediaMode.value !== 'audio_only')
 const includesAudio = computed(() => mediaMode.value !== 'video_only')
 const scheduleError = computed(() => scheduledLocalError(scheduledLocal.value, scheduleValidationNow.value))
 const taskSpeedLimitError = computed(() => speedLimitMibError(taskSpeedLimitMib.value))
+const embeddingFormatError = computed(() =>
+  outputExtension.value !== 'mkv' && (settings.draft.embed_cover || settings.draft.embed_subtitles)
+    ? '嵌入封面和字幕仅支持 MKV，请改用 MKV 或在设置中关闭嵌入。'
+    : null,
+)
 const duplicatePreview = computed(() => duplicateMatches.value.slice(0, 6))
 const duplicateRemaining = computed(() => Math.max(duplicateMatches.value.length - duplicatePreview.value.length, 0))
 const downloadAdvancedSummary = computed(() => {
   const codec = includesVideo.value ? optionLabel(codecOptions, videoCodec.value) : '无视频编码'
-  return `${outputExtension.value.toUpperCase()} · ${codec} · ${optionLabel(archiveModeOptions, archiveMode.value)}`
+  return `${outputExtension.value.toUpperCase()} · ${codec} · ${optionLabel(saveLayoutOptions, saveLayout.value)} · ${optionLabel(archiveModeOptions, archiveMode.value)}`
 })
 const downloadSettingsSummary = computed(() => {
   const content = optionLabel(mediaModeOptions, mediaMode.value)
@@ -105,6 +117,7 @@ const openDialog = async () => {
   videoQuality.value = defaults.quality
   audioQuality.value = defaults.audio_quality
   videoCodec.value = defaults.codec
+  saveLayout.value = 'title_folder'
   scheduledLocal.value = ''
   taskSpeedLimitMib.value = ''
   scheduleValidationNow.value = Date.now()
@@ -136,8 +149,8 @@ const createTasks = async (duplicatePolicy: DuplicateTaskPolicy = 'ask') => {
   const sourceIds = duplicatePolicy === 'ask' ? selectedSourceIds.value : duplicatePendingSourceIds.value
   if (sourceIds.length === 0) return
   scheduleValidationNow.value = Date.now()
-  if (scheduleError.value || taskSpeedLimitError.value) {
-    parse.setNotice(scheduleError.value ?? taskSpeedLimitError.value ?? '请检查下载设置', 'warning')
+  if (scheduleError.value || taskSpeedLimitError.value || embeddingFormatError.value) {
+    parse.setNotice(scheduleError.value ?? taskSpeedLimitError.value ?? embeddingFormatError.value ?? '请检查下载设置', 'warning')
     return
   }
   const health = await checkDownloadEnvironment()
@@ -149,6 +162,7 @@ const createTasks = async (duplicatePolicy: DuplicateTaskPolicy = 'ask') => {
     downloadDir: downloadDir.value,
     archiveMode: archiveMode.value,
     outputExtension: outputExtension.value,
+    namingTemplate: saveLayout.value === 'download_root' ? directDownloadNamingTemplate : undefined,
     mediaMode: mediaMode.value,
     quality: videoQuality.value,
     audioQuality: audioQuality.value,
@@ -213,6 +227,7 @@ function optionLabel(options: Array<{ label: string; value: string }>, value: st
         <UiTextField :model-value="downloadDir" label="保存目录" placeholder="留空时使用 downloads" @update:model-value="updateDownloadDir" />
         <UiButton variant="secondary" :disabled="activeLoading" @click="chooseDownloadDir">选择</UiButton>
       </div>
+      <UiSelect v-model="saveLayout" label="文件保存结构" :options="saveLayoutOptions" />
 
       <section class="grid gap-2">
         <h3 class="m-0 text-[13px] font-extrabold text-(--color-text)">下载内容</h3>
@@ -239,6 +254,8 @@ function optionLabel(options: Array<{ label: string; value: string }>, value: st
         </div>
       </UiDisclosure>
 
+      <UiInlineNotice v-if="embeddingFormatError" tone="danger">{{ embeddingFormatError }}</UiInlineNotice>
+
       <p class="m-0 wrap-anywhere rounded-md border border-(--color-border) bg-(--color-panel) px-3 py-2 text-xs leading-5 text-(--color-muted)">
         {{ downloadSettingsSummary }}
       </p>
@@ -257,7 +274,7 @@ function optionLabel(options: Array<{ label: string; value: string }>, value: st
     <template #footer>
       <UiButton variant="secondary" :disabled="activeLoading" @click="downloadDialogOpen = false">取消</UiButton>
       <UiButton
-        :disabled="selectedSourceIds.length === 0 || Boolean(scheduleError) || Boolean(taskSpeedLimitError) || settings.environmentChecking || settings.environmentHealth?.ready === false"
+        :disabled="selectedSourceIds.length === 0 || Boolean(scheduleError) || Boolean(taskSpeedLimitError) || Boolean(embeddingFormatError) || settings.environmentChecking || settings.environmentHealth?.ready === false"
         @click="createTasks()"
       >加入传输</UiButton>
     </template>

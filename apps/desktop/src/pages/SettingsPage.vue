@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 
 import {
   defaultNamingTemplate,
+  embeddingContainerError,
   namingTemplatePresets,
   namingVariables,
   useSettingsStore,
@@ -99,6 +100,7 @@ const settingsGlobalSpeedInputDirty = computed(
   ),
 )
 const settingsFormChanged = computed(() => settings.changed || settingsGlobalSpeedInputDirty.value)
+const settingsEmbeddingFormatError = computed(() => embeddingContainerError(settings.draft))
 const updateGlobalSpeedLimit = (value: string) => {
   settingsGlobalSpeedLimitMib.value = value
   if (!settingsGlobalSpeedLimitError.value) {
@@ -157,7 +159,7 @@ const embeddingCopy = computed(() => {
   const subtitlesSelected = settings.draft.archive_mode === 'complete_archive' || settings.draft.archive_assets.subtitles
   if (canUseArchiveAssets && coverSelected && settings.draft.embed_cover) items.push('封面')
   if (canUseArchiveAssets && subtitlesSelected && settings.draft.embed_subtitles) items.push('字幕')
-  return items.length > 0 ? `；容器支持时嵌入${items.join('和')}` : ''
+  return items.length > 0 ? `；嵌入${items.join('和')}` : ''
 })
 const settingsArchiveDescription = computed(() => {
   if (settings.draft.archive_mode === 'complete_archive') {
@@ -224,7 +226,7 @@ onMounted(async () => {
           <UiButton variant="ghost" :disabled="settings.loading || settings.saving || !settingsFormChanged" @click="resetSettingsDraft">
             撤销
           </UiButton>
-          <UiButton :disabled="settings.loading || settings.saving || !settingsFormChanged || Boolean(settings.namingTemplateError) || Boolean(settingsGlobalSpeedLimitError)" @click="saveSettings">
+          <UiButton :disabled="settings.loading || settings.saving || !settingsFormChanged || Boolean(settings.namingTemplateError) || Boolean(settingsGlobalSpeedLimitError) || Boolean(settingsEmbeddingFormatError)" @click="saveSettings">
             {{ settings.saving ? '保存中' : '保存' }}
           </UiButton>
         </div>
@@ -487,15 +489,18 @@ onMounted(async () => {
           <div class="archive-option-grid embed-option-grid">
             <UiCheckbox
               v-model="settingsEmbedCover"
-              label="支持时嵌入封面"
+              label="嵌入封面（仅 MKV）"
               :disabled="settings.loading || settings.saving"
             />
             <UiCheckbox
               v-model="settingsEmbedSubtitles"
-              label="支持时嵌入字幕"
+              label="嵌入字幕（仅 MKV）"
               :disabled="settings.loading || settings.saving"
             />
           </div>
+          <UiInlineNotice v-if="settingsEmbeddingFormatError" tone="danger">
+            {{ settingsEmbeddingFormatError }}
+          </UiInlineNotice>
           <p class="settings-note">{{ settingsArchiveDescription }}</p>
         </section>
       </UiDisclosure>

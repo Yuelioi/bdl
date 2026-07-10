@@ -114,6 +114,11 @@ impl AppSettings {
         validate_template(&self.naming_template)?;
         validate_archive_mode(&self.archive_mode)?;
         validate_output_extension(&self.output_extension)?;
+        validate_embedding_container(
+            &self.output_extension,
+            self.embed_cover,
+            self.embed_subtitles,
+        )?;
         StreamPreference::parse(&self.quality, "视频清晰度")?;
         StreamPreference::parse(&self.audio_quality, "音频质量")?;
         parse_stream_codec(&self.codec)?;
@@ -124,6 +129,20 @@ impl AppSettings {
         validate_speed_limit(self.global_speed_limit_bytes_per_second, "全局下载限速")?;
         Ok(())
     }
+}
+
+pub fn validate_embedding_container(
+    output_extension: &str,
+    embed_cover: bool,
+    embed_subtitles: bool,
+) -> BdlResult<()> {
+    if output_extension != "mkv" && (embed_cover || embed_subtitles) {
+        return Err(crate::error::BdlError::Planning {
+            message: "嵌入封面和字幕仅支持 MKV 封装，请改用 MKV 或关闭嵌入选项。".to_owned(),
+        });
+    }
+
+    Ok(())
 }
 
 fn validate_archive_mode(value: &str) -> BdlResult<()> {

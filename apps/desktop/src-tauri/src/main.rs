@@ -34,6 +34,7 @@ fn main() {
             bdl_tauri::commands::queue_remove,
             bdl_tauri::commands::queue_open_file,
             bdl_tauri::commands::queue_open_dir,
+            bdl_tauri::commands::open_external_url,
             bdl_tauri::commands::settings_get,
             bdl_tauri::commands::settings_update,
             bdl_tauri::commands::environment_health,

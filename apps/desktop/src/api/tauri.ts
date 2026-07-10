@@ -63,6 +63,7 @@ export interface SelectionCreateTasksRequest {
   output_dir?: string
   archive_mode?: ArchiveMode
   output_extension?: string
+  naming_template?: string
   media_mode?: DownloadMediaMode
   quality?: string
   audio_quality?: string
@@ -204,6 +205,8 @@ export const maintenanceCleanupCache = () => invokeCommand<MaintenanceResult>('m
 export const maintenanceCleanupTemp = () => invokeCommand<MaintenanceResult>('maintenance_cleanup_temp')
 
 export const diagnosticsExport = () => invokeCommand<DiagnosticsExportResponse>('diagnostics_export')
+
+export const openExternalUrl = (url: string) => invokeCommand<void>('open_external_url', { url })
 
 const invokeCommand = async <T>(command: string, args?: Record<string, unknown>): Promise<T> => {
   try {

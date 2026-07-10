@@ -24,7 +24,7 @@ use bdl_core::queue::{
     DownloadResource, DownloadResourceIntent, DownloadTask, DuplicateTaskPolicy, QueueLogEntry,
     QueueLogLevel, ResourceStatus, TaskStatus,
 };
-use bdl_core::settings::validate_speed_limit;
+use bdl_core::settings::{validate_embedding_container, validate_speed_limit};
 use bdl_core::{BdlError, BdlResult};
 use chrono::{DateTime, Utc};
 use futures::stream::{FuturesUnordered, StreamExt};
@@ -171,6 +171,7 @@ pub struct SelectionCreateTasksRequest {
     pub output_dir: Option<String>,
     pub archive_mode: Option<String>,
     pub output_extension: Option<String>,
+    pub naming_template: Option<String>,
     pub media_mode: Option<String>,
     pub quality: Option<String>,
     pub audio_quality: Option<String>,
@@ -418,13 +419,20 @@ pub async fn selection_create_tasks(
     )?;
 
     let mut options = DownloadOptions::new(output_dir).with_archive_mode(archive_mode);
-    options.output_extension = request
+    let output_extension = request
         .output_extension
-        .clone()
+        .as_deref()
+        .map(ToOwned::to_owned)
         .unwrap_or_else(|| settings.output_extension.clone());
+    validate_embedding_container(
+        &output_extension,
+        settings.embed_cover,
+        settings.embed_subtitles,
+    )?;
+    options.output_extension = output_extension;
     options.media_mode =
         DownloadMediaMode::parse(request.media_mode.as_deref().unwrap_or("audio_video"))?;
-    options.naming_template = settings.naming_template;
+    options.naming_template = request.naming_template.unwrap_or(settings.naming_template);
     options.duplicate_naming_strategy = settings.duplicate_naming_strategy;
     options.video_quality = StreamPreference::parse(
         request.quality.as_deref().unwrap_or(&settings.quality),
@@ -836,6 +844,27 @@ pub fn queue_open_dir(
 ) -> CommandResult<()> {
     let task = state.task_snapshot(&task_id)?;
     open_task_output_dir(&app, &task)
+}
+
+#[tauri::command]
+pub fn open_external_url(app: AppHandle, url: String) -> CommandResult<()> {
+    const ALLOWED_URLS: [&str; 2] = [
+        "https://space.bilibili.com/4279370",
+        "https://www.yuelili.com",
+    ];
+    if !ALLOWED_URLS.contains(&url.as_str()) {
+        return Err(CommandError {
+            code: "external_url_not_allowed".to_owned(),
+            message: "该链接不在允许打开的列表中。".to_owned(),
+        });
+    }
+
+    app.opener()
+        .open_url(url, None::<String>)
+        .map_err(|error| CommandError {
+            code: "open_url_failed".to_owned(),
+            message: format!("打开链接失败：{error}"),
+        })
 }
 
 #[tauri::command]

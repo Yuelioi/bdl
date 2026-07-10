@@ -149,4 +149,24 @@ describe('parse store', () => {
     expect(api.selectionCreateTasks).toHaveBeenCalledTimes(2)
     expect(result?.pendingSourceIds).toEqual(['source:one'])
   })
+
+  it('passes a per-download naming template to task creation', async () => {
+    const parse = useParseStore()
+    const settings = useSettingsStore()
+    settings.loaded = true
+    parse.upsertSource(sourceTree('source:direct', '直接保存'))
+    api.selectionCreateTasks.mockResolvedValue({
+      created: [],
+      duplicates: [],
+      requires_confirmation: false,
+    })
+
+    await parse.createTasksForSelection('source:direct', {
+      namingTemplate: '{title} - P{part_index} - {part_title}.{ext}',
+    })
+
+    expect(api.selectionCreateTasks).toHaveBeenCalledWith(expect.objectContaining({
+      naming_template: '{title} - P{part_index} - {part_title}.{ext}',
+    }))
+  })
 })

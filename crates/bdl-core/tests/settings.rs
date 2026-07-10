@@ -167,3 +167,31 @@ fn settings_validate_rejects_an_excessive_global_speed_limit() {
 
     assert!(error.to_string().contains("全局下载限速"));
 }
+
+#[test]
+fn settings_validate_rejects_cover_embedding_for_mp4() {
+    let settings = AppSettings {
+        output_extension: "mp4".to_owned(),
+        embed_cover: true,
+        ..AppSettings::default()
+    };
+
+    let error = settings
+        .validate()
+        .expect_err("MP4 cover embedding should fail");
+
+    assert!(error.to_string().contains("仅支持 MKV"));
+}
+
+#[test]
+fn settings_validate_accepts_subtitle_embedding_for_mkv() {
+    let settings = AppSettings {
+        output_extension: "mkv".to_owned(),
+        embed_subtitles: true,
+        ..AppSettings::default()
+    };
+
+    settings
+        .validate()
+        .expect("MKV subtitle embedding should be valid");
+}

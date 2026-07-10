@@ -18,6 +18,7 @@ const ParsePage = defineAsyncComponent(() => import('./pages/ParsePage.vue'))
 const LibraryPage = defineAsyncComponent(() => import('./pages/LibraryPage.vue'))
 const TransferPage = defineAsyncComponent(() => import('./pages/TransferPage.vue'))
 const SettingsPage = defineAsyncComponent(() => import('./pages/SettingsPage.vue'))
+const AboutPage = defineAsyncComponent(() => import('./pages/AboutPage.vue'))
 
 const ui = useUiStore()
 const account = useAccountStore()
@@ -38,6 +39,7 @@ const navItems: Array<{ value: AppTab; label: string; description: string; icon:
   { value: 'library', label: '内容库', description: '收藏与订阅', icon: 'i-tabler-books', shortcut: '2' },
   { value: 'transfer', label: '传输', description: '队列与恢复', icon: 'i-tabler-transfer', shortcut: '3' },
   { value: 'settings', label: '设置', description: '偏好与维护', icon: 'i-tabler-adjustments', shortcut: '4' },
+  { value: 'about', label: '关于', description: '版本与链接', icon: 'i-tabler-info-circle', shortcut: '5' },
 ]
 
 const appWindow = getCurrentWindow()
@@ -45,6 +47,7 @@ const activePageComponent = computed(() => {
   if (ui.activeTab === 'transfer') return TransferPage
   if (ui.activeTab === 'library') return LibraryPage
   if (ui.activeTab === 'settings') return SettingsPage
+  if (ui.activeTab === 'about') return AboutPage
   return ParsePage
 })
 const transferBadgeCount = computed(() =>
@@ -156,7 +159,7 @@ const dismissStartupRecovery = async () => {
 
 const handleAppShortcut = (event: KeyboardEvent) => {
   if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return
-  const tabByKey: Partial<Record<string, AppTab>> = { '1': 'parse', '2': 'library', '3': 'transfer', '4': 'settings' }
+  const tabByKey: Partial<Record<string, AppTab>> = { '1': 'parse', '2': 'library', '3': 'transfer', '4': 'settings', '5': 'about' }
   const tab = tabByKey[event.key]
   if (!tab) return
   event.preventDefault()

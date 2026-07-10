@@ -16,6 +16,12 @@ import type { InlineNotice, NoticeTone } from './feedback'
 import { NOTICE_CLEAR_DELAY } from './feedback'
 
 export const defaultNamingTemplate = '{title}/P{part_index} - {part_title}.{ext}'
+export const embeddingContainerError = (
+  settings: Pick<SettingsSnapshot, 'output_extension' | 'embed_cover' | 'embed_subtitles'>,
+): string | null =>
+  settings.output_extension !== 'mkv' && (settings.embed_cover || settings.embed_subtitles)
+    ? '嵌入封面和字幕仅支持 MKV 封装，请改用 MKV 或关闭嵌入选项。'
+    : null
 const legacyNamingTemplate = '{title}/{title} - P{part_index} - {part_title}.{ext}'
 
 export const namingTemplatePresets = [
@@ -181,9 +187,10 @@ export const useSettingsStore = defineStore('settings', {
     async save() {
       const ui = useUiStore()
       const namingError = validateNamingTemplate(this.draft.naming_template)
-      if (namingError) {
-        this.error = namingError
-        this.setNotice(namingError, 'warning')
+      const compatibilityError = embeddingContainerError(this.draft)
+      if (namingError || compatibilityError) {
+        this.error = namingError ?? compatibilityError
+        this.setNotice(this.error ?? '请检查设置', 'warning')
         return
       }
 

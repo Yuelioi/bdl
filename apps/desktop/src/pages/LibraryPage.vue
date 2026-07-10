@@ -15,7 +15,6 @@ const library = useLibraryStore()
 const parse = useParseStore()
 const ui = useUiStore()
 const query = ref('')
-const selectedIds = ref<string[]>([])
 const failedCoverIds = ref<string[]>([])
 
 const categories: Array<{
@@ -37,31 +36,17 @@ const visibleItems = computed(() => {
     [item.title, item.owner_name, item.description].filter(Boolean).some((value) => value!.toLocaleLowerCase().includes(keyword)),
   )
 })
-const selectedItems = computed(() => {
-  const ids = new Set(selectedIds.value)
-  return (page.value?.items ?? []).filter((item) => ids.has(item.media_id))
-})
-
 const load = async (kind = library.activeKind, targetPage = 1) => {
-  selectedIds.value = []
   await library.load(kind, targetPage)
 }
 
 const selectCategory = async (kind: AccountLibraryFolderKind) => {
   query.value = ''
-  selectedIds.value = []
   await library.selectKind(kind)
 }
 
-const toggleItem = (mediaId: string) => {
-  selectedIds.value = selectedIds.value.includes(mediaId)
-    ? selectedIds.value.filter((id) => id !== mediaId)
-    : [...selectedIds.value, mediaId]
-}
-
-const openItems = async (items: AccountLibraryFolder[]) => {
-  if (items.length === 0) return
-  await parse.createSource(items.map((item) => item.source_url).join('\n'))
+const openItem = async (item: AccountLibraryFolder) => {
+  await parse.createSource(item.source_url)
   ui.setTab('parse')
 }
 
@@ -74,7 +59,6 @@ watch(
   ([loggedIn, mid], previous) => {
     if (!loggedIn) {
       library.clear()
-      selectedIds.value = []
       return
     }
     if (!previous?.[0] || previous[1] !== mid) void load()
@@ -143,7 +127,6 @@ watch(
           <UIcon name="i-tabler-search" aria-hidden="true" />
           <input v-model="query" type="search" placeholder="搜索标题、创建者或简介" />
         </label>
-        <span class="toolbar-summary">已选 {{ selectedItems.length }}</span>
       </div>
 
       <div v-if="library.loading && page" class="library-sync" role="status" aria-live="polite">
@@ -182,17 +165,7 @@ watch(
           v-for="item in visibleItems"
           :key="item.media_id"
           class="library-card"
-          :class="{ selected: selectedIds.includes(item.media_id) }"
         >
-          <button
-            class="library-check"
-            type="button"
-            :aria-pressed="selectedIds.includes(item.media_id)"
-            :aria-label="`${selectedIds.includes(item.media_id) ? '取消选择' : '选择'} ${item.title}`"
-            @click="toggleItem(item.media_id)"
-          >
-            <UIcon :name="selectedIds.includes(item.media_id) ? 'i-tabler-check' : 'i-tabler-plus'" aria-hidden="true" />
-          </button>
           <div class="library-cover">
             <img
               v-if="item.cover_url && !failedCoverIds.includes(item.media_id)"
@@ -215,7 +188,7 @@ watch(
             <p v-if="item.description" class="library-description">{{ item.description }}</p>
             <div class="library-card-meta">
               <span>{{ item.media_count }} 个视频</span>
-              <button type="button" @click="openItems([item])">
+              <button type="button" @click="openItem(item)">
                 打开内容 <UIcon name="i-tabler-arrow-up-right" aria-hidden="true" />
               </button>
             </div>
@@ -241,16 +214,6 @@ watch(
           下一页
         </UiButton>
       </footer>
-
-      <Transition name="selection-bar">
-        <div v-if="selectedItems.length" class="library-selection-bar" role="region" aria-label="已选内容操作">
-          <span><strong>{{ selectedItems.length }}</strong> 个集合已选</span>
-          <div>
-            <UiButton variant="ghost" @click="selectedIds = []">取消选择</UiButton>
-            <UiButton @click="openItems(selectedItems)">解析所选</UiButton>
-          </div>
-        </div>
-      </Transition>
     </section>
   </section>
 </template>
