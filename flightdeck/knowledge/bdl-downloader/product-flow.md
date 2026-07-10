@@ -91,7 +91,7 @@ Paged sources are progressive:
 [解析更多] [解析全部]
 ```
 
-`解析全部` must confirm the maximum load limit before starting.
+`解析全部` confirms the remaining remote work, then keeps paging until the source reports `has_more = false`. It must never silently behave like “load at most 100”.
 
 ## Download Settings Dialog
 

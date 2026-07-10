@@ -39,9 +39,6 @@ use tokio::sync::Notify;
 
 use crate::secure_store::SecureStore;
 
-const DEFAULT_PARSE_ALL_LIMIT: usize = 100;
-const MAX_PARSE_ALL_LIMIT: usize = 100;
-
 pub struct AppState {
     parse_sources: Mutex<HashMap<SourceId, NormalizedSourceTree>>,
     queue: Mutex<Vec<DownloadTask>>,
@@ -202,11 +199,7 @@ impl AppState {
         limit: Option<usize>,
     ) -> BdlResult<NormalizedSourceTree> {
         let mut tree = self.source_snapshot(source_id)?;
-        let limit = limit
-            .unwrap_or(DEFAULT_PARSE_ALL_LIMIT)
-            .clamp(1, MAX_PARSE_ALL_LIMIT);
-
-        while tree.source.has_more && tree.source.loaded_count < limit {
+        while should_continue_parse_all(tree.source.has_more, tree.source.loaded_count, limit) {
             let loaded_before = tree.source.loaded_count;
             self.append_next_page(&mut tree).await?;
             if tree.source.loaded_count == loaded_before {
@@ -996,6 +989,10 @@ impl AppState {
             None => CheeseResolver::new(),
         }
     }
+}
+
+fn should_continue_parse_all(has_more: bool, loaded_count: usize, limit: Option<usize>) -> bool {
+    has_more && limit.is_none_or(|limit| loaded_count < limit.max(1))
 }
 
 fn ignores_status_transition(current: TaskStatus, next: TaskStatus) -> bool {
@@ -1809,7 +1806,7 @@ mod tests {
         AppState, PartHydrationRequest, StartupRecoverySnapshot, append_new_tasks,
         append_source_page, dedupe_tasks_by_id, hydrate_placeholder_part, load_account_snapshot,
         next_page_request, prepare_startup_recovery, remap_selected_part_ids, select_task_stream,
-        selected_hydration_requests, task_media_refresh_ids,
+        selected_hydration_requests, should_continue_parse_all, task_media_refresh_ids,
     };
     use crate::secure_store::SecureStore;
     use chrono::Utc;
@@ -2024,6 +2021,15 @@ mod tests {
         assert!(imported > initial);
         assert!(logged_out > imported);
         let _ = std::fs::remove_dir_all(data_dir);
+    }
+
+    #[test]
+    fn parse_all_without_limit_continues_beyond_the_legacy_hundred_item_cap() {
+        assert!(should_continue_parse_all(true, 100, None));
+        assert!(should_continue_parse_all(true, 149, None));
+        assert!(!should_continue_parse_all(false, 150, None));
+        assert!(should_continue_parse_all(true, 99, Some(100)));
+        assert!(!should_continue_parse_all(true, 100, Some(100)));
     }
 
     #[test]

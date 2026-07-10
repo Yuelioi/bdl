@@ -334,11 +334,14 @@ const parseAll = () => {
   if (activeSource.value) {
     const source = activeSource.value.source
     const total = source.total_count ?? '未知'
+    const remaining = source.total_count === null
+      ? '将持续加载，直到远端列表结束。'
+      : `预计还需解析 ${Math.max(source.total_count - source.loaded_count, 0)} 项。`
     const confirmed = window.confirm(
-      `解析全部会继续加载这个来源的远端列表，当前最多解析到 100 项。\n\n当前已加载 ${source.loaded_count} / ${total}。是否继续？`,
+      `解析全部会加载这个来源的所有剩余内容。\n\n当前已加载 ${source.loaded_count} / ${total}。${remaining}\n\n是否继续？`,
     )
     if (confirmed) {
-      void parse.parseAll(source.id, 100)
+      void parse.parseAll(source.id)
     }
   }
 }

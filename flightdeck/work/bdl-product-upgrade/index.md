@@ -79,6 +79,7 @@ Verified:
 - Added aggregate global and per-task download limits with shared multi-segment budgets, persistence, live global updates, transfer editing, and real concurrent-fetch timing regressions.
 - Added a persisted system/light/dark appearance menu, pre-mount theme application, five-level dark surfaces, and semantic dark variants for controls, tables, overlays, notices, and status badges.
 - Added a top-level account library backed by real authenticated created/collected favorite-folder APIs, with pagination, filtering, multi-select, cover fallbacks, account-change cache clearing, and handoff into the existing multi-source Parse flow.
+- Fixed `解析全部` to exhaust paged sources until `has_more = false`; removed the legacy 100-item cap from the backend, store, confirmation copy, and frontend request contract.
 - Moved toast notifications below the top bar after live review found that bottom-right notifications could cover modal primary actions.
 
 ## Open questions
