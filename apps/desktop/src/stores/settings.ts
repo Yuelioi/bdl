@@ -73,6 +73,7 @@ const defaultSettings = (): SettingsSnapshot => ({
   concurrent_tasks: 1,
   retry_count: 3,
   segment_count: 4,
+  global_speed_limit_bytes_per_second: null,
   startup_auto_recovery: false,
   auto_refresh_expired_urls: true,
 })
@@ -413,6 +414,9 @@ export const useSettingsStore = defineStore('settings', {
       const count = Number(value)
       this.draft.segment_count = segmentCounts.has(count) ? count : 4
     },
+    setGlobalSpeedLimitBytesPerSecond(value: number | null) {
+      this.draft.global_speed_limit_bytes_per_second = value && value > 0 ? value : null
+    },
     setStartupAutoRecovery(value: boolean) {
       this.draft.startup_auto_recovery = value
     },
@@ -489,6 +493,10 @@ const normalizeSettings = (settings: SettingsSnapshot): SettingsSnapshot => ({
   concurrent_tasks: concurrentTaskCounts.has(settings.concurrent_tasks) ? settings.concurrent_tasks : 1,
   retry_count: retryCounts.has(settings.retry_count) ? settings.retry_count : 3,
   segment_count: segmentCounts.has(settings.segment_count) ? settings.segment_count : 4,
+  global_speed_limit_bytes_per_second:
+    settings.global_speed_limit_bytes_per_second && settings.global_speed_limit_bytes_per_second > 0
+      ? settings.global_speed_limit_bytes_per_second
+      : null,
   startup_auto_recovery: settings.startup_auto_recovery === true,
   auto_refresh_expired_urls: settings.auto_refresh_expired_urls !== false,
 })

@@ -122,6 +122,7 @@ fn failed_task(audio_status: ResourceStatus) -> DownloadTask {
         refresh_intent: None,
         media_selection: DownloadTaskMediaSelection::default(),
         scheduled_at: None,
+        speed_limit_bytes_per_second: None,
         resources: vec![
             resource(
                 "resource:video",

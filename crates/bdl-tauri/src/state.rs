@@ -27,7 +27,7 @@ use bdl_core::resolver::paged::PageRequest;
 use bdl_core::resolver::uploader::UploaderResolver;
 use bdl_core::resolver::video::VideoResolver;
 use bdl_core::resolver::{ResolveOptions, Resolver};
-use bdl_core::settings::AppSettings;
+use bdl_core::settings::{AppSettings, validate_speed_limit};
 use bdl_core::storage::TaskStorage;
 use bdl_core::{BdlError, BdlResult};
 use chrono::{DateTime, Utc};
@@ -380,6 +380,35 @@ impl AppState {
         reset_interrupted_resources(&mut task.resources);
         let updated = task.clone();
         self.persist_queue(&queue)?;
+        Ok(updated)
+    }
+
+    pub fn set_task_speed_limit(
+        &self,
+        task_id: &str,
+        speed_limit_bytes_per_second: Option<u64>,
+    ) -> BdlResult<DownloadTask> {
+        validate_speed_limit(speed_limit_bytes_per_second, "单任务下载限速")?;
+        let mut queue = self.queue.lock().map_err(|_| state_poisoned("queue"))?;
+        let task = queue
+            .iter_mut()
+            .find(|task| task.id == task_id)
+            .ok_or_else(|| BdlError::Planning {
+                message: format!("任务 `{task_id}` 不存在。"),
+            })?;
+        if !matches!(
+            task.status,
+            TaskStatus::Waiting | TaskStatus::Paused | TaskStatus::Failed
+        ) {
+            return Err(BdlError::Planning {
+                message: "请先暂停任务，再修改单任务下载限速。".to_owned(),
+            });
+        }
+
+        task.speed_limit_bytes_per_second = speed_limit_bytes_per_second;
+        let updated = task.clone();
+        self.persist_queue(&queue)?;
+        self.notify_queue_changed();
         Ok(updated)
     }
 
@@ -2160,6 +2189,36 @@ mod tests {
         let _ = std::fs::remove_dir_all(data_dir);
     }
 
+    #[test]
+    fn paused_task_can_receive_a_persisted_speed_limit() {
+        let data_dir = temp_state_dir();
+        let mut task = task_with_id("task:limited");
+        task.status = TaskStatus::Paused;
+        let state = test_state_with_tasks(&data_dir, vec![task]);
+
+        let updated = state
+            .set_task_speed_limit("task:limited", Some(2 * 1024 * 1024))
+            .expect("paused task should accept a speed limit");
+
+        assert_eq!(updated.speed_limit_bytes_per_second, Some(2 * 1024 * 1024));
+        let _ = std::fs::remove_dir_all(data_dir);
+    }
+
+    #[test]
+    fn downloading_task_rejects_a_speed_limit_change() {
+        let data_dir = temp_state_dir();
+        let mut task = task_with_id("task:active");
+        task.status = TaskStatus::Downloading;
+        let state = test_state_with_tasks(&data_dir, vec![task]);
+
+        let error = state
+            .set_task_speed_limit("task:active", Some(2 * 1024 * 1024))
+            .expect_err("active task should not change speed limit in place");
+
+        assert!(error.to_string().contains("暂停"));
+        let _ = std::fs::remove_dir_all(data_dir);
+    }
+
     #[tokio::test]
     async fn settings_update_wakes_a_waiting_worker_and_exposes_the_latest_snapshot() {
         let data_dir = temp_state_dir();
@@ -2464,6 +2523,7 @@ mod tests {
             refresh_intent: None,
             media_selection: DownloadTaskMediaSelection::default(),
             scheduled_at: None,
+            speed_limit_bytes_per_second: None,
         }
     }
 

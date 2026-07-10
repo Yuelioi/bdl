@@ -104,6 +104,8 @@ pub struct DownloadTask {
     pub media_selection: DownloadTaskMediaSelection,
     #[serde(default)]
     pub scheduled_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub speed_limit_bytes_per_second: Option<u64>,
 }
 
 impl DownloadTask {

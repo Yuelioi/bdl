@@ -67,6 +67,7 @@ export interface SelectionCreateTasksRequest {
   codec?: VideoCodecPreference
   duplicate_policy?: DuplicateTaskPolicy
   scheduled_at?: string
+  speed_limit_bytes_per_second?: number
 }
 
 export interface AccountImportCookieRequest {
@@ -123,6 +124,11 @@ export const queueSchedule = (taskId: string, scheduledAt: string) =>
 
 export const queueUnschedule = (taskId: string) =>
   invokeCommand<DownloadTask>('queue_unschedule', { taskId })
+
+export const queueSetSpeedLimit = (taskId: string, speedLimitBytesPerSecond?: number) =>
+  invokeCommand<DownloadTask>('queue_set_speed_limit', {
+    request: { task_id: taskId, speed_limit_bytes_per_second: speedLimitBytesPerSecond },
+  })
 
 export const queueCancel = (taskId: string) => invokeCommand<DownloadTask>('queue_cancel', { taskId })
 

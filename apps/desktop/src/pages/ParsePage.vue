@@ -25,6 +25,7 @@ import { useSettingsStore } from '../stores/settings'
 import { useUiStore } from '../stores/ui'
 import { statusBadge, statusLabel } from '../stores/transferView'
 import { scheduledLocalError, toDateTimeLocalValue, toScheduledIso } from '../utils/schedule'
+import { formatSpeedLimit, speedLimitMibError, toBytesPerSecond } from '../utils/speedLimit'
 
 interface PageTreeNode {
   id: string
@@ -74,6 +75,7 @@ const videoQuality = ref('best')
 const audioQuality = ref('best')
 const videoCodec = ref<VideoCodecPreference>('auto')
 const scheduledLocal = ref('')
+const taskSpeedLimitMib = ref('')
 const scheduleMin = ref('')
 const scheduleValidationNow = ref(Date.now())
 const resultQuery = ref('')
@@ -148,6 +150,7 @@ const canSelectRange = computed(() => Boolean(activeSource.value && rangeExpress
 const scheduleError = computed(() => {
   return scheduledLocalError(scheduledLocal.value, scheduleValidationNow.value)
 })
+const taskSpeedLimitError = computed(() => speedLimitMibError(taskSpeedLimitMib.value))
 const createTaskLabel = computed(() => {
   if (activeLoading.value) {
     return '处理中'
@@ -184,7 +187,9 @@ const downloadSettingsSummary = computed(() => {
   const schedule = scheduledLocal.value
     ? `定时 ${new Date(scheduledLocal.value).toLocaleString('zh-CN', { dateStyle: 'short', timeStyle: 'short' })}`
     : '立即开始'
-  return `${content} · ${video} · ${audio} · ${codec} · ${outputExtension.value.toUpperCase()} · ${dir} · ${archive} · ${schedule}`
+  const taskLimit = toBytesPerSecond(taskSpeedLimitMib.value)
+  const speedLimit = taskLimit ? `任务限速 ${formatSpeedLimit(taskLimit)}` : '仅受全局限速影响'
+  return `${content} · ${video} · ${audio} · ${codec} · ${outputExtension.value.toUpperCase()} · ${dir} · ${archive} · ${schedule} · ${speedLimit}`
 })
 const downloadAdvancedSummary = computed(() => {
   const codec = includesVideo.value ? optionLabel(codecOptions, videoCodec.value) : '无视频编码'
@@ -227,6 +232,7 @@ const openDownloadSettings = async () => {
   audioQuality.value = defaults.audio_quality
   videoCodec.value = defaults.codec
   scheduledLocal.value = ''
+  taskSpeedLimitMib.value = ''
   scheduleValidationNow.value = Date.now()
   scheduleMin.value = toDateTimeLocalValue(new Date(scheduleValidationNow.value + 60_000))
   downloadDialogOpen.value = true
@@ -255,8 +261,8 @@ const createDownloadDirectory = () => {
 const createTasks = async (duplicatePolicy: DuplicateTaskPolicy = 'ask') => {
   if (activeSource.value) {
     scheduleValidationNow.value = Date.now()
-    if (scheduleError.value) {
-      parse.setNotice(scheduleError.value, 'warning')
+    if (scheduleError.value || taskSpeedLimitError.value) {
+      parse.setNotice(scheduleError.value ?? taskSpeedLimitError.value ?? '请检查下载设置', 'warning')
       return
     }
     const health = await checkDownloadEnvironment()
@@ -274,6 +280,7 @@ const createTasks = async (duplicatePolicy: DuplicateTaskPolicy = 'ask') => {
       codec: videoCodec.value,
       duplicatePolicy,
       scheduledAt: scheduledLocal.value ? toScheduledIso(scheduledLocal.value) : undefined,
+      speedLimitBytesPerSecond: toBytesPerSecond(taskSpeedLimitMib.value),
     })
     if (result?.requires_confirmation) {
       duplicateMatches.value = result.duplicates
@@ -814,14 +821,23 @@ const errorMessage = (error: unknown): string => {
         </section>
         <section class="download-settings-section">
           <h3>开始方式</h3>
-          <UiTextField
-            v-model="scheduledLocal"
-            type="datetime-local"
-            label="开始时间（可选）"
-            :min="scheduleMin"
-            :error="scheduleError"
-            helper="留空时立即加入下载队列"
-          />
+          <div class="download-settings-grid">
+            <UiTextField
+              v-model="scheduledLocal"
+              type="datetime-local"
+              label="开始时间（可选）"
+              :min="scheduleMin"
+              :error="scheduleError"
+              helper="留空时立即加入下载队列"
+            />
+            <UiTextField
+              v-model="taskSpeedLimitMib"
+              label="单任务限速（MiB/s）"
+              placeholder="留空时不单独限速"
+              :error="taskSpeedLimitError ?? undefined"
+              helper="留空时仅受全局限速影响；多分段共同使用此额度"
+            />
+          </div>
         </section>
         <details class="download-settings-more">
           <summary>
@@ -862,7 +878,7 @@ const errorMessage = (error: unknown): string => {
       <template #footer>
         <UiButton variant="secondary" :disabled="activeLoading" @click="downloadDialogOpen = false">取消</UiButton>
         <UiButton
-          :disabled="!canCreateTasks || Boolean(scheduleError) || settings.environmentChecking || settings.environmentHealth?.ready === false"
+          :disabled="!canCreateTasks || Boolean(scheduleError) || Boolean(taskSpeedLimitError) || settings.environmentChecking || settings.environmentHealth?.ready === false"
           @click="createTasks()"
         >
           加入传输

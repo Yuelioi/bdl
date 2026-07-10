@@ -88,5 +88,6 @@ fn waiting_task() -> DownloadTask {
         refresh_intent: None,
         media_selection: DownloadTaskMediaSelection::default(),
         scheduled_at: None,
+        speed_limit_bytes_per_second: None,
     }
 }

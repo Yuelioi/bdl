@@ -331,6 +331,7 @@ fn plan_part(
             container: options.output_extension.clone(),
         },
         scheduled_at: None,
+        speed_limit_bytes_per_second: None,
     })
 }
 

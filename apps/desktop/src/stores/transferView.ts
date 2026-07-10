@@ -1,4 +1,5 @@
 import type { DownloadResourceIntent, DownloadTask, QueueLogEntry, TaskStatus } from '../api/dto'
+import { formatSpeedLimit } from '../utils/speedLimit'
 
 export type QueueFilter = 'active' | 'failed' | 'completed' | 'all'
 
@@ -14,6 +15,7 @@ export type TaskActionKind =
   | 'copy_source'
   | 'unschedule'
   | 'schedule'
+  | 'speed_limit'
   | 'none'
 
 export interface TaskActionDescriptor {
@@ -166,7 +168,10 @@ export const createTaskDiagnosticView = (task: DownloadTask, logs: QueueLogEntry
     (resource) => resource.status === 'failed' || resource.status === 'cancelled',
   ).length
   const completedCount = task.resources.filter((resource) => resource.status === 'completed').length
-  const trackImpact = `轨道 ${task.resources.length} 个 · 已完成 ${completedCount} · 失败 ${failedCount}`
+  const taskLimit = task.speed_limit_bytes_per_second
+    ? ` · 限速 ${formatSpeedLimit(task.speed_limit_bytes_per_second)}`
+    : ''
+  const trackImpact = `轨道 ${task.resources.length} 个 · 已完成 ${completedCount} · 失败 ${failedCount}${taskLimit}`
   const warningLogs = logs.filter((log) => log.level === 'warning')
 
   if (isScheduledTask(task)) {
@@ -565,7 +570,11 @@ const secondaryActionsForTask = (task: DownloadTask, primaryAction: TaskActionKi
   const actions: TaskActionDescriptor[] = []
 
   if (isScheduledTask(task)) {
-    actions.push(actionDescriptor('schedule', '修改时间'), actionDescriptor('cancel'))
+    actions.push(
+      actionDescriptor('schedule', '修改时间'),
+      actionDescriptor('speed_limit'),
+      actionDescriptor('cancel'),
+    )
     return actions
   }
 
@@ -580,12 +589,19 @@ const secondaryActionsForTask = (task: DownloadTask, primaryAction: TaskActionKi
   }
 
   if (task.status === 'failed' || task.status === 'cancelled') {
-    actions.push(actionDescriptor('retry'), actionDescriptor('open_dir'), actionDescriptor('remove'))
+    actions.push(actionDescriptor('retry'))
+    if (task.status === 'failed') actions.push(actionDescriptor('speed_limit'))
+    actions.push(actionDescriptor('open_dir'), actionDescriptor('remove'))
     return uniqueActions(actions).filter((action) => action.kind !== primaryAction)
   }
 
   if (task.status === 'paused') {
-    actions.push(actionDescriptor('schedule'), actionDescriptor('cancel'), actionDescriptor('remove'))
+    actions.push(
+      actionDescriptor('schedule'),
+      actionDescriptor('speed_limit'),
+      actionDescriptor('cancel'),
+      actionDescriptor('remove'),
+    )
     return actions.filter((action) => action.kind !== primaryAction)
   }
 
@@ -593,6 +609,7 @@ const secondaryActionsForTask = (task: DownloadTask, primaryAction: TaskActionKi
     return actions
   }
 
+  if (task.status === 'waiting') actions.push(actionDescriptor('speed_limit'))
   actions.push(actionDescriptor('cancel'))
   return actions.filter((action) => action.kind !== primaryAction)
 }
@@ -632,6 +649,7 @@ const actionLabel = (action: TaskActionKind): string => {
     copy_source: '复制来源',
     unschedule: '立即开始',
     schedule: '定时开始',
+    speed_limit: '设置限速',
     none: '',
   }
 
@@ -651,6 +669,7 @@ const actionIcon = (action: TaskActionKind): string => {
     copy_source: 'copy',
     unschedule: 'play',
     schedule: 'clock',
+    speed_limit: 'gauge',
     none: 'more',
   }
 

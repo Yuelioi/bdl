@@ -27,6 +27,7 @@ import {
   queueRemove,
   queueResume,
   queueSchedule,
+  queueSetSpeedLimit,
   queueRetry,
   queueStartupRecovery,
   queueUnschedule,
@@ -348,6 +349,12 @@ export const useQueueStore = defineStore('queue', {
     },
     async schedule(taskId: string, scheduledAt: string): Promise<boolean> {
       return this.runTaskCommand(() => queueSchedule(taskId, scheduledAt), '已更新任务开始时间')
+    },
+    async setSpeedLimit(taskId: string, speedLimitBytesPerSecond?: number): Promise<boolean> {
+      return this.runTaskCommand(
+        () => queueSetSpeedLimit(taskId, speedLimitBytesPerSecond),
+        speedLimitBytesPerSecond ? '已更新单任务限速' : '已取消单任务限速',
+      )
     },
     async cancel(taskId: string) {
       await this.runTaskCommand(() => queueCancel(taskId), '已取消')

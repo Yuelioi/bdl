@@ -2,7 +2,7 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::{
     Arc,
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicU64, Ordering},
 };
 
 use async_trait::async_trait;
@@ -16,6 +16,7 @@ use tokio::fs::{self, OpenOptions};
 use tokio::io::AsyncWriteExt;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::{Mutex, Notify};
+use tokio::time::Instant;
 
 use crate::error::{BdlError, BdlResult};
 use crate::queue::DownloadResource;
@@ -25,6 +26,7 @@ pub struct FetchConfig {
     pub max_retries: usize,
     pub proxy_url: Option<String>,
     pub segment_count: usize,
+    pub speed_limit_bytes_per_second: Option<u64>,
 }
 
 impl Default for FetchConfig {
@@ -33,6 +35,80 @@ impl Default for FetchConfig {
             max_retries: 3,
             proxy_url: None,
             segment_count: 1,
+            speed_limit_bytes_per_second: None,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct BandwidthLimiter {
+    bytes_per_second: AtomicU64,
+    state: Mutex<BandwidthLimiterState>,
+}
+
+#[derive(Debug)]
+struct BandwidthLimiterState {
+    configured_bytes_per_second: u64,
+    available_bytes: f64,
+    last_refill: Instant,
+}
+
+impl BandwidthLimiter {
+    pub fn new(bytes_per_second: Option<u64>) -> Self {
+        let bytes_per_second = bytes_per_second.unwrap_or_default();
+        Self {
+            bytes_per_second: AtomicU64::new(bytes_per_second),
+            state: Mutex::new(BandwidthLimiterState {
+                configured_bytes_per_second: bytes_per_second,
+                available_bytes: bytes_per_second as f64,
+                last_refill: Instant::now(),
+            }),
+        }
+    }
+
+    pub fn set_limit(&self, bytes_per_second: Option<u64>) {
+        self.bytes_per_second
+            .store(bytes_per_second.unwrap_or_default(), Ordering::Relaxed);
+    }
+
+    pub async fn acquire(&self, bytes: u64) {
+        let mut remaining = bytes as f64;
+        while remaining > 0.0 {
+            let bytes_per_second = self.bytes_per_second.load(Ordering::Relaxed);
+            if bytes_per_second == 0 {
+                return;
+            }
+
+            let mut state = self.state.lock().await;
+            let bytes_per_second = self.bytes_per_second.load(Ordering::Relaxed);
+            if bytes_per_second == 0 {
+                return;
+            }
+
+            let now = Instant::now();
+            let capacity = bytes_per_second as f64;
+            if state.configured_bytes_per_second != bytes_per_second {
+                state.configured_bytes_per_second = bytes_per_second;
+                state.available_bytes = capacity;
+                state.last_refill = now;
+            }
+
+            let replenished = now.duration_since(state.last_refill).as_secs_f64() * capacity;
+            state.available_bytes = (state.available_bytes + replenished).min(capacity);
+            state.last_refill = now;
+
+            let available = state.available_bytes.min(remaining);
+            state.available_bytes -= available;
+            remaining -= available;
+            if remaining <= 0.0 {
+                return;
+            }
+
+            let wait_seconds = (remaining / capacity).min(0.1);
+            let wait = std::time::Duration::from_secs_f64(wait_seconds);
+            tokio::time::sleep(wait).await;
+            remaining -= wait_seconds * capacity;
+            state.last_refill = Instant::now();
         }
     }
 }
@@ -142,6 +218,8 @@ pub trait Fetcher {
 pub struct ReqwestFetcher {
     client: Client,
     config: FetchConfig,
+    global_limiter: Option<Arc<BandwidthLimiter>>,
+    task_limiter: Option<Arc<BandwidthLimiter>>,
 }
 
 impl ReqwestFetcher {
@@ -150,6 +228,20 @@ impl ReqwestFetcher {
     }
 
     pub fn with_config(config: FetchConfig) -> BdlResult<Self> {
+        Self::with_optional_global_limiter(config, None)
+    }
+
+    pub fn with_global_limiter(
+        config: FetchConfig,
+        global_limiter: Arc<BandwidthLimiter>,
+    ) -> BdlResult<Self> {
+        Self::with_optional_global_limiter(config, Some(global_limiter))
+    }
+
+    fn with_optional_global_limiter(
+        config: FetchConfig,
+        global_limiter: Option<Arc<BandwidthLimiter>>,
+    ) -> BdlResult<Self> {
         let mut client = Client::builder();
         if let Some(proxy_url) = config
             .proxy_url
@@ -165,7 +257,17 @@ impl ReqwestFetcher {
             .build()
             .map_err(|error| fetch_error(format!("创建下载客户端失败: {error}")))?;
 
-        Ok(Self { client, config })
+        let task_limiter = config
+            .speed_limit_bytes_per_second
+            .map(|limit| BandwidthLimiter::new(Some(limit)))
+            .map(Arc::new);
+
+        Ok(Self {
+            client,
+            config,
+            global_limiter,
+            task_limiter,
+        })
     }
 }
 
@@ -282,6 +384,8 @@ impl ReqwestFetcher {
             };
             let Some(chunk) = chunk else { break };
             let chunk = chunk.map_err(|error| fetch_error(format!("读取响应失败: {error}")))?;
+            self.wait_for_bandwidth(chunk.len() as u64, &cancel_token)
+                .await?;
             file.write_all(&chunk).await?;
             downloaded_bytes += chunk.len() as u64;
 
@@ -456,6 +560,8 @@ impl ReqwestFetcher {
             };
             let Some(chunk) = chunk else { break };
             let chunk = chunk.map_err(|error| fetch_error(format!("读取分段响应失败: {error}")))?;
+            self.wait_for_bandwidth(chunk.len() as u64, &cancel_token)
+                .await?;
             file.write_all(&chunk).await?;
             downloaded_bytes += chunk.len() as u64;
             let total_downloaded = {
@@ -475,6 +581,27 @@ impl ReqwestFetcher {
         }
 
         Ok(())
+    }
+
+    async fn wait_for_bandwidth(
+        &self,
+        bytes: u64,
+        cancel_token: &FetchCancelToken,
+    ) -> BdlResult<()> {
+        let acquire = async {
+            match (&self.global_limiter, &self.task_limiter) {
+                (Some(global), Some(task)) => {
+                    tokio::join!(global.acquire(bytes), task.acquire(bytes));
+                }
+                (Some(limiter), None) | (None, Some(limiter)) => limiter.acquire(bytes).await,
+                (None, None) => {}
+            }
+        };
+
+        tokio::select! {
+            _ = cancel_token.cancelled() => Err(cancelled_error()),
+            () = acquire => Ok(()),
+        }
     }
 
     async fn resource_metadata(

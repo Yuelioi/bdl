@@ -46,6 +46,7 @@ Verification: deterministic stalled-request cancellation test; task-state transi
 - Environment health (complete): writable-directory probe, real FFmpeg version probe, shared Settings/download-dialog health panel, inline directory creation, and persisted FFmpeg repair routing.
 - Frontend component/store tests and keyboard-navigation tests (complete): Vitest repository gate, environment health/repair regressions, and roving-focus parsed-tree navigation.
 - One-time task scheduler (complete): persisted UTC schedules, restart-safe capacity-aware worker wakeups, create/modify/start-now controls, and inline time validation.
-- Evaluate speed limits, updater, dark theme, and account asset entry points as separate vertical slices.
+- Download speed limits (complete): live global aggregate cap, persisted per-task overrides, shared multi-segment budgets, create/edit controls, and MiB/s validation.
+- Evaluate updater, dark theme, and account asset entry points as separate vertical slices.
 
 Verification: narrow Rust tests per feature, full core/Tauri clippy, frontend tests/build, and release QA.

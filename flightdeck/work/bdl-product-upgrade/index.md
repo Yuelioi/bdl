@@ -6,7 +6,7 @@ Stages 1–3, Stage 4.1 transfer reliability, duplicate-task policy, environment
 
 ## Next
 
-Have the maintainer exercise pause/resume, duplicate confirmation, environment repair, and scheduled wakeup on real downloads. Then continue with speed limits as the next product-depth slice.
+Have the maintainer exercise pause/resume, duplicate confirmation, environment repair, scheduled wakeup, and global/task speed limits on real downloads. Then continue with the updater as the next product-depth slice.
 
 ## Read now
 
@@ -76,6 +76,7 @@ Verified:
 - Review-hardened environment repair: non-FFmpeg executables are rejected, edited batch paths cannot reuse stale health, and older async checks cannot overwrite newer results.
 - Added Vitest to the repository gate with Store race regressions, environment-health interaction/announcement coverage, and roving-focus tree keyboard tests.
 - Added persisted one-time schedules with restart-safe, capacity-aware worker wakeups, create/modify/start-now controls, UTC/local conversion tests, and live download-dialog validation.
+- Added aggregate global and per-task download limits with shared multi-segment budgets, persistence, live global updates, transfer editing, and real concurrent-fetch timing regressions.
 - Moved toast notifications below the top bar after live review found that bottom-right notifications could cover modal primary actions.
 
 ## Open questions

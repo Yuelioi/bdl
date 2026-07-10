@@ -63,6 +63,23 @@ fn task_storage_reloads_media_selection_after_reopen() -> BdlResult<()> {
 }
 
 #[test]
+fn task_storage_reloads_speed_limit_after_reopen() -> BdlResult<()> {
+    let fixture = StorageFixture::new()?;
+    let task = sample_task();
+
+    {
+        let mut storage = TaskStorage::open(&fixture.db_path)?;
+        storage.save_task(&task)?;
+    }
+
+    let storage = TaskStorage::open(&fixture.db_path)?;
+    let tasks = storage.load_tasks()?;
+
+    assert_eq!(tasks[0].speed_limit_bytes_per_second, Some(2 * 1024 * 1024));
+    Ok(())
+}
+
+#[test]
 fn task_storage_reloads_refresh_intent_after_reopen() -> BdlResult<()> {
     let fixture = StorageFixture::new()?;
     let task = sample_task();
@@ -344,6 +361,7 @@ fn sample_task() -> DownloadTask {
             container: "mp4".to_owned(),
         },
         scheduled_at: Some(Utc::now() + Duration::minutes(30)),
+        speed_limit_bytes_per_second: Some(2 * 1024 * 1024),
     }
 }
 

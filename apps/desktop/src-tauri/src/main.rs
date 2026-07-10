@@ -20,6 +20,7 @@ fn main() {
             bdl_tauri::commands::queue_resume,
             bdl_tauri::commands::queue_schedule,
             bdl_tauri::commands::queue_unschedule,
+            bdl_tauri::commands::queue_set_speed_limit,
             bdl_tauri::commands::queue_cancel,
             bdl_tauri::commands::queue_retry,
             bdl_tauri::commands::queue_refresh_urls_and_retry,

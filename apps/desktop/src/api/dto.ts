@@ -118,6 +118,7 @@ export interface DownloadTask {
   refresh_intent: DownloadTaskRefreshIntent | null
   media_selection: DownloadTaskMediaSelection
   scheduled_at: string | null
+  speed_limit_bytes_per_second: number | null
 }
 
 export type DuplicateTaskPolicy = 'skip' | 'create' | 'ask'
@@ -235,6 +236,7 @@ export interface SettingsSnapshot {
   concurrent_tasks: number
   retry_count: number
   segment_count: number
+  global_speed_limit_bytes_per_second: number | null
   startup_auto_recovery: boolean
   auto_refresh_expired_urls: boolean
 }

@@ -8,6 +8,7 @@ use crate::planner::{
 
 const LEGACY_DUPLICATE_TITLE_TEMPLATE: &str =
     "{title}/{title} - P{part_index} - {part_title}.{ext}";
+const MAX_SPEED_LIMIT_BYTES_PER_SECOND: u64 = 10 * 1024 * 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
@@ -34,6 +35,7 @@ pub struct AppSettings {
     pub concurrent_tasks: usize,
     pub retry_count: usize,
     pub segment_count: usize,
+    pub global_speed_limit_bytes_per_second: Option<u64>,
     pub startup_auto_recovery: bool,
     pub auto_refresh_expired_urls: bool,
 }
@@ -62,6 +64,7 @@ impl Default for AppSettings {
             concurrent_tasks: 1,
             retry_count: 3,
             segment_count: 4,
+            global_speed_limit_bytes_per_second: None,
             startup_auto_recovery: false,
             auto_refresh_expired_urls: true,
         }
@@ -100,6 +103,9 @@ impl AppSettings {
             .filter(|path| !path.is_empty())
             .map(ToOwned::to_owned);
         self.segment_count = normalize_segment_count(self.segment_count);
+        self.global_speed_limit_bytes_per_second = self
+            .global_speed_limit_bytes_per_second
+            .filter(|limit| *limit > 0);
 
         self
     }
@@ -115,6 +121,7 @@ impl AppSettings {
         validate_log_level(&self.log_level)?;
         validate_proxy_url(self.proxy_url.as_deref())?;
         validate_segment_count(self.segment_count)?;
+        validate_speed_limit(self.global_speed_limit_bytes_per_second, "全局下载限速")?;
         Ok(())
     }
 }
@@ -175,4 +182,16 @@ fn validate_segment_count(value: usize) -> BdlResult<()> {
             message: format!("单任务分段数设置无效：`{other}`。"),
         }),
     }
+}
+
+pub fn validate_speed_limit(value: Option<u64>, label: &str) -> BdlResult<()> {
+    let Some(value) = value else {
+        return Ok(());
+    };
+    if value == 0 || value > MAX_SPEED_LIMIT_BYTES_PER_SECOND {
+        return Err(crate::error::BdlError::Planning {
+            message: format!("{label}必须大于 0 且不超过 10 GiB/s。"),
+        });
+    }
+    Ok(())
 }

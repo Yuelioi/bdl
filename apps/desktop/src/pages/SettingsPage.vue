@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 
 import {
   defaultNamingTemplate,
@@ -13,6 +13,7 @@ import UiInlineNotice from '../ui/InlineNotice.vue'
 import UiSelect from '../ui/Select.vue'
 import UiTextField from '../ui/TextField.vue'
 import UiEnvironmentHealthPanel from '../ui/EnvironmentHealthPanel.vue'
+import { speedLimitMibError, toBytesPerSecond, toMibPerSecondInput } from '../utils/speedLimit'
 
 const settings = useSettingsStore()
 
@@ -89,6 +90,20 @@ const settingsSegmentCount = computed({
   get: () => String(settings.draft.segment_count),
   set: (value: string) => settings.setSegmentCount(value),
 })
+const settingsGlobalSpeedLimitMib = ref('')
+const settingsGlobalSpeedLimitError = computed(() => speedLimitMibError(settingsGlobalSpeedLimitMib.value))
+const settingsGlobalSpeedInputDirty = computed(
+  () => settingsGlobalSpeedLimitMib.value.trim() !== toMibPerSecondInput(
+    settings.draft.global_speed_limit_bytes_per_second,
+  ),
+)
+const settingsFormChanged = computed(() => settings.changed || settingsGlobalSpeedInputDirty.value)
+const updateGlobalSpeedLimit = (value: string) => {
+  settingsGlobalSpeedLimitMib.value = value
+  if (!settingsGlobalSpeedLimitError.value) {
+    settings.setGlobalSpeedLimitBytesPerSecond(toBytesPerSecond(value) ?? null)
+  }
+}
 const settingsAutoRefreshExpiredUrls = computed({
   get: () => settings.draft.auto_refresh_expired_urls,
   set: (value: boolean) => settings.setAutoRefreshExpiredUrls(value),
@@ -165,6 +180,21 @@ const resetNamingTemplate = () => {
   settings.setNamingTemplate(defaultNamingTemplate)
 }
 
+const resetSettingsDraft = () => {
+  settings.resetDraft()
+  settingsGlobalSpeedLimitMib.value = toMibPerSecondInput(
+    settings.draft.global_speed_limit_bytes_per_second,
+  )
+}
+
+const saveSettings = async () => {
+  if (settingsGlobalSpeedLimitError.value) return
+  await settings.save()
+  settingsGlobalSpeedLimitMib.value = toMibPerSecondInput(
+    settings.draft.global_speed_limit_bytes_per_second,
+  )
+}
+
 const formatNamingVariable = (name: string): string => `{${name}}`
 
 const scrollToSettingsSection = (id: string) => {
@@ -173,6 +203,9 @@ const scrollToSettingsSection = (id: string) => {
 
 onMounted(async () => {
   await settings.ensureLoaded()
+  settingsGlobalSpeedLimitMib.value = toMibPerSecondInput(
+    settings.draft.global_speed_limit_bytes_per_second,
+  )
   await settings.checkEnvironment()
 })
 </script>
@@ -183,14 +216,14 @@ onMounted(async () => {
       <div class="panel-heading settings-heading">
         <div class="settings-heading-copy">
           <span>CONFIGURATION</span>
-          <p>默认值只影响新建任务；当前队列保持原有配置。</p>
+          <p>媒体与任务默认值用于新任务；全局下载限速会即时作用于当前传输。</p>
         </div>
         <div class="settings-actions">
-          <span v-if="settings.changed" class="dirty-indicator">未保存更改</span>
-          <UiButton variant="ghost" :disabled="settings.loading || settings.saving || !settings.changed" @click="settings.resetDraft">
+          <span v-if="settingsFormChanged" class="dirty-indicator">未保存更改</span>
+          <UiButton variant="ghost" :disabled="settings.loading || settings.saving || !settingsFormChanged" @click="resetSettingsDraft">
             撤销
           </UiButton>
-          <UiButton :disabled="settings.loading || settings.saving || !settings.changed || Boolean(settings.namingTemplateError)" @click="settings.save">
+          <UiButton :disabled="settings.loading || settings.saving || !settingsFormChanged || Boolean(settings.namingTemplateError) || Boolean(settingsGlobalSpeedLimitError)" @click="saveSettings">
             {{ settings.saving ? '保存中' : '保存' }}
           </UiButton>
         </div>
@@ -256,6 +289,14 @@ onMounted(async () => {
             ]"
           />
         </div>
+        <UiTextField
+          :model-value="settingsGlobalSpeedLimitMib"
+          label="全局下载限速（MiB/s）"
+          placeholder="留空时不限速"
+          :error="settingsGlobalSpeedLimitError ?? undefined"
+          helper="所有并发任务共享此带宽额度"
+          @update:model-value="updateGlobalSpeedLimit"
+        />
         <UiCheckbox
           v-model="settingsAutoRefreshExpiredUrls"
           label="链接过期时自动刷新"

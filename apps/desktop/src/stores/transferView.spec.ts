@@ -18,6 +18,7 @@ const scheduledTask = (): DownloadTask => ({
     container: 'mp4',
   },
   scheduled_at: '2026-07-10T13:30:00Z',
+  speed_limit_bytes_per_second: null,
 })
 
 describe('scheduled transfer task view', () => {
@@ -43,5 +44,16 @@ describe('scheduled transfer task view', () => {
 
     expect(diagnostic.summary).toBe('任务已定时')
     expect(diagnostic.recommendedAction).toBe('unschedule')
+  })
+
+  it('exposes and explains a task-specific speed limit', () => {
+    const task = scheduledTask()
+    task.speed_limit_bytes_per_second = 2 * 1024 * 1024
+
+    const view = createTransferTaskView(task, 0)
+    const diagnostic = createTaskDiagnosticView(task)
+
+    expect(view.secondaryActions.map((action) => action.kind)).toContain('speed_limit')
+    expect(diagnostic.impact).toContain('限速 2 MiB/s')
   })
 })

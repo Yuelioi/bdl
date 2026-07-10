@@ -60,6 +60,7 @@ fn settings_deserialize_old_config_defaults_duplicate_naming_strategy() {
     assert_eq!(settings.log_level, "info");
     assert_eq!(settings.data_dir, None);
     assert_eq!(settings.segment_count, 4);
+    assert_eq!(settings.global_speed_limit_bytes_per_second, None);
     assert!(!settings.startup_auto_recovery);
 }
 
@@ -139,4 +140,30 @@ fn settings_validate_rejects_invalid_segment_count() {
         .expect_err("unsupported segment count should fail");
 
     assert!(error.to_string().contains("单任务分段数"));
+}
+
+#[test]
+fn settings_validate_accepts_a_global_speed_limit() {
+    let settings = AppSettings {
+        global_speed_limit_bytes_per_second: Some(8 * 1024 * 1024),
+        ..AppSettings::default()
+    };
+
+    settings
+        .validate()
+        .expect("a practical global speed limit should be valid");
+}
+
+#[test]
+fn settings_validate_rejects_an_excessive_global_speed_limit() {
+    let settings = AppSettings {
+        global_speed_limit_bytes_per_second: Some(10 * 1024 * 1024 * 1024 + 1),
+        ..AppSettings::default()
+    };
+
+    let error = settings
+        .validate()
+        .expect_err("an excessive global speed limit should fail");
+
+    assert!(error.to_string().contains("全局下载限速"));
 }

@@ -58,6 +58,7 @@ Important invariants:
 - title and output path
 - task status
 - optional UTC `scheduled_at` start time
+- optional per-task `speed_limit_bytes_per_second`
 - resource list
 - media selection snapshot
 - refresh intent for expiring media URLs
@@ -80,12 +81,15 @@ Retry skips completed resources and resumes incomplete resources from `.bdlpart`
 - CDN fallback through current URL lists
 - size/metadata checks with ETag or last-modified when available
 - wakeable cancellation through `FetchCancelToken`; metadata requests, GET requests, and response streams race their waits against cancellation
+- a shared token-bucket limiter: all active tasks share the global byte budget, while every task's segments share its optional task budget
 
 Pause and cancel are not just queue-state changes. They must cancel the running fetch stream, persist resource status, and allow resume/retry to rebuild pending resource state.
 
 Settings carry a schema version. The first transfer-engine migration upgrades the historical single-segment default to four once; after migration, an explicit one-segment choice remains respected.
 
 Chunk progress is coalesced by the Tauri layer to a bounded UI cadence (currently 200 ms) with a final flush. The frontend derives displayed speed from a rolling cumulative-byte window, not one adjacent event pair. This keeps high-throughput downloads from flooding Vue and makes the speed label resistant to burst timing.
+
+Global speed limiting is a live setting. The queue worker owns one `BandwidthLimiter` shared by every active `ReqwestFetcher` and updates it when settings change. A task-specific limit is persisted with the task, captured when the task starts, and shared by all of that task's range segments. Active tasks must be paused before their task-specific limit is edited; changing the global limit does not restart transfers.
 
 ## URL Refresh
 
@@ -175,6 +179,7 @@ queue_pause
 queue_resume
 queue_schedule
 queue_unschedule
+queue_set_speed_limit
 queue_cancel
 queue_retry
 queue_refresh_urls_and_retry

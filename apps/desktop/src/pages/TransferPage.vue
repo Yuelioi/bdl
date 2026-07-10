@@ -19,6 +19,7 @@ import BulkActionBar from '../ui/BulkActionBar.vue'
 import TaskInspector from '../ui/TaskInspector.vue'
 import TransferTaskTable from '../ui/TransferTaskTable.vue'
 import { scheduledLocalError, toDateTimeLocalValue, toScheduledIso } from '../utils/schedule'
+import { speedLimitMibError, toBytesPerSecond, toMibPerSecondInput } from '../utils/speedLimit'
 
 type TransferSortMode = 'queue' | 'name_asc' | 'progress_desc' | 'speed_desc' | 'issue_first'
 
@@ -32,6 +33,9 @@ const scheduleTaskId = ref<string | null>(null)
 const scheduleLocal = ref('')
 const scheduleMin = ref('')
 const scheduleValidationNow = ref(Date.now())
+const speedLimitDialogOpen = ref(false)
+const speedLimitTaskId = ref<string | null>(null)
+const speedLimitMib = ref('')
 const contextMenu = ref<{ taskId: string; x: number; y: number } | null>(null)
 const queueFilter = computed({
   get: () => queue.activeFilter,
@@ -107,6 +111,7 @@ const selectedDetailTitle = computed(() => queue.selectedTask?.title ?? '任务�
 const scheduleError = computed(() => {
   return scheduledLocalError(scheduleLocal.value, scheduleValidationNow.value, true)
 })
+const speedLimitError = computed(() => speedLimitMibError(speedLimitMib.value))
 const emptyTitle = computed(() => {
   if (queue.tasks.length === 0) {
     return '还没有传输任务'
@@ -159,6 +164,10 @@ const handleTaskAction = (taskId: string, action: Exclude<TaskActionKind, 'none'
     openScheduleDialog(taskId)
     return
   }
+  if (action === 'speed_limit') {
+    openSpeedLimitDialog(taskId)
+    return
+  }
   if (action === 'retry') {
     void queue.retry(taskId)
     return
@@ -209,6 +218,24 @@ const submitSchedule = async () => {
   const updated = await queue.schedule(scheduleTaskId.value, toScheduledIso(scheduleLocal.value))
   if (updated) {
     scheduleDialogOpen.value = false
+  }
+}
+
+const openSpeedLimitDialog = (taskId: string) => {
+  const task = queue.tasks.find((task) => task.id === taskId)
+  speedLimitTaskId.value = taskId
+  speedLimitMib.value = toMibPerSecondInput(task?.speed_limit_bytes_per_second)
+  speedLimitDialogOpen.value = true
+}
+
+const submitSpeedLimit = async () => {
+  if (!speedLimitTaskId.value || speedLimitError.value) return
+  const updated = await queue.setSpeedLimit(
+    speedLimitTaskId.value,
+    toBytesPerSecond(speedLimitMib.value),
+  )
+  if (updated) {
+    speedLimitDialogOpen.value = false
   }
 }
 
@@ -429,6 +456,22 @@ const issueRank = (status: TaskStatus): number => {
       <template #footer>
         <UiButton variant="secondary" @click="scheduleDialogOpen = false">取消</UiButton>
         <UiButton :disabled="Boolean(scheduleError) || queue.loading" @click="submitSchedule">保存定时</UiButton>
+      </template>
+    </UiDialog>
+
+    <UiDialog v-model="speedLimitDialogOpen" title="设置单任务限速">
+      <UiTextField
+        v-model="speedLimitMib"
+        label="最大下载速度（MiB/s）"
+        placeholder="留空时不单独限速"
+        :error="speedLimitError ?? undefined"
+        helper="留空时仅受全局限速影响；同一任务的所有分段共享此额度"
+      />
+      <template #footer>
+        <UiButton variant="secondary" @click="speedLimitDialogOpen = false">取消</UiButton>
+        <UiButton :disabled="Boolean(speedLimitError) || queue.loading" @click="submitSpeedLimit">
+          保存限速
+        </UiButton>
       </template>
     </UiDialog>
 

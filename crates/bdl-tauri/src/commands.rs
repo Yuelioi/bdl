@@ -1,11 +1,13 @@
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use bdl_core::account::{
     QrLoginSession, QrLoginStatus, poll_qr_login, redact_sensitive, start_qr_login,
 };
 use bdl_core::fetcher::{
-    FetchCancelToken, FetchConfig, FetchProgress, ProgressSender, ReqwestFetcher, state_path_for,
+    BandwidthLimiter, FetchCancelToken, FetchConfig, FetchProgress, ProgressSender, ReqwestFetcher,
+    state_path_for,
 };
 use bdl_core::ids::{PartId, SourceId};
 use bdl_core::model::NormalizedSourceTree;
@@ -21,6 +23,7 @@ use bdl_core::queue::{
     DownloadResource, DownloadResourceIntent, DownloadTask, DuplicateTaskPolicy, QueueLogEntry,
     QueueLogLevel, ResourceStatus, TaskStatus,
 };
+use bdl_core::settings::validate_speed_limit;
 use bdl_core::{BdlError, BdlResult};
 use chrono::{DateTime, Utc};
 use futures::stream::{FuturesUnordered, StreamExt};
@@ -121,6 +124,12 @@ pub struct ScheduleTaskRequest {
     pub scheduled_at: String,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct SpeedLimitTaskRequest {
+    pub task_id: String,
+    pub speed_limit_bytes_per_second: Option<u64>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct BulkQueueFailure {
     pub task_id: String,
@@ -166,6 +175,7 @@ pub struct SelectionCreateTasksRequest {
     pub audio_quality: Option<String>,
     pub codec: Option<String>,
     pub scheduled_at: Option<String>,
+    pub speed_limit_bytes_per_second: Option<u64>,
     #[serde(default)]
     pub duplicate_policy: DuplicateTaskPolicy,
 }
@@ -296,11 +306,15 @@ struct QueueTaskLaunchContext {
     runtime_options: DownloadRuntimeOptions,
 }
 
-fn queue_task_launch_context(settings: SettingsSnapshot) -> QueueTaskLaunchContext {
+fn queue_task_launch_context(
+    settings: SettingsSnapshot,
+    task_speed_limit_bytes_per_second: Option<u64>,
+) -> QueueTaskLaunchContext {
     let fetch_config = FetchConfig {
         max_retries: retry_count(&settings),
         proxy_url: settings.proxy_url.clone(),
         segment_count: segment_count(&settings),
+        speed_limit_bytes_per_second: task_speed_limit_bytes_per_second,
     };
     let runtime_options = DownloadRuntimeOptions::from(&settings);
     QueueTaskLaunchContext {
@@ -376,6 +390,8 @@ pub async fn selection_create_tasks(
     let source_id = SourceId(request.source_id);
     let duplicate_policy = request.duplicate_policy;
     let scheduled_at = parse_future_schedule(request.scheduled_at.as_deref(), Utc::now())?;
+    let speed_limit_bytes_per_second =
+        parse_speed_limit(request.speed_limit_bytes_per_second, "单任务下载限速")?;
     let settings = state.settings()?;
     let selected_part_ids = request.part_ids.into_iter().map(PartId).collect::<Vec<_>>();
 
@@ -423,6 +439,7 @@ pub async fn selection_create_tasks(
     let mut planned_tasks = plan_selected_parts(&prepared.tree, &prepared.part_ids, &options)?;
     for task in &mut planned_tasks {
         task.scheduled_at = scheduled_at;
+        task.speed_limit_bytes_per_second = speed_limit_bytes_per_second;
     }
 
     if prepared.tree_updated {
@@ -545,6 +562,24 @@ pub fn queue_unschedule(
         QueueLogLevel::Info,
         "已取消定时，任务恢复到队列",
     )?;
+    start_queue_worker(&app);
+    Ok(task)
+}
+
+#[tauri::command]
+pub fn queue_set_speed_limit(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    request: SpeedLimitTaskRequest,
+) -> CommandResult<DownloadTask> {
+    let speed_limit = parse_speed_limit(request.speed_limit_bytes_per_second, "单任务下载限速")?;
+    let task = state.set_task_speed_limit(&request.task_id, speed_limit)?;
+    events::emit(&app, events::QUEUE_TASK_UPDATED, &task)?;
+    let message = speed_limit.map_or_else(
+        || "单任务下载限速已取消".to_owned(),
+        |limit| format!("单任务下载限速已设为 {limit} B/s"),
+    );
+    emit_queue_log(&app, state.inner(), &task.id, QueueLogLevel::Info, &message)?;
     start_queue_worker(&app);
     Ok(task)
 }
@@ -1076,6 +1111,12 @@ fn parse_future_schedule(
     Ok(Some(scheduled_at))
 }
 
+fn parse_speed_limit(value: Option<u64>, label: &str) -> CommandResult<Option<u64>> {
+    let value = value.filter(|limit| *limit > 0);
+    validate_speed_limit(value, label)?;
+    Ok(value)
+}
+
 async fn check_download_directory(path: PathBuf) -> DownloadDirectoryHealth {
     let display_path = path.to_string_lossy().into_owned();
     let metadata = match fs::metadata(&path).await {
@@ -1223,23 +1264,29 @@ fn start_queue_worker(app: &AppHandle) {
 }
 
 async fn run_queue_worker(app: &AppHandle, state: &AppState) -> CommandResult<()> {
+    let global_limiter = Arc::new(BandwidthLimiter::new(
+        state.settings()?.global_speed_limit_bytes_per_second,
+    ));
     let mut running = FuturesUnordered::new();
 
     loop {
-        let concurrent_tasks = concurrent_tasks(&state.settings()?);
+        let current_settings = state.settings()?;
+        global_limiter.set_limit(current_settings.global_speed_limit_bytes_per_second);
+        let concurrent_tasks = concurrent_tasks(&current_settings);
         while running.len() < concurrent_tasks {
-            let launch = queue_task_launch_context(state.settings()?);
-            let fetcher = ReqwestFetcher::with_config(launch.fetch_config)?;
             let Some(task) = state.take_next_startable_task()? else {
                 break;
             };
+            let launch =
+                queue_task_launch_context(state.settings()?, task.speed_limit_bytes_per_second);
 
             events::emit(app, events::QUEUE_TASK_UPDATED, &task)?;
             emit_queue_log(app, state, &task.id, QueueLogLevel::Info, "开始下载任务")?;
             running.push(run_download_task_with_identity(
                 app,
                 state,
-                fetcher,
+                global_limiter.clone(),
+                launch.fetch_config,
                 task,
                 launch.runtime_options,
                 launch.settings,
@@ -1277,12 +1324,16 @@ async fn run_queue_worker(app: &AppHandle, state: &AppState) -> CommandResult<()
 async fn run_download_task_with_identity(
     app: &AppHandle,
     state: &AppState,
-    fetcher: ReqwestFetcher,
+    global_limiter: Arc<BandwidthLimiter>,
+    fetch_config: FetchConfig,
     task: DownloadTask,
     runtime_options: DownloadRuntimeOptions,
     settings: SettingsSnapshot,
 ) -> (DownloadTask, SettingsSnapshot, CommandResult<()>) {
-    let outcome = run_download_task(app, state, &fetcher, task.clone(), runtime_options).await;
+    let outcome = match ReqwestFetcher::with_global_limiter(fetch_config, global_limiter) {
+        Ok(fetcher) => run_download_task(app, state, &fetcher, task.clone(), runtime_options).await,
+        Err(error) => Err(error.into()),
+    };
     (task, settings, outcome)
 }
 
@@ -2088,6 +2139,23 @@ mod tests {
     }
 
     #[test]
+    fn zero_speed_limit_normalizes_to_unlimited() {
+        assert_eq!(
+            super::parse_speed_limit(Some(0), "单任务下载限速")
+                .expect("zero should mean unlimited"),
+            None
+        );
+    }
+
+    #[test]
+    fn excessive_task_speed_limit_is_rejected() {
+        let error = super::parse_speed_limit(Some(10 * 1024 * 1024 * 1024 + 1), "单任务下载限速")
+            .expect_err("excessive task limit should fail");
+
+        assert!(error.message.contains("单任务下载限速"));
+    }
+
+    #[test]
     fn task_launch_context_uses_the_supplied_latest_settings() {
         let settings = super::SettingsSnapshot {
             proxy_url: Some("http://127.0.0.1:7890".to_owned()),
@@ -2100,7 +2168,7 @@ mod tests {
             ..Default::default()
         };
 
-        let launch = queue_task_launch_context(settings.clone());
+        let launch = queue_task_launch_context(settings.clone(), Some(3 * 1024 * 1024));
 
         assert_eq!(launch.settings, settings);
         assert_eq!(launch.fetch_config.max_retries, 5);
@@ -2109,6 +2177,10 @@ mod tests {
             Some("http://127.0.0.1:7890")
         );
         assert_eq!(launch.fetch_config.segment_count, 8);
+        assert_eq!(
+            launch.fetch_config.speed_limit_bytes_per_second,
+            Some(3 * 1024 * 1024)
+        );
         assert_eq!(
             launch.runtime_options.ffmpeg_path.as_deref(),
             Some(std::path::Path::new("C:/tools/ffmpeg.exe"))
@@ -2130,6 +2202,7 @@ mod tests {
             refresh_intent: None,
             media_selection: DownloadTaskMediaSelection::default(),
             scheduled_at: None,
+            speed_limit_bytes_per_second: None,
         };
 
         let nfo = nfo_content(&task);
@@ -2186,6 +2259,7 @@ mod tests {
             refresh_intent: None,
             media_selection: DownloadTaskMediaSelection::default(),
             scheduled_at: None,
+            speed_limit_bytes_per_second: None,
         };
 
         assert!(
@@ -2274,6 +2348,7 @@ mod tests {
             refresh_intent: None,
             media_selection: DownloadTaskMediaSelection::default(),
             scheduled_at: None,
+            speed_limit_bytes_per_second: None,
         };
 
         task = redact_task_for_diagnostics(task);

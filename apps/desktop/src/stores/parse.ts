@@ -48,6 +48,7 @@ export interface CreateTaskOptions {
   codec?: SettingsSnapshot['codec']
   duplicatePolicy?: DuplicateTaskPolicy
   scheduledAt?: string
+  speedLimitBytesPerSecond?: number
 }
 
 export const useParseStore = defineStore('parse', {
@@ -320,6 +321,7 @@ export const useParseStore = defineStore('parse', {
           codec: options.codec ?? settings.saved.codec,
           duplicate_policy: options.duplicatePolicy ?? 'ask',
           scheduled_at: options.scheduledAt,
+          speed_limit_bytes_per_second: options.speedLimitBytesPerSecond,
         })
         this.errorsBySource[sourceId] = null
         if (result.requires_confirmation) {

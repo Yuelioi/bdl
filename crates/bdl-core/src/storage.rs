@@ -101,7 +101,7 @@ impl TaskStorage {
 
     pub fn load_tasks(&self) -> BdlResult<Vec<DownloadTask>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, title, source_id, status, output_path, refresh_intent, media_selection, scheduled_at FROM tasks ORDER BY sort_order, rowid",
+            "SELECT id, title, source_id, status, output_path, refresh_intent, media_selection, scheduled_at, speed_limit_bytes_per_second FROM tasks ORDER BY sort_order, rowid",
         )?;
         let task_rows = stmt.query_map([], |row| {
             Ok(TaskRow {
@@ -113,6 +113,7 @@ impl TaskStorage {
                 refresh_intent_json: row.get(5)?,
                 media_selection_json: row.get(6)?,
                 scheduled_at_json: row.get(7)?,
+                speed_limit_bytes_per_second: row.get(8)?,
             })
         })?;
 
@@ -138,6 +139,10 @@ impl TaskStorage {
                     .as_deref()
                     .map(deserialize_json)
                     .transpose()?,
+                speed_limit_bytes_per_second: task_row
+                    .speed_limit_bytes_per_second
+                    .and_then(|value| u64::try_from(value).ok())
+                    .filter(|value| *value > 0),
             });
         }
 
@@ -389,6 +394,7 @@ struct TaskRow {
     refresh_intent_json: Option<String>,
     media_selection_json: String,
     scheduled_at_json: Option<String>,
+    speed_limit_bytes_per_second: Option<i64>,
 }
 
 struct ResourceRow {
@@ -421,6 +427,7 @@ fn run_migrations(conn: &Connection) -> BdlResult<()> {
             refresh_intent TEXT,
             media_selection TEXT NOT NULL DEFAULT '{"video_quality":"unknown","audio_quality":"unknown","video_codec":"unknown","container":"unknown"}',
             scheduled_at TEXT,
+            speed_limit_bytes_per_second INTEGER,
             sort_order INTEGER NOT NULL DEFAULT 0,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -491,6 +498,12 @@ fn run_migrations(conn: &Connection) -> BdlResult<()> {
     add_column_if_missing(conn, "tasks", "scheduled_at", "scheduled_at TEXT")?;
     add_column_if_missing(
         conn,
+        "tasks",
+        "speed_limit_bytes_per_second",
+        "speed_limit_bytes_per_second INTEGER",
+    )?;
+    add_column_if_missing(
+        conn,
         "history",
         "source_id",
         "source_id TEXT NOT NULL DEFAULT ''",
@@ -533,8 +546,8 @@ fn save_task_in_tx(tx: &Transaction<'_>, task: &DownloadTask, sort_order: usize)
 
     tx.execute(
         r#"
-        INSERT INTO tasks (id, title, source_id, status, output_path, refresh_intent, media_selection, scheduled_at, sort_order, updated_at)
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, CURRENT_TIMESTAMP)
+        INSERT INTO tasks (id, title, source_id, status, output_path, refresh_intent, media_selection, scheduled_at, speed_limit_bytes_per_second, sort_order, updated_at)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, CURRENT_TIMESTAMP)
         ON CONFLICT(id) DO UPDATE SET
             title = excluded.title,
             source_id = excluded.source_id,
@@ -543,6 +556,7 @@ fn save_task_in_tx(tx: &Transaction<'_>, task: &DownloadTask, sort_order: usize)
             refresh_intent = excluded.refresh_intent,
             media_selection = excluded.media_selection,
             scheduled_at = excluded.scheduled_at,
+            speed_limit_bytes_per_second = excluded.speed_limit_bytes_per_second,
             sort_order = excluded.sort_order,
             updated_at = CURRENT_TIMESTAMP
         "#,
@@ -555,6 +569,7 @@ fn save_task_in_tx(tx: &Transaction<'_>, task: &DownloadTask, sort_order: usize)
             refresh_intent_json.as_deref(),
             serialize_json(&task.media_selection)?,
             scheduled_at_json.as_deref(),
+            task.speed_limit_bytes_per_second.and_then(|value| i64::try_from(value).ok()),
             sort_order as i64,
         ],
     )?;

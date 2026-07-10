@@ -103,6 +103,8 @@ Before task creation, the same environment health contract used by Settings chec
 
 The download dialog optionally accepts a one-time local start time. The backend stores it in UTC, keeps future tasks out of the worker, and restores the wakeup after restart. Transfer rows label scheduled work explicitly and offer `立即开始` plus `修改时间`; paused tasks can also be scheduled. Invalid or past times are shown inline beside the native datetime input.
 
+The same dialog optionally accepts a per-task speed cap in MiB/s. Leaving it empty means the task only follows the global cap. Settings exposes a live global cap shared across concurrent tasks. Transfer actions let waiting, scheduled, paused, and failed tasks change or clear their own cap; an active download must be paused first. All range segments consume one task budget rather than multiplying the configured speed.
+
 Task creation uses an explicit duplicate policy:
 
 - `ask` is the default and is atomic: if any selected logical task already exists, create nothing and return the matches for confirmation.

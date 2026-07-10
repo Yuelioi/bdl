@@ -4,8 +4,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use bdl_core::fetcher::{
-    FetchCancelToken, FetchConfig, FetchState, Fetcher, ReqwestFetcher, state_path_for,
-    write_fetch_state,
+    BandwidthLimiter, FetchCancelToken, FetchConfig, FetchState, Fetcher, ReqwestFetcher,
+    state_path_for, write_fetch_state,
 };
 use bdl_core::model::HeaderPair;
 use bdl_core::queue::{
@@ -172,6 +172,63 @@ async fn fetcher_downloads_segments_with_configured_segment_count() {
             "bytes=6-7".to_owned(),
         ]
     );
+}
+
+#[tokio::test]
+async fn segmented_fetch_shares_one_task_speed_limit() {
+    let server = TestServer::spawn(b"abcdefgh".to_vec(), 0).await;
+    let dir = temp_case_dir("segment-limit").await;
+    let resource = resource(server.url(), &dir, "segment-limit.bin");
+    let fetcher = ReqwestFetcher::with_config(FetchConfig {
+        max_retries: 0,
+        segment_count: 4,
+        speed_limit_bytes_per_second: Some(4),
+        ..FetchConfig::default()
+    })
+    .expect("fetcher should be created");
+    let started = std::time::Instant::now();
+
+    fetcher
+        .fetch(&resource, None)
+        .await
+        .expect("segmented resource should download within one task budget");
+
+    assert!(started.elapsed() >= Duration::from_millis(800));
+}
+
+#[tokio::test]
+async fn concurrent_fetchers_share_one_global_speed_limit() {
+    let server = TestServer::spawn(b"abcdefgh".to_vec(), 0).await;
+    let dir = temp_case_dir("global-limit").await;
+    let first = resource(server.url(), &dir, "global-first.bin");
+    let second = resource(server.url(), &dir, "global-second.bin");
+    let limiter = Arc::new(BandwidthLimiter::new(Some(8)));
+    let first_fetcher = ReqwestFetcher::with_global_limiter(
+        FetchConfig {
+            max_retries: 0,
+            ..FetchConfig::default()
+        },
+        limiter.clone(),
+    )
+    .expect("first fetcher should be created");
+    let second_fetcher = ReqwestFetcher::with_global_limiter(
+        FetchConfig {
+            max_retries: 0,
+            ..FetchConfig::default()
+        },
+        limiter,
+    )
+    .expect("second fetcher should be created");
+    let started = std::time::Instant::now();
+
+    let (first_result, second_result) = tokio::join!(
+        first_fetcher.fetch(&first, None),
+        second_fetcher.fetch(&second, None),
+    );
+
+    first_result.expect("first resource should download");
+    second_result.expect("second resource should download");
+    assert!(started.elapsed() >= Duration::from_millis(800));
 }
 
 #[tokio::test]
