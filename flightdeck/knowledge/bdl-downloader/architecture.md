@@ -82,6 +82,8 @@ Retry skips completed resources and resumes incomplete resources from `.bdlpart`
 
 Pause and cancel are not just queue-state changes. They must cancel the running fetch stream, persist resource status, and allow resume/retry to rebuild pending resource state.
 
+Settings carry a schema version. The first transfer-engine migration upgrades the historical single-segment default to four once; after migration, an explicit one-segment choice remains respected.
+
 Chunk progress is coalesced by the Tauri layer to a bounded UI cadence (currently 200 ms) with a final flush. The frontend derives displayed speed from a rolling cumulative-byte window, not one adjacent event pair. This keeps high-throughput downloads from flooding Vue and makes the speed label resistant to burst timing.
 
 ## URL Refresh

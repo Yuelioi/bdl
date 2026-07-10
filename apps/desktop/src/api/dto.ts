@@ -198,6 +198,7 @@ export interface ArchiveAssetSelection {
 }
 
 export interface SettingsSnapshot {
+  settings_schema_version: number
   download_dir: string | null
   naming_template: string
   quality: string

@@ -48,7 +48,7 @@ Done:
 - Replaced the custom account/source popovers and native-details overflow menu with accessible Nuxt UI dropdowns.
 - Made fetch cancellation wake stalled metadata, request, and response-stream waits immediately.
 - Coalesced chunk progress to five UI updates per second and changed speed display to a five-second rolling byte window.
-- Changed new/default downloads to four resumable range segments and preserved partial segment files across pause/resume.
+- Migrated the legacy single-segment default to four resumable range segments once, while preserving an explicit post-migration choice of one segment; partial segment files survive pause/resume.
 - Made successful muxing an irreversible completion commit and prevented muxing/completed tasks from accepting late pause/cancel transitions.
 - Added recovery for the exact `missing media input` case where the final MP4 exists and raw media inputs were already cleaned.
 

@@ -12,6 +12,8 @@ const LEGACY_DUPLICATE_TITLE_TEMPLATE: &str =
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AppSettings {
+    #[serde(default)]
+    pub settings_schema_version: u16,
     pub download_dir: Option<String>,
     pub naming_template: String,
     pub quality: String,
@@ -39,6 +41,7 @@ pub struct AppSettings {
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
+            settings_schema_version: 1,
             download_dir: None,
             naming_template: DEFAULT_NAMING_TEMPLATE.to_owned(),
             quality: "best".to_owned(),
@@ -67,6 +70,12 @@ impl Default for AppSettings {
 
 impl AppSettings {
     pub fn normalized(mut self) -> Self {
+        if self.settings_schema_version == 0 {
+            if self.segment_count == 1 {
+                self.segment_count = 4;
+            }
+            self.settings_schema_version = 1;
+        }
         if self.naming_template.trim().is_empty()
             || self.naming_template.trim() == LEGACY_DUPLICATE_TITLE_TEMPLATE
         {

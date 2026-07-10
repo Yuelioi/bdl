@@ -64,6 +64,24 @@ fn settings_deserialize_old_config_defaults_duplicate_naming_strategy() {
 }
 
 #[test]
+fn settings_normalization_migrates_legacy_single_segment_default_once() {
+    let legacy: AppSettings =
+        serde_json::from_str(r#"{"segment_count":1,"naming_template":"{title}.{ext}"}"#)
+            .expect("legacy settings should deserialize");
+    let migrated = legacy.normalized();
+
+    assert_eq!(migrated.settings_schema_version, 1);
+    assert_eq!(migrated.segment_count, 4);
+
+    let explicit_single_segment = AppSettings {
+        segment_count: 1,
+        ..AppSettings::default()
+    }
+    .normalized();
+    assert_eq!(explicit_single_segment.segment_count, 1);
+}
+
+#[test]
 fn settings_validate_accepts_custom_archive_mode() {
     let settings = AppSettings {
         archive_mode: "custom".to_owned(),

@@ -45,6 +45,7 @@ export const namingVariables = [
 ]
 
 const defaultSettings = (): SettingsSnapshot => ({
+  settings_schema_version: 1,
   download_dir: null,
   naming_template: defaultNamingTemplate,
   quality: 'best',
@@ -69,7 +70,7 @@ const defaultSettings = (): SettingsSnapshot => ({
   data_dir: null,
   concurrent_tasks: 1,
   retry_count: 3,
-  segment_count: 1,
+  segment_count: 4,
   startup_auto_recovery: false,
   auto_refresh_expired_urls: true,
 })
@@ -326,7 +327,7 @@ export const useSettingsStore = defineStore('settings', {
     },
     setSegmentCount(value: string) {
       const count = Number(value)
-      this.draft.segment_count = segmentCounts.has(count) ? count : 1
+      this.draft.segment_count = segmentCounts.has(count) ? count : 4
     },
     setStartupAutoRecovery(value: boolean) {
       this.draft.startup_auto_recovery = value
@@ -376,6 +377,7 @@ export const useSettingsStore = defineStore('settings', {
 })
 
 const normalizeSettings = (settings: SettingsSnapshot): SettingsSnapshot => ({
+  settings_schema_version: settings.settings_schema_version || 1,
   download_dir: settings.download_dir?.trim() || null,
   naming_template: normalizeNamingTemplate(settings.naming_template),
   quality: videoQualities.has(settings.quality) ? settings.quality : 'best',
@@ -399,7 +401,7 @@ const normalizeSettings = (settings: SettingsSnapshot): SettingsSnapshot => ({
   data_dir: settings.data_dir?.trim() || null,
   concurrent_tasks: concurrentTaskCounts.has(settings.concurrent_tasks) ? settings.concurrent_tasks : 1,
   retry_count: retryCounts.has(settings.retry_count) ? settings.retry_count : 3,
-  segment_count: segmentCounts.has(settings.segment_count) ? settings.segment_count : 1,
+  segment_count: segmentCounts.has(settings.segment_count) ? settings.segment_count : 4,
   startup_auto_recovery: settings.startup_auto_recovery === true,
   auto_refresh_expired_urls: settings.auto_refresh_expired_urls !== false,
 })
