@@ -90,6 +90,7 @@ Verified:
 - Restored custom-title-bar dragging by granting Tauri's `start-dragging` capability and verified a real window-coordinate move; simplified light mode to white chrome with pink used only as a signal color.
 - Removed pink contamination from structural neutrals in both themes: light mode now uses clean whites/cool grays and dark mode uses a five-step charcoal ladder, with pink retained as the only brand accent.
 - Fixed completed tasks inheriting warning status from historical pause/resume logs, added raw-deflate compatibility for Bilibili XML danmaku downloads, and polished clipped field focus plus task-row action borders. Replayed the persisted failed danmaku task through the real desktop UI and verified it completed cleanly.
+- Closed the metadata-only selection loop for repeated list downloads: stale favorite/uploader/collection/series placeholder IDs now map to their already hydrated BVID parts before planning, so duplicate confirmation no longer fails with “分 P 未加载” or requires reparsing.
 
 ## Open questions
 

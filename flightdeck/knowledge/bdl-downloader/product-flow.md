@@ -62,6 +62,8 @@ Logged-out, loading, empty, API-error, pagination, cover-fallback, and narrow-wi
 
 Playable stream URLs, codecs, and quality profiles are hydrated when tasks are created, and only for the selected CID when the source already exposes one. Hydrating one selected part must preserve streams already hydrated for sibling parts.
 
+Duplicate confirmation and repeated download actions reuse the already hydrated backend tree even when the frontend selection still contains the original list placeholder ID. The backend maps favorite/uploader/collection/series placeholders to the hydrated parts with the same BVID; it must not ask the user to reparse the source.
+
 Current parse controls:
 
 - source switcher with loaded/selected counts

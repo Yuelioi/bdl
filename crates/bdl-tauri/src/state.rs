@@ -231,16 +231,17 @@ impl AppState {
         selected_part_ids: &[PartId],
     ) -> BdlResult<PreparedSelection> {
         let mut tree = self.source_snapshot(source_id)?;
-        let requests = selected_hydration_requests(&tree, selected_part_ids)?;
+        let selected_part_ids = normalize_selected_part_ids(&tree, selected_part_ids);
+        let requests = selected_hydration_requests(&tree, &selected_part_ids)?;
         if requests.is_empty() {
             return Ok(PreparedSelection {
                 tree,
-                part_ids: selected_part_ids.to_vec(),
+                part_ids: selected_part_ids,
                 tree_updated: false,
             });
         }
 
-        let mut part_ids = selected_part_ids.to_vec();
+        let mut part_ids = selected_part_ids;
 
         for request in requests {
             let hydrated = self
@@ -1504,6 +1505,63 @@ fn selected_hydration_requests(
     Ok(requests)
 }
 
+fn normalize_selected_part_ids(
+    tree: &NormalizedSourceTree,
+    selected_part_ids: &[PartId],
+) -> Vec<PartId> {
+    let mut seen = HashSet::new();
+    let mut normalized = Vec::new();
+
+    for part_id in selected_part_ids {
+        if find_part(tree, part_id).is_some() {
+            if seen.insert(part_id.clone()) {
+                normalized.push(part_id.clone());
+            }
+            continue;
+        }
+
+        let hydrated_parts = list_placeholder_bvid(part_id)
+            .and_then(|bvid| {
+                tree.groups
+                    .iter()
+                    .flat_map(|group| &group.items)
+                    .find(|item| {
+                        item.parts
+                            .iter()
+                            .any(|part| part.bvid.as_deref() == Some(bvid))
+                    })
+            })
+            .map(|item| {
+                item.parts
+                    .iter()
+                    .map(|part| part.id.clone())
+                    .collect::<Vec<_>>()
+            });
+
+        if let Some(hydrated_parts) = hydrated_parts {
+            for hydrated_part_id in hydrated_parts {
+                if seen.insert(hydrated_part_id.clone()) {
+                    normalized.push(hydrated_part_id);
+                }
+            }
+        } else if seen.insert(part_id.clone()) {
+            normalized.push(part_id.clone());
+        }
+    }
+
+    normalized
+}
+
+fn list_placeholder_bvid(part_id: &PartId) -> Option<&str> {
+    let mut segments = part_id.0.strip_prefix("part:")?.split(':');
+    let kind = segments.next()?;
+    if !matches!(kind, "favorite" | "uploader" | "collection" | "series") {
+        return None;
+    }
+
+    segments.next_back().filter(|value| value.starts_with("BV"))
+}
+
 fn find_part<'a>(tree: &'a NormalizedSourceTree, part_id: &PartId) -> Option<&'a NormalizedPart> {
     tree.groups
         .iter()
@@ -1848,8 +1906,9 @@ mod tests {
     use super::{
         AppState, PartHydrationRequest, StartupRecoverySnapshot, append_new_tasks,
         append_source_page, dedupe_tasks_by_id, hydrate_placeholder_part, load_account_snapshot,
-        next_page_request, prepare_startup_recovery, remap_selected_part_ids, select_task_stream,
-        selected_hydration_requests, should_continue_parse_all, task_media_refresh_ids,
+        next_page_request, normalize_selected_part_ids, prepare_startup_recovery,
+        remap_selected_part_ids, select_task_stream, selected_hydration_requests,
+        should_continue_parse_all, task_media_refresh_ids,
     };
     use crate::secure_store::SecureStore;
     use chrono::Utc;
@@ -2430,6 +2489,24 @@ mod tests {
         assert_eq!(item.parts.len(), 2);
         assert_eq!(item.parts[0].cid, Some(62131));
         assert_eq!(item.parts[1].cid, Some(62132));
+    }
+
+    #[test]
+    fn hydrated_list_item_accepts_its_original_placeholder_selection() {
+        let mut tree = uploader_tree();
+        let placeholder = PartId("part:uploader:1001:BV1xx411c7mD".to_owned());
+        let hydrated_ids = hydrate_placeholder_part(&mut tree, &placeholder, None, video_tree())
+            .expect("placeholder should hydrate");
+
+        let selected = normalize_selected_part_ids(&tree, std::slice::from_ref(&placeholder));
+
+        assert_eq!(selected, hydrated_ids);
+        assert!(
+            selected
+                .iter()
+                .all(|part_id| super::find_part(&tree, part_id).is_some()),
+            "the planner must only receive part IDs present in the hydrated tree"
+        );
     }
 
     #[test]

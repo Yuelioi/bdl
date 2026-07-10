@@ -150,6 +150,8 @@ The queue worker:
 
 Logical task identity is the deterministic planner ID (`task:<source>:<part>`). Explicit duplicate copies append `:copy:<n>` while still matching the same logical identity. `AppState` applies duplicate detection, `ask`/`skip`/`create`, copy IDs, output-path reservation, and persistence under one queue lock; task/resource re-keying and path retargeting remain `bdl-core` domain behavior.
 
+List-source selections use lightweight placeholder part IDs until task creation hydrates their BVID/CID streams. A later duplicate-confirmation or repeated create request may still carry the original favorite/uploader/collection/series placeholder; `AppState` must normalize that stale placeholder to the already hydrated parts for the same BVID before invoking the planner. This compatibility mapping prevents repeated requests from requiring a second list parse.
+
 Startup recovery:
 
 - persisted waiting/parsing/downloading/muxing tasks are normalized on app start
