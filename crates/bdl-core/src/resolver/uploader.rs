@@ -197,6 +197,7 @@ fn map_video_item(source_mid: u64, video: ResolvedUploaderVideo) -> NormalizedIt
             aid: Some(video.aid),
             bvid: Some(video.bvid),
             cid: None,
+            duration_seconds: video.duration_seconds,
             streams: Vec::new(),
             assets: vec![AssetKind::Cover.with_policy(FetchPolicy::OnDemand)],
         }],

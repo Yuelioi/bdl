@@ -83,6 +83,10 @@ Verified:
 - Moved toast notifications below the top bar after live review found that bottom-right notifications could cover modal primary actions.
 - Changed initial video parsing to metadata-only resolution and moved stream/profile hydration to task creation; repeated live checks of a 190-part AV input now resolve its complete visible tree in under half a second instead of issuing two extra stream requests per part.
 - Added CID-targeted video hydration so selecting one part fetches only that part's play/player data, while preserving streams already hydrated for sibling selections.
+- Added per-part duration to the normalized model so multi-part rows display their own runtime instead of repeating the whole video's total.
+- Made initial parse and refresh exhaust every lightweight metadata page automatically and removed the Parse-page `解析更多` / `解析全部` controls.
+- Replaced native window decorations and the redundant page header with a slim custom title bar, removed the help button, and shifted both themes to a restrained Bilibili-pink token system.
+- Added a local, intentionally uncommitted `bpi-rs` compatibility patch that normalizes negative `last_play_time` / `last_play_cid` sentinels before unsigned decoding.
 
 ## Open questions
 

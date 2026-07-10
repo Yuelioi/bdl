@@ -160,6 +160,19 @@ impl AppState {
         Ok(tree)
     }
 
+    pub async fn parse_source_all(
+        &self,
+        input: &str,
+        fetch_streams: bool,
+    ) -> BdlResult<NormalizedSourceTree> {
+        let tree = self.parse_source(input, fetch_streams).await?;
+        if tree.source.has_more {
+            self.load_all(&tree.source.id, None).await
+        } else {
+            Ok(tree)
+        }
+    }
+
     pub fn close_source(&self, source_id: &SourceId) -> BdlResult<bool> {
         Ok(self
             .parse_sources
@@ -182,7 +195,7 @@ impl AppState {
 
     pub async fn refresh_source(&self, source_id: &SourceId) -> BdlResult<NormalizedSourceTree> {
         let current = self.source_snapshot(source_id)?;
-        self.parse_source(&current.source.input, true).await
+        self.parse_source_all(&current.source.input, false).await
     }
 
     pub async fn load_more(&self, source_id: &SourceId) -> BdlResult<NormalizedSourceTree> {
@@ -2801,6 +2814,7 @@ mod tests {
                         aid: Some(170001),
                         bvid: Some("BV1xx411c7mD".to_owned()),
                         cid: None,
+                        duration_seconds: Some(62),
                         streams: Vec::new(),
                         assets: Vec::new(),
                     }],
@@ -2843,6 +2857,7 @@ mod tests {
                         aid: Some(170001),
                         bvid: None,
                         cid: Some(789),
+                        duration_seconds: Some(62),
                         streams: Vec::new(),
                         assets: Vec::new(),
                     }],
@@ -2879,6 +2894,7 @@ mod tests {
                         aid: Some(170002),
                         bvid: Some("BV1yy411c7mD".to_owned()),
                         cid: None,
+                        duration_seconds: None,
                         streams: Vec::new(),
                         assets: Vec::new(),
                     }],
@@ -2922,6 +2938,7 @@ mod tests {
                             aid: Some(170001),
                             bvid: Some("BV1xx411c7mD".to_owned()),
                             cid: Some(62131),
+                            duration_seconds: Some(30),
                             streams: Vec::new(),
                             assets: Vec::new(),
                         },
@@ -2931,6 +2948,7 @@ mod tests {
                             aid: Some(170001),
                             bvid: Some("BV1xx411c7mD".to_owned()),
                             cid: Some(62132),
+                            duration_seconds: Some(32),
                             streams: Vec::new(),
                             assets: Vec::new(),
                         },

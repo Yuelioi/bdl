@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { getCurrentWindow } from '@tauri-apps/api/window'
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import { useAccountStore } from './stores/account'
@@ -9,8 +10,6 @@ import { useUiStore, type AppTab } from './stores/ui'
 import UiButton from './ui/Button.vue'
 import AppearanceMenu from './ui/AppearanceMenu.vue'
 import UiDialog from './ui/Dialog.vue'
-import UiDrawer from './ui/Drawer.vue'
-import UiIconButton from './ui/IconButton.vue'
 import UiTabs from './ui/Tabs.vue'
 import UiTextarea from './ui/Textarea.vue'
 import UiToastHost from './ui/ToastHost.vue'
@@ -29,7 +28,6 @@ const loginDialogOpen = computed({
   get: () => ui.loginDialogOpen,
   set: (value: boolean) => { ui.loginDialogOpen = value },
 })
-const helpDrawerOpen = ref(false)
 const startupRecoveryDialogOpen = ref(false)
 const loginMode = ref<'qr' | 'cookie'>('qr')
 const cookieText = ref('')
@@ -42,7 +40,7 @@ const navItems: Array<{ value: AppTab; label: string; description: string; icon:
   { value: 'settings', label: '设置', description: '偏好与维护', icon: 'i-tabler-adjustments', shortcut: '4' },
 ]
 
-const activeTitle = computed(() => navItems.find((item) => item.value === ui.activeTab)?.label ?? '解析')
+const appWindow = getCurrentWindow()
 const activePageComponent = computed(() => {
   if (ui.activeTab === 'transfer') return TransferPage
   if (ui.activeTab === 'library') return LibraryPage
@@ -108,6 +106,10 @@ const accountMenuItems = computed(() => {
 const openLoginDialog = () => {
   ui.openLoginDialog()
 }
+
+const minimizeWindow = () => { void appWindow.minimize() }
+const toggleMaximizeWindow = () => { void appWindow.toggleMaximize() }
+const closeWindow = () => { void appWindow.close() }
 
 const saveLogin = async () => {
   if (loginMode.value === 'qr') {
@@ -223,15 +225,49 @@ watch(
 <template>
   <UApp>
     <main class="app-shell">
-      <aside class="side-nav" aria-label="主导航">
-        <div class="brand-block">
-          <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
-          <span class="brand-copy">
-            <strong>BDL</strong>
-            <small>Media transfer desk</small>
-          </span>
+      <header class="app-titlebar" data-tauri-drag-region @dblclick="toggleMaximizeWindow">
+        <div class="titlebar-brand" data-tauri-drag-region>
+          <span class="titlebar-mark" aria-hidden="true"><i></i><i></i></span>
+          <strong data-tauri-drag-region>BDL</strong>
+          <span data-tauri-drag-region>Bilibili Download Lab</span>
         </div>
+        <div class="titlebar-actions">
+          <AppearanceMenu />
+          <UDropdownMenu
+            :items="accountMenuItems"
+            :content="{ align: 'end', sideOffset: 6, collisionPadding: 12 }"
+            :ui="{ content: 'min-w-36' }"
+          >
+            <button class="account-button" type="button">
+              <span class="account-avatar" aria-hidden="true">
+                <img
+                  v-if="account.profile.avatar_url && !avatarLoadFailed"
+                  :src="account.profile.avatar_url"
+                  alt=""
+                  referrerpolicy="no-referrer"
+                  @error="avatarLoadFailed = true"
+                />
+                <span v-else>{{ account.avatarLabel }}</span>
+              </span>
+              <span>{{ account.displayName }}</span>
+              <UIcon name="i-tabler-chevron-down" class="account-chevron" aria-hidden="true" />
+            </button>
+          </UDropdownMenu>
+          <div class="window-controls" aria-label="窗口控制">
+            <button type="button" aria-label="最小化" @click.stop="minimizeWindow">
+              <UIcon name="i-tabler-minus" aria-hidden="true" />
+            </button>
+            <button type="button" aria-label="最大化或还原" @click.stop="toggleMaximizeWindow">
+              <UIcon name="i-tabler-square" aria-hidden="true" />
+            </button>
+            <button class="close" type="button" aria-label="关闭" @click.stop="closeWindow">
+              <UIcon name="i-tabler-x" aria-hidden="true" />
+            </button>
+          </div>
+        </div>
+      </header>
 
+      <aside class="side-nav" aria-label="主导航">
         <nav class="nav-list">
           <button
             v-for="item in navItems"
@@ -265,36 +301,6 @@ watch(
       </aside>
 
     <section class="main-region" :data-page="ui.activeTab">
-      <header class="top-bar">
-        <div class="page-identity">
-          <h1>{{ activeTitle }}</h1>
-        </div>
-        <div class="top-actions">
-          <AppearanceMenu />
-          <UiIconButton icon="help" label="帮助" @click="helpDrawerOpen = true" />
-          <UDropdownMenu
-            :items="accountMenuItems"
-            :content="{ align: 'end', sideOffset: 6, collisionPadding: 12 }"
-            :ui="{ content: 'min-w-36' }"
-          >
-            <button class="account-button" type="button">
-              <span class="account-avatar" aria-hidden="true">
-                <img
-                  v-if="account.profile.avatar_url && !avatarLoadFailed"
-                  :src="account.profile.avatar_url"
-                  alt=""
-                  referrerpolicy="no-referrer"
-                  @error="avatarLoadFailed = true"
-                />
-                <span v-else>{{ account.avatarLabel }}</span>
-              </span>
-              <span>{{ account.displayName }}</span>
-              <UIcon name="i-tabler-chevron-down" class="account-chevron" aria-hidden="true" />
-            </button>
-          </UDropdownMenu>
-        </div>
-      </header>
-
       <Suspense>
         <Transition name="workspace" mode="out-in">
           <component :is="activePageComponent" :key="ui.activeTab" />
@@ -343,23 +349,6 @@ watch(
         </UiButton>
       </template>
     </UiDialog>
-
-    <UiDrawer v-model="helpDrawerOpen" title="流程">
-      <div class="flow-list">
-        <div>
-          <strong>解析</strong>
-          <span>识别输入并拉取可选分集。</span>
-        </div>
-        <div>
-          <strong>归一化</strong>
-          <span>统一成下载任务和媒体轨道。</span>
-        </div>
-        <div>
-          <strong>下载</strong>
-          <span>按任务队列获取、合并并生成输出文件。</span>
-        </div>
-      </div>
-    </UiDrawer>
 
       <UiToastHost />
     </main>

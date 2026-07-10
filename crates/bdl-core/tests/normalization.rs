@@ -35,6 +35,7 @@ fn normalized_source_tree_serializes_stable_shape() {
                     aid: Some(1),
                     bvid: Some("BV1xx411c7mD".into()),
                     cid: Some(2),
+                    duration_seconds: None,
                     streams: vec![
                         MediaStream {
                             id: "stream_video_720".into(),
@@ -111,6 +112,7 @@ fn normalized_source_tree_serializes_stable_shape() {
                                     "aid": 1,
                                     "bvid": "BV1xx411c7mD",
                                     "cid": 2,
+                                    "duration_seconds": null,
                                     "streams": [
                                         {
                                             "id": "stream_video_720",

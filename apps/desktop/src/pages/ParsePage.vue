@@ -26,6 +26,7 @@ import { useUiStore } from '../stores/ui'
 import { statusBadge, statusLabel } from '../stores/transferView'
 import { scheduledLocalError, toDateTimeLocalValue, toScheduledIso } from '../utils/schedule'
 import { formatSpeedLimit, speedLimitMibError, toBytesPerSecond } from '../utils/speedLimit'
+import { displayPartDuration, formatDuration } from '../utils/duration'
 
 interface PageTreeNode {
   id: string
@@ -143,7 +144,6 @@ const createLoading = computed(() => Boolean(parse.loadingBySource.__create__))
 const activeLoading = computed(() => Boolean(activeSource.value && parse.loadingBySource[activeSource.value.source.id]))
 const activeError = computed(() => (activeSource.value ? parse.errorsBySource[activeSource.value.source.id] : null))
 const canCreateTasks = computed(() => Boolean(activeSource.value && selectedCount.value > 0 && !activeLoading.value))
-const canLoadMore = computed(() => Boolean(activeSource.value?.source.has_more && !activeLoading.value))
 const hasResultQuery = computed(() => resultQuery.value.trim().length > 0)
 const canSelectVisible = computed(() => Boolean(activeSource.value && visiblePartCount.value > 0 && !activeLoading.value))
 const canSelectRange = computed(() => Boolean(activeSource.value && rangeExpression.value.trim() && visiblePartCount.value > 0 && !activeLoading.value))
@@ -324,28 +324,6 @@ const openEnvironmentSettings = () => {
   ui.setTab('settings')
 }
 
-const loadMore = () => {
-  if (activeSource.value) {
-    void parse.loadMore(activeSource.value.source.id)
-  }
-}
-
-const parseAll = () => {
-  if (activeSource.value) {
-    const source = activeSource.value.source
-    const total = source.total_count ?? '未知'
-    const remaining = source.total_count === null
-      ? '将持续加载，直到远端列表结束。'
-      : `预计还需解析 ${Math.max(source.total_count - source.loaded_count, 0)} 项。`
-    const confirmed = window.confirm(
-      `解析全部会加载这个来源的所有剩余内容。\n\n当前已加载 ${source.loaded_count} / ${total}。${remaining}\n\n是否继续？`,
-    )
-    if (confirmed) {
-      void parse.parseAll(source.id)
-    }
-  }
-}
-
 const selectAllLoaded = () => {
   if (activeSource.value) {
     parse.selectPartIds(
@@ -495,7 +473,7 @@ const partNode = (
   partIds: [part.id],
   searchText: searchableText(item.title, item.owner_name, part.title, part.bvid, part.cid),
   sortTitle: part.title || item.title || `P${index + 1}`,
-  durationSeconds: item.duration_seconds,
+  durationSeconds: displayPartDuration(part.duration_seconds, item.duration_seconds, item.parts.length),
   sourceOrder: index,
   leafPartId: part.id,
 })
@@ -639,15 +617,12 @@ const parseRangeExpression = (value: string, total: number): number[] => {
 const partMeta = (
   item: NormalizedSourceTree['groups'][number]['items'][number],
   part: NormalizedSourceTree['groups'][number]['items'][number]['parts'][number],
-): string => item.duration_seconds ? formatDuration(item.duration_seconds) : streamSummary(part.streams.length)
+): string => {
+  const duration = displayPartDuration(part.duration_seconds, item.duration_seconds, item.parts.length)
+  return duration !== null ? formatDuration(duration) : streamSummary(part.streams.length)
+}
 
 const sameTitle = (left: string, right: string): boolean => left.trim() !== '' && left.trim() === right.trim()
-
-const formatDuration = (seconds: number): string => {
-  const minutes = Math.floor(seconds / 60)
-  const rest = seconds % 60
-  return `${minutes}:${rest.toString().padStart(2, '0')}`
-}
 
 const streamSummary = (count: number): string => (count > 0 ? `${count} 条流` : '未拉流')
 
@@ -741,8 +716,6 @@ const errorMessage = (error: unknown): string => {
           <UiButton variant="secondary" :disabled="activeLoading || selectedCount === 0" @click="clearSelection">
             清空
           </UiButton>
-          <UiButton variant="secondary" :disabled="!canLoadMore" @click="loadMore">解析更多</UiButton>
-          <UiButton variant="secondary" :disabled="!canLoadMore" @click="parseAll">解析全部</UiButton>
           <UiButton :disabled="!canCreateTasks" @click="openDownloadSettings">{{ createTaskLabel }}</UiButton>
           <UiIconButton icon="refresh" label="刷新解析结果" variant="ghost" :disabled="activeLoading" @click="refreshSource" />
           <UiIconButton

@@ -520,6 +520,7 @@ fn map_archive_item(source_key: &str, video: ResolvedArchiveVideo) -> Normalized
             aid: Some(video.aid),
             bvid: Some(video.bvid),
             cid: None,
+            duration_seconds: video.duration_seconds,
             streams: Vec::new(),
             assets: vec![AssetKind::Cover.with_policy(FetchPolicy::OnDemand)],
         }],

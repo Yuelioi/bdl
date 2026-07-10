@@ -3,5 +3,12 @@
   "identifier": "default",
   "description": "Default permissions for BDL desktop.",
   "windows": ["main"],
-  "permissions": ["core:default", "dialog:default", "opener:default"]
+  "permissions": [
+    "core:default",
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-close",
+    "dialog:default",
+    "opener:default"
+  ]
 }

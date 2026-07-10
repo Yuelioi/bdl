@@ -258,6 +258,7 @@ fn map_video_item(media_id: u64, video: ResolvedFavoriteVideo) -> NormalizedItem
             aid: Some(video.aid),
             bvid: Some(video.bvid),
             cid: None,
+            duration_seconds: video.duration_seconds,
             streams: Vec::new(),
             assets: vec![AssetKind::Cover.with_policy(FetchPolicy::OnDemand)],
         }],

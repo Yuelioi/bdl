@@ -1,5 +1,5 @@
 # BDL design-system checklist
-SUMMARY: Always shape BDL as a quiet desktop control room: warm mineral OKLCH neutrals, restrained green signal color, clear command hierarchy, adaptive navigation, stable transfer rows, and progressive disclosure.
+SUMMARY: Always shape BDL as a quiet desktop control room: subtly pink-tinted OKLCH neutrals, restrained Bilibili-pink signal color, clear command hierarchy, adaptive navigation, stable transfer rows, and progressive disclosure.
 READ WHEN: before any BDL UI, interaction, visual-token, responsive-layout, or user-facing copy change.
 
 ---
@@ -12,7 +12,8 @@ BDL is a compact operations tool for Bilibili power users. It should feel calm, 
 
 - Keep Parse, Account Library, Transfer, and Settings as the only primary pages; account identity and login remain global in the top bar.
 - Put current status and the recommended action before logs or technical detail.
-- Use OKLCH semantic tokens and neutrals tinted toward the restrained green brand hue.
+- Use OKLCH semantic tokens and neutrals tinted toward the restrained pink brand hue.
+- The custom 42px desktop title bar owns appearance, account, and native window controls; page content must not add a second global header.
 - Support `system`, `light`, and `dark` appearance preferences. Persist the preference locally and apply it before Vue mounts to avoid a theme flash.
 - Dark mode uses five distinct layers: page, region, card, inset/control, and overlay. It never uses pure black or relies on shadows alone for separation.
 - Hard-coded light status fills are not allowed; selected, success, warning, danger, info, progress, backdrop, and grid treatments must resolve through semantic tokens.

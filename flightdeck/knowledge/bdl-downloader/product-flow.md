@@ -71,7 +71,7 @@ Current parse controls:
 - sort by original order, title, or duration
 - range select visible results, e.g. `1-5,7,9-12`
 - `全选可见`, not ambiguous download-all behavior
-- `解析更多` and guarded `解析全部`
+- paged list sources automatically exhaust all metadata pages during initial parse and refresh
 
 ## Selection Rules
 
@@ -86,14 +86,13 @@ Default selection:
 
 The primary action is always `下载已选择`.
 
-Paged sources are progressive:
+Paged sources expose complete lightweight metadata:
 
 ```text
-已加载 30 / 1240
-[解析更多] [解析全部]
+已解析 1240 / 1240
 ```
 
-`解析全部` confirms the remaining remote work, then keeps paging until the source reports `has_more = false`. It must never silently behave like “load at most 100”.
+Initial parse and refresh keep paging until the source reports `has_more = false`. This applies to favorites, uploader videos, collections, series, bangumi, and courses. Paging fetches list metadata only; stream URLs and codec profiles remain download-time hydration.
 
 ## Download Settings Dialog
 
@@ -275,6 +274,7 @@ Logs and diagnostics must redact cookies, sensitive headers, and long signed URL
 - No page-level horizontal scrolling at 1100px wide.
 - Long titles and paths truncate with tooltip or move to inspector.
 - Controls use Nuxt UI/local wrappers and Tabler icons consistently.
-- Theme remains quiet, compact, and task-focused with restrained dark-green accent.
+- Theme remains quiet, compact, and task-focused with a restrained Bilibili-pink accent and pink-tinted neutral surfaces.
+- The desktop uses a frameless Tauri window with one custom title bar containing appearance, account, minimize, maximize/restore, and close controls.
 - The global appearance menu offers system, light, and dark modes. System mode reacts to operating-system changes; explicit choices persist locally. Theme changes affect presentation only and never alter downloader state.
 - Do not add a separate History page unless the product becomes a media library.

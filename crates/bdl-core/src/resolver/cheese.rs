@@ -472,6 +472,7 @@ fn map_episode_item(
             aid: Some(episode.aid),
             bvid: None,
             cid: Some(episode.cid),
+            duration_seconds: episode.duration_seconds,
             streams,
             assets: vec![AssetKind::Cover.with_policy(FetchPolicy::OnDemand)],
         }],

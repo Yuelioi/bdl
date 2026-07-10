@@ -175,6 +175,7 @@ where
                 aid: Some(video.aid),
                 bvid: Some(video.bvid.clone()),
                 cid: Some(page.cid),
+                duration_seconds: page.duration_seconds,
                 streams,
                 assets: archive_assets(page.cid, &player_info),
             });

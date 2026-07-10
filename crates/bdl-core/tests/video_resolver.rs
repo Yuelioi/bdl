@@ -130,6 +130,7 @@ async fn video_resolver_resolves_bv_without_streams() -> Result<(), BdlError> {
     assert_eq!(part.aid, Some(170001));
     assert_eq!(part.bvid.as_deref(), Some("BV1xx411c7mD"));
     assert_eq!(part.cid, Some(62131));
+    assert_eq!(part.duration_seconds, Some(42));
     assert!(part.streams.is_empty());
     assert_eq!(part.assets[0].kind, AssetKind::Cover);
     assert_eq!(part.assets[0].fetch_policy, FetchPolicy::OnDemand);

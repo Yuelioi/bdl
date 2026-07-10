@@ -16,7 +16,8 @@
         "title": "BDL",
         "width": 1080,
         "height": 720,
-        "resizable": true
+        "resizable": true,
+        "decorations": false
       }
     ],
     "security": {

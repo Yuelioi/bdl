@@ -68,6 +68,8 @@ pub struct NormalizedPart {
     pub aid: Option<u64>,
     pub bvid: Option<String>,
     pub cid: Option<u64>,
+    #[serde(default)]
+    pub duration_seconds: Option<u64>,
     pub streams: Vec<MediaStream>,
     pub assets: Vec<DerivedAsset>,
 }

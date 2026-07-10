@@ -92,10 +92,122 @@ select:focus-visible {
   min-height: 0;
   display: grid;
   grid-template-columns: 224px minmax(0, 1fr);
+  grid-template-rows: 42px minmax(0, 1fr);
   overflow: hidden;
 }
 
+.app-titlebar {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid color-mix(in oklab, var(--color-nav-text) 10%, transparent);
+  background: var(--color-nav);
+  color: var(--color-nav-text);
+  user-select: none;
+}
+
+.titlebar-brand {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding-left: var(--space-sm);
+  pointer-events: none;
+}
+
+.titlebar-brand strong {
+  font-family: var(--font-display);
+  font-size: var(--font-13);
+  font-variation-settings: "wdth" 92;
+  letter-spacing: 0.08em;
+}
+
+.titlebar-brand > span:last-child {
+  overflow: hidden;
+  color: var(--color-nav-muted);
+  font-size: var(--font-11);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.titlebar-mark {
+  width: 24px;
+  height: 20px;
+  display: inline-flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 3px;
+  border: 1px solid color-mix(in oklab, var(--color-accent) 62%, var(--color-nav));
+  border-radius: var(--radius-4);
+  background: color-mix(in oklab, var(--color-accent) 17%, var(--color-nav));
+  padding: 4px 5px;
+}
+
+.titlebar-mark i {
+  width: 4px;
+  border-radius: 1px;
+  background: var(--color-accent);
+}
+
+.titlebar-mark i:first-child { height: 7px; }
+.titlebar-mark i:last-child { height: 11px; }
+
+.titlebar-actions {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+}
+
+.titlebar-actions .account-button {
+  height: 30px;
+  border-color: color-mix(in oklab, var(--color-nav-text) 14%, transparent);
+  background: color-mix(in oklab, var(--color-nav-raised) 78%, transparent);
+  color: var(--color-nav-text);
+}
+
+.titlebar-actions .account-button:hover {
+  background: var(--color-nav-raised);
+}
+
+.window-controls {
+  height: 100%;
+  display: flex;
+  margin-left: var(--space-2xs);
+}
+
+.window-controls button {
+  width: 44px;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-nav-muted);
+}
+
+.window-controls button:hover {
+  background: var(--color-nav-raised);
+  color: var(--color-nav-text);
+}
+
+.window-controls button.close:hover {
+  background: var(--color-danger);
+  color: var(--color-on-accent);
+}
+
+.window-controls svg {
+  width: 15px;
+  height: 15px;
+}
+
 .side-nav {
+  grid-column: 1;
+  grid-row: 2;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -137,7 +249,7 @@ select:focus-visible {
 }
 
 .brand-mark i:nth-child(1) { height: 9px; }
-.brand-mark i:nth-child(2) { height: 18px; background: oklch(0.72 0.13 158); }
+.brand-mark i:nth-child(2) { height: 18px; background: var(--color-accent); }
 .brand-mark i:nth-child(3) { height: 13px; }
 
 .brand-copy {
@@ -236,7 +348,7 @@ select:focus-visible {
   width: 3px;
   height: 22px;
   border-radius: 0 2px 2px 0;
-  background: oklch(0.72 0.13 158);
+  background: var(--color-accent);
   content: "";
 }
 
@@ -254,7 +366,7 @@ select:focus-visible {
   display: inline-grid;
   place-items: center;
   border-radius: 999px;
-  background: oklch(0.72 0.13 158);
+  background: var(--color-accent);
   color: var(--color-nav);
   padding: 0 6px;
   font-size: var(--font-12);
@@ -310,10 +422,12 @@ select:focus-visible {
 }
 
 .main-region {
+  grid-column: 2;
+  grid-row: 2;
   min-width: 0;
   min-height: 0;
   display: grid;
-  grid-template-rows: var(--height-topbar) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   overflow: hidden;
 }
 
@@ -923,15 +1037,7 @@ select:focus-visible {
 }
 
 @media (max-width: 720px) {
-  .main-region {
-    grid-template-rows: 60px minmax(0, 1fr);
-  }
-
-  .top-bar {
-    padding-inline: var(--space-md);
-  }
-
-  .page-identity p,
+  .titlebar-brand > span:last-child,
   .account-button > span:last-child {
     display: none;
   }

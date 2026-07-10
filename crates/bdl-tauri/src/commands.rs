@@ -339,7 +339,7 @@ pub async fn parse_create_source(
     request: ParseCreateSourceRequest,
 ) -> CommandResult<NormalizedSourceTree> {
     let tree = state
-        .parse_source(&request.input, request.fetch_streams)
+        .parse_source_all(&request.input, request.fetch_streams)
         .await?;
     events::emit(&app, events::PARSE_SOURCE_UPDATED, &tree)?;
     Ok(tree)

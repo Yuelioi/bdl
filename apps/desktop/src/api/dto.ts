@@ -54,6 +54,7 @@ export interface NormalizedPart {
   aid: number | null
   bvid: string | null
   cid: number | null
+  duration_seconds: number | null
   streams: MediaStream[]
   assets: DerivedAsset[]
 }

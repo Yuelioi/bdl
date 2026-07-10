@@ -466,6 +466,7 @@ fn fixture_tree(include_audio: bool) -> NormalizedSourceTree {
                     aid: Some(1),
                     bvid: Some("BV1xx411c7mD".to_owned()),
                     cid: Some(100),
+                    duration_seconds: Some(42),
                     streams,
                     assets: vec![
                         AssetKind::Cover.with_policy(FetchPolicy::OnDemand),
