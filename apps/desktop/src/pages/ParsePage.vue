@@ -58,34 +58,77 @@ const runNoticeAction = () => {
         >{{ parse.notice.message }}</UiInlineNotice
       >
 
-      <section v-if="activeStage === 'source'" class="grid min-h-0 content-start gap-5 py-1">
-        <header class="flex min-w-0 items-start justify-between gap-4">
-          <div class="grid min-w-0 gap-1">
-            <h2 class="m-0 text-lg text-(--color-text)">添加来源</h2>
-            <p class="text-pretty m-0 max-w-[62ch] text-xs leading-5 text-(--color-muted)">
-              每行输入一个视频链接；合集、收藏夹等容器链接会展开为可选内容。
-            </p>
-          </div>
-          <UiStatusBadge v-if="createLoading" status="downloading">解析中</UiStatusBadge>
-        </header>
-
-        <form
-          class="grid grid-cols-[minmax(0,1fr)_116px] items-end gap-3 max-[840px]:grid-cols-1"
-          @submit.prevent="submitInput"
+      <section
+        v-if="activeStage === 'source'"
+        class="grid min-h-0 flex-1 place-items-center overflow-y-auto py-8 max-[840px]:place-items-start max-[840px]:py-4"
+      >
+        <div
+          class="grid w-full max-w-4xl grid-cols-[220px_minmax(0,1fr)] items-start gap-10 max-[840px]:grid-cols-1 max-[840px]:gap-6"
         >
-          <UiTextarea
-            v-model="parse.input"
-            label="链接或 BV / AV（每行一个）"
-            :rows="4"
-            placeholder="粘贴一个或多个视频链接；批量时每行作为一个视频"
-            :disabled="createLoading"
-          />
-          <UiButton type="submit" :disabled="createLoading">{{ createLoading ? '解析中' : '开始解析' }}</UiButton>
-        </form>
+          <aside class="grid min-w-0 gap-6" aria-label="支持的来源类型">
+            <div class="grid gap-2">
+              <span class="text-[11px] font-bold text-(--color-accent-strong)">快速解析</span>
+              <h2 class="text-balance m-0 text-xl leading-7 text-(--color-text)">从链接整理下载内容</h2>
+              <p class="text-pretty m-0 text-xs leading-5 text-(--color-muted)">
+                BDL 会识别来源类型，并把标题、分集与时长整理成下一步可选择的清单。
+              </p>
+            </div>
 
-        <div class="flex items-center gap-2 text-xs text-(--color-muted)">
-          <UIcon name="i-tabler-bolt" class="size-4 text-(--color-accent-strong)" aria-hidden="true" />
-          这里只读取标题、分集和时长；媒体地址会在创建下载任务时获取。
+            <ul class="m-0 grid list-none gap-2 p-0 text-xs text-(--color-muted)">
+              <li class="flex items-center gap-2">
+                <UIcon
+                  name="i-tabler-circle-check"
+                  class="size-4 shrink-0 text-(--color-accent-strong)"
+                  aria-hidden="true"
+                />
+                视频、BV 与 AV 编号
+              </li>
+              <li class="flex items-center gap-2">
+                <UIcon
+                  name="i-tabler-circle-check"
+                  class="size-4 shrink-0 text-(--color-accent-strong)"
+                  aria-hidden="true"
+                />
+                合集、收藏夹与 UP 空间
+              </li>
+              <li class="flex items-center gap-2">
+                <UIcon
+                  name="i-tabler-circle-check"
+                  class="size-4 shrink-0 text-(--color-accent-strong)"
+                  aria-hidden="true"
+                />
+                番剧、课程与多行批量视频
+              </li>
+            </ul>
+          </aside>
+
+          <form class="grid min-w-0 gap-3" @submit.prevent="submitInput">
+            <div class="flex min-w-0 items-end justify-between gap-4">
+              <div class="grid min-w-0 gap-1">
+                <strong class="text-[13px] text-(--color-text)">粘贴来源</strong>
+                <span class="text-xs text-(--color-muted)">每行一个链接；容器来源会展开为完整内容。</span>
+              </div>
+              <UiStatusBadge v-if="createLoading" status="downloading">解析中</UiStatusBadge>
+            </div>
+
+            <UiTextarea
+              v-model="parse.input"
+              label="链接或 BV / AV"
+              :rows="6"
+              placeholder="https://www.bilibili.com/video/BV...&#10;https://space.bilibili.com/..."
+              :disabled="createLoading"
+            />
+
+            <div class="flex min-w-0 items-center justify-between gap-4 max-[620px]:items-stretch max-[620px]:flex-col">
+              <span class="flex min-w-0 items-center gap-2 text-xs leading-5 text-(--color-muted)">
+                <UIcon name="i-tabler-bolt" class="size-4 shrink-0 text-(--color-accent-strong)" aria-hidden="true" />
+                媒体地址会在创建下载任务时获取
+              </span>
+              <UiButton class="min-w-28" type="submit" :disabled="createLoading">
+                {{ createLoading ? '正在解析' : '开始解析' }}
+              </UiButton>
+            </div>
+          </form>
         </div>
       </section>
 
