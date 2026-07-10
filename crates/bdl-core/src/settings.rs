@@ -130,7 +130,7 @@ fn validate_archive_mode(value: &str) -> BdlResult<()> {
     match value {
         "fast" | "complete_archive" | "custom" => Ok(()),
         other => Err(crate::error::BdlError::Planning {
-            message: format!("归档模式设置无效：`{other}`。"),
+            message: format!("下载内容模式设置无效：`{other}`。"),
         }),
     }
 }

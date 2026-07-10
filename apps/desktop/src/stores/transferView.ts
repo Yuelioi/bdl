@@ -84,17 +84,22 @@ export const createTransferTaskView = (
   const primaryAction = primaryActionForTask(task, issue)
   const completedWithWarnings = task.status === 'completed' && hasWarningLogs(logs)
   const scheduled = isScheduledTask(task)
+  const activelyTransferring = task.status === 'downloading'
 
   return {
     id: task.id,
     displayTitle: titleParts.displayTitle,
     subtitle: titleParts.subtitle,
-    statusLabel: completedWithWarnings ? '已完成 · 有警告' : scheduled ? '已定时' : statusLabel(task.status),
+    statusLabel: completedWithWarnings ? '已完成 · 部分失败' : scheduled ? '已定时' : statusLabel(task.status),
     statusBadge: completedWithWarnings ? 'warning' : statusBadge(task.status),
     progressValue: progress,
     progressLabel: `${progress}%`,
-    speedLabel: transferProgress ? formatSpeedLabel(transferProgress.speedBytesPerSecond) : '--',
-    etaLabel: scheduled ? scheduleLabel(task.scheduled_at) : transferProgress ? etaLabel(transferProgress) : '--',
+    speedLabel: activelyTransferring && transferProgress ? formatSpeedLabel(transferProgress.speedBytesPerSecond) : '--',
+    etaLabel: scheduled
+      ? scheduleLabel(task.scheduled_at)
+      : activelyTransferring && transferProgress
+        ? etaLabel(transferProgress)
+        : '--',
     sizeLabel: transferProgress ? sizeLabel(transferProgress) : '--',
     issueLabel: issue.label,
     shortLocation: shortLocation(task.output_path),
@@ -187,7 +192,7 @@ export const createTaskDiagnosticView = (task: DownloadTask, logs: QueueLogEntry
 
   if (task.status === 'completed' && warningLogs.length > 0) {
     return {
-      summary: '任务已完成但归档有警告',
+      summary: '任务已完成，但部分附加内容未处理',
       detail: warningLogs.map((log) => redactLogMessage(log.message)).join('；'),
       impact: trackImpact,
       recommendedAction: 'open_file',
@@ -406,9 +411,9 @@ const classifyTaskIssue = (task: DownloadTask, logs: QueueLogEntry[]): Classifie
   const warningLogs = completionWarningLogs(logs)
   if (task.status === 'completed' && warningLogs.length > 0) {
     return {
-      label: '归档有警告',
+      label: '附加内容失败',
       detail: warningLogs.map((log) => redactLogMessage(log.message)).join('；'),
-      trackLabel: '归档素材',
+      trackLabel: '附加内容',
       recommendedAction: 'open_file',
       recommendedActionLabel: actionLabel('open_file'),
     }

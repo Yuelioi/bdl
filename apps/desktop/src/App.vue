@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { getCurrentWindow } from '@tauri-apps/api/window'
-import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import { useAccountStore } from './stores/account'
 import { useQueueStore } from './stores/queue'
@@ -66,10 +66,7 @@ const queueHealthLabel = computed(() => {
   return '队列空闲'
 })
 const aggregateSpeedLabel = computed(() => {
-  const bytesPerSecond = queue.tasks.reduce(
-    (total, task) => total + (queue.taskTransferProgress(task.id)?.speedBytesPerSecond ?? 0),
-    0,
-  )
+  const bytesPerSecond = queue.totalSpeedBytesPerSecond()
   if (bytesPerSecond <= 0 || !Number.isFinite(bytesPerSecond)) return '0 B/s'
   const units = ['B/s', 'KB/s', 'MB/s', 'GB/s']
   let value = bytesPerSecond
@@ -159,12 +156,6 @@ const dismissStartupRecovery = async () => {
 
 const handleAppShortcut = (event: KeyboardEvent) => {
   if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return
-  if (event.key.toLowerCase() === 'l') {
-    event.preventDefault()
-    ui.setTab('parse')
-    void nextTick(() => document.querySelector<HTMLTextAreaElement>('.parse-form textarea')?.focus())
-    return
-  }
   const tabByKey: Partial<Record<string, AppTab>> = { '1': 'parse', '2': 'library', '3': 'transfer', '4': 'settings' }
   const tab = tabByKey[event.key]
   if (!tab) return
@@ -287,7 +278,6 @@ watch(
             <span v-if="item.value === 'transfer' && transferBadgeCount > 0" class="nav-badge">
               {{ transferBadgeCount > 99 ? '99+' : transferBadgeCount }}
             </span>
-            <kbd v-else>⌘{{ item.shortcut }}</kbd>
           </button>
         </nav>
 

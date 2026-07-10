@@ -22,7 +22,7 @@ const settingsSections = [
   { id: 'settings-media', label: '默认媒体', icon: 'i-tabler-movie' },
   { id: 'settings-naming', label: '命名', icon: 'i-tabler-file-text' },
   { id: 'settings-media-advanced', label: '媒体高级', icon: 'i-tabler-adjustments-horizontal' },
-  { id: 'settings-archive', label: '归档和素材', icon: 'i-tabler-archive' },
+  { id: 'settings-archive', label: '附加内容', icon: 'i-tabler-files' },
   { id: 'settings-maintenance', label: '网络和维护', icon: 'i-tabler-tool' },
 ]
 
@@ -160,15 +160,15 @@ const embeddingCopy = computed(() => {
 })
 const settingsArchiveDescription = computed(() => {
   if (settings.draft.archive_mode === 'complete_archive') {
-    return `保存最终视频，并额外保存可用的封面、字幕、弹幕和 NFO${rawStreamCopy.value}${embeddingCopy.value}。不可用的素材会在任务日志中记录。`
+    return `下载最终视频，并额外下载可用的封面、字幕、弹幕和 NFO${rawStreamCopy.value}${embeddingCopy.value}。不可用的附加内容会记录在任务详情中。`
   }
 
   if (settings.draft.archive_mode === 'custom') {
-    const selected = selectedArchiveAssetLabels.value.length > 0 ? selectedArchiveAssetLabels.value.join('、') : '不额外保存素材'
-    return `保存最终视频，并按自定义选择保存：${selected}${rawStreamCopy.value}${embeddingCopy.value}。`
+    const selected = selectedArchiveAssetLabels.value.length > 0 ? selectedArchiveAssetLabels.value.join('、') : '不下载附加内容'
+    return `下载最终视频，并按设置下载：${selected}${rawStreamCopy.value}${embeddingCopy.value}。`
   }
 
-  return `保存最终视频${rawStreamCopy.value}${embeddingCopy.value}；不抓取封面、字幕、弹幕或 NFO。`
+  return `仅下载最终视频${rawStreamCopy.value}${embeddingCopy.value}；不下载封面、字幕、弹幕或 NFO。`
 })
 const settingsDuplicateDescription = computed(() =>
   settings.draft.duplicate_naming_strategy === 'overwrite_existing'
@@ -452,18 +452,18 @@ onMounted(async () => {
       <details id="settings-archive" class="settings-disclosure">
         <summary>
           <div>
-            <strong>归档和素材</strong>
-            <span>封面、字幕、弹幕、NFO 和原始轨道</span>
+            <strong>附加内容</strong>
+            <span>按需下载封面、字幕、弹幕、NFO 和原始轨道</span>
           </div>
         </summary>
         <section class="settings-block disclosure-block">
           <UiSelect
             v-model="settingsArchiveMode"
-            label="保存内容"
+            label="下载范围"
             :options="[
-              { label: '只保存视频（最快）', value: 'fast' },
-              { label: '视频 + 全部可用素材（归档）', value: 'complete_archive' },
-              { label: '自定义素材', value: 'custom' },
+              { label: '仅下载最终视频（最快）', value: 'fast' },
+              { label: '下载全部附加内容', value: 'complete_archive' },
+              { label: '自定义附加内容', value: 'custom' },
             ]"
           />
           <div v-if="settings.draft.archive_mode === 'custom'" class="archive-option-grid">

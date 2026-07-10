@@ -87,4 +87,21 @@ describe('completed transfer task warnings', () => {
     expect(diagnostic.summary).toBe('任务已完成')
     expect(diagnostic.tone).toBe('success')
   })
+
+  it('does not show stale transfer speed after completion', () => {
+    const task = scheduledTask()
+    task.status = 'completed'
+    task.scheduled_at = null
+
+    const view = createTransferTaskView(task, 100, [], {
+      downloadedBytes: 128 * 1024 * 1024,
+      totalBytes: 128 * 1024 * 1024,
+      speedBytesPerSecond: 13 * 1024 * 1024,
+      updatedAt: Date.now(),
+    })
+
+    expect(view.speedLabel).toBe('--')
+    expect(view.etaLabel).toBe('--')
+    expect(view.sizeLabel).toBe('128 MB / 128 MB')
+  })
 })

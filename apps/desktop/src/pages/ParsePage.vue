@@ -117,9 +117,9 @@ const outputExtensionOptions = [
   { label: 'MKV', value: 'mkv' },
 ]
 const archiveModeOptions = [
-  { label: '仅最终媒体', value: 'fast' },
-  { label: '媒体 + 全部可用素材', value: 'complete_archive' },
-  { label: '使用设置页自定义素材', value: 'custom' },
+  { label: '仅下载最终媒体', value: 'fast' },
+  { label: '下载全部附加内容', value: 'complete_archive' },
+  { label: '使用设置中的附加内容', value: 'custom' },
 ]
 const resultSortOptions = [
   { label: '原始顺序', value: 'source' },
@@ -173,10 +173,10 @@ const downloadSettingsSummary = computed(() => {
   const codec = includesVideo.value ? optionLabel(codecOptions, videoCodec.value) : '无视频编码'
   const archive =
     archiveMode.value === 'complete_archive'
-      ? '视频 + 全部可用素材'
+      ? '全部附加内容'
       : archiveMode.value === 'custom'
-        ? '使用设置页自定义素材'
-        : '仅最终媒体'
+        ? '使用设置中的附加内容'
+        : '仅最终媒体文件'
   const schedule = scheduledLocal.value
     ? `定时 ${new Date(scheduledLocal.value).toLocaleString('zh-CN', { dateStyle: 'short', timeStyle: 'short' })}`
     : '立即开始'
@@ -640,7 +640,7 @@ const errorMessage = (error: unknown): string => {
 
 <template>
   <section class="page-grid parse-page">
-    <section class="panel parse-input-panel command-panel">
+    <section class="panel parse-input-panel command-panel" :class="{ 'has-results': activeSource }">
       <div class="panel-heading">
         <div class="command-heading">
           <span class="command-index">01</span>
@@ -668,20 +668,12 @@ const errorMessage = (error: unknown): string => {
               </button>
             </UDropdownMenu>
           </div>
-          <UiStatusBadge :status="createLoading ? 'downloading' : 'ready'">
-            {{ createLoading ? "解析中" : "就绪" }}
-          </UiStatusBadge>
+          <UiStatusBadge v-if="createLoading" status="downloading">解析中</UiStatusBadge>
         </div>
       </div>
       <form class="parse-form" @submit.prevent="submitInput">
         <div class="parse-input-stack">
-          <UiTextarea v-model="parse.input" label="链接、BV / AV 或多行列表" placeholder="BV1xx411c7mD&#10;https://www.bilibili.com/video/..." :rows="3" />
-          <div class="input-capabilities" aria-label="支持的输入">
-            <span>视频</span>
-            <span>合集 / 收藏夹</span>
-            <span>番剧 / 课程</span>
-            <kbd>Ctrl L 聚焦</kbd>
-          </div>
+          <UiTextarea v-model="parse.input" label="链接、BV / AV 或多行列表" placeholder="粘贴视频、合集、收藏夹、番剧或课程链接" :rows="2" />
         </div>
         <div class="parse-actions">
           <UiButton type="submit" :disabled="createLoading">{{ createLoading ? '识别中' : '开始解析' }}</UiButton>
@@ -723,11 +715,11 @@ const errorMessage = (error: unknown): string => {
             variant="ghost"
             @click="closeSource(activeSource.source.id)"
           />
-          <UiButton :disabled="!canCreateTasks" @click="openDownloadSettings">{{ createTaskLabel }}</UiButton>
+          <UiButton class="result-primary-action" :disabled="!canCreateTasks" @click="openDownloadSettings">{{ createTaskLabel }}</UiButton>
         </div>
         <p class="result-hydration-note">
           <UIcon name="i-tabler-bolt" aria-hidden="true" />
-          清晰度、编码与流地址会在创建下载任务时，仅为所选内容获取。
+          清晰度、编码与下载地址会在创建任务时，仅为所选内容获取。
         </p>
         <div class="result-tools">
           <UiTextField v-model="resultQuery" label="搜索内容" placeholder="标题 / UP 主 / BV" :disabled="activeLoading" />
@@ -835,7 +827,7 @@ const errorMessage = (error: unknown): string => {
               />
               <UiSelect
                 v-model="archiveMode"
-                label="保存内容"
+                label="附加内容"
                 :options="archiveModeOptions"
               />
             </div>
@@ -905,6 +897,23 @@ const errorMessage = (error: unknown): string => {
   grid-column: 1 / -1;
   z-index: 10;
   overflow: visible;
+}
+
+.parse-input-panel.has-results {
+  gap: var(--space-12);
+  padding-block: var(--space-12);
+}
+
+.parse-input-panel.has-results .command-heading p {
+  display: none;
+}
+
+.parse-input-stack :deep(textarea) {
+  min-height: 78px;
+}
+
+.parse-input-panel.has-results .parse-input-stack :deep(textarea) {
+  min-height: 64px;
 }
 
 .command-panel {
@@ -1057,8 +1066,8 @@ const errorMessage = (error: unknown): string => {
 
 .parse-form {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 104px;
-  align-items: start;
+  grid-template-columns: minmax(0, 1fr) 116px;
+  align-items: end;
   gap: var(--space-12);
 }
 
@@ -1068,39 +1077,9 @@ const errorMessage = (error: unknown): string => {
   gap: var(--space-xs);
 }
 
-.input-capabilities {
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.input-capabilities span,
-.input-capabilities kbd {
-  min-height: 22px;
-  display: inline-flex;
-  align-items: center;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-4);
-  background: color-mix(in oklab, var(--color-surface) 72%, transparent);
-  color: var(--color-muted);
-  padding: 0 var(--space-xs);
-  font-size: var(--font-11);
-  font-weight: 620;
-}
-
-.input-capabilities kbd {
-  margin-left: auto;
-  border-color: transparent;
-  background: transparent;
-  font-family: var(--font-display);
-}
-
 .parse-actions {
   display: grid;
   gap: var(--space-8);
-  padding-top: 24px;
 }
 
 .parse-actions :deep(.ui-button) {
@@ -1192,6 +1171,11 @@ const errorMessage = (error: unknown): string => {
 .result-actions :deep(.ui-icon-button) {
   width: 28px;
   height: 28px;
+}
+
+.result-actions :deep(.result-primary-action) {
+  height: var(--height-button);
+  padding-inline: var(--space-12);
 }
 
 .result-hydration-note {

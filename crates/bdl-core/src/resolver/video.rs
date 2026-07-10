@@ -258,7 +258,7 @@ impl VideoApi for BpiVideoApi {
             default_cid: view.cid.get(),
             title: view.title,
             owner_name: non_empty(view.owner.name),
-            cover_url: None,
+            cover_url: non_empty(view.pic),
             pages: view
                 .pages
                 .into_iter()

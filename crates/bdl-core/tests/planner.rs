@@ -150,6 +150,12 @@ fn plan_selected_parts_complete_archive_uses_asset_urls_and_formats() {
     let tasks = plan_selected_parts(&tree, &[PartId("part:BV1:100".to_owned())], &options)
         .expect("complete archive should plan asset resources");
 
+    let cover = resource_by_intent(&tasks[0], DownloadResourceIntent::Cover);
+    assert_eq!(
+        cover.current_urls,
+        vec!["https://example.invalid/cover.jpg".to_owned()]
+    );
+
     let subtitle = resource_by_intent(&tasks[0], DownloadResourceIntent::Subtitle);
     assert_eq!(
         subtitle.current_urls,
