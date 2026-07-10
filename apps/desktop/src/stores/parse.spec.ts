@@ -86,6 +86,24 @@ describe('parse store', () => {
     expect(parse.notice?.message).toBe('已加载 100 / 20000 项')
   })
 
+  it('loads a configurable chunk relative to the currently loaded uploader items', async () => {
+    const firstPage = sourceTree('uploader:42', '大型 UP 主空间')
+    firstPage.source.kind = 'uploader'
+    firstPage.source.loaded_count = 30
+    firstPage.source.total_count = 20_000
+    firstPage.source.has_more = true
+    const chunk = structuredClone(firstPage)
+    chunk.source.loaded_count = 240
+    api.parseLoadAll.mockResolvedValue(chunk)
+    const parse = useParseStore()
+    parse.upsertSource(firstPage)
+
+    await parse.loadChunk('uploader:42', 200)
+
+    expect(api.parseLoadAll).toHaveBeenCalledWith({ source_id: 'uploader:42', limit: 230 })
+    expect(parse.notice?.message).toBe('已加载 240 / 20000 项')
+  })
+
   it('keeps initial parsing metadata-only so large multi-part videos stay fast', async () => {
     api.parseCreateSource.mockRejectedValue(new Error('request captured'))
     const parse = useParseStore()

@@ -26,6 +26,7 @@ const { embedded = false } = defineProps<{ embedded?: boolean }>()
 const parse = useParseStore()
 const resultQuery = ref('')
 const resultSort = ref<ResultSortMode>('source')
+const loadBatchSize = ref('200')
 const rangeExpression = ref('')
 const rangeError = ref('')
 
@@ -33,6 +34,11 @@ const resultSortOptions = [
   { label: '原始顺序', value: 'source' },
   { label: '标题 A-Z', value: 'title_asc' },
   { label: '时长优先', value: 'duration_desc' },
+]
+const loadBatchOptions = [
+  { label: '每批 200', value: '200' },
+  { label: '每批 500', value: '500' },
+  { label: '每批 1000', value: '1000' },
 ]
 
 const activeSource = computed(() => parse.activeSource)
@@ -79,7 +85,9 @@ const refreshSource = () => {
 }
 
 const loadMore = () => {
-  if (activeSource.value?.source.has_more) void parse.loadMore(activeSource.value.source.id)
+  if (activeSource.value?.source.has_more) {
+    void parse.loadChunk(activeSource.value.source.id, Number(loadBatchSize.value))
+  }
 }
 
 const closeSource = () => {
@@ -145,9 +153,26 @@ const selectRange = () => {
         <UiButton size="compact" variant="ghost" :disabled="!canSelectResults" @click="selectAllResults">{{
           selectAllLabel
         }}</UiButton>
-        <UiButton v-if="hasMore" size="compact" variant="secondary" :disabled="activeLoading" @click="loadMore">
-          {{ activeLoading ? '解析中' : '解析更多' }}
-        </UiButton>
+        <div v-if="hasMore" class="flex items-center gap-1.5">
+          <USelect
+            v-model="loadBatchSize"
+            :items="loadBatchOptions"
+            value-key="value"
+            label-key="label"
+            size="xs"
+            color="neutral"
+            variant="outline"
+            trailing-icon="i-tabler-chevron-down"
+            :disabled="activeLoading"
+            :portal="true"
+            aria-label="每次解析数量"
+            :content="{ side: 'bottom', align: 'end', sideOffset: 4, collisionPadding: 12, position: 'popper' }"
+            :ui="{ base: 'h-7 min-h-7 w-25 py-0', content: 'z-50 shadow-md', item: 'font-medium' }"
+          />
+          <UiButton size="compact" variant="secondary" :disabled="activeLoading" @click="loadMore">
+            {{ activeLoading ? '解析中' : '解析更多' }}
+          </UiButton>
+        </div>
         <UiIconButton
           icon="refresh"
           label="刷新当前来源"

@@ -227,11 +227,25 @@ export const useParseStore = defineStore('parse', {
       try {
         const tree = await parseLoadMore({ source_id: sourceId })
         this.upsertSource(tree)
-        const total = tree.source.total_count
-        this.setNotice(
-          total === null ? `已加载 ${tree.source.loaded_count} 项` : `已加载 ${tree.source.loaded_count} / ${total} 项`,
-          'success',
-        )
+        this.setNotice(loadedCountMessage(tree), 'success')
+      } catch (error) {
+        this.errorsBySource[sourceId] = errorMessage(error)
+        ui.pushToast(errorMessage(error), 'danger')
+      } finally {
+        this.loadingBySource[sourceId] = false
+      }
+    },
+    async loadChunk(sourceId: string, chunkSize: number) {
+      const ui = useUiStore()
+      const current = this.sources[sourceId]
+      if (!current?.source.has_more) return
+
+      const limit = current.source.loaded_count + Math.max(1, Math.floor(chunkSize))
+      this.loadingBySource[sourceId] = true
+      try {
+        const tree = await parseLoadAll({ source_id: sourceId, limit })
+        this.upsertSource(tree)
+        this.setNotice(loadedCountMessage(tree), 'success')
       } catch (error) {
         this.errorsBySource[sourceId] = errorMessage(error)
         ui.pushToast(errorMessage(error), 'danger')
@@ -496,6 +510,11 @@ const collectPartIds = (tree: NormalizedSourceTree): string[] =>
   tree.groups.flatMap((group) => group.items.flatMap((item) => item.parts.map((part) => part.id)))
 
 const uniquePartIds = (partIds: string[]): string[] => Array.from(new Set(partIds))
+
+const loadedCountMessage = (tree: NormalizedSourceTree): string => {
+  const total = tree.source.total_count
+  return total === null ? `已加载 ${tree.source.loaded_count} 项` : `已加载 ${tree.source.loaded_count} / ${total} 项`
+}
 
 const uniqueSourceTrees = (trees: NormalizedSourceTree[]): NormalizedSourceTree[] => {
   const seen = new Set<string>()
