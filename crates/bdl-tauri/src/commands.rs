@@ -18,8 +18,8 @@ use bdl_core::planner::{
     parse_stream_codec, plan_selected_parts,
 };
 use bdl_core::queue::{
-    DownloadResource, DownloadResourceIntent, DownloadTask, QueueLogEntry, QueueLogLevel,
-    ResourceStatus, TaskStatus,
+    DownloadResource, DownloadResourceIntent, DownloadTask, DuplicateTaskPolicy, QueueLogEntry,
+    QueueLogLevel, ResourceStatus, TaskStatus,
 };
 use bdl_core::{BdlError, BdlResult};
 use chrono::Utc;
@@ -158,6 +158,23 @@ pub struct SelectionCreateTasksRequest {
     pub quality: Option<String>,
     pub audio_quality: Option<String>,
     pub codec: Option<String>,
+    #[serde(default)]
+    pub duplicate_policy: DuplicateTaskPolicy,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DuplicateTaskMatch {
+    pub proposed_task_id: String,
+    pub title: String,
+    pub existing_task_id: String,
+    pub existing_status: TaskStatus,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SelectionCreateTasksResult {
+    pub created: Vec<DownloadTask>,
+    pub duplicates: Vec<DuplicateTaskMatch>,
+    pub requires_confirmation: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -269,8 +286,9 @@ pub async fn selection_create_tasks(
     app: AppHandle,
     state: State<'_, AppState>,
     request: SelectionCreateTasksRequest,
-) -> CommandResult<Vec<DownloadTask>> {
+) -> CommandResult<SelectionCreateTasksResult> {
     let source_id = SourceId(request.source_id);
+    let duplicate_policy = request.duplicate_policy;
     let settings = state.settings()?;
     let selected_part_ids = request.part_ids.into_iter().map(PartId).collect::<Vec<_>>();
 
@@ -316,11 +334,23 @@ pub async fn selection_create_tasks(
         .prepare_selection(&source_id, &selected_part_ids)
         .await?;
     let planned_tasks = plan_selected_parts(&prepared.tree, &prepared.part_ids, &options)?;
-    let tasks = state.enqueue_tasks(planned_tasks)?;
 
     if prepared.tree_updated {
         events::emit(&app, events::PARSE_SOURCE_UPDATED, &prepared.tree)?;
     }
+
+    let outcome = state.enqueue_tasks_with_duplicate_policy(planned_tasks, duplicate_policy)?;
+    let tasks = outcome.inserted;
+    let duplicates = outcome
+        .duplicates
+        .into_iter()
+        .map(|duplicate| DuplicateTaskMatch {
+            proposed_task_id: duplicate.proposed_task_id,
+            title: duplicate.title,
+            existing_task_id: duplicate.existing_task_id,
+            existing_status: duplicate.existing_status,
+        })
+        .collect();
 
     for task in &tasks {
         events::emit(&app, events::QUEUE_TASK_UPDATED, task)?;
@@ -329,7 +359,11 @@ pub async fn selection_create_tasks(
         start_queue_worker(&app);
     }
 
-    Ok(tasks)
+    Ok(SelectionCreateTasksResult {
+        created: tasks,
+        duplicates,
+        requires_confirmation: outcome.requires_confirmation,
+    })
 }
 
 #[tauri::command]

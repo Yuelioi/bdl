@@ -28,7 +28,7 @@ Verification: documented commands match repository scripts and workspace paths.
 
 ## Stage 4 — Functional depth after the UI foundation
 
-### Stage 4.1 — Transfer reliability (current)
+### Stage 4.1 — Transfer reliability (complete)
 
 - Make pause wake stalled metadata, request, and response-stream waits immediately.
 - Treat successful muxing as a commit point that cannot be overwritten by pause/cancel races.
@@ -42,7 +42,7 @@ Verification: deterministic stalled-request cancellation test; task-state transi
 
 ### Stage 4.2 — Product depth
 
-- Add backend duplicate-task detection with skip/create/ask policy.
+- Duplicate-task policy (complete): backend `ask`/`skip`/`create`, atomic confirmation, safe copy IDs, queue-path reservation, and a status-aware confirmation dialog.
 - Add a download-directory/FFmpeg environment health command and inline repair actions.
 - Add frontend component/store tests and keyboard-navigation tests.
 - Evaluate scheduler, speed limits, updater, dark theme, and account asset entry points as separate vertical slices.

@@ -12,9 +12,10 @@ use bdl_core::model::{
     MediaKind, MediaStream, NormalizedItem, NormalizedPart, NormalizedSourceTree, PageState,
     SourceKind, StreamCodec, StreamQuality,
 };
+use bdl_core::naming::unique_path;
 use bdl_core::queue::{
     DownloadResourceIntent, DownloadTask, DownloadTaskRefreshInput, DownloadTaskRefreshIntent,
-    QueueLogEntry, ResourceStatus, TaskStatus,
+    DuplicateTaskPolicy, QueueLogEntry, ResourceStatus, TaskStatus,
 };
 use bdl_core::resolver::bangumi::BangumiResolver;
 use bdl_core::resolver::cheese::CheeseResolver;
@@ -56,6 +57,21 @@ pub struct PreparedSelection {
     pub tree: NormalizedSourceTree,
     pub part_ids: Vec<PartId>,
     pub tree_updated: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DuplicateTaskMatch {
+    pub proposed_task_id: String,
+    pub title: String,
+    pub existing_task_id: String,
+    pub existing_status: TaskStatus,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DuplicateTaskEnqueueResult {
+    pub inserted: Vec<DownloadTask>,
+    pub duplicates: Vec<DuplicateTaskMatch>,
+    pub requires_confirmation: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
@@ -236,14 +252,49 @@ impl AppState {
         })
     }
 
-    pub fn enqueue_tasks(&self, tasks: Vec<DownloadTask>) -> BdlResult<Vec<DownloadTask>> {
+    pub fn enqueue_tasks_with_duplicate_policy(
+        &self,
+        mut tasks: Vec<DownloadTask>,
+        policy: DuplicateTaskPolicy,
+    ) -> BdlResult<DuplicateTaskEnqueueResult> {
         let mut queue = self.queue.lock().map_err(|_| state_poisoned("queue"))?;
         let removed_existing_duplicates = dedupe_tasks_by_id(&mut queue);
+        let duplicates = duplicate_task_matches(&tasks, &queue);
+
+        if policy == DuplicateTaskPolicy::Ask && !duplicates.is_empty() {
+            if removed_existing_duplicates {
+                self.persist_queue(&queue)?;
+            }
+            return Ok(DuplicateTaskEnqueueResult {
+                inserted: Vec::new(),
+                duplicates,
+                requires_confirmation: true,
+            });
+        }
+
+        match policy {
+            DuplicateTaskPolicy::Skip => {
+                let duplicate_ids = duplicates
+                    .iter()
+                    .map(|duplicate| duplicate.proposed_task_id.as_str())
+                    .collect::<HashSet<_>>();
+                tasks.retain(|task| !duplicate_ids.contains(task.id.as_str()));
+            }
+            DuplicateTaskPolicy::Create => {
+                tasks = prepare_duplicate_copies(tasks, &queue)?;
+            }
+            DuplicateTaskPolicy::Ask => {}
+        }
+
         let inserted = append_new_tasks(&mut queue, tasks);
         if removed_existing_duplicates || !inserted.is_empty() {
             self.persist_queue(&queue)?;
         }
-        Ok(inserted)
+        Ok(DuplicateTaskEnqueueResult {
+            inserted,
+            duplicates,
+            requires_confirmation: false,
+        })
     }
 
     pub fn try_start_queue_worker(&self) -> bool {
@@ -1492,6 +1543,62 @@ fn dedupe_tasks_by_id(queue: &mut Vec<DownloadTask>) -> bool {
     queue.len() != original_len
 }
 
+fn duplicate_task_matches(
+    planned: &[DownloadTask],
+    existing: &[DownloadTask],
+) -> Vec<DuplicateTaskMatch> {
+    planned
+        .iter()
+        .filter_map(|candidate| {
+            existing
+                .iter()
+                .find(|task| task.logical_id() == candidate.id)
+                .map(|task| DuplicateTaskMatch {
+                    proposed_task_id: candidate.id.clone(),
+                    title: candidate.title.clone(),
+                    existing_task_id: task.id.clone(),
+                    existing_status: task.status,
+                })
+        })
+        .collect()
+}
+
+fn prepare_duplicate_copies(
+    tasks: Vec<DownloadTask>,
+    existing: &[DownloadTask],
+) -> BdlResult<Vec<DownloadTask>> {
+    let mut used_ids = existing
+        .iter()
+        .map(|task| task.id.clone())
+        .chain(tasks.iter().map(|task| task.id.clone()))
+        .collect::<HashSet<_>>();
+    let mut reserved_paths = existing
+        .iter()
+        .map(|task| task.output_path.clone())
+        .collect::<HashSet<_>>();
+    let mut prepared = Vec::with_capacity(tasks.len());
+
+    for task in tasks {
+        if !existing
+            .iter()
+            .any(|candidate| candidate.logical_id() == task.id)
+        {
+            reserved_paths.insert(task.output_path.clone());
+            prepared.push(task);
+            continue;
+        }
+
+        let mut copy_index = 1;
+        while !used_ids.insert(format!("{}:copy:{copy_index}", task.logical_id())) {
+            copy_index += 1;
+        }
+        let output_path = unique_path(task.output_path.clone(), &mut reserved_paths);
+        prepared.push(task.into_duplicate_copy(copy_index, output_path)?);
+    }
+
+    Ok(prepared)
+}
+
 fn append_new_tasks(queue: &mut Vec<DownloadTask>, tasks: Vec<DownloadTask>) -> Vec<DownloadTask> {
     let mut known_ids = queue
         .iter()
@@ -1578,7 +1685,7 @@ mod tests {
     use bdl_core::queue::{
         DownloadResource, DownloadResourceIntent, DownloadResourceKind, DownloadTask,
         DownloadTaskMediaSelection, DownloadTaskRefreshInput, DownloadTaskRefreshIntent,
-        ResourceStatus, TaskStatus,
+        DuplicateTaskPolicy, ResourceStatus, TaskStatus,
     };
     use bdl_core::resolver::paged::PageRequest;
     use bdl_core::settings::AppSettings;
@@ -1607,6 +1714,62 @@ mod tests {
             ["task:video:fixture:part:one", "task:video:fixture:part:two"]
         );
         assert_eq!(queue_ids(&inserted), ["task:video:fixture:part:two"]);
+    }
+
+    #[test]
+    fn duplicate_policy_ask_returns_matches_without_partial_insertion() {
+        let data_dir = temp_state_dir();
+        let existing = task_with_id("task:source:part");
+        let state = test_state_with_tasks(&data_dir, vec![existing]);
+
+        let result = state
+            .enqueue_tasks_with_duplicate_policy(
+                vec![task_with_id("task:source:part")],
+                DuplicateTaskPolicy::Ask,
+            )
+            .expect("duplicate preflight should succeed");
+
+        assert!(result.requires_confirmation);
+        assert!(result.inserted.is_empty());
+        assert_eq!(result.duplicates[0].existing_task_id, "task:source:part");
+        assert_eq!(state.queue_snapshot().unwrap().len(), 1);
+        let _ = std::fs::remove_dir_all(data_dir);
+    }
+
+    #[test]
+    fn duplicate_policy_create_reserves_path_and_rekeys_task_resources_atomically() {
+        let data_dir = temp_state_dir();
+        let existing = task_with_id("task:source:part");
+        let existing_copy = task_with_id("task:source:part:copy:1");
+        let state = test_state_with_tasks(&data_dir, vec![existing, existing_copy]);
+        let mut planned = task_with_id("task:source:part");
+        planned.resources = vec![DownloadResource {
+            id: "task:source:part:resource:video".to_owned(),
+            kind: DownloadResourceKind::Video,
+            intent: DownloadResourceIntent::Video,
+            current_urls: vec!["https://example.invalid/video.m4s".to_owned()],
+            headers: Vec::new(),
+            target_path: PathBuf::from("downloads/fixture.video.m4s"),
+            temp_path: PathBuf::from("downloads/fixture.video.m4s.bdlpart"),
+            status: ResourceStatus::Pending,
+        }];
+
+        let result = state
+            .enqueue_tasks_with_duplicate_policy(vec![planned], DuplicateTaskPolicy::Create)
+            .expect("duplicate copy should be created");
+
+        assert_eq!(result.inserted[0].id, "task:source:part:copy:2");
+        assert!(result.inserted[0].output_path.ends_with("fixture (1).mp4"));
+        assert_eq!(
+            result.inserted[0].resources[0].id,
+            "task:source:part:copy:2:resource:video"
+        );
+        assert!(
+            result.inserted[0].resources[0]
+                .target_path
+                .ends_with("fixture (1).video.m4s")
+        );
+        let _ = std::fs::remove_dir_all(data_dir);
     }
 
     #[test]

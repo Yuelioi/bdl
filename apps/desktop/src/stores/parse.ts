@@ -2,11 +2,13 @@ import { defineStore } from 'pinia'
 
 import type {
   DownloadMediaMode,
+  DuplicateTaskPolicy,
   NormalizedGroup,
   NormalizedItem,
   NormalizedPart,
   NormalizedSourceTree,
   SettingsSnapshot,
+  SelectionCreateTasksResult,
 } from '../api/dto'
 import {
   parseCloseSource,
@@ -44,6 +46,7 @@ export interface CreateTaskOptions {
   quality?: string
   audioQuality?: string
   codec?: SettingsSnapshot['codec']
+  duplicatePolicy?: DuplicateTaskPolicy
 }
 
 export const useParseStore = defineStore('parse', {
@@ -285,7 +288,10 @@ export const useParseStore = defineStore('parse', {
 
       this.selectionBySource[sourceId] = uniquePartIds([...(this.selectionBySource[sourceId] ?? []), ...partIds])
     },
-    async createTasksForSelection(sourceId: string, options: CreateTaskOptions = {}) {
+    async createTasksForSelection(
+      sourceId: string,
+      options: CreateTaskOptions = {},
+    ): Promise<SelectionCreateTasksResult | null> {
       const ui = useUiStore()
       const settings = useSettingsStore()
       const queue = useQueueStore()
@@ -293,7 +299,7 @@ export const useParseStore = defineStore('parse', {
 
       if (partIds.length === 0) {
         this.setNotice('请选择要下载的分集', 'warning')
-        return
+        return null
       }
 
       this.loadingBySource[sourceId] = true
@@ -301,7 +307,7 @@ export const useParseStore = defineStore('parse', {
         await settings.ensureLoaded()
         const downloadDir =
           options.downloadDir !== undefined ? options.downloadDir?.trim() : settings.saved.download_dir?.trim()
-        const tasks = await selectionCreateTasks({
+        const result = await selectionCreateTasks({
           source_id: sourceId,
           part_ids: partIds,
           output_dir: downloadDir || undefined,
@@ -311,18 +317,25 @@ export const useParseStore = defineStore('parse', {
           quality: options.quality ?? settings.saved.quality,
           audio_quality: options.audioQuality ?? settings.saved.audio_quality,
           codec: options.codec ?? settings.saved.codec,
+          duplicate_policy: options.duplicatePolicy ?? 'ask',
         })
         this.errorsBySource[sourceId] = null
-        if (tasks.length === 0) {
+        if (result.requires_confirmation) {
+          return result
+        }
+        if (result.created.length === 0) {
           this.setNotice('所选内容已在传输中', 'info', '查看传输')
-          return
+          return result
         }
 
-        queue.applyCreatedTasks(tasks)
-        this.setNotice(`已创建 ${tasks.length} 个任务`, 'success', '查看传输')
+        queue.applyCreatedTasks(result.created)
+        const duplicateSuffix = result.duplicates.length > 0 ? `，处理 ${result.duplicates.length} 个重复项` : ''
+        this.setNotice(`已创建 ${result.created.length} 个任务${duplicateSuffix}`, 'success', '查看传输')
+        return result
       } catch (error) {
         this.errorsBySource[sourceId] = errorMessage(error)
         ui.pushToast(errorMessage(error), 'danger')
+        return null
       } finally {
         this.loadingBySource[sourceId] = false
       }

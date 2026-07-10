@@ -2,7 +2,14 @@
 import { open } from '@tauri-apps/plugin-dialog'
 import { computed, ref, useTemplateRef } from 'vue'
 
-import type { DownloadMediaMode, NormalizedSourceTree, SourceKind, VideoCodecPreference } from '../api/dto'
+import type {
+  DownloadMediaMode,
+  DuplicateTaskMatch,
+  DuplicateTaskPolicy,
+  NormalizedSourceTree,
+  SourceKind,
+  VideoCodecPreference,
+} from '../api/dto'
 import UiButton from '../ui/Button.vue'
 import UiDialog from '../ui/Dialog.vue'
 import UiIconButton from '../ui/IconButton.vue'
@@ -15,6 +22,7 @@ import UiTree from '../ui/Tree.vue'
 import { useParseStore } from '../stores/parse'
 import { useSettingsStore } from '../stores/settings'
 import { useUiStore } from '../stores/ui'
+import { statusBadge, statusLabel } from '../stores/transferView'
 
 interface PageTreeNode {
   id: string
@@ -52,6 +60,10 @@ const settings = useSettingsStore()
 const ui = useUiStore()
 const inputFile = useTemplateRef<HTMLInputElement>('input-file')
 const downloadDialogOpen = ref(false)
+const duplicateDialogOpen = ref(false)
+const duplicateMatches = ref<DuplicateTaskMatch[]>([])
+const duplicatePreview = computed(() => duplicateMatches.value.slice(0, 6))
+const duplicateRemaining = computed(() => Math.max(duplicateMatches.value.length - duplicatePreview.value.length, 0))
 const downloadDir = ref('')
 const archiveMode = ref<'fast' | 'complete_archive' | 'custom'>('fast')
 const outputExtension = ref<'mp4' | 'mkv'>('mp4')
@@ -206,9 +218,9 @@ const openDownloadSettings = async () => {
   downloadDialogOpen.value = true
 }
 
-const createTasks = async () => {
+const createTasks = async (duplicatePolicy: DuplicateTaskPolicy = 'ask') => {
   if (activeSource.value) {
-    await parse.createTasksForSelection(activeSource.value.source.id, {
+    const result = await parse.createTasksForSelection(activeSource.value.source.id, {
       downloadDir: downloadDir.value,
       archiveMode: archiveMode.value,
       outputExtension: outputExtension.value,
@@ -216,9 +228,25 @@ const createTasks = async () => {
       quality: videoQuality.value,
       audioQuality: audioQuality.value,
       codec: videoCodec.value,
+      duplicatePolicy,
     })
+    if (result?.requires_confirmation) {
+      duplicateMatches.value = result.duplicates
+      downloadDialogOpen.value = false
+      duplicateDialogOpen.value = true
+      return
+    }
+    if (!result) {
+      return
+    }
     downloadDialogOpen.value = false
+    duplicateDialogOpen.value = false
+    duplicateMatches.value = []
   }
+}
+
+const resolveDuplicates = (policy: Exclude<DuplicateTaskPolicy, 'ask'>) => {
+  void createTasks(policy)
 }
 
 const chooseDownloadDir = async () => {
@@ -756,7 +784,35 @@ const errorMessage = (error: unknown): string => {
 
       <template #footer>
         <UiButton variant="secondary" :disabled="activeLoading" @click="downloadDialogOpen = false">取消</UiButton>
-        <UiButton :disabled="!canCreateTasks" @click="createTasks">加入传输</UiButton>
+        <UiButton :disabled="!canCreateTasks" @click="createTasks()">加入传输</UiButton>
+      </template>
+    </UiDialog>
+
+    <UiDialog v-model="duplicateDialogOpen" title="发现重复任务">
+      <section class="duplicate-summary">
+        <span class="duplicate-summary-icon" aria-hidden="true">
+          <UIcon name="i-tabler-copy" />
+        </span>
+        <div>
+          <strong>{{ duplicateMatches.length }} 个分集已在传输记录中</strong>
+          <p>可以跳过这些分集，或创建使用独立文件名的新任务。</p>
+        </div>
+      </section>
+
+      <ul class="duplicate-list" aria-label="重复任务">
+        <li v-for="match in duplicatePreview" :key="match.proposed_task_id">
+          <span>{{ match.title }}</span>
+          <UiStatusBadge :status="statusBadge(match.existing_status)">
+            {{ statusLabel(match.existing_status) }}
+          </UiStatusBadge>
+        </li>
+      </ul>
+      <p v-if="duplicateRemaining > 0" class="duplicate-remaining">另有 {{ duplicateRemaining }} 项未展开</p>
+
+      <template #footer>
+        <UiButton variant="ghost" :disabled="activeLoading" @click="duplicateDialogOpen = false">取消</UiButton>
+        <UiButton variant="secondary" :disabled="activeLoading" @click="resolveDuplicates('skip')">跳过重复项</UiButton>
+        <UiButton :disabled="activeLoading" @click="resolveDuplicates('create')">仍然创建</UiButton>
       </template>
     </UiDialog>
   </section>
@@ -781,6 +837,61 @@ const errorMessage = (error: unknown): string => {
 
 .command-panel::after {
   content: none;
+}
+
+.duplicate-summary {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-12);
+}
+
+.duplicate-summary p,
+.duplicate-remaining {
+  margin: 4px 0 0;
+  color: var(--color-text-muted);
+}
+
+.duplicate-summary-icon {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-accent-strong);
+  background: var(--color-accent-soft);
+}
+
+.duplicate-list {
+  max-height: 240px;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.duplicate-list li {
+  min-height: 44px;
+  padding: 8px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-12);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.duplicate-list li:last-child {
+  border-bottom: 0;
+}
+
+.duplicate-list li > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .command-heading {

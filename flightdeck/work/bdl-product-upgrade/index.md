@@ -2,11 +2,11 @@
 
 ## State
 
-Stages 1–3 and the Stage 4.1 transfer-reliability slice are complete. The UI is quieter, transient menus dismiss correctly, pause is wakeable during network waits, progress events are bounded, segmented downloads resume, and mux completion cannot regress to a false failure.
+Stages 1–3, Stage 4.1 transfer reliability, and the Stage 4.2 duplicate-task policy slice are complete. Duplicate selections now use an explicit atomic ask/skip/create flow with safe copy IDs and output paths.
 
 ## Next
 
-Have the maintainer exercise pause/resume on a fresh real download and compare throughput. Then continue Stage 4.2 with backend duplicate-task detection and its skip/create/ask UI.
+Have the maintainer exercise pause/resume and the duplicate confirmation flow on real downloads. Then continue Stage 4.2 with the download-directory/FFmpeg environment health command and inline repair actions.
 
 ## Read now
 
@@ -51,9 +51,11 @@ Done:
 - Migrated the legacy single-segment default to four resumable range segments once, while preserving an explicit post-migration choice of one segment; partial segment files survive pause/resume.
 - Made successful muxing an irreversible completion commit and prevented muxing/completed tasks from accepting late pause/cancel transitions.
 - Added recovery for the exact `missing media input` case where the final MP4 exists and raw media inputs were already cleaned.
+- Replaced silent duplicate-task skipping with an atomic ask/skip/create contract and status-aware confirmation dialog.
+- Reserved active queue output paths and generated safe `:copy:<n>` task/resource identities for create-anyway.
 
 Current:
-- Stage 4.1 is complete; the recommended next slice is duplicate-task policy.
+- The duplicate-task policy slice is complete; the recommended next slice is environment health and inline repair.
 
 Verified:
 - Git was clean on `main` at preflight.
@@ -67,6 +69,7 @@ Verified:
 - Added deterministic regressions for cancellation of a stalled GET, resumable segment parts, terminal task transitions, and completed-output recovery.
 - `./scripts/check.ps1` passes after the transfer reliability changes: Rustfmt, strict workspace Clippy, all Rust tests, frontend type/build, and whitespace checks.
 - Restarted and inspected the live Tauri app after the backend changes; the existing 100%-progress failed task remains available for the maintainer to retry into the new completed-output recovery path.
+- Added atomic AppState regressions for ask-without-partial-insertion and create-anyway path/ID reservation; the full repository check passes.
 
 ## Open questions
 

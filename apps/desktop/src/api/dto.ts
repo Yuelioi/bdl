@@ -119,6 +119,21 @@ export interface DownloadTask {
   media_selection: DownloadTaskMediaSelection
 }
 
+export type DuplicateTaskPolicy = 'skip' | 'create' | 'ask'
+
+export interface DuplicateTaskMatch {
+  proposed_task_id: string
+  title: string
+  existing_task_id: string
+  existing_status: TaskStatus
+}
+
+export interface SelectionCreateTasksResult {
+  created: DownloadTask[]
+  duplicates: DuplicateTaskMatch[]
+  requires_confirmation: boolean
+}
+
 export interface DownloadTaskRefreshIntent {
   input: DownloadTaskRefreshInput
   cid: number

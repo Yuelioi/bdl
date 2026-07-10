@@ -139,6 +139,8 @@ The queue worker:
 - records completed metadata
 - can auto-refresh expired URLs once per task when enabled
 
+Logical task identity is the deterministic planner ID (`task:<source>:<part>`). Explicit duplicate copies append `:copy:<n>` while still matching the same logical identity. `AppState` applies duplicate detection, `ask`/`skip`/`create`, copy IDs, output-path reservation, and persistence under one queue lock; task/resource re-keying and path retargeting remain `bdl-core` domain behavior.
+
 Startup recovery:
 
 - persisted waiting/parsing/downloading/muxing tasks are normalized on app start

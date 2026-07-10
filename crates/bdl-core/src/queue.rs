@@ -1,8 +1,18 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use crate::error::{BdlError, BdlResult};
 use crate::model::HeaderPair;
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DuplicateTaskPolicy {
+    Skip,
+    Create,
+    #[default]
+    Ask,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -91,6 +101,79 @@ pub struct DownloadTask {
     pub refresh_intent: Option<DownloadTaskRefreshIntent>,
     #[serde(default)]
     pub media_selection: DownloadTaskMediaSelection,
+}
+
+impl DownloadTask {
+    pub fn logical_id(&self) -> &str {
+        logical_task_id(&self.id)
+    }
+
+    pub fn into_duplicate_copy(
+        mut self,
+        copy_index: usize,
+        output_path: PathBuf,
+    ) -> BdlResult<Self> {
+        let original_id = self.id.clone();
+        let copy_id = format!("{}:copy:{copy_index}", self.logical_id());
+        let original_output = self.output_path.clone();
+
+        for resource in &mut self.resources {
+            let suffix =
+                resource
+                    .id
+                    .strip_prefix(&original_id)
+                    .ok_or_else(|| BdlError::Planning {
+                        message: format!(
+                            "资源 `{}` 不属于任务 `{original_id}`，无法创建重复任务。",
+                            resource.id
+                        ),
+                    })?;
+            resource.id = format!("{copy_id}{suffix}");
+            resource.target_path =
+                retarget_task_path(&resource.target_path, &original_output, &output_path)?;
+            resource.temp_path =
+                retarget_task_path(&resource.temp_path, &original_output, &output_path)?;
+        }
+
+        self.id = copy_id;
+        self.output_path = output_path;
+        Ok(self)
+    }
+}
+
+pub fn logical_task_id(task_id: &str) -> &str {
+    let Some((logical_id, copy_index)) = task_id.rsplit_once(":copy:") else {
+        return task_id;
+    };
+    if copy_index.parse::<usize>().is_ok() {
+        logical_id
+    } else {
+        task_id
+    }
+}
+
+fn retarget_task_path(path: &Path, old_output: &Path, new_output: &Path) -> BdlResult<PathBuf> {
+    let old_stem = old_output
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| BdlError::Planning {
+            message: format!("输出路径 `{}` 没有有效文件名。", old_output.display()),
+        })?;
+    let new_stem = new_output
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| BdlError::Planning {
+            message: format!("输出路径 `{}` 没有有效文件名。", new_output.display()),
+        })?;
+    let file_name = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .and_then(|value| value.strip_prefix(old_stem))
+        .ok_or_else(|| BdlError::Planning {
+            message: format!("资源路径 `{}` 与输出文件名不匹配。", path.display()),
+        })?;
+
+    Ok(new_output.with_file_name(format!("{new_stem}{file_name}")))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

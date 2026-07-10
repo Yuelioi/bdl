@@ -5,6 +5,7 @@ import type {
   BulkQueueResult,
   DiagnosticsExportResponse,
   DownloadTask,
+  DuplicateTaskPolicy,
   MaintenanceResult,
   NormalizedSourceTree,
   QrLoginPollResponse,
@@ -14,6 +15,7 @@ import type {
   ArchiveMode,
   DownloadMediaMode,
   SettingsSnapshot,
+  SelectionCreateTasksResult,
   StartupRecoverySnapshot,
   VideoCodecPreference,
 } from './dto'
@@ -61,6 +63,7 @@ export interface SelectionCreateTasksRequest {
   quality?: string
   audio_quality?: string
   codec?: VideoCodecPreference
+  duplicate_policy?: DuplicateTaskPolicy
 }
 
 export interface AccountImportCookieRequest {
@@ -91,7 +94,7 @@ export const parseRefreshSource = (request: ParseSourcePageRequest) =>
   invokeCommand<NormalizedSourceTree>('parse_refresh_source', { request })
 
 export const selectionCreateTasks = (request: SelectionCreateTasksRequest) =>
-  invokeCommand<DownloadTask[]>('selection_create_tasks', { request })
+  invokeCommand<SelectionCreateTasksResult>('selection_create_tasks', { request })
 
 export const queueList = () => invokeCommand<DownloadTask[]>('queue_list')
 

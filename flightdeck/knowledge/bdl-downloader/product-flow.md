@@ -99,6 +99,14 @@ Advanced options:
 
 Do not show all archive/diagnostic internals in the first view.
 
+Task creation uses an explicit duplicate policy:
+
+- `ask` is the default and is atomic: if any selected logical task already exists, create nothing and return the matches for confirmation.
+- `skip` creates only non-duplicate selections.
+- `create` creates safe copies with new task/resource IDs and output paths that do not collide with queued work.
+
+The duplicate dialog shows a short status-aware preview and offers cancel, skip duplicates, or create anyway. It must not silently choose on the user's behalf.
+
 ## Transfer Flow
 
 Transfer is a task manager, not a log viewer.
