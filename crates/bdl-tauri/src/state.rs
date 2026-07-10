@@ -173,6 +173,19 @@ impl AppState {
         }
     }
 
+    pub async fn parse_source_for_workspace(
+        &self,
+        input: &str,
+        fetch_streams: bool,
+    ) -> BdlResult<NormalizedSourceTree> {
+        let tree = self.parse_source(input, fetch_streams).await?;
+        if should_expand_initial_source(tree.source.kind, tree.source.has_more) {
+            self.load_all(&tree.source.id, None).await
+        } else {
+            Ok(tree)
+        }
+    }
+
     pub fn close_source(&self, source_id: &SourceId) -> BdlResult<bool> {
         Ok(self
             .parse_sources
@@ -195,7 +208,8 @@ impl AppState {
 
     pub async fn refresh_source(&self, source_id: &SourceId) -> BdlResult<NormalizedSourceTree> {
         let current = self.source_snapshot(source_id)?;
-        self.parse_source_all(&current.source.input, false).await
+        self.parse_source_for_workspace(&current.source.input, false)
+            .await
     }
 
     pub async fn load_more(&self, source_id: &SourceId) -> BdlResult<NormalizedSourceTree> {
@@ -1015,6 +1029,10 @@ impl AppState {
 
 fn should_continue_parse_all(has_more: bool, loaded_count: usize, limit: Option<usize>) -> bool {
     has_more && limit.is_none_or(|limit| loaded_count < limit.max(1))
+}
+
+fn should_expand_initial_source(kind: SourceKind, has_more: bool) -> bool {
+    has_more && kind != SourceKind::Uploader
 }
 
 fn ignores_status_transition(current: TaskStatus, next: TaskStatus) -> bool {
@@ -1908,7 +1926,7 @@ mod tests {
         append_source_page, dedupe_tasks_by_id, hydrate_placeholder_part, load_account_snapshot,
         next_page_request, normalize_selected_part_ids, prepare_startup_recovery,
         remap_selected_part_ids, select_task_stream, selected_hydration_requests,
-        should_continue_parse_all, task_media_refresh_ids,
+        should_continue_parse_all, should_expand_initial_source, task_media_refresh_ids,
     };
     use crate::secure_store::SecureStore;
     use chrono::Utc;
@@ -2132,6 +2150,16 @@ mod tests {
         assert!(!should_continue_parse_all(false, 150, None));
         assert!(should_continue_parse_all(true, 99, Some(100)));
         assert!(!should_continue_parse_all(true, 100, Some(100)));
+    }
+
+    #[test]
+    fn workspace_parse_keeps_large_uploader_sources_paged() {
+        assert!(!should_expand_initial_source(SourceKind::Uploader, true));
+    }
+
+    #[test]
+    fn workspace_parse_still_expands_bounded_container_sources() {
+        assert!(should_expand_initial_source(SourceKind::Favorite, true));
     }
 
     #[test]
