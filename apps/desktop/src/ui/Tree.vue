@@ -111,7 +111,7 @@ const handleKeydown = (event: KeyboardEvent, node: FlatTreeNode, index: number) 
 </script>
 
 <template>
-  <div class="tree-list" role="tree" aria-label="解析结果">
+  <div class="tree-list" role="tree" aria-label="内容选择">
     <div
       v-for="(node, index) in flatNodes"
       :key="node.id"
@@ -164,7 +164,7 @@ const handleKeydown = (event: KeyboardEvent, node: FlatTreeNode, index: number) 
 }
 
 .tree-row.selected {
-  background: var(--color-accent-soft);
+  background: color-mix(in oklab, var(--color-accent-faint) 38%, var(--color-surface));
 }
 
 .tree-row.partial {

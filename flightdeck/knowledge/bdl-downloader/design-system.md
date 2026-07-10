@@ -26,6 +26,7 @@ BDL is a compact operations tool for Bilibili power users. It should feel calm, 
 - Adapt navigation and toolbars for narrow desktop windows instead of hiding critical actions.
 - Every custom interactive surface needs focus-visible styling, accessible naming, keyboard behavior, and a reduced-motion path.
 - Focus treatments inside clipped or scrollable regions must render inward; adjacent task-row icon actions must not create a stack of competing outlines.
+- Metadata result headers are flat selection toolbars, not nested cards. Use title, total count, selected count, and optional search-match count; reserve pink surfaces for checks and the primary download action rather than every selected row.
 - Do not use gradient text, decorative glassmorphism, generic glow, or thick colored side stripes.
 
 ## Product boundary

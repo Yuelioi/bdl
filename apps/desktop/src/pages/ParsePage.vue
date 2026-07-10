@@ -130,6 +130,7 @@ const resultSortOptions = [
 const activeSource = computed(() => parse.activeSource)
 const selectedIds = computed(() => parse.activeSelection)
 const selectedCount = computed(() => selectedIds.value.length)
+const totalPartCount = computed(() => (activeSource.value ? sourcePartCount(activeSource.value) : 0))
 const treeNodes = computed(() => {
   if (!activeSource.value) {
     return []
@@ -145,7 +146,7 @@ const activeLoading = computed(() => Boolean(activeSource.value && parse.loading
 const activeError = computed(() => (activeSource.value ? parse.errorsBySource[activeSource.value.source.id] : null))
 const canCreateTasks = computed(() => Boolean(activeSource.value && selectedCount.value > 0 && !activeLoading.value))
 const hasResultQuery = computed(() => resultQuery.value.trim().length > 0)
-const canSelectVisible = computed(() => Boolean(activeSource.value && visiblePartCount.value > 0 && !activeLoading.value))
+const canSelectResults = computed(() => Boolean(activeSource.value && visiblePartCount.value > 0 && !activeLoading.value))
 const canSelectRange = computed(() => Boolean(activeSource.value && rangeExpression.value.trim() && visiblePartCount.value > 0 && !activeLoading.value))
 const scheduleError = computed(() => {
   return scheduledLocalError(scheduledLocal.value, scheduleValidationNow.value)
@@ -157,19 +158,11 @@ const createTaskLabel = computed(() => {
   }
   return selectedCount.value > 0 ? `下载已选择 (${selectedCount.value})` : '先选择分集'
 })
-const loadedLabel = computed(() => {
-  if (!activeSource.value) {
-    return '--'
-  }
-
-  const total = activeSource.value.source.total_count ?? activeSource.value.source.loaded_count
-  return `${activeSource.value.source.loaded_count} / ${total}`
-})
 const activeSourceKindLabel = computed(() => (activeSource.value ? sourceKindLabels[activeSource.value.source.kind] : '--'))
 const activeSourceTitle = computed(() => activeSource.value?.source.title ?? '')
 const canCloseActiveSource = computed(() => Boolean(activeSource.value && parse.sourceOrder.length > 1))
-const sourceMenuLabel = computed(() => (parse.sourceOrder.length > 0 ? `已解析 ${parse.sourceOrder.length}` : '无记录'))
-const visibleResultLabel = computed(() => (hasResultQuery.value ? `匹配 ${visiblePartCount.value}` : `可见 ${visiblePartCount.value}`))
+const sourceMenuLabel = computed(() => (parse.sourceOrder.length > 0 ? `${parse.sourceOrder.length} 个来源` : '无来源'))
+const selectAllLabel = computed(() => (hasResultQuery.value ? `全选搜索结果 (${visiblePartCount.value})` : '全选全部'))
 const includesVideo = computed(() => mediaMode.value !== 'audio_only')
 const includesAudio = computed(() => mediaMode.value !== 'video_only')
 const downloadSettingsSummary = computed(() => {
@@ -324,7 +317,7 @@ const openEnvironmentSettings = () => {
   ui.setTab('settings')
 }
 
-const selectAllLoaded = () => {
+const selectAllResults = () => {
   if (activeSource.value) {
     parse.selectPartIds(
       activeSource.value.source.id,
@@ -363,7 +356,7 @@ const selectSource = (sourceId: string) => {
 const sourceMenuItems = computed(() => [
   parse.orderedSources.map((tree) => ({
     label: tree.source.title,
-    description: `${sourceLoadedLabel(tree)} · 已选 ${sourceSelectedCount(tree.source.id)}`,
+    description: `${sourcePartCount(tree)} 项 · 已选 ${sourceSelectedCount(tree.source.id)}`,
     icon: parse.activeSourceId === tree.source.id ? 'i-tabler-check' : 'i-tabler-link',
     onSelect: () => selectSource(tree.source.id),
   })),
@@ -385,7 +378,7 @@ const selectRange = () => {
     const indexes = parseRangeExpression(rangeExpression.value, visiblePartEntries.value.length)
     const partIds = indexes.map((index) => visiblePartEntries.value[index].id)
     parse.selectPartIds(activeSource.value.source.id, partIds)
-    parse.setNotice(`已选中 ${partIds.length} 个可见分集`, 'success')
+    parse.setNotice(`已选中 ${partIds.length} 个结果`, 'success')
   } catch (error) {
     rangeError.value = errorMessage(error)
   }
@@ -603,7 +596,7 @@ const parseRangeExpression = (value: string, total: number): number[] => {
     const min = Math.min(start, end)
     const max = Math.max(start, end)
     if (min < 1 || max > total) {
-      throw new Error(`范围超出当前可见数量：${token}`)
+      throw new Error(`范围超出当前结果数量：${token}`)
     }
 
     for (let index = min; index <= max; index += 1) {
@@ -619,15 +612,16 @@ const partMeta = (
   part: NormalizedSourceTree['groups'][number]['items'][number]['parts'][number],
 ): string => {
   const duration = displayPartDuration(part.duration_seconds, item.duration_seconds, item.parts.length)
-  return duration !== null ? formatDuration(duration) : streamSummary(part.streams.length)
+  return duration !== null ? formatDuration(duration) : ''
 }
 
 const sameTitle = (left: string, right: string): boolean => left.trim() !== '' && left.trim() === right.trim()
 
-const streamSummary = (count: number): string => (count > 0 ? `${count} 条流` : '未拉流')
-
-const sourceLoadedLabel = (tree: NormalizedSourceTree): string =>
-  `${tree.source.loaded_count} / ${tree.source.total_count ?? tree.source.loaded_count}`
+const sourcePartCount = (tree: NormalizedSourceTree): number =>
+  tree.groups.reduce(
+    (groupTotal, group) => groupTotal + group.items.reduce((itemTotal, item) => itemTotal + item.parts.length, 0),
+    0,
+  )
 
 const sourceSelectedCount = (sourceId: string): number => parse.selectionBySource[sourceId]?.length ?? 0
 
@@ -708,16 +702,20 @@ const errorMessage = (error: unknown): string => {
     <section class="panel result-panel">
       <div v-if="activeSource" class="result-toolbar">
         <div class="result-current">
-          <strong :title="activeSourceTitle">{{ activeSourceTitle }}</strong>
-          <span>{{ activeSourceKindLabel }} · 已选 {{ selectedCount }} 个 · 已解析 {{ loadedLabel }} · {{ visibleResultLabel }}</span>
+          <div class="result-title-line">
+            <strong :title="activeSourceTitle">{{ activeSourceTitle }}</strong>
+            <span class="result-kind">{{ activeSourceKindLabel }}</span>
+          </div>
+          <div class="result-counts" aria-label="内容选择统计">
+            <span>共 <b>{{ totalPartCount }}</b> 项</span>
+            <span>已选 <b>{{ selectedCount }}</b> 项</span>
+            <span v-if="hasResultQuery">搜索找到 <b>{{ visiblePartCount }}</b> 项</span>
+          </div>
         </div>
         <div class="result-actions">
-          <UiButton variant="secondary" :disabled="!canSelectVisible" @click="selectAllLoaded">全选可见</UiButton>
-          <UiButton variant="secondary" :disabled="activeLoading || selectedCount === 0" @click="clearSelection">
-            清空
-          </UiButton>
-          <UiButton :disabled="!canCreateTasks" @click="openDownloadSettings">{{ createTaskLabel }}</UiButton>
-          <UiIconButton icon="refresh" label="刷新解析结果" variant="ghost" :disabled="activeLoading" @click="refreshSource" />
+          <UiButton variant="ghost" :disabled="!canSelectResults" @click="selectAllResults">{{ selectAllLabel }}</UiButton>
+          <UiButton variant="ghost" :disabled="activeLoading || selectedCount === 0" @click="clearSelection">清空选择</UiButton>
+          <UiIconButton icon="refresh" label="刷新内容" variant="ghost" :disabled="activeLoading" @click="refreshSource" />
           <UiIconButton
             v-if="canCloseActiveSource"
             icon="x"
@@ -725,14 +723,19 @@ const errorMessage = (error: unknown): string => {
             variant="ghost"
             @click="closeSource(activeSource.source.id)"
           />
+          <UiButton :disabled="!canCreateTasks" @click="openDownloadSettings">{{ createTaskLabel }}</UiButton>
         </div>
+        <p class="result-hydration-note">
+          <UIcon name="i-tabler-bolt" aria-hidden="true" />
+          清晰度、编码与流地址会在创建下载任务时，仅为所选内容获取。
+        </p>
         <div class="result-tools">
-          <UiTextField v-model="resultQuery" label="搜索结果" placeholder="标题 / UP 主 / BV" :disabled="activeLoading" />
+          <UiTextField v-model="resultQuery" label="搜索内容" placeholder="标题 / UP 主 / BV" :disabled="activeLoading" />
           <UiSelect v-model="resultSort" label="排序" :options="resultSortOptions" :disabled="activeLoading" />
           <div class="range-control">
             <UiTextField
               v-model="rangeExpression"
-              label="范围"
+              label="序号范围"
               placeholder="1-5,7,9-12"
               :disabled="activeLoading || visiblePartCount === 0"
             />
@@ -1122,11 +1125,9 @@ const errorMessage = (error: unknown): string => {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: var(--space-16);
-  padding: var(--space-10, 10px) var(--space-12);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-8);
-  background: var(--color-panel);
+  gap: var(--space-12) var(--space-16);
+  padding-bottom: var(--space-12);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .result-current {
@@ -1135,23 +1136,44 @@ const errorMessage = (error: unknown): string => {
   gap: var(--space-4);
 }
 
-.result-current strong,
-.result-current span {
+.result-title-line {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+.result-title-line strong {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.result-current strong {
+.result-title-line strong {
   color: var(--color-text);
-  font-size: var(--font-13);
+  font-size: var(--font-16);
 }
 
-.result-current span {
+.result-kind {
+  flex: 0 0 auto;
+  color: var(--color-muted);
+  font-size: var(--font-11);
+  font-weight: 700;
+}
+
+.result-counts {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-12);
   color: var(--color-muted);
   font-size: var(--font-12);
-  font-weight: 700;
+}
+
+.result-counts b {
+  color: var(--color-text);
+  font-weight: 760;
 }
 
 .result-actions {
@@ -1162,7 +1184,7 @@ const errorMessage = (error: unknown): string => {
 }
 
 .result-toolbar :deep(.ui-button) {
-  min-width: 64px;
+  min-width: 0;
   height: 28px;
   font-size: var(--font-12);
 }
@@ -1170,6 +1192,25 @@ const errorMessage = (error: unknown): string => {
 .result-actions :deep(.ui-icon-button) {
   width: 28px;
   height: 28px;
+}
+
+.result-hydration-note {
+  grid-column: 1 / -1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  margin: 0;
+  color: var(--color-muted);
+  font-size: var(--font-11);
+  line-height: 1.4;
+}
+
+.result-hydration-note svg {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  color: var(--color-accent-strong);
 }
 
 .result-tools {

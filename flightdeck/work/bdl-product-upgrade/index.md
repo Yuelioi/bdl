@@ -91,6 +91,7 @@ Verified:
 - Removed pink contamination from structural neutrals in both themes: light mode now uses clean whites/cool grays and dark mode uses a five-step charcoal ladder, with pink retained as the only brand accent.
 - Fixed completed tasks inheriting warning status from historical pause/resume logs, added raw-deflate compatibility for Bilibili XML danmaku downloads, and polished clipped field focus plus task-row action borders. Replayed the persisted failed danmaku task through the real desktop UI and verified it completed cleanly.
 - Closed the metadata-only selection loop for repeated list downloads: stale favorite/uploader/collection/series placeholder IDs now map to their already hydrated BVID parts before planning, so duplicate confirmation no longer fails with “分 P 未加载” or requires reparsing.
+- Reframed the parse result as a flat batch content selector: removed parsed/visible/stream-internal counters, added total/selected/search-result counts and an on-demand hydration explanation, simplified result actions, and reduced selected-row pink across light and dark themes. Verified against the real 190-part AV source.
 
 ## Open questions
 

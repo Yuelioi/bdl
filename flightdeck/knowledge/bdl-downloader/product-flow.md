@@ -96,6 +96,8 @@ Paged sources expose complete lightweight metadata:
 
 Initial parse and refresh keep paging until the source reports `has_more = false`. This applies to favorites, uploader videos, collections, series, bangumi, and courses. Paging fetches list metadata only; stream URLs and codec profiles remain download-time hydration.
 
+The result area presents this metadata as a content selector. Its stable counts are `共 N 项` and `已选 N 项`; an active search adds `搜索找到 N 项`. It must not expose legacy `已解析 x/y`, `可见`, `解析更多`, or `未拉流` states. Range selection operates on the current sorted/search result, and the UI explains once that stream details are fetched only for selected content at task creation.
+
 ## Download Settings Dialog
 
 Settings page defines defaults. The parse dialog provides temporary overrides for the selected batch.
