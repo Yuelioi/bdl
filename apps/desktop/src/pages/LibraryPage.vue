@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, useTemplateRef, watch } from 'vue'
 
 import type { AccountLibraryFolder, AccountLibraryFolderKind } from '../api/dto'
 import { useAccountStore } from '../stores/account'
@@ -10,6 +10,8 @@ import UiButton from '../ui/Button.vue'
 import UiEmptyState from '../ui/EmptyState.vue'
 import UiIconButton from '../ui/IconButton.vue'
 import UiTabs from '../ui/Tabs.vue'
+import LibraryFolderDetail from './library/LibraryFolderDetail.vue'
+import ParseDownloadPlanner from './parse/ParseDownloadPlanner.vue'
 
 const account = useAccountStore()
 const library = useLibraryStore()
@@ -17,6 +19,8 @@ const parse = useParseStore()
 const ui = useUiStore()
 const query = ref('')
 const failedCoverIds = ref<string[]>([])
+const detailFolder = ref<AccountLibraryFolder | null>(null)
+const downloadPlanner = useTemplateRef<{ openDialog: () => Promise<void> }>('download-planner')
 
 const categories: Array<{
   kind: AccountLibraryFolderKind
@@ -55,14 +59,26 @@ const load = async (kind = library.activeKind, targetPage = 1) => {
 }
 
 const selectCategory = async (kind: AccountLibraryFolderKind) => {
+  if (parse.activeSourceId) await parse.removeSource(parse.activeSourceId)
+  detailFolder.value = null
   query.value = ''
   await library.selectKind(kind)
 }
 
-const openItem = async (item: AccountLibraryFolder) => {
+const openFolder = async (item: AccountLibraryFolder) => {
   await parse.createSource(item.source_url)
-  ui.setTab('parse')
+  if (parse.activeSource) {
+    detailFolder.value = item
+    parse.clearNotice()
+  }
 }
+
+const closeFolder = async () => {
+  if (parse.activeSourceId) await parse.removeSource(parse.activeSourceId)
+  detailFolder.value = null
+}
+
+const openDownloadSettings = () => void downloadPlanner.value?.openDialog()
 
 onMounted(() => {
   if (account.profile.logged_in) void load()
@@ -73,6 +89,7 @@ watch(
   ([loggedIn, mid], previous) => {
     if (!loggedIn) {
       library.clear()
+      detailFolder.value = null
       return
     }
     if (!previous?.[0] || previous[1] !== mid) void load()
@@ -83,9 +100,18 @@ watch(
 <template>
   <section class="page-grid grid-cols-1" aria-label="账号内容库">
     <section class="panel library-panel">
-      <UiTabs v-model="categoryFilter" :tabs="categoryTabs" />
+      <div class="shrink-0">
+        <UiTabs v-model="categoryFilter" :tabs="categoryTabs" />
+      </div>
 
-      <section class="library-content" aria-labelledby="library-heading" :aria-busy="library.loading">
+      <LibraryFolderDetail
+        v-if="detailFolder"
+        :folder="detailFolder"
+        @back="closeFolder"
+        @download="openDownloadSettings"
+      />
+
+      <section v-else class="library-content" aria-labelledby="library-heading" :aria-busy="library.loading">
         <header class="library-header">
           <div>
             <h2 id="library-heading">{{ activeCategory.label }}</h2>
@@ -165,8 +191,8 @@ watch(
               <p v-if="item.description" class="library-description">{{ item.description }}</p>
               <div class="library-card-meta">
                 <span>{{ item.media_count }} 个视频</span>
-                <button type="button" @click="openItem(item)">
-                  解析内容 <UIcon name="i-tabler-arrow-up-right" aria-hidden="true" />
+                <button type="button" @click="openFolder(item)">
+                  查看内容 <UIcon name="i-tabler-arrow-right" aria-hidden="true" />
                 </button>
               </div>
             </div>
@@ -203,6 +229,7 @@ watch(
         </footer>
       </section>
     </section>
+    <ParseDownloadPlanner ref="download-planner" />
   </section>
 </template>
 
