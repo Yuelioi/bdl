@@ -53,6 +53,7 @@ export interface TransferProgressSnapshot {
 
 export interface TransferTaskView {
   id: string
+  isCompleted: boolean
   displayTitle: string
   subtitle: string
   statusLabel: string
@@ -88,13 +89,15 @@ export const createTransferTaskView = (
 
   return {
     id: task.id,
+    isCompleted: task.status === 'completed',
     displayTitle: titleParts.displayTitle,
     subtitle: titleParts.subtitle,
     statusLabel: completedWithWarnings ? '部分失败' : scheduled ? '已定时' : statusLabel(task.status),
     statusBadge: completedWithWarnings ? 'warning' : statusBadge(task.status),
     progressValue: progress,
     progressLabel: `${progress}%`,
-    speedLabel: activelyTransferring && transferProgress ? formatSpeedLabel(transferProgress.speedBytesPerSecond) : '--',
+    speedLabel:
+      activelyTransferring && transferProgress ? formatSpeedLabel(transferProgress.speedBytesPerSecond) : '--',
     etaLabel: scheduled
       ? scheduleLabel(task.scheduled_at)
       : activelyTransferring && transferProgress
@@ -249,9 +252,8 @@ export const createTaskDiagnosticView = (task: DownloadTask, logs: QueueLogEntry
     summary: statusLabel(task.status),
     detail: '任务正在按队列流程执行。速度、剩余时间和大小会在下载引擎提供数据后显示。',
     impact: trackImpact,
-    recommendedAction: task.status === 'waiting' || task.status === 'parsing' || task.status === 'downloading'
-      ? 'pause'
-      : null,
+    recommendedAction:
+      task.status === 'waiting' || task.status === 'parsing' || task.status === 'downloading' ? 'pause' : null,
     recommendedActionLabel:
       task.status === 'waiting' || task.status === 'parsing' || task.status === 'downloading'
         ? actionLabel('pause')
@@ -436,9 +438,9 @@ const classifyTaskIssue = (task: DownloadTask, logs: QueueLogEntry[]): Classifie
     .toLowerCase()
 
   if (
-    lastErrors.includes('404')
-    || lastErrors.includes('资源长度失败')
-    || (lastErrors.includes('not found') && !lastErrors.includes('ffmpeg'))
+    lastErrors.includes('404') ||
+    lastErrors.includes('资源长度失败') ||
+    (lastErrors.includes('not found') && !lastErrors.includes('ffmpeg'))
   ) {
     return {
       label: '链接可能已过期',
@@ -449,11 +451,11 @@ const classifyTaskIssue = (task: DownloadTask, logs: QueueLogEntry[]): Classifie
     }
   }
   if (
-    lastErrors.includes('permission denied')
-    || lastErrors.includes('access is denied')
-    || lastErrors.includes('拒绝访问')
-    || lastErrors.includes('保存目录不可写')
-    || lastErrors.includes('readonly')
+    lastErrors.includes('permission denied') ||
+    lastErrors.includes('access is denied') ||
+    lastErrors.includes('拒绝访问') ||
+    lastErrors.includes('保存目录不可写') ||
+    lastErrors.includes('readonly')
   ) {
     return {
       label: '保存目录不可写',
@@ -464,11 +466,11 @@ const classifyTaskIssue = (task: DownloadTask, logs: QueueLogEntry[]): Classifie
     }
   }
   if (
-    lastErrors.includes('private')
-    || lastErrors.includes('私密')
-    || lastErrors.includes('不可见')
-    || lastErrors.includes('无权访问')
-    || lastErrors.includes('访问受限')
+    lastErrors.includes('private') ||
+    lastErrors.includes('私密') ||
+    lastErrors.includes('不可见') ||
+    lastErrors.includes('无权访问') ||
+    lastErrors.includes('访问受限')
   ) {
     return {
       label: '资源不可访问',
@@ -479,13 +481,13 @@ const classifyTaskIssue = (task: DownloadTask, logs: QueueLogEntry[]): Classifie
     }
   }
   if (
-    lastErrors.includes('403')
-    || lastErrors.includes('401')
-    || lastErrors.includes('forbidden')
-    || lastErrors.includes('unauthorized')
-    || lastErrors.includes('登录')
-    || lastErrors.includes('cookie')
-    || lastErrors.includes('权限')
+    lastErrors.includes('403') ||
+    lastErrors.includes('401') ||
+    lastErrors.includes('forbidden') ||
+    lastErrors.includes('unauthorized') ||
+    lastErrors.includes('登录') ||
+    lastErrors.includes('cookie') ||
+    lastErrors.includes('权限')
   ) {
     return {
       label: '权限或登录异常',
@@ -542,11 +544,7 @@ const classifyTaskIssue = (task: DownloadTask, logs: QueueLogEntry[]): Classifie
   }
 }
 
-const transientWarningMessages = new Set([
-  '任务已停止',
-  '任务已暂停或取消',
-  '自动刷新过期链接',
-])
+const transientWarningMessages = new Set(['任务已停止', '任务已暂停或取消', '自动刷新过期链接'])
 
 const completionWarningLogs = (logs: QueueLogEntry[]): QueueLogEntry[] =>
   logs.filter((log) => log.level === 'warning' && !transientWarningMessages.has(log.message.trim()))
@@ -584,11 +582,7 @@ const secondaryActionsForTask = (task: DownloadTask, primaryAction: TaskActionKi
   const actions: TaskActionDescriptor[] = []
 
   if (isScheduledTask(task)) {
-    actions.push(
-      actionDescriptor('schedule', '修改时间'),
-      actionDescriptor('speed_limit'),
-      actionDescriptor('cancel'),
-    )
+    actions.push(actionDescriptor('schedule', '修改时间'), actionDescriptor('speed_limit'), actionDescriptor('cancel'))
     return actions
   }
 
@@ -628,10 +622,7 @@ const secondaryActionsForTask = (task: DownloadTask, primaryAction: TaskActionKi
   return actions.filter((action) => action.kind !== primaryAction)
 }
 
-const actionDescriptor = (
-  kind: Exclude<TaskActionKind, 'none'>,
-  label = actionLabel(kind),
-): TaskActionDescriptor => ({
+const actionDescriptor = (kind: Exclude<TaskActionKind, 'none'>, label = actionLabel(kind)): TaskActionDescriptor => ({
   kind,
   label,
   icon: actionIcon(kind),
@@ -691,9 +682,7 @@ const actionIcon = (action: TaskActionKind): string => {
 }
 
 const isScheduledTask = (task: DownloadTask): boolean =>
-  task.status === 'waiting'
-  && Boolean(task.scheduled_at)
-  && Date.parse(task.scheduled_at ?? '') > Date.now()
+  task.status === 'waiting' && Boolean(task.scheduled_at) && Date.parse(task.scheduled_at ?? '') > Date.now()
 
 const scheduleLabel = (scheduledAt: string | null, includeDate = false): string => {
   if (!scheduledAt) return '--'

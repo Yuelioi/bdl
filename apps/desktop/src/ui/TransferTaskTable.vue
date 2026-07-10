@@ -8,11 +8,18 @@ import UiStatusBadge from './StatusBadge.vue'
 import UiCheckbox from './Checkbox.vue'
 import TaskActionMenu from './TaskActionMenu.vue'
 
-const { views, selectedTaskId, selectedTaskIds, loading = false } = defineProps<{
+const {
+  views,
+  selectedTaskId,
+  selectedTaskIds,
+  loading = false,
+  mode = 'transfer',
+} = defineProps<{
   views: TransferTaskView[]
   selectedTaskId: string | null
   selectedTaskIds: string[]
   loading?: boolean
+  mode?: 'transfer' | 'completed'
 }>()
 
 const emit = defineEmits<{
@@ -35,7 +42,7 @@ const toggleVisible = () => {
 </script>
 
 <template>
-  <div class="transfer-table" role="table" aria-label="传输任务">
+  <div class="transfer-table" :class="`${mode}-mode`" role="table" aria-label="传输任务">
     <div class="transfer-table-row table-head" role="row">
       <div class="select-cell" role="columnheader">
         <UiCheckbox
@@ -48,9 +55,12 @@ const toggleVisible = () => {
       </div>
       <div role="columnheader">名称</div>
       <div role="columnheader">状态</div>
-      <div role="columnheader">进度</div>
-      <div role="columnheader">速度</div>
-      <div role="columnheader">剩余</div>
+      <div v-if="mode === 'completed'" role="columnheader">输出位置</div>
+      <template v-else>
+        <div role="columnheader">进度</div>
+        <div role="columnheader">速度</div>
+        <div role="columnheader">剩余</div>
+      </template>
       <div class="action-head" role="columnheader">操作</div>
     </div>
 
@@ -83,14 +93,22 @@ const toggleVisible = () => {
         <UiStatusBadge :status="view.statusBadge">{{ view.statusLabel }}</UiStatusBadge>
       </span>
 
-      <span class="progress-cell" role="cell">
-        <strong>{{ view.progressLabel }}</strong>
-        <small>{{ view.sizeLabel }}</small>
-        <UiProgressBar :value="view.progressValue" />
+      <span v-if="mode === 'completed'" class="location-cell" role="cell" :title="view.fullLocation">
+        <UIcon name="i-tabler-folder" aria-hidden="true" />
+        {{ view.shortLocation }}
       </span>
-
-      <span class="metric-cell" role="cell">{{ view.speedLabel }}</span>
-      <span class="metric-cell" role="cell">{{ view.etaLabel }}</span>
+      <template v-else>
+        <span class="progress-cell" role="cell">
+          <template v-if="!view.isCompleted">
+            <strong>{{ view.progressLabel }}</strong>
+            <small>{{ view.sizeLabel }}</small>
+            <UiProgressBar :value="view.progressValue" />
+          </template>
+          <span v-else class="completed-result">已完成</span>
+        </span>
+        <span class="metric-cell" role="cell">{{ view.isCompleted ? '—' : view.speedLabel }}</span>
+        <span class="metric-cell" role="cell">{{ view.isCompleted ? '—' : view.etaLabel }}</span>
+      </template>
       <span class="action-cell" role="cell" @click.stop @keydown.stop>
         <UiIconButton
           icon="info"
@@ -100,11 +118,7 @@ const toggleVisible = () => {
           :disabled="loading"
           @click="emit('inspectTask', view.id)"
         />
-        <TaskActionMenu
-          :view
-          :disabled="loading"
-          @action="(action) => emit('taskAction', view.id, action)"
-        />
+        <TaskActionMenu :view :disabled="loading" @action="(action) => emit('taskAction', view.id, action)" />
       </span>
     </div>
   </div>
@@ -130,6 +144,10 @@ const toggleVisible = () => {
     96px;
   column-gap: var(--space-8);
   align-items: center;
+}
+
+.completed-mode .transfer-table-row {
+  grid-template-columns: 30px minmax(260px, 1fr) 86px minmax(140px, 0.42fr) 96px;
 }
 
 .table-head {
@@ -219,6 +237,30 @@ const toggleVisible = () => {
   font-weight: 700;
 }
 
+.completed-result {
+  color: var(--color-success);
+  font-size: var(--font-12);
+  font-weight: 700;
+}
+
+.location-cell {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  overflow: hidden;
+  color: var(--color-muted);
+  font-size: var(--font-12);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.location-cell svg {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+}
+
 .progress-cell small {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -246,5 +288,4 @@ const toggleVisible = () => {
   justify-content: flex-end;
   gap: 2px;
 }
-
 </style>

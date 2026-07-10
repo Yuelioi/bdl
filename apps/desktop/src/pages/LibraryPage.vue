@@ -33,7 +33,9 @@ const visibleItems = computed(() => {
   const keyword = query.value.trim().toLocaleLowerCase()
   if (!keyword) return page.value?.items ?? []
   return (page.value?.items ?? []).filter((item) =>
-    [item.title, item.owner_name, item.description].filter(Boolean).some((value) => value!.toLocaleLowerCase().includes(keyword)),
+    [item.title, item.owner_name, item.description]
+      .filter(Boolean)
+      .some((value) => value!.toLocaleLowerCase().includes(keyword)),
   )
 })
 const load = async (kind = library.activeKind, targetPage = 1) => {
@@ -156,16 +158,13 @@ watch(
 
       <div v-else-if="library.loading && !page" class="library-grid" aria-label="正在加载内容">
         <div v-for="index in 6" :key="index" class="library-card skeleton" aria-hidden="true">
-          <span></span><div><i></i><i></i><i></i></div>
+          <span></span>
+          <div><i></i><i></i><i></i></div>
         </div>
       </div>
 
       <div v-else-if="visibleItems.length" class="library-grid">
-        <article
-          v-for="item in visibleItems"
-          :key="item.media_id"
-          class="library-card"
-        >
+        <article v-for="item in visibleItems" :key="item.media_id" class="library-card">
           <div class="library-cover">
             <img
               v-if="item.cover_url && !failedCoverIds.includes(item.media_id)"
@@ -189,7 +188,7 @@ watch(
             <div class="library-card-meta">
               <span>{{ item.media_count }} 个视频</span>
               <button type="button" @click="openItem(item)">
-                打开内容 <UIcon name="i-tabler-arrow-up-right" aria-hidden="true" />
+                解析内容 <UIcon name="i-tabler-arrow-up-right" aria-hidden="true" />
               </button>
             </div>
           </div>
@@ -206,11 +205,19 @@ watch(
       </UiEmptyState>
 
       <footer v-if="page && page.total > page.page_size" class="library-pagination" aria-label="内容库分页">
-        <UiButton variant="ghost" :disabled="page.page <= 1 || library.loading" @click="load(library.activeKind, page.page - 1)">
+        <UiButton
+          variant="ghost"
+          :disabled="page.page <= 1 || library.loading"
+          @click="load(library.activeKind, page.page - 1)"
+        >
           上一页
         </UiButton>
         <span>第 {{ page.page }} 页</span>
-        <UiButton variant="ghost" :disabled="!page.has_more || library.loading" @click="load(library.activeKind, page.page + 1)">
+        <UiButton
+          variant="ghost"
+          :disabled="!page.has_more || library.loading"
+          @click="load(library.activeKind, page.page + 1)"
+        >
           下一页
         </UiButton>
       </footer>

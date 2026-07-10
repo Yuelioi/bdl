@@ -36,26 +36,28 @@ const emit = defineEmits<{
   refresh: []
 }>()
 
-const moreItems = computed(() => [[
-  {
-    label: '暂停全部',
-    icon: 'i-tabler-player-pause',
-    disabled: loading || !canPause,
-    onSelect: () => emit('pause'),
-  },
-  {
-    label: '取消全部',
-    icon: 'i-tabler-x',
-    disabled: loading || !canCancel,
-    onSelect: () => emit('cancel'),
-  },
-  {
-    label: '继续全部',
-    icon: 'i-tabler-player-play',
-    disabled: loading || !canResume,
-    onSelect: () => emit('resume'),
-  },
-]])
+const moreItems = computed(() => [
+  [
+    {
+      label: '暂停全部',
+      icon: 'i-tabler-player-pause',
+      disabled: loading || !canPause,
+      onSelect: () => emit('pause'),
+    },
+    {
+      label: '取消全部',
+      icon: 'i-tabler-x',
+      disabled: loading || !canCancel,
+      onSelect: () => emit('cancel'),
+    },
+    {
+      label: '继续全部',
+      icon: 'i-tabler-player-play',
+      disabled: loading || !canResume,
+      onSelect: () => emit('resume'),
+    },
+  ],
+])
 </script>
 
 <template>
@@ -65,18 +67,39 @@ const moreItems = computed(() => [[
     </div>
 
     <div v-if="selectedCount > 0" class="bulk-actions">
-      <UiButton size="compact" variant="secondary" :disabled="loading || !canPause" @click="emit('pause')">暂停</UiButton>
-      <UiButton size="compact" variant="secondary" :disabled="loading || !canCancel" @click="emit('cancel')">取消</UiButton>
-      <UiButton size="compact" variant="secondary" :disabled="loading || !canResume" @click="emit('resume')">继续</UiButton>
-      <UiButton size="compact" variant="secondary" :disabled="loading || !canRetry" @click="emit('retry')">重试</UiButton>
-      <UiButton size="compact" variant="secondary" :disabled="loading || !canRefreshRetry" @click="emit('refreshRetry')">
+      <UiButton v-if="canPause" size="compact" variant="secondary" :disabled="loading" @click="emit('pause')"
+        >暂停</UiButton
+      >
+      <UiButton v-if="canCancel" size="compact" variant="secondary" :disabled="loading" @click="emit('cancel')"
+        >取消</UiButton
+      >
+      <UiButton v-if="canResume" size="compact" variant="secondary" :disabled="loading" @click="emit('resume')"
+        >继续</UiButton
+      >
+      <UiButton v-if="canRetry" size="compact" variant="secondary" :disabled="loading" @click="emit('retry')"
+        >重试</UiButton
+      >
+      <UiButton
+        v-if="canRefreshRetry"
+        size="compact"
+        variant="secondary"
+        :disabled="loading"
+        @click="emit('refreshRetry')"
+      >
         刷新链接并重试
       </UiButton>
-      <UiButton size="compact" variant="danger" :disabled="loading || !canRemove" @click="emit('remove')">移除</UiButton>
+      <UiButton v-if="canRemove" size="compact" variant="danger" :disabled="loading" @click="emit('remove')"
+        >移除</UiButton
+      >
     </div>
 
     <div v-else class="bulk-actions">
-      <UiButton size="compact" variant="secondary" :disabled="loading || completedCount === 0" @click="emit('clearCompleted')">
+      <UiButton
+        size="compact"
+        variant="secondary"
+        :disabled="loading || completedCount === 0"
+        @click="emit('clearCompleted')"
+      >
         清理已完成
       </UiButton>
       <UiButton size="compact" variant="secondary" :disabled="loading" @click="emit('refresh')">刷新</UiButton>

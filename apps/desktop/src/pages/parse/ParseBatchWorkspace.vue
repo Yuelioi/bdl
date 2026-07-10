@@ -7,14 +7,17 @@ import UiIconButton from '../../ui/IconButton.vue'
 import UiTextField from '../../ui/TextField.vue'
 
 const emit = defineEmits<{ download: [] }>()
+const { embedded = false } = defineProps<{ embedded?: boolean }>()
 const parse = useParseStore()
 const query = ref('')
 
 const normalizedQuery = computed(() => query.value.trim().toLowerCase())
-const entries = computed(() => parse.batchEntries.filter((entry) => {
-  if (!normalizedQuery.value) return true
-  return `${entry.title} ${entry.input}`.toLowerCase().includes(normalizedQuery.value)
-}))
+const entries = computed(() =>
+  parse.batchEntries.filter((entry) => {
+    if (!normalizedQuery.value) return true
+    return `${entry.title} ${entry.input}`.toLowerCase().includes(normalizedQuery.value)
+  }),
+)
 const selectedSet = computed(() => new Set(parse.selectedBatchEntryIds))
 const selectedCount = computed(() => parse.selectedBatchEntryIds.length)
 const allSelected = computed(
@@ -38,7 +41,7 @@ const handleRowKeydown = (event: KeyboardEvent, entryId: string) => {
 </script>
 
 <template>
-  <section class="panel min-h-0 overflow-hidden">
+  <section class="min-h-0 overflow-hidden" :class="embedded ? 'flex flex-1 flex-col gap-3' : 'panel'">
     <header class="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-4 border-b border-(--color-border) pb-3">
       <div class="grid min-w-0 gap-1">
         <div class="flex items-center gap-2">
@@ -64,9 +67,11 @@ const handleRowKeydown = (event: KeyboardEvent, entryId: string) => {
         v-for="entry in entries"
         :key="entry.id"
         class="grid min-h-18 cursor-pointer grid-cols-[28px_minmax(0,1fr)_auto] items-center gap-3 rounded-lg border px-3 py-2.5 outline-none"
-        :class="selectedSet.has(entry.id)
-          ? 'border-(--color-accent) bg-(--color-accent-soft)'
-          : 'border-(--color-border) bg-(--color-surface) hover:bg-(--color-panel)'"
+        :class="
+          selectedSet.has(entry.id)
+            ? 'border-(--color-accent) bg-(--color-accent-soft)'
+            : 'border-(--color-border) bg-(--color-surface) hover:bg-(--color-panel)'
+        "
         role="checkbox"
         :aria-checked="selectedSet.has(entry.id)"
         tabindex="0"
@@ -75,9 +80,11 @@ const handleRowKeydown = (event: KeyboardEvent, entryId: string) => {
       >
         <span
           class="grid size-7 place-items-center rounded-full border text-(--color-muted)"
-          :class="selectedSet.has(entry.id)
-            ? 'border-(--color-accent) bg-(--color-accent) text-(--color-on-accent)'
-            : 'border-(--color-border) bg-(--color-surface)'"
+          :class="
+            selectedSet.has(entry.id)
+              ? 'border-(--color-accent) bg-(--color-accent) text-(--color-on-accent)'
+              : 'border-(--color-border) bg-(--color-surface)'
+          "
           aria-hidden="true"
         >
           <UIcon class="size-4" :name="selectedSet.has(entry.id) ? 'i-tabler-check' : 'i-tabler-plus'" />
@@ -106,8 +113,12 @@ const handleRowKeydown = (event: KeyboardEvent, entryId: string) => {
         <span class="ml-2 text-xs">共 {{ parse.batchEntries.length }} 个</span>
       </p>
       <div class="flex items-center gap-2">
-        <UiButton variant="ghost" :disabled="selectedCount === 0 || loading" @click="parse.clearBatchSelection()">取消选择</UiButton>
-        <UiButton :disabled="selectedCount === 0 || loading" @click="emit('download')">下载所选 ({{ selectedCount }})</UiButton>
+        <UiButton variant="ghost" :disabled="selectedCount === 0 || loading" @click="parse.clearBatchSelection()"
+          >取消选择</UiButton
+        >
+        <UiButton :disabled="selectedCount === 0 || loading" @click="emit('download')"
+          >下载所选 ({{ selectedCount }})</UiButton
+        >
       </div>
     </footer>
   </section>

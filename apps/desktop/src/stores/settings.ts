@@ -355,6 +355,11 @@ export const useSettingsStore = defineStore('settings', {
       this.invalidateEnvironmentHealth()
       void this.checkEnvironment()
     },
+    restoreDefaults() {
+      this.draft = defaultSettings()
+      this.invalidateEnvironmentHealth()
+      void this.checkEnvironment()
+    },
     invalidateEnvironmentHealth() {
       this.environmentCheckId += 1
       this.environmentHealth = null
@@ -587,7 +592,10 @@ const previewTemplate = (template: string, ext: string): string => {
     ext,
   }
 
-  return (template || defaultSettings().naming_template).replace(/\{([^{}]+)\}/g, (_, key: string) => values[key.trim()] ?? '')
+  return (template || defaultSettings().naming_template).replace(
+    /\{([^{}]+)\}/g,
+    (_, key: string) => values[key.trim()] ?? '',
+  )
 }
 
 const errorMessage = (error: unknown): string => {

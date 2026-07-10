@@ -22,6 +22,7 @@ import {
 } from './parseResultTree'
 
 const emit = defineEmits<{ download: [] }>()
+const { embedded = false } = defineProps<{ embedded?: boolean }>()
 const parse = useParseStore()
 const resultQuery = ref('')
 const resultSort = ref<ResultSortMode>('source')
@@ -37,7 +38,7 @@ const resultSortOptions = [
 const activeSource = computed(() => parse.activeSource)
 const selectedIds = computed(() => parse.activeSelection)
 const selectedCount = computed(() => selectedIds.value.length)
-const totalPartCount = computed(() => activeSource.value ? sourcePartCount(activeSource.value) : 0)
+const totalPartCount = computed(() => (activeSource.value ? sourcePartCount(activeSource.value) : 0))
 const treeNodes = computed(() => {
   if (!activeSource.value) return []
   const filtered = filterTreeNodes(toTreeNodes(activeSource.value), resultQuery.value)
@@ -46,19 +47,26 @@ const treeNodes = computed(() => {
 const visiblePartEntries = computed(() => flattenVisibleParts(treeNodes.value))
 const visiblePartCount = computed(() => visiblePartEntries.value.length)
 const activeLoading = computed(() => Boolean(activeSource.value && parse.loadingBySource[activeSource.value.source.id]))
-const activeError = computed(() => activeSource.value ? parse.errorsBySource[activeSource.value.source.id] : null)
+const activeError = computed(() => (activeSource.value ? parse.errorsBySource[activeSource.value.source.id] : null))
 const hasResultQuery = computed(() => resultQuery.value.trim().length > 0)
 const canCreateTasks = computed(() => Boolean(activeSource.value && selectedCount.value > 0 && !activeLoading.value))
-const canSelectResults = computed(() => Boolean(activeSource.value && visiblePartCount.value > 0 && !activeLoading.value))
-const canSelectRange = computed(() => Boolean(activeSource.value && rangeExpression.value.trim() && visiblePartCount.value > 0 && !activeLoading.value))
-const createTaskLabel = computed(() => activeLoading.value
-  ? '处理中'
-  : selectedCount.value > 0 ? `下载所选 (${selectedCount.value})` : '请先选择')
-const selectAllLabel = computed(() => hasResultQuery.value ? `全选搜索结果 (${visiblePartCount.value})` : '全选全部')
+const canSelectResults = computed(() =>
+  Boolean(activeSource.value && visiblePartCount.value > 0 && !activeLoading.value),
+)
+const canSelectRange = computed(() =>
+  Boolean(activeSource.value && rangeExpression.value.trim() && visiblePartCount.value > 0 && !activeLoading.value),
+)
+const createTaskLabel = computed(() =>
+  activeLoading.value ? '处理中' : selectedCount.value > 0 ? `下载所选 (${selectedCount.value})` : '请先选择',
+)
+const selectAllLabel = computed(() => (hasResultQuery.value ? `全选搜索结果 (${visiblePartCount.value})` : '全选全部'))
 
 const selectAllResults = () => {
   if (!activeSource.value) return
-  parse.selectPartIds(activeSource.value.source.id, visiblePartEntries.value.map((entry) => entry.id))
+  parse.selectPartIds(
+    activeSource.value.source.id,
+    visiblePartEntries.value.map((entry) => entry.id),
+  )
 }
 
 const clearSelection = () => {
@@ -92,7 +100,11 @@ const selectRange = () => {
 </script>
 
 <template>
-  <section v-if="activeSource" class="panel min-h-0 overflow-hidden">
+  <section
+    v-if="activeSource"
+    class="min-h-0 overflow-hidden"
+    :class="embedded ? 'flex flex-1 flex-col gap-3' : 'panel'"
+  >
     <div
       class="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-3 border-b border-(--color-border) pb-3 max-[840px]:grid-cols-1"
     >
@@ -106,30 +118,60 @@ const selectRange = () => {
           </span>
         </div>
         <div class="flex flex-wrap items-center gap-3 text-xs text-(--color-muted)" aria-label="内容选择统计">
-          <span>共 <b class="font-bold text-(--color-text)">{{ totalPartCount }}</b> 项</span>
-          <span>已选 <b class="font-bold text-(--color-text)">{{ selectedCount }}</b> 项</span>
-          <span v-if="hasResultQuery">搜索找到 <b class="font-bold text-(--color-text)">{{ visiblePartCount }}</b> 项</span>
+          <span
+            >共 <b class="font-bold text-(--color-text)">{{ totalPartCount }}</b> 项</span
+          >
+          <span
+            >已选 <b class="font-bold text-(--color-text)">{{ selectedCount }}</b> 项</span
+          >
+          <span v-if="hasResultQuery"
+            >搜索找到 <b class="font-bold text-(--color-text)">{{ visiblePartCount }}</b> 项</span
+          >
         </div>
       </div>
 
       <div class="flex flex-wrap justify-end gap-1 max-[840px]:justify-start">
-        <UiButton size="compact" variant="ghost" :disabled="!canSelectResults" @click="selectAllResults">{{ selectAllLabel }}</UiButton>
-        <UiIconButton icon="refresh" label="刷新当前来源" variant="ghost" size="compact" :disabled="activeLoading" @click="refreshSource" />
+        <UiButton size="compact" variant="ghost" :disabled="!canSelectResults" @click="selectAllResults">{{
+          selectAllLabel
+        }}</UiButton>
+        <UiIconButton
+          icon="refresh"
+          label="刷新当前来源"
+          variant="ghost"
+          size="compact"
+          :disabled="activeLoading"
+          @click="refreshSource"
+        />
         <UiIconButton icon="x" label="关闭解析结果" variant="ghost" size="compact" @click="closeSource" />
       </div>
 
-      <div class="col-span-full grid min-w-0 grid-cols-[minmax(180px,1fr)_minmax(150px,180px)_minmax(220px,280px)] items-end gap-2.5 max-[840px]:grid-cols-1">
+      <div
+        class="col-span-full grid min-w-0 grid-cols-[minmax(180px,1fr)_minmax(150px,180px)_minmax(220px,280px)] items-end gap-2.5 max-[840px]:grid-cols-1"
+      >
         <UiTextField v-model="resultQuery" label="搜索内容" placeholder="标题 / UP 主 / BV" :disabled="activeLoading" />
         <UiSelect v-model="resultSort" label="排序" :options="resultSortOptions" :disabled="activeLoading" />
         <div class="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-end gap-2">
-          <UiTextField v-model="rangeExpression" label="序号范围" placeholder="1-5,7,9-12" :disabled="activeLoading || visiblePartCount === 0" />
+          <UiTextField
+            v-model="rangeExpression"
+            label="序号范围"
+            placeholder="1-5,7,9-12"
+            :disabled="activeLoading || visiblePartCount === 0"
+          />
           <UiButton class="h-9" variant="secondary" :disabled="!canSelectRange" @click="selectRange">选中</UiButton>
         </div>
-        <p v-if="rangeError" class="col-span-full -mt-2 m-0 text-xs font-bold text-(--color-danger)">{{ rangeError }}</p>
+        <p v-if="rangeError" class="col-span-full -mt-2 m-0 text-xs font-bold text-(--color-danger)">
+          {{ rangeError }}
+        </p>
       </div>
     </div>
 
-    <UiTree v-if="treeNodes.length" class="min-h-0 flex-1" :nodes="treeNodes" :selected-ids="selectedIds" @toggle="toggleNode" />
+    <UiTree
+      v-if="treeNodes.length"
+      class="min-h-0 flex-1"
+      :nodes="treeNodes"
+      :selected-ids="selectedIds"
+      @toggle="toggleNode"
+    />
     <UiEmptyState
       v-else
       title="没有匹配结果"
@@ -147,7 +189,9 @@ const selectRange = () => {
         <span class="ml-2 text-xs">共 {{ totalPartCount }} 项</span>
       </p>
       <div class="flex items-center gap-2">
-        <UiButton variant="ghost" :disabled="selectedCount === 0 || activeLoading" @click="clearSelection">取消选择</UiButton>
+        <UiButton variant="ghost" :disabled="selectedCount === 0 || activeLoading" @click="clearSelection"
+          >取消选择</UiButton
+        >
         <UiButton :disabled="!canCreateTasks" @click="emit('download')">{{ createTaskLabel }}</UiButton>
       </div>
     </footer>

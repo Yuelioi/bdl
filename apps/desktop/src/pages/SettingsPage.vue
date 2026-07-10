@@ -201,6 +201,11 @@ const resetSettingsDraft = () => {
   settingsGlobalSpeedLimitMib.value = toMibPerSecondInput(settings.draft.global_speed_limit_bytes_per_second);
 };
 
+const restoreDefaultSettings = () => {
+  settings.restoreDefaults();
+  settingsGlobalSpeedLimitMib.value = toMibPerSecondInput(settings.draft.global_speed_limit_bytes_per_second);
+};
+
 const saveSettings = async () => {
   if (settingsGlobalSpeedLimitError.value) return;
   await settings.save();
@@ -227,6 +232,9 @@ onMounted(async () => {
         </div>
         <div class="settings-actions">
           <span v-if="settingsFormChanged" class="dirty-indicator">未保存</span>
+          <UiButton variant="ghost" :disabled="settings.loading || settings.saving" @click="restoreDefaultSettings">
+            恢复默认
+          </UiButton>
           <UiButton
             variant="ghost"
             :disabled="settings.loading || settings.saving || !settingsFormChanged"

@@ -99,3 +99,17 @@ describe('settings media compatibility', () => {
     expect(error).toBeNull()
   })
 })
+
+describe('settings defaults', () => {
+  it('restores the editable draft without overwriting the saved settings', () => {
+    setActivePinia(createPinia())
+    const store = useSettingsStore()
+    store.saved.concurrent_tasks = 5
+    store.draft.concurrent_tasks = 3
+
+    store.restoreDefaults()
+
+    expect(store.draft.concurrent_tasks).toBe(1)
+    expect(store.saved.concurrent_tasks).toBe(5)
+  })
+})

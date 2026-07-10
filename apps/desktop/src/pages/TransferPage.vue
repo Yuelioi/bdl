@@ -3,11 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
 import type { TaskStatus } from '../api/dto'
 import { sourceReference, useQueueStore, type QueueFilter } from '../stores/queue'
-import {
-  createTransferTaskView,
-  type TaskActionDescriptor,
-  type TaskActionKind,
-} from '../stores/transferView'
+import { createTransferTaskView, type TaskActionDescriptor, type TaskActionKind } from '../stores/transferView'
 import { useUiStore } from '../stores/ui'
 import UiButton from '../ui/Button.vue'
 import UiDialog from '../ui/Dialog.vue'
@@ -103,10 +99,18 @@ const selectedProgress = computed(() => (queue.selectedTask ? queue.taskProgress
 const selectedTaskSet = computed(() => new Set(queue.selectedTaskIds))
 const selectedTasks = computed(() => queue.tasks.filter((task) => selectedTaskSet.value.has(task.id)))
 const bulkScopeTasks = computed(() => (selectedTasks.value.length > 0 ? selectedTasks.value : visibleTasks.value))
-const pausableTaskIds = computed(() => bulkScopeTasks.value.filter((task) => isPausable(task.status)).map((task) => task.id))
-const cancellableTaskIds = computed(() => bulkScopeTasks.value.filter((task) => isCancellable(task.status)).map((task) => task.id))
-const resumableTaskIds = computed(() => bulkScopeTasks.value.filter((task) => task.status === 'paused').map((task) => task.id))
-const retryableTaskIds = computed(() => bulkScopeTasks.value.filter((task) => isRetryable(task.status)).map((task) => task.id))
+const pausableTaskIds = computed(() =>
+  bulkScopeTasks.value.filter((task) => isPausable(task.status)).map((task) => task.id),
+)
+const cancellableTaskIds = computed(() =>
+  bulkScopeTasks.value.filter((task) => isCancellable(task.status)).map((task) => task.id),
+)
+const resumableTaskIds = computed(() =>
+  bulkScopeTasks.value.filter((task) => task.status === 'paused').map((task) => task.id),
+)
+const retryableTaskIds = computed(() =>
+  bulkScopeTasks.value.filter((task) => isRetryable(task.status)).map((task) => task.id),
+)
 const removableTaskIds = computed(() => selectedTasks.value.map((task) => task.id))
 const selectedDetailTitle = computed(() => queue.selectedTask?.title ?? '任务详情')
 const scheduleError = computed(() => {
@@ -132,9 +136,7 @@ const emptyTitle = computed(() => {
 
   return '没有匹配任务'
 })
-const emptyDescription = computed(() =>
-  queue.tasks.length === 0 ? '在解析页选择视频后，任务会出现在这里。' : '',
-)
+const emptyDescription = computed(() => (queue.tasks.length === 0 ? '在解析页选择视频后，任务会出现在这里。' : ''))
 
 onMounted(() => {
   void queue.startEventListeners()
@@ -209,7 +211,9 @@ const openScheduleDialog = (taskId: string) => {
   const minimum = new Date(scheduleValidationNow.value + 60_000)
   scheduleTaskId.value = taskId
   scheduleMin.value = toDateTimeLocalValue(minimum)
-  scheduleLocal.value = toDateTimeLocalValue(task?.scheduled_at ? new Date(task.scheduled_at) : new Date(Date.now() + 300_000))
+  scheduleLocal.value = toDateTimeLocalValue(
+    task?.scheduled_at ? new Date(task.scheduled_at) : new Date(Date.now() + 300_000),
+  )
   scheduleDialogOpen.value = true
 }
 
@@ -231,10 +235,7 @@ const openSpeedLimitDialog = (taskId: string) => {
 
 const submitSpeedLimit = async () => {
   if (!speedLimitTaskId.value || speedLimitError.value) return
-  const updated = await queue.setSpeedLimit(
-    speedLimitTaskId.value,
-    toBytesPerSecond(speedLimitMib.value),
-  )
+  const updated = await queue.setSpeedLimit(speedLimitTaskId.value, toBytesPerSecond(speedLimitMib.value))
   if (updated) {
     speedLimitDialogOpen.value = false
   }
@@ -318,7 +319,8 @@ const isPausable = (status: TaskStatus): boolean =>
 const isCancellable = (status: TaskStatus): boolean =>
   status === 'waiting' || status === 'parsing' || status === 'downloading' || status === 'paused'
 
-const isRetryable = (status: TaskStatus): boolean => status === 'failed' || status === 'cancelled' || status === 'completed'
+const isRetryable = (status: TaskStatus): boolean =>
+  status === 'failed' || status === 'cancelled' || status === 'completed'
 
 const sortTransferTasks = (tasks: typeof queue.tasks, mode: TransferSortMode): typeof queue.tasks => {
   const indexed = tasks.map((task, index) => ({ task, index }))
@@ -379,6 +381,40 @@ const issueRank = (status: TaskStatus): number => {
 
       <div class="transfer-toolbar">
         <UiTabs v-model="queueFilter" :tabs="tabs" />
+      </div>
+
+      <div class="transfer-list-tools">
+        <UiTextField
+          v-if="queue.activeFilter === 'completed'"
+          v-model="completedSearch"
+          label="搜索已完成"
+          placeholder="标题、来源或保存路径"
+          :disabled="queue.loading"
+        />
+        <UiSelect v-model="transferSort" label="排序" :options="transferSortOptions" :disabled="queue.loading" />
+      </div>
+
+      <div v-if="taskViews.length" class="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
+        <TransferTaskTable
+          :views="taskViews"
+          :mode="queue.activeFilter === 'completed' ? 'completed' : 'transfer'"
+          :selected-task-id="taskDetailOpen ? queue.selectedTaskId : null"
+          :selected-task-ids="queue.selectedTaskIds"
+          :loading="queue.loading"
+          @inspect-task="openTaskDetail"
+          @toggle-task-selection="queue.toggleTaskSelection"
+          @toggle-visible-selection="queue.setVisibleTaskSelection"
+          @task-action="handleTaskAction"
+          @open-context-menu="openContextMenu"
+        />
+      </div>
+      <UiEmptyState v-else :title="emptyTitle" :description="emptyDescription || undefined" layout="stacked" compact>
+        <template v-if="queue.tasks.length === 0" #action>
+          <UiButton variant="secondary" @click="ui.setTab('parse')">去解析</UiButton>
+        </template>
+      </UiEmptyState>
+
+      <footer class="transfer-footer">
         <BulkActionBar
           :selected-count="queue.selectedTaskIds.length"
           :completed-count="completedTaskCount"
@@ -398,43 +434,7 @@ const issueRank = (status: TaskStatus): number => {
           @clear-completed="runClearCompleted"
           @refresh="queue.list"
         />
-      </div>
-
-      <div class="transfer-list-tools">
-        <UiTextField
-          v-if="queue.activeFilter === 'completed'"
-          v-model="completedSearch"
-          label="搜索已完成"
-          placeholder="标题、来源或保存路径"
-          :disabled="queue.loading"
-        />
-        <UiSelect v-model="transferSort" label="排序" :options="transferSortOptions" :disabled="queue.loading" />
-      </div>
-
-      <div v-if="taskViews.length" class="flex min-h-0 flex-col gap-3 overflow-hidden">
-        <TransferTaskTable
-          :views="taskViews"
-          :selected-task-id="taskDetailOpen ? queue.selectedTaskId : null"
-          :selected-task-ids="queue.selectedTaskIds"
-          :loading="queue.loading"
-          @inspect-task="openTaskDetail"
-          @toggle-task-selection="queue.toggleTaskSelection"
-          @toggle-visible-selection="queue.setVisibleTaskSelection"
-          @task-action="handleTaskAction"
-          @open-context-menu="openContextMenu"
-        />
-      </div>
-      <UiEmptyState
-        v-else
-        :title="emptyTitle"
-        :description="emptyDescription || undefined"
-        layout="stacked"
-        compact
-      >
-        <template v-if="queue.tasks.length === 0" #action>
-          <UiButton variant="secondary" @click="ui.setTab('parse')">去解析</UiButton>
-        </template>
-      </UiEmptyState>
+      </footer>
     </section>
 
     <UiDialog v-model="taskDetailOpen" :title="selectedDetailTitle" size="wide">
@@ -474,9 +474,7 @@ const issueRank = (status: TaskStatus): number => {
       />
       <template #footer>
         <UiButton variant="secondary" @click="speedLimitDialogOpen = false">取消</UiButton>
-        <UiButton :disabled="Boolean(speedLimitError) || queue.loading" @click="submitSpeedLimit">
-          保存限速
-        </UiButton>
+        <UiButton :disabled="Boolean(speedLimitError) || queue.loading" @click="submitSpeedLimit"> 保存限速 </UiButton>
       </template>
     </UiDialog>
 
