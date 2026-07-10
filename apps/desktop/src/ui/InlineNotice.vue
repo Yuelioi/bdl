@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { NoticeTone } from '../stores/feedback'
+import UiButton from './Button.vue'
 
 const props = withDefaults(
   defineProps<{
@@ -20,9 +21,9 @@ const emit = defineEmits<{
   <div class="inline-notice" :class="`tone-${props.tone}`" role="status">
     <span class="notice-dot" aria-hidden="true"></span>
     <p><slot /></p>
-    <button v-if="props.actionLabel" type="button" @click="emit('action')">
+    <UiButton v-if="props.actionLabel" size="compact" variant="secondary" @click="emit('action')">
       {{ props.actionLabel }}
-    </button>
+    </UiButton>
   </div>
 </template>
 
@@ -53,22 +54,6 @@ const emit = defineEmits<{
   min-width: 0;
   margin: 0;
   overflow-wrap: anywhere;
-}
-
-.inline-notice button {
-  height: 26px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-6);
-  background: var(--color-surface);
-  color: var(--color-accent-strong);
-  padding: 0 var(--space-8);
-  font-size: var(--font-12);
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-.inline-notice button:hover {
-  background: var(--color-selected-surface);
 }
 
 .tone-success {

@@ -6,11 +6,13 @@ const props = withDefaults(
     icon: string
     label: string
     variant?: 'secondary' | 'ghost' | 'danger'
+    size?: 'default' | 'compact'
     type?: 'button' | 'submit' | 'reset'
     disabled?: boolean
   }>(),
   {
     variant: 'secondary',
+    size: 'default',
     type: 'button',
     disabled: false,
   },
@@ -40,11 +42,12 @@ const aliases: Record<string, string> = {
 const iconName = computed(() => `i-tabler-${aliases[props.icon] ?? props.icon}`)
 const color = computed(() => (props.variant === 'danger' ? 'error' : 'neutral'))
 const uiVariant = computed(() => (props.variant === 'secondary' ? 'outline' : props.variant))
+const sizeClass = computed(() => `size-${props.size}`)
 </script>
 
 <template>
   <UButton
-    class="ui-icon-button"
+    :class="['ui-icon-button', sizeClass]"
     square
     size="xs"
     :type="props.type"
@@ -74,5 +77,17 @@ const uiVariant = computed(() => (props.variant === 'secondary' ? 'outline' : pr
   width: 16px;
   height: 16px;
   margin: 0;
+}
+
+.ui-icon-button.size-compact {
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  min-height: 28px;
+}
+
+.ui-icon-button.size-compact :deep(svg) {
+  width: 15px;
+  height: 15px;
 }
 </style>

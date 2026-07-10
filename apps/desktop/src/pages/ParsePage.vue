@@ -707,12 +707,13 @@ const errorMessage = (error: unknown): string => {
         <div class="result-actions">
           <UiButton variant="ghost" :disabled="!canSelectResults" @click="selectAllResults">{{ selectAllLabel }}</UiButton>
           <UiButton variant="ghost" :disabled="activeLoading || selectedCount === 0" @click="clearSelection">清空选择</UiButton>
-          <UiIconButton icon="refresh" label="刷新内容" variant="ghost" :disabled="activeLoading" @click="refreshSource" />
+          <UiIconButton icon="refresh" label="刷新内容" variant="ghost" size="compact" :disabled="activeLoading" @click="refreshSource" />
           <UiIconButton
             v-if="canCloseActiveSource"
             icon="x"
             label="关闭当前结果"
             variant="ghost"
+            size="compact"
             @click="closeSource(activeSource.source.id)"
           />
           <UiButton class="result-primary-action" :disabled="!canCreateTasks" @click="openDownloadSettings">{{ createTaskLabel }}</UiButton>
@@ -1166,11 +1167,6 @@ const errorMessage = (error: unknown): string => {
   min-width: 0;
   height: 28px;
   font-size: var(--font-12);
-}
-
-.result-actions :deep(.ui-icon-button) {
-  width: 28px;
-  height: 28px;
 }
 
 .result-actions :deep(.result-primary-action) {

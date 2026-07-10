@@ -1,40 +1,32 @@
 <script setup lang="ts">
-import { useId } from 'vue'
+import UiFormField from './FormField.vue'
 
 const model = defineModel<string>({ default: '' })
-const { rows = 6, disabled = false } = defineProps<{
+const { rows = 6, disabled = false, error, helper } = defineProps<{
   label: string
   placeholder?: string
   rows?: number
   disabled?: boolean
+  error?: string
+  helper?: string
 }>()
-
-const fieldId = useId()
 </script>
 
 <template>
-  <label class="ui-field" :for="fieldId">
-    <span>{{ label }}</span>
-    <textarea :id="fieldId" v-model="model" :rows :placeholder :disabled />
-  </label>
+  <UiFormField v-slot="{ fieldId, describedBy, invalid }" :label :error :helper>
+    <textarea
+      :id="fieldId"
+      v-model="model"
+      :rows
+      :placeholder
+      :disabled
+      :aria-invalid="invalid || undefined"
+      :aria-describedby="describedBy"
+    />
+  </UiFormField>
 </template>
 
 <style scoped>
-.ui-field {
-  display: grid;
-  gap: var(--space-6);
-  color: var(--color-muted);
-  font-size: var(--font-13);
-  font-weight: 600;
-}
-
-.ui-field > span {
-  min-height: 18px;
-  display: flex;
-  align-items: center;
-  line-height: 18px;
-}
-
 textarea {
   width: 100%;
   min-height: 112px;

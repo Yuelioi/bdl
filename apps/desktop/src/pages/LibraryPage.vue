@@ -7,6 +7,7 @@ import { useLibraryStore } from '../stores/library'
 import { useParseStore } from '../stores/parse'
 import { useUiStore } from '../stores/ui'
 import UiButton from '../ui/Button.vue'
+import UiEmptyState from '../ui/EmptyState.vue'
 import UiIconButton from '../ui/IconButton.vue'
 
 const account = useAccountStore()
@@ -150,23 +151,25 @@ watch(
         正在同步{{ activeCategory.label }}…
       </div>
 
-      <div v-if="!account.profile.logged_in" class="library-empty library-login-state">
-        <span class="empty-symbol"><UIcon name="i-tabler-lock" aria-hidden="true" /></span>
-        <div>
-          <h3>登录后连接你的内容库</h3>
-          <p>账号凭据仍保存在系统安全存储中，内容库不会显示或导出 Cookie。</p>
-        </div>
-        <UiButton @click="ui.openLoginDialog()">登录账号</UiButton>
-      </div>
+      <UiEmptyState
+        v-if="!account.profile.logged_in"
+        title="登录后连接你的内容库"
+        description="账号凭据仍保存在系统安全存储中，内容库不会显示或导出 Cookie。"
+        icon="i-tabler-lock"
+      >
+        <template #action><UiButton @click="ui.openLoginDialog()">登录账号</UiButton></template>
+      </UiEmptyState>
 
-      <div v-else-if="library.error" class="library-empty" role="alert">
-        <span class="empty-symbol warning"><UIcon name="i-tabler-cloud-off" aria-hidden="true" /></span>
-        <div>
-          <h3>暂时无法读取内容库</h3>
-          <p>{{ library.error }}</p>
-        </div>
-        <UiButton variant="secondary" @click="load()">重新加载</UiButton>
-      </div>
+      <UiEmptyState
+        v-else-if="library.error"
+        title="暂时无法读取内容库"
+        :description="library.error"
+        icon="i-tabler-cloud-off"
+        tone="warning"
+        role="alert"
+      >
+        <template #action><UiButton variant="secondary" @click="load()">重新加载</UiButton></template>
+      </UiEmptyState>
 
       <div v-else-if="library.loading && !page" class="library-grid" aria-label="正在加载内容">
         <div v-for="index in 6" :key="index" class="library-card skeleton" aria-hidden="true">
@@ -220,14 +223,14 @@ watch(
         </article>
       </div>
 
-      <div v-else-if="page" class="library-empty">
-        <span class="empty-symbol"><UIcon name="i-tabler-folder-open" aria-hidden="true" /></span>
-        <div>
-          <h3>{{ query ? '没有匹配的内容' : '这里还是空的' }}</h3>
-          <p>{{ query ? '尝试缩短关键词，或清除搜索条件。' : '在 Bilibili 添加内容后，回到这里刷新即可。' }}</p>
-        </div>
-        <UiButton v-if="query" variant="secondary" @click="query = ''">清除搜索</UiButton>
-      </div>
+      <UiEmptyState
+        v-else-if="page"
+        :title="query ? '没有匹配的内容' : '这里还是空的'"
+        :description="query ? '尝试缩短关键词，或清除搜索条件。' : '在 Bilibili 添加内容后，回到这里刷新即可。'"
+        icon="i-tabler-folder-open"
+      >
+        <template v-if="query" #action><UiButton variant="secondary" @click="query = ''">清除搜索</UiButton></template>
+      </UiEmptyState>
 
       <footer v-if="page && page.total > page.page_size" class="library-pagination" aria-label="内容库分页">
         <UiButton variant="ghost" :disabled="page.page <= 1 || library.loading" @click="load(library.activeKind, page.page - 1)">
@@ -345,13 +348,6 @@ watch(
 .library-card-meta button:hover { color: var(--color-accent-strong); }
 .library-card-meta svg { width: 13px; height: 13px; }
 
-.library-empty { min-height: 240px; flex: 1; display: flex; align-items: center; justify-content: center; gap: var(--space-md); padding: var(--space-xl); border: 1px dashed var(--color-border-strong); border-radius: var(--radius-8); background: var(--color-inset); }
-.library-empty h3 { margin: 0; color: var(--color-text-strong); font-size: var(--font-16); }
-.library-empty p { max-width: 52ch; margin: var(--space-2xs) 0 0; color: var(--color-muted); font-size: var(--font-13); line-height: 1.6; }
-.empty-symbol { width: 44px; height: 44px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 50%; color: var(--color-accent); background: var(--color-accent-soft); }
-.empty-symbol.warning { color: var(--color-warning); background: var(--color-warning-soft); }
-.empty-symbol svg { width: 20px; height: 20px; }
-
 .library-pagination { display: flex; align-items: center; justify-content: center; gap: var(--space-sm); color: var(--color-muted); font-size: var(--font-12); }
 .library-selection-bar { position: sticky; z-index: 2; bottom: 0; display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); padding: var(--space-sm) var(--space-md); border: 1px solid var(--color-border-strong); border-radius: var(--radius-8); background: var(--color-surface-raised); box-shadow: var(--shadow-overlay); }
 .library-selection-bar > div { display: flex; gap: var(--space-xs); }
@@ -385,7 +381,6 @@ watch(
   .library-content { padding: var(--space-md); }
   .library-card { grid-template-columns: 88px minmax(0, 1fr); }
   .toolbar-summary { display: none; }
-  .library-empty { flex-direction: column; text-align: center; }
   .library-selection-bar { align-items: stretch; flex-direction: column; }
   .library-selection-bar > div { justify-content: flex-end; }
 }

@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
+import UiButton from './Button.vue'
+
 const {
   selectedCount,
   completedCount,
@@ -63,27 +65,27 @@ const moreItems = computed(() => [[
     </div>
 
     <div v-if="selectedCount > 0" class="bulk-actions">
-      <button type="button" :disabled="loading || !canPause" @click="emit('pause')">暂停</button>
-      <button type="button" :disabled="loading || !canCancel" @click="emit('cancel')">取消</button>
-      <button type="button" :disabled="loading || !canResume" @click="emit('resume')">继续</button>
-      <button type="button" :disabled="loading || !canRetry" @click="emit('retry')">重试</button>
-      <button type="button" :disabled="loading || !canRefreshRetry" @click="emit('refreshRetry')">
+      <UiButton size="compact" variant="secondary" :disabled="loading || !canPause" @click="emit('pause')">暂停</UiButton>
+      <UiButton size="compact" variant="secondary" :disabled="loading || !canCancel" @click="emit('cancel')">取消</UiButton>
+      <UiButton size="compact" variant="secondary" :disabled="loading || !canResume" @click="emit('resume')">继续</UiButton>
+      <UiButton size="compact" variant="secondary" :disabled="loading || !canRetry" @click="emit('retry')">重试</UiButton>
+      <UiButton size="compact" variant="secondary" :disabled="loading || !canRefreshRetry" @click="emit('refreshRetry')">
         刷新链接并重试
-      </button>
-      <button type="button" class="danger" :disabled="loading || !canRemove" @click="emit('remove')">移除</button>
+      </UiButton>
+      <UiButton size="compact" variant="danger" :disabled="loading || !canRemove" @click="emit('remove')">移除</UiButton>
     </div>
 
     <div v-else class="bulk-actions">
-      <button type="button" :disabled="loading || completedCount === 0" @click="emit('clearCompleted')">
+      <UiButton size="compact" variant="secondary" :disabled="loading || completedCount === 0" @click="emit('clearCompleted')">
         清理已完成
-      </button>
-      <button type="button" :disabled="loading" @click="emit('refresh')">刷新</button>
+      </UiButton>
+      <UiButton size="compact" variant="secondary" :disabled="loading" @click="emit('refresh')">刷新</UiButton>
       <UDropdownMenu
         :items="moreItems"
         :content="{ align: 'end', sideOffset: 4, collisionPadding: 12 }"
         :ui="{ content: 'min-w-32' }"
       >
-        <button class="bulk-menu-trigger" type="button" :disabled="loading">更多</button>
+        <UiButton size="compact" variant="secondary" :disabled="loading">更多</UiButton>
       </UDropdownMenu>
     </div>
   </div>
@@ -129,51 +131,6 @@ const moreItems = computed(() => [[
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: var(--space-4);
-}
-
-.bulk-actions button {
-  height: 28px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-6);
-  background: var(--color-surface);
-  color: var(--color-text);
-  padding: 0 var(--space-8);
-  font-size: var(--font-12);
-  font-weight: 650;
-  white-space: nowrap;
-}
-
-.bulk-menu-trigger {
-  height: 28px;
-  display: inline-flex;
-  align-items: center;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-6);
-  background: var(--color-surface);
-  color: var(--color-muted);
-  padding: 0 var(--space-8);
-  font-size: var(--font-12);
-  font-weight: 650;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.bulk-actions button:hover:not(:disabled) {
-  background: var(--color-panel);
-}
-
-.bulk-actions button:focus-visible {
-  outline: 2px solid var(--color-focus-outline);
-  outline-offset: 2px;
-}
-
-.bulk-actions button:disabled {
-  opacity: 0.48;
-}
-
-.bulk-actions button.danger {
-  border-color: color-mix(in oklab, var(--color-danger) 38%, var(--color-border));
-  color: var(--color-danger);
 }
 
 @media (max-width: 1180px) {

@@ -11,6 +11,7 @@ import {
 import { useUiStore } from '../stores/ui'
 import UiButton from '../ui/Button.vue'
 import UiDialog from '../ui/Dialog.vue'
+import UiEmptyState from '../ui/EmptyState.vue'
 import UiInlineNotice from '../ui/InlineNotice.vue'
 import UiSelect from '../ui/Select.vue'
 import UiTabs from '../ui/Tabs.vue'
@@ -410,7 +411,7 @@ const issueRank = (status: TaskStatus): number => {
         <UiSelect v-model="transferSort" label="排序" :options="transferSortOptions" :disabled="queue.loading" />
       </div>
 
-      <div v-if="taskViews.length" class="grid gap-3">
+      <div v-if="taskViews.length" class="flex min-h-0 flex-col gap-3 overflow-hidden">
         <TransferTaskTable
           :views="taskViews"
           :selected-task-id="taskDetailOpen ? queue.selectedTaskId : null"
@@ -423,13 +424,17 @@ const issueRank = (status: TaskStatus): number => {
           @open-context-menu="openContextMenu"
         />
       </div>
-      <div v-else class="empty-state task-empty-state">
-        <div>
-          <strong>{{ emptyTitle }}</strong>
-          <p v-if="emptyDescription">{{ emptyDescription }}</p>
-        </div>
-        <UiButton v-if="queue.tasks.length === 0" variant="secondary" @click="ui.setTab('parse')">去解析</UiButton>
-      </div>
+      <UiEmptyState
+        v-else
+        :title="emptyTitle"
+        :description="emptyDescription || undefined"
+        layout="stacked"
+        compact
+      >
+        <template v-if="queue.tasks.length === 0" #action>
+          <UiButton variant="secondary" @click="ui.setTab('parse')">去解析</UiButton>
+        </template>
+      </UiEmptyState>
     </section>
 
     <UiDialog v-model="taskDetailOpen" :title="selectedDetailTitle" size="wide">
@@ -533,42 +538,6 @@ const issueRank = (status: TaskStatus): number => {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--space-12);
-}
-
-.task-list {
-  min-height: 0;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
-
-.empty-state {
-  min-height: 120px;
-  display: grid;
-  place-items: center;
-  border: 1px dashed var(--color-border);
-  border-radius: var(--radius-8);
-  background: var(--color-panel);
-  color: var(--color-muted);
-  font-size: var(--font-12);
-}
-
-.task-empty-state {
-  align-content: center;
-  gap: var(--space-12);
-  text-align: center;
-}
-
-.task-empty-state strong {
-  display: block;
-  color: var(--color-text);
-  font-size: var(--font-14);
-}
-
-.task-empty-state p {
-  margin: var(--space-4) 0 0;
-  color: var(--color-muted);
-  font-size: var(--font-13);
 }
 
 .task-detail-dialog {

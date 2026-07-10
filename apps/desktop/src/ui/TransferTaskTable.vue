@@ -94,6 +94,7 @@ const toggleVisible = () => {
           icon="info"
           label="详情和诊断"
           variant="ghost"
+          size="compact"
           :disabled="loading"
           @click="emit('inspectTask', view.id)"
         />
@@ -288,16 +289,4 @@ const toggleVisible = () => {
   gap: 2px;
 }
 
-.action-cell :deep(.ui-icon-button) {
-  width: 28px;
-  height: 28px;
-  min-width: 28px;
-  min-height: 28px;
-  padding: 0;
-}
-
-.action-cell :deep(.ui-icon-button svg) {
-  width: 15px;
-  height: 15px;
-}
 </style>

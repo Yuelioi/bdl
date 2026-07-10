@@ -61,6 +61,7 @@ const tablerIcon = (icon: string): string => {
       :icon="view.primaryActionIcon"
       :label="view.primaryActionLabel"
       variant="ghost"
+      size="compact"
       :disabled
       @click.stop="runPrimary"
     />
@@ -71,7 +72,7 @@ const tablerIcon = (icon: string): string => {
       :content="{ align: 'end', sideOffset: 4, collisionPadding: 12 }"
       :ui="{ content: 'min-w-32' }"
     >
-      <UiIconButton icon="more" label="更多操作" variant="ghost" :disabled />
+      <UiIconButton icon="more" label="更多操作" variant="ghost" size="compact" :disabled />
     </UDropdownMenu>
   </div>
 </template>
@@ -85,16 +86,4 @@ const tablerIcon = (icon: string): string => {
   gap: 2px;
 }
 
-.task-action-menu :deep(.ui-icon-button) {
-  width: 28px;
-  height: 28px;
-  min-width: 28px;
-  min-height: 28px;
-  padding: 0;
-}
-
-.task-action-menu :deep(.ui-icon-button svg) {
-  width: 15px;
-  height: 15px;
-}
 </style>
