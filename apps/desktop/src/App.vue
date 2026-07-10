@@ -240,7 +240,7 @@ watch(
                 />
                 <span v-else>{{ account.avatarLabel }}</span>
               </span>
-              <span>{{ account.displayName }}</span>
+              <span class="account-name">{{ account.displayName }}</span>
               <UIcon name="i-tabler-chevron-down" class="account-chevron" aria-hidden="true" />
             </button>
           </UDropdownMenu>
@@ -285,7 +285,7 @@ watch(
           <span class="status-beacon" :class="{ attention: attentionCount > 0 }" aria-hidden="true"></span>
           <span>
             <strong>{{ queueHealthLabel }}</strong>
-            <small>{{ aggregateSpeedLabel }} · {{ account.statusLabel }}</small>
+            <small class="tabular-nums">{{ aggregateSpeedLabel }} · {{ account.statusLabel }}</small>
           </span>
         </div>
       </aside>
@@ -344,3 +344,5 @@ watch(
     </main>
   </UApp>
 </template>
+
+<style scoped src="./App.css"></style>

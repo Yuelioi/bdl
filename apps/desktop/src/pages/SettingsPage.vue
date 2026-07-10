@@ -562,3 +562,5 @@ onMounted(async () => {
     </section>
   </section>
 </template>
+
+<style scoped src="./SettingsPage.css"></style>

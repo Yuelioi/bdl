@@ -410,7 +410,7 @@ const issueRank = (status: TaskStatus): number => {
         <UiSelect v-model="transferSort" label="排序" :options="transferSortOptions" :disabled="queue.loading" />
       </div>
 
-      <div v-if="taskViews.length" class="task-list">
+      <div v-if="taskViews.length" class="grid gap-3">
         <TransferTaskTable
           :views="taskViews"
           :selected-task-id="taskDetailOpen ? queue.selectedTaskId : null"
