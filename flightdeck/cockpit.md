@@ -1,10 +1,10 @@
 # Cockpit — bdl
 
-Focus: BDL downloader UI backlog is open.
+Focus: Upgrade BDL into a polished, feature-complete open-source desktop downloader.
 
 ## In Flight
 
-- [bdl-downloader-ui-followups](work/bdl-downloader-ui-followups.md) — current UI feedback cleanup completed; follow-up backlog remains open.
+- [bdl-product-upgrade](work/bdl-product-upgrade/index.md) — auditing product gaps and UI quality before staged implementation.
 
 ## Archived
 

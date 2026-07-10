@@ -1,6 +1,6 @@
-# BDL Downloader UI Follow-ups
+# Legacy BDL Downloader UI Follow-ups
 
-Status: Backlog open
+Status before product-upgrade effort: backlog open
 Started: 2026-07-09
 
 ## Completed Current Pass
@@ -20,3 +20,4 @@ Started: 2026-07-09
 2. Transfer context menu/right-click parity for task actions.
 3. Download directory health check with inline repair action.
 4. Account asset entry points after downloader core stabilizes: favorites, watch later, history, follows.
+
