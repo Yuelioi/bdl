@@ -229,3 +229,5 @@ export function useSettingsForm() {
     formatNamingVariable,
   };
 }
+
+export type SettingsForm = ReturnType<typeof useSettingsForm>;

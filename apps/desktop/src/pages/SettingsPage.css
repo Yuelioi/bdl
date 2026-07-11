@@ -154,7 +154,7 @@
   gap: var(--space-8) var(--space-12);
 }
 
-.archive-option-grid :deep(.ui-checkbox) {
+.archive-option-grid .ui-checkbox {
   min-width: 0;
   min-height: 36px;
   padding: 0 var(--space-12);
@@ -162,7 +162,7 @@
   background: var(--color-panel);
 }
 
-.archive-option-grid :deep(.ui-checkbox:has([data-state='checked'])) {
+.archive-option-grid .ui-checkbox:has([data-state='checked']) {
   background: var(--color-selected-surface);
 }
 
