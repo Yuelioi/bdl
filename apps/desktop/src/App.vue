@@ -204,13 +204,19 @@ const handleAppShortcut = (event: KeyboardEvent) => {
   ui.setTab(tab)
 }
 
+const preventNativeContextMenu = (event: MouseEvent) => {
+  event.preventDefault()
+}
+
 onMounted(() => {
   void initializeApp()
   window.addEventListener('keydown', handleAppShortcut)
+  document.addEventListener('contextmenu', preventNativeContextMenu)
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleAppShortcut)
+  document.removeEventListener('contextmenu', preventNativeContextMenu)
   theme.dispose()
 })
 

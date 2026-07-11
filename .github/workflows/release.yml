@@ -53,3 +53,7 @@ jobs:
           releaseBody: 下载适用于 Windows 的安装包。应用内更新将使用同一发布中的签名清单。
           releaseDraft: true
           prerelease: false
+
+      - name: Verify Windows GUI subsystem
+        shell: pwsh
+        run: ./scripts/verify-windows-gui.ps1 ./target/release/bdl-desktop.exe

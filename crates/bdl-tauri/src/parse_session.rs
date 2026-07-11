@@ -273,26 +273,25 @@ pub(crate) fn hydrate_placeholder_part(
         };
 
         let existing_item = &mut group.items[item_index];
-        if let Some(target_cid) = target_cid {
-            if let Some(existing_part_index) = existing_item
+        if let Some(target_cid) = target_cid
+            && let Some(existing_part_index) = existing_item
                 .parts
                 .iter()
                 .position(|part| part.cid == Some(target_cid))
-            {
-                let hydrated_part_index = hydrated_item
-                    .parts
-                    .iter()
-                    .position(|part| part.cid == Some(target_cid))
-                    .ok_or_else(|| BdlError::Planning {
-                        message: format!("视频解析结果缺少 CID `{target_cid}`，无法创建下载任务。"),
-                    })?;
-                let mut hydrated_part = hydrated_item.parts.swap_remove(hydrated_part_index);
-                let existing_part_id = existing_item.parts[existing_part_index].id.clone();
-                hydrated_part.id = existing_part_id.clone();
-                merge_missing_item_metadata(existing_item, &hydrated_item);
-                existing_item.parts[existing_part_index] = hydrated_part;
-                return Ok(vec![existing_part_id]);
-            }
+        {
+            let hydrated_part_index = hydrated_item
+                .parts
+                .iter()
+                .position(|part| part.cid == Some(target_cid))
+                .ok_or_else(|| BdlError::Planning {
+                    message: format!("视频解析结果缺少 CID `{target_cid}`，无法创建下载任务。"),
+                })?;
+            let mut hydrated_part = hydrated_item.parts.swap_remove(hydrated_part_index);
+            let existing_part_id = existing_item.parts[existing_part_index].id.clone();
+            hydrated_part.id = existing_part_id.clone();
+            merge_missing_item_metadata(existing_item, &hydrated_item);
+            existing_item.parts[existing_part_index] = hydrated_part;
+            return Ok(vec![existing_part_id]);
         }
 
         hydrated_item.id = existing_item.id.clone();

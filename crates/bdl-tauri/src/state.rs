@@ -1260,15 +1260,14 @@ fn select_task_stream<'a>(
         codec_matches
     };
 
-    if let Some(target_quality) = parse_quality_label(quality_label) {
-        if let Some(exact) = candidates
+    if let Some(target_quality) = parse_quality_label(quality_label)
+        && let Some(exact) = candidates
             .iter()
             .copied()
             .filter(|stream| stream_quality_rank(stream.quality) == target_quality)
             .max_by_key(|stream| stream_selection_rank(stream))
-        {
-            return Some(exact);
-        }
+    {
+        return Some(exact);
     }
 
     candidates

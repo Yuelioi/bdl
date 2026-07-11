@@ -56,6 +56,10 @@ try {
         pnpm --dir $DesktopDir tauri build
     }
 
+    Invoke-Step "Windows GUI subsystem" {
+        & (Join-Path $PSScriptRoot "verify-windows-gui.ps1") (Join-Path $TargetDir "bdl-desktop.exe")
+    }
+
     $artifacts = @(Get-PackageArtifacts)
     if ($artifacts.Count -eq 0) {
         throw "Tauri build completed but no package artifacts were found under $TargetDir."

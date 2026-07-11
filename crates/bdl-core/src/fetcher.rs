@@ -417,12 +417,12 @@ impl ReqwestFetcher {
         file.flush().await?;
         drop(file);
 
-        if let Some(total_bytes) = metadata.total_bytes {
-            if downloaded_bytes != total_bytes {
-                return Err(fetch_error(format!(
-                    "下载长度不完整: expected {total_bytes}, got {downloaded_bytes}"
-                )));
-            }
+        if let Some(total_bytes) = metadata.total_bytes
+            && downloaded_bytes != total_bytes
+        {
+            return Err(fetch_error(format!(
+                "下载长度不完整: expected {total_bytes}, got {downloaded_bytes}"
+            )));
         }
 
         if resource.target_path.exists() {

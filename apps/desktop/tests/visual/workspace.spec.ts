@@ -45,3 +45,15 @@ for (const theme of ['light', 'dark'] as const) {
     });
   }
 }
+
+test('native browser context menu is suppressed', async ({ page }) => {
+  await installTauriMock(page, 'light');
+  await page.goto('/');
+  await expect(page.getByRole('heading', { name: '从链接整理下载内容' })).toBeVisible();
+
+  const contextMenuAllowed = await page.evaluate(() =>
+    document.body.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })),
+  );
+
+  expect(contextMenuAllowed).toBe(false);
+});

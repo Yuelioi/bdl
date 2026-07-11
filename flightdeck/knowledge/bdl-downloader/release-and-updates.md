@@ -74,7 +74,13 @@ pnpm --dir apps/desktop tauri icon src-tauri/icons/app-icon.svg
 
 Commit the SVG master and generated icon set together. The mark is deliberately code-native vector artwork so future brand changes remain deterministic and scalable.
 
+## Windows production shell
+
+- The desktop entry point must keep `#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]`; without it, a production EXE opens a console window beside the Tauri window.
+- The application root suppresses the WebView's native browser context menu. Product-owned context menus may still handle the same event and render their own actions.
+- After a Windows release build, verify the PE optional header subsystem is `2` (`IMAGE_SUBSYSTEM_WINDOWS_GUI`), not `3` (`IMAGE_SUBSYSTEM_WINDOWS_CUI`).
+- When uploading the updater private key through PowerShell, remove a leading UTF-8 BOM before writing `TAURI_SIGNING_PRIVATE_KEY`; a BOM is parsed as invalid Base64 input.
+
 ## Verification
 
 Before tagging, `./scripts/check.ps1` must pass. Update-specific coverage includes the Pinia preference/check tests and deterministic Playwright workspace screenshots. A real end-to-end install still requires a published release newer than the installed build and valid GitHub signing secrets.
-

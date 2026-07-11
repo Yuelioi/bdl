@@ -76,10 +76,10 @@ fn classify_url(raw_url: &str, url: &Url) -> Option<ClassifiedInput> {
             });
         }
 
-        if is_uploader_path(&segments) {
-            if let Some(mid) = space_mid(&segments) {
-                return Some(ClassifiedInput::Uploader { mid });
-            }
+        if is_uploader_path(&segments)
+            && let Some(mid) = space_mid(&segments)
+        {
+            return Some(ClassifiedInput::Uploader { mid });
         }
 
         if is_space_list_path(&segments) {
