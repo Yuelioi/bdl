@@ -8,12 +8,15 @@ import SettingsMaintenanceSection from './settings/SettingsMaintenanceSection.vu
 import SettingsMediaSection from './settings/SettingsMediaSection.vue';
 import SettingsNamingSection from './settings/SettingsNamingSection.vue';
 import SettingsProcessingSection from './settings/SettingsProcessingSection.vue';
+import SettingsUpdateSection from './settings/SettingsUpdateSection.vue';
 import SettingsSectionNav from './settings/SettingsSectionNav.vue';
 import { settingsSections } from './settings/settingsCatalog';
 import type { SettingsSectionId } from './settings/settingsSections';
 import { useSettingsForm } from './settings/useSettingsForm';
+import { useUpdateStore } from '../stores/update';
 
 const settingsForm = useSettingsForm();
+const updater = useUpdateStore();
 const {
   settings,
   settingsGlobalSpeedLimitError,
@@ -23,6 +26,11 @@ const {
   restoreDefaultSettings,
   saveSettings,
 } = settingsForm;
+
+const restoreAllDefaults = () => {
+  restoreDefaultSettings();
+  updater.setAutoCheck(false);
+};
 
 const activeSettingsSection = ref<SettingsSectionId>('settings-download');
 const currentSettingsSection = computed(
@@ -41,7 +49,7 @@ const currentSettingsSection = computed(
         </div>
         <div class="settings-actions">
           <span v-if="settingsFormChanged" class="dirty-indicator">未保存</span>
-          <UiButton variant="ghost" :disabled="settings.loading || settings.saving" @click="restoreDefaultSettings">
+          <UiButton variant="ghost" :disabled="settings.loading || settings.saving" @click="restoreAllDefaults">
             恢复默认
           </UiButton>
           <UiButton
@@ -97,6 +105,8 @@ const currentSettingsSection = computed(
           />
 
           <SettingsArchiveSection v-else-if="activeSettingsSection === 'settings-archive'" :form="settingsForm" />
+
+          <SettingsUpdateSection v-else-if="activeSettingsSection === 'settings-update'" />
 
           <SettingsMaintenanceSection v-else :form="settingsForm" />
 

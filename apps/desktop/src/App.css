@@ -37,12 +37,31 @@
   font-variation-settings: 'wdth' 92;
 }
 
-.titlebar-brand > span:last-child {
+.titlebar-name {
   overflow: hidden;
   color: var(--color-nav-muted);
   font-size: var(--font-11);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.titlebar-brand .titlebar-version {
+  color: var(--color-muted);
+  font-size: var(--font-11);
+}
+
+.titlebar-update {
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-6);
+  background: var(--color-accent-soft);
+  color: var(--color-accent-strong);
+  padding: 0 9px;
+  font-size: var(--font-11);
+  font-weight: 700;
 }
 
 .titlebar-mark {

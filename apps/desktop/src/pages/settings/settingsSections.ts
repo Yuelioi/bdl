@@ -4,6 +4,7 @@ export type SettingsSectionId =
   | 'settings-naming'
   | 'settings-media-advanced'
   | 'settings-archive'
+  | 'settings-update'
   | 'settings-maintenance';
 
 export interface SettingsSection {

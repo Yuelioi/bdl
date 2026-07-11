@@ -6,6 +6,7 @@ import { useAccountStore } from './stores/account'
 import { useQueueStore } from './stores/queue'
 import { useLibraryStore } from './stores/library'
 import { useThemeStore } from './stores/theme'
+import { useUpdateStore } from './stores/update'
 import { useUiStore, type AppTab } from './stores/ui'
 import UiButton from './ui/Button.vue'
 import AppearanceMenu from './ui/AppearanceMenu.vue'
@@ -25,6 +26,7 @@ const account = useAccountStore()
 const queue = useQueueStore()
 const library = useLibraryStore()
 const theme = useThemeStore()
+const updater = useUpdateStore()
 const loginDialogOpen = computed({
   get: () => ui.loginDialogOpen,
   set: (value: boolean) => {
@@ -137,6 +139,7 @@ const signOut = async () => {
 }
 
 const initializeApp = async () => {
+  await updater.initialize()
   await account.startEventListeners()
   void account.load()
   await queue.startEventListeners()
@@ -239,9 +242,14 @@ watch(
         <div class="titlebar-brand" data-tauri-drag-region>
           <span class="titlebar-mark" aria-hidden="true"><i></i><i></i></span>
           <strong data-tauri-drag-region>BDL</strong>
-          <span data-tauri-drag-region>Bilibili Download Lab</span>
+          <span class="titlebar-name" data-tauri-drag-region>Bilibili Download Lab</span>
+          <span class="titlebar-version tabular-nums" data-tauri-drag-region>v{{ updater.currentVersion }}</span>
         </div>
         <div class="titlebar-actions">
+          <button v-if="updater.hasUpdate" class="titlebar-update" type="button" @click="ui.setTab('settings')">
+            <UIcon name="i-tabler-arrow-up-circle" aria-hidden="true" />
+            可更新至 v{{ updater.availableVersion }}
+          </button>
           <AppearanceMenu />
           <UDropdownMenu
             :items="accountMenuItems"

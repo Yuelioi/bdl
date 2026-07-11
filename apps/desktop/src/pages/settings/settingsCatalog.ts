@@ -12,6 +12,7 @@ export const settingsSections = [
     icon: 'i-tabler-adjustments-horizontal',
   },
   { id: 'settings-archive', label: '附加内容', description: '封面、字幕与弹幕', icon: 'i-tabler-files' },
+  { id: 'settings-update', label: '应用更新', description: '版本检测与安装', icon: 'i-tabler-refresh' },
   { id: 'settings-maintenance', label: '网络与维护', description: '代理、日志与数据', icon: 'i-tabler-tool' },
 ] as const satisfies readonly SettingsSection[];
 

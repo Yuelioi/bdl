@@ -26,6 +26,7 @@
   },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": "all",
     "icon": [
       "icons/32x32.png",
@@ -34,5 +35,16 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEJDQ0RGOUEyNDQ3MzM4NDYKUldSR09ITkVvdm5OdkVVb1hYK08yaWE0V0dvUTY5Q1V0bUs4RE5VL05jcDhjZUl3YzlydWJGV00K",
+      "endpoints": [
+        "https://github.com/Yuelioi/bdl/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

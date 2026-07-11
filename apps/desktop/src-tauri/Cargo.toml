@@ -8,9 +8,12 @@ authors.workspace = true
 
 [dependencies]
 bdl-tauri = { path = "../../../crates/bdl-tauri" }
+serde_json.workspace = true
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
+tauri-plugin-process = "2.3.1"
+tauri-plugin-updater = "2.10.1"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
