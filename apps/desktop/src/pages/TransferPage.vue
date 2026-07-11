@@ -18,12 +18,21 @@ import { matchesTransferSearch, sortTransferTasks, type TransferSortMode } from 
 import { useTransferBulkActions } from './transfer/useTransferBulkActions';
 import { useTransferDialogs } from './transfer/useTransferDialogs';
 import { contextIcon, useTransferContextMenu } from './transfer/useTransferContextMenu';
+import { useTransferTaskDetail } from './transfer/useTransferTaskDetail';
 
 const queue = useQueueStore();
 const ui = useUiStore();
 const completedSearch = ref('');
 const transferSort = ref<TransferSortMode>('queue');
-const taskDetailOpen = ref(false);
+const {
+  taskDetailOpen,
+  selectedLogs,
+  selectedLogsLoading,
+  selectedProgress,
+  selectedDetailTitle,
+  openTaskDetail,
+  refreshSelectedLogs,
+} = useTransferTaskDetail(queue);
 const {
   scheduleDialogOpen,
   scheduleLocal,
@@ -94,12 +103,6 @@ const {
   runClearCompleted,
 } = useTransferBulkActions(queue, visibleTasks);
 const completedTaskCount = computed(() => queue.tasks.filter((task) => task.status === 'completed').length);
-const selectedLogs = computed(() => (queue.selectedTaskId ? (queue.logsByTask[queue.selectedTaskId] ?? []) : []));
-const selectedLogsLoading = computed(() =>
-  queue.selectedTaskId ? Boolean(queue.logsLoadingByTask[queue.selectedTaskId]) : false,
-);
-const selectedProgress = computed(() => (queue.selectedTask ? queue.taskProgress(queue.selectedTask) : 0));
-const selectedDetailTitle = computed(() => queue.selectedTask?.title ?? '任务详情');
 const emptyTitle = computed(() => {
   if (queue.tasks.length === 0) {
     return '还没有传输任务';
@@ -192,17 +195,6 @@ const {
   closeContextMenuOnEscape,
   runContextAction,
 } = useTransferContextMenu(taskViews, handleTaskAction);
-
-const openTaskDetail = (taskId: string) => {
-  queue.selectTask(taskId);
-  taskDetailOpen.value = true;
-};
-
-const refreshSelectedLogs = () => {
-  if (queue.selectedTaskId) {
-    void queue.loadLogs(queue.selectedTaskId);
-  }
-};
 </script>
 
 <template>
