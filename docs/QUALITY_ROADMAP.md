@@ -32,7 +32,8 @@ Progress:
 - [x] Extract deterministic source paging, source identity parsing, page merging, and initial expansion rules into `parse_session`.
 - [x] Move selection normalization and on-demand part hydration into `parse_session`.
 - [x] Extract duplicate handling, startup recovery, and guarded queue transitions into `QueueCoordinator`.
-- [ ] Reduce `commands.rs` to command adapters and move worker/media processing behind dedicated modules.
+- [x] Move diagnostic credential, URL, header, task, and log sanitization behind a tested export module.
+- [ ] Reduce the remaining `commands.rs` worker/media processing to command adapters and dedicated modules.
 
 Planned seams:
 

@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use bdl_core::account::{
     AccountLibraryFolderKind, AccountLibraryPage, QrLoginSession, QrLoginStatus, poll_qr_login,
-    redact_sensitive, start_qr_login,
+    start_qr_login,
 };
 use bdl_core::fetcher::{
     BandwidthLimiter, FetchCancelToken, FetchConfig, FetchProgress, ProgressSender, ReqwestFetcher,
@@ -35,6 +35,10 @@ use tokio::fs;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::mpsc::unbounded_channel;
 
+use crate::diagnostic_export::{
+    redact_log as redact_log_for_diagnostics, redact_task as redact_task_for_diagnostics,
+    redact_url,
+};
 use crate::events;
 use crate::state::{AccountSnapshot, AppState, SettingsSnapshot, StartupRecoverySnapshot};
 
@@ -2002,48 +2006,6 @@ fn count_files_sync(path: &Path) -> BdlResult<usize> {
         }
     }
     Ok(count)
-}
-
-fn redact_url(raw: &str) -> String {
-    let Some(scheme_end) = raw.find("://") else {
-        return raw.to_owned();
-    };
-    let Some(credentials_end) = raw[scheme_end + 3..].find('@') else {
-        return raw.to_owned();
-    };
-    let host_start = scheme_end + 3 + credentials_end + 1;
-    format!("{}://<redacted>@{}", &raw[..scheme_end], &raw[host_start..])
-}
-
-fn redact_task_for_diagnostics(mut task: DownloadTask) -> DownloadTask {
-    for resource in &mut task.resources {
-        resource.current_urls = resource
-            .current_urls
-            .iter()
-            .map(|url| redact_sensitive(url))
-            .collect();
-        for header in &mut resource.headers {
-            if is_sensitive_header(&header.name) {
-                header.value = "<redacted>".to_owned();
-            } else {
-                header.value = redact_sensitive(&header.value);
-            }
-        }
-    }
-
-    task
-}
-
-fn redact_log_for_diagnostics(mut log: QueueLogEntry) -> QueueLogEntry {
-    log.message = redact_sensitive(&log.message);
-    log
-}
-
-fn is_sensitive_header(name: &str) -> bool {
-    matches!(
-        name.to_ascii_lowercase().as_str(),
-        "cookie" | "authorization" | "proxy-authorization"
-    )
 }
 
 fn emit_queue_log(

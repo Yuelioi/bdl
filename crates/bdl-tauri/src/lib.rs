@@ -1,4 +1,5 @@
 pub mod commands;
+mod diagnostic_export;
 pub mod events;
 mod parse_session;
 mod queue_coordinator;
