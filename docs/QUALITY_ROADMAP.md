@@ -51,7 +51,7 @@ Exit condition: command adapters contain validation and translation only, and ea
 - [x] Centralize settings navigation and select-option catalogs with uniqueness tests.
 - [x] Move settings bindings, validation, derived descriptions, initialization, save, reset, and restore behavior into `useSettingsForm` while the settings store remains the source of truth.
 - [x] Extract download and media settings sections behind the shared `SettingsForm` interface.
-- Split the remaining `SettingsPage.vue` template by settings domain without duplicating store ownership.
+- [x] Split naming, processing, archive, and maintenance sections without duplicating store ownership.
 - Separate transfer query/filter state from task commands in `transferView.ts`.
 - Keep parse orchestration in the parse store, but move pure tree/selection transformations into tested modules.
 - Define one page shell, one filter toolbar, one selection action bar, and one empty/error pattern for all five pages.
