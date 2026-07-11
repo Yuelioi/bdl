@@ -7,6 +7,7 @@ import UiButton from '../../ui/Button.vue'
 import UiEmptyState from '../../ui/EmptyState.vue'
 import UiInlineNotice from '../../ui/InlineNotice.vue'
 import UiPagination from '../../ui/Pagination.vue'
+import SelectionActionBar from '../../ui/SelectionActionBar.vue'
 
 const { folder } = defineProps<{ folder: AccountLibraryFolder }>()
 const emit = defineEmits<{ back: []; download: [] }>()
@@ -205,20 +206,22 @@ const formatDuration = (seconds: number | null): string => {
 
     <UiEmptyState v-else title="这个集合暂时没有内容" icon="i-tabler-folder-open" layout="stacked" compact embedded />
 
-    <footer class="flex min-w-0 items-center justify-between gap-4 border-t border-(--color-border) pt-3">
-      <UiPagination
-        :page="currentPage"
-        :total="totalCount"
-        :items-per-page="pageSize"
-        :disabled="loading"
-        label="集合内容分页"
-        @update:page="goToPage"
-      />
-      <div v-if="selectedCount > 0" class="flex items-center gap-2">
+    <SelectionActionBar :selected-count="selectedCount" :total-count="totalCount">
+      <template #leading>
+        <UiPagination
+          :page="currentPage"
+          :total="totalCount"
+          :items-per-page="pageSize"
+          :disabled="loading"
+          label="集合内容分页"
+          @update:page="goToPage"
+        />
+      </template>
+      <template v-if="selectedCount > 0" #actions>
         <strong class="text-[13px] text-(--color-text)">已选 {{ selectedCount }} 个</strong>
         <UiButton size="compact" variant="ghost" :disabled="loading" @click="clearSelection">取消选择</UiButton>
         <UiButton size="compact" :disabled="loading" @click="downloadSelected">下载所选</UiButton>
-      </div>
-    </footer>
+      </template>
+    </SelectionActionBar>
   </section>
 </template>

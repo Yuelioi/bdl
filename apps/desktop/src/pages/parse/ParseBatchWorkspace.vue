@@ -6,6 +6,7 @@ import { allBatchEntriesSelected, filterParseBatchEntries } from '../../stores/p
 import UiButton from '../../ui/Button.vue'
 import UiIconButton from '../../ui/IconButton.vue'
 import UiTextField from '../../ui/TextField.vue'
+import SelectionActionBar from '../../ui/SelectionActionBar.vue'
 
 const emit = defineEmits<{ download: [] }>()
 const { embedded = false } = defineProps<{ embedded?: boolean }>()
@@ -100,19 +101,15 @@ const handleRowKeydown = (event: KeyboardEvent, entryId: string) => {
       <p v-if="entries.length === 0" class="m-0 py-12 text-center text-sm text-(--color-muted)">没有匹配的视频</p>
     </div>
 
-    <footer class="flex min-w-0 items-center justify-between gap-4 border-t border-(--color-border) pt-3">
-      <p class="m-0 text-sm text-(--color-muted)">
-        <strong class="tabular-nums text-(--color-text)">{{ selectedCount }}</strong> 个视频已选
-        <span class="ml-2 text-xs">共 {{ parse.batchEntries.length }} 个</span>
-      </p>
-      <div class="flex items-center gap-2">
+    <SelectionActionBar :selected-count="selectedCount" :total-count="parse.batchEntries.length" unit="个视频">
+      <template #actions>
         <UiButton variant="ghost" :disabled="selectedCount === 0 || loading" @click="parse.clearBatchSelection()"
           >取消选择</UiButton
         >
         <UiButton :disabled="selectedCount === 0 || loading" @click="emit('download')"
           >下载所选 ({{ selectedCount }})</UiButton
         >
-      </div>
-    </footer>
+      </template>
+    </SelectionActionBar>
   </section>
 </template>

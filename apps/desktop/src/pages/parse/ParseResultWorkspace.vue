@@ -9,6 +9,7 @@ import UiInlineNotice from '../../ui/InlineNotice.vue'
 import UiSelect from '../../ui/Select.vue'
 import UiTextField from '../../ui/TextField.vue'
 import UiTree from '../../ui/Tree.vue'
+import SelectionActionBar from '../../ui/SelectionActionBar.vue'
 import {
   filterTreeNodes,
   flattenVisibleParts,
@@ -222,18 +223,14 @@ const selectRange = () => {
     />
     <UiInlineNotice v-if="activeError" tone="danger">{{ activeError }}</UiInlineNotice>
 
-    <footer class="flex min-w-0 items-center justify-between gap-4 border-t border-(--color-border) pt-3">
-      <p class="m-0 text-sm text-(--color-muted)">
-        <strong class="tabular-nums text-(--color-text)">{{ selectedCount }}</strong> 项已选
-        <span class="ml-2 text-xs">共 {{ totalPartCount }} 项</span>
-      </p>
-      <div class="flex items-center gap-2">
+    <SelectionActionBar :selected-count="selectedCount" :total-count="totalPartCount">
+      <template #actions>
         <UiButton variant="ghost" :disabled="selectedCount === 0 || activeLoading" @click="clearSelection"
           >取消选择</UiButton
         >
         <UiButton :disabled="!canCreateTasks" @click="emit('download')">{{ createTaskLabel }}</UiButton>
-      </div>
-    </footer>
+      </template>
+    </SelectionActionBar>
   </section>
 
   <UiEmptyState

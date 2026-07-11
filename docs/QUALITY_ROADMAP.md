@@ -62,7 +62,7 @@ Exit condition: command adapters contain validation and translation only, and ea
 - [x] Extract exhaustive single-task command dispatch and local configuration actions behind a narrow queue interface.
 - [x] Centralize transfer-page refresh and window-listener ownership; keep global queue listeners at the app boundary.
 - [x] Keep parse orchestration in the parse store while moving tree, filtering, and batch-selection transformations into tested pure modules.
-- Define one page shell, one filter toolbar, one selection action bar, and one empty/error pattern for all five pages.
+- [x] Use one page shell, shared toolbar primitives, shared selection action bars, and one empty/error pattern across all five pages.
 
 Exit condition: pages compose domain modules and shared UI primitives instead of owning repeated interaction behavior or large style blocks.
 
