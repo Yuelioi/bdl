@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "vue-tsc --noEmit && vite build",
+    "lint": "eslint \"src/**/*.{ts,vue}\" vite.config.ts vitest.config.ts --max-warnings 0 --cache",
     "lint:styles": "stylelint \"src/**/*.{css,vue}\" && pnpm lint:tailwind",
     "lint:tailwind": "node scripts/check-tailwind-syntax.mjs",
     "format:styles": "prettier --write \"src/**/*.css\"",
@@ -24,14 +25,19 @@
     "vue-router": "^5.1.0"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.4",
     "@tauri-apps/cli": "^2.11.4",
     "@vitejs/plugin-vue": "^6.0.7",
     "@vue/test-utils": "^2.4.11",
+    "eslint": "^9.39.4",
+    "eslint-plugin-vue": "^10.9.2",
+    "globals": "^16.5.0",
     "happy-dom": "^20.10.6",
     "prettier": "^3.9.4",
     "stylelint": "^17.14.0",
     "stylelint-config-standard-vue": "^1.0.0",
     "typescript": "5.9.3",
+    "typescript-eslint": "^8.63.0",
     "vite": "^8.1.4",
     "vitest": "^4.1.10",
     "vue-tsc": "^3.3.7"

@@ -44,6 +44,10 @@ try {
         pnpm --dir apps/desktop build
     }
 
+    Invoke-Step "Desktop code lint" {
+        pnpm --dir apps/desktop lint
+    }
+
     Invoke-Step "Desktop style lint" {
         pnpm --dir apps/desktop lint:styles
     }
