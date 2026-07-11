@@ -10,6 +10,12 @@ const ui = useUiStore()
 const version = ref('0.1.0')
 const links = [
   {
+    label: 'GitHub 仓库',
+    value: 'github.com/Yuelioi/bdl',
+    url: 'https://github.com/Yuelioi/bdl',
+    icon: 'i-tabler-brand-github',
+  },
+  {
     label: 'Bilibili 主页',
     value: 'space.bilibili.com/4279370',
     url: 'https://space.bilibili.com/4279370',
