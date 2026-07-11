@@ -1,10 +1,10 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { check } = vi.hoisted(() => ({ check: vi.fn() }))
+const { check, relaunch } = vi.hoisted(() => ({ check: vi.fn(), relaunch: vi.fn() }))
 
 vi.mock('@tauri-apps/api/app', () => ({ getVersion: vi.fn().mockResolvedValue('1.2.3') }))
-vi.mock('@tauri-apps/plugin-process', () => ({ relaunch: vi.fn() }))
+vi.mock('@tauri-apps/plugin-process', () => ({ relaunch }))
 vi.mock('@tauri-apps/plugin-updater', () => ({ check }))
 
 import { useUpdateStore } from './update'
@@ -14,6 +14,7 @@ describe('update preferences', () => {
     setActivePinia(createPinia())
     localStorage.clear()
     check.mockReset().mockResolvedValue(null)
+    relaunch.mockReset()
   })
 
   it('does not check automatically by default', async () => {
@@ -38,5 +39,26 @@ describe('update preferences', () => {
     await update.initialize()
     await vi.waitFor(() => expect(update.checking).toBe(false))
     expect(update.error).toBeNull()
+  })
+
+  it('keeps updater class instances callable after storing them', async () => {
+    class PrivateUpdate {
+      #installed = false
+
+      version = '1.2.4'
+      body = 'hotfix'
+
+      async downloadAndInstall() {
+        if (!this.#installed) this.#installed = true
+      }
+    }
+
+    check.mockResolvedValue(new PrivateUpdate())
+    const update = useUpdateStore()
+    await update.checkForUpdate()
+    await update.install()
+
+    expect(update.error).toBeNull()
+    expect(relaunch).toHaveBeenCalledOnce()
   })
 })

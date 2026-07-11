@@ -2,6 +2,7 @@ import { getVersion } from '@tauri-apps/api/app'
 import { relaunch } from '@tauri-apps/plugin-process'
 import { check, type Update } from '@tauri-apps/plugin-updater'
 import { defineStore } from 'pinia'
+import { markRaw } from 'vue'
 
 const AUTO_CHECK_KEY = 'bdl.update.auto-check'
 
@@ -41,7 +42,8 @@ export const useUpdateStore = defineStore('update', {
       this.checking = true
       this.error = null
       try {
-        this.update = await check()
+        const availableUpdate = await check()
+        this.update = availableUpdate ? markRaw(availableUpdate) : null
         this.availableVersion = this.update?.version ?? null
         this.notes = this.update?.body ?? null
       } catch (error) {

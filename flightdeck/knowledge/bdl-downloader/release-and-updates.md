@@ -50,6 +50,8 @@ The `.github/workflows/release.yml` workflow builds Windows bundles with `tauri-
 
 The frontend update state lives in `apps/desktop/src/stores/update.ts`; its settings UI lives in `apps/desktop/src/pages/settings/SettingsUpdateSection.vue`. Tauri updater/process plugins and permissions live under `apps/desktop/src-tauri/`.
 
+The updater plugin returns an `Update` class instance with JavaScript private fields. Pinia/Vue must never deep-proxy that instance: store it with `markRaw`, while copying display fields such as version and notes into ordinary reactive state. A proxied updater instance throws `Cannot read private member from an object whose class did not declare it` when installation starts. Keep the private-field regression test in `src/stores/update.spec.ts`.
+
 ## Distribution and mainland-China fallback
 
 The client consumes the standard Tauri signed manifest protocol, not GitHub-specific APIs. GitHub Releases is the initial source:
