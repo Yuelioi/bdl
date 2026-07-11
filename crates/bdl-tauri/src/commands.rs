@@ -41,6 +41,10 @@ use crate::media_finalize::{
     completed_resource_by_intent, select_mux_attachments, task_has_resource_intent, write_nfo,
 };
 use crate::state::{AccountSnapshot, AppState, SettingsSnapshot, StartupRecoverySnapshot};
+use crate::task_failure::{
+    has_auto_refresh_attempt, is_expired_url_error, is_login_expired_error,
+    is_private_resource_error,
+};
 
 pub type CommandResult<T> = Result<T, CommandError>;
 
@@ -1964,34 +1968,10 @@ fn segment_count(settings: &SettingsSnapshot) -> usize {
     }
 }
 
-fn is_expired_url_error(message: &str) -> bool {
-    message.contains("HTTP 404") || message.contains("资源长度失败")
-}
-
-fn is_login_expired_error(message: &str) -> bool {
-    let lower = message.to_ascii_lowercase();
-    lower.contains("http 401")
-        || lower.contains("http 403")
-        || lower.contains("forbidden")
-        || lower.contains("unauthorized")
-        || message.contains("登录")
-        || message.contains("Cookie")
-        || message.contains("权限")
-}
-
-fn is_private_resource_error(message: &str) -> bool {
-    let lower = message.to_ascii_lowercase();
-    lower.contains("private")
-        || message.contains("私密")
-        || message.contains("不可见")
-        || message.contains("无权访问")
-        || message.contains("访问受限")
-}
-
 fn already_auto_refreshed(state: &AppState, task_id: &str) -> bool {
     state
         .task_logs(task_id, 50)
-        .map(|logs| logs.iter().any(|log| log.message == "自动刷新过期链接"))
+        .map(|logs| has_auto_refresh_attempt(&logs))
         .unwrap_or(false)
 }
 

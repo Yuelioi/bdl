@@ -6,6 +6,7 @@ mod parse_session;
 mod queue_coordinator;
 pub mod secure_store;
 pub mod state;
+mod task_failure;
 
 pub fn version() -> &'static str {
     env!("CARGO_PKG_VERSION")
