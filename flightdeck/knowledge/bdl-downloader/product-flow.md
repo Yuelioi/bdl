@@ -33,10 +33,11 @@ Out of scope:
 
 Primary pages:
 
-- `解析`: input, parse source switching, result selection, download settings dialog
-- `内容库`: authenticated created/collected favorite folders, filtering, pagination, and handoff to Parse
+- `解析`: source input, single-source or link-level batch results, selection, and download settings dialog
+- `内容库`: authenticated created/collected favorite folders, filtering, folder detail, pagination, and direct download planning
 - `传输`: active/failed/completed task management
-- `设置`: download, media, archive, naming, advanced, diagnostics
+- `设置`: download, media, naming, processing, additional content, updates, network, and maintenance
+- `关于`: installed version plus project, author, and website links
 
 Account lives in the top-right account button. It must not be placed in settings.
 
@@ -44,9 +45,9 @@ Account lives in the top-right account button. It must not be placed in settings
 
 1. A verified account opens `内容库`.
 2. Backend reads created favorite folders or collected favorite folders through the authenticated Bilibili API.
-3. The UI filters only the loaded page and supports selecting one or more folders.
-4. `打开内容` or `解析所选` sends canonical favorite URLs into the existing multi-source Parse flow.
-5. Video-level selection and task creation remain in `解析`; account metadata is never treated as queue truth.
+3. Folder lists use top tabs, local filtering, and a pagination component; folder cards are navigation targets, not multi-select controls.
+4. Opening one folder enters an in-page detail view with paged video cards, per-video download, page selection, selected download, and download-all.
+5. The detail view reuses the parse tree and download planner. Account metadata is never treated as queue truth, and playable URLs are still hydrated only when tasks are created.
 
 Logged-out, loading, empty, API-error, pagination, cover-fallback, and narrow-window states are explicit. Cached account-library pages are cleared whenever the active account changes.
 
@@ -54,9 +55,9 @@ Logged-out, loading, empty, API-error, pagination, cover-fallback, and narrow-wi
 
 1. User enters BV/AV, URL, short link, or multi-line text.
 2. Backend classifies input and resolves only the metadata needed for the normalized tree. Initial parsing must not fetch playable stream URLs for every visible part.
-3. UI keeps parsed sources in a source switcher instead of replacing all previous results.
-4. User searches, sorts, range-selects, or manually toggles visible results.
-5. User clicks `下载已选择`.
+3. Multiple input lines enter link-level batch mode: each input is represented as one video entry and shares one download configuration. A single container link retains its internal selectable content tree.
+4. User searches, sorts, range-selects, or manually toggles loaded results.
+5. User clicks `下载所选`.
 6. A download settings dialog opens with task-level overrides.
 7. Creating tasks stays on `解析`; show inline notice with `查看传输` action.
 
@@ -66,14 +67,13 @@ Duplicate confirmation and repeated download actions reuse the already hydrated 
 
 Current parse controls:
 
-- source switcher with loaded/selected counts
 - refresh current source
-- close current source when multiple sources exist
+- close current result and return to source input
 - search result titles/owner/BV
 - sort by original order, title, or duration
-- range select visible results, e.g. `1-5,7,9-12`
-- `全选可见`, not ambiguous download-all behavior
-- paged list sources automatically exhaust all metadata pages during initial parse and refresh
+- range-select the current filtered/sorted results, e.g. `1-5,7,9-12`
+- select all currently loaded/search-matching results without implying that unloaded pages are included
+- paged list sources load lightweight metadata progressively; users can request 200, 500, or 1000 more items per operation
 
 ## Selection Rules
 
@@ -86,17 +86,17 @@ Default selection:
 - list sources: not selected by default
 - bangumi, course, collection, and series: parsed items are visible and user-selected
 
-The primary action is always `下载已选择`.
+The primary selection action is `下载所选`; account-folder detail also offers explicit per-item and `下载全部` actions.
 
-Paged sources expose complete lightweight metadata:
+Paged sources expose loaded and known-total lightweight metadata while more pages remain:
 
 ```text
-已解析 1240 / 1240
+已加载 200 项 · 共 13030 项
 ```
 
-Initial parse and refresh keep paging until the source reports `has_more = false`. This applies to favorites, uploader videos, collections, series, bangumi, and courses. Paging fetches list metadata only; stream URLs and codec profiles remain download-time hydration.
+Initial parse and refresh fetch the first useful metadata page rather than exhausting an arbitrarily large source. `解析更多` uses the selected 200/500/1000 batch size and stops when the source reports `has_more = false`. Download-all from an account-folder detail may explicitly exhaust remaining lightweight pages before task creation. Paging still fetches metadata only; stream URLs and codec profiles remain download-time hydration.
 
-The result area presents this metadata as a content selector. Its stable counts are `共 N 项` and `已选 N 项`; an active search adds `搜索找到 N 项`. It must not expose legacy `已解析 x/y`, `可见`, `解析更多`, or `未拉流` states. Range selection operates on the current sorted/search result, and the UI explains once that stream details are fetched only for selected content at task creation.
+The result area presents this metadata as a content selector. Its stable counts are `已加载 N 项`, optional `共 N 项`, and `已选 N 项`; an active search adds `搜索找到 N 项`. It must not expose the legacy `可见` or `未拉流` vocabulary. Range selection operates on the current sorted/search result, and the UI explains once that stream details are fetched only for selected content at task creation.
 
 ## Download Settings Dialog
 
@@ -242,10 +242,12 @@ Settings expose backend-honored behavior only.
 Sections:
 
 - `下载`: save directory, concurrency, retries, segments, expired URL refresh, startup recovery
-- `默认媒体`: video quality, audio quality, codec, container
-- `命名`: naming template, duplicate path behavior, preview, variables
-- `归档和素材`: final media/archive/custom assets, raw streams, cover/subtitle embedding
-- `高级`: proxy, log level, data directory, cleanup, diagnostics export
+- `媒体`: video/audio quality and container
+- `文件命名`: naming template, duplicate path behavior, preview, variables
+- `编码与处理`: codec, segments, raw-stream retention, and FFmpeg
+- `附加内容`: cover, subtitle, danmaku, NFO, and embedding controls
+- `应用更新`: installed version, default-off automatic detection, manual check, and signed install
+- `网络与维护`: proxy, log level, data directory, cleanup, environment health, and diagnostics export
 
 Naming template defaults:
 
@@ -259,7 +261,7 @@ Naming template defaults:
 
 Prefer inline feedback near the work surface.
 
-Use global toast only for severe or cross-surface failures. Non-error toasts disappear after 3 seconds. Error toasts can persist until dismissed.
+Use global toast only for severe or cross-surface failures. Non-error notices and toasts share the five-second auto-dismiss setting. Error feedback persists until dismissed or replaced.
 
 Errors should be short and actionable:
 
@@ -281,6 +283,6 @@ Logs and diagnostics must redact cookies, sensitive headers, and long signed URL
 - Controls use Nuxt UI/local wrappers and Tabler icons consistently.
 - Compact task-row actions use one border treatment: secondary icon actions remain borderless inside the row, and focus indicators render inside clipped scroll regions so no edge is cut off.
 - Theme remains quiet, compact, and task-focused. Both modes use achromatic cool-neutral structure: clean white/gray chrome in light mode and a charcoal surface ladder in dark mode. Bilibili pink is the sole brand accent; other hues appear only for semantic warning, danger, and success states.
-- The desktop uses a frameless Tauri window with one custom title bar containing appearance, account, minimize, maximize/restore, and close controls.
+- The desktop uses a frameless Tauri window with one custom title bar containing brand/version, conditional update notice, appearance, account, minimize, maximize/restore, and close controls.
 - The global appearance menu offers system, light, and dark modes. System mode reacts to operating-system changes; explicit choices persist locally. Theme changes affect presentation only and never alter downloader state.
 - Do not add a separate History page unless the product becomes a media library.

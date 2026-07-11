@@ -10,10 +10,10 @@ BDL is a compact operations tool for Bilibili power users. It should feel calm, 
 
 ## Standing rules
 
-- Keep Parse, Account Library, Transfer, and Settings as the only primary pages; account identity and login remain global in the top bar.
+- Keep Parse, Account Library, Transfer, Settings, and About as the only primary pages; account identity and login remain global in the top bar.
 - Put current status and the recommended action before logs or technical detail.
 - Use OKLCH semantic tokens. Structural surfaces stay achromatic/cool-neutral in both themes: clean whites and grays in light mode, a charcoal surface ladder in dark mode. Pink is reserved for primary actions, selection, focus, and small status signals; red, amber, and green appear only for their semantic states.
-- The custom 42px desktop title bar owns appearance, account, and native window controls; page content must not add a second global header.
+- The custom 42px desktop title bar owns brand/version, conditional update notice, appearance, account, and native window controls; page content must not add a second global header.
 - Support `system`, `light`, and `dark` appearance preferences. Persist the preference locally and apply it before Vue mounts to avoid a theme flash.
 - Dark mode uses five distinct layers: page, region, card, inset/control, and overlay. It never uses pure black or relies on shadows alone for separation.
 - Hard-coded light status fills are not allowed; selected, success, warning, danger, info, progress, backdrop, and grid treatments must resolve through semantic tokens.

@@ -200,8 +200,8 @@ queue_clear_completed
 
 settings_get
 settings_update
-settings_cleanup_cache
-settings_cleanup_temp_files
+maintenance_cleanup_cache
+maintenance_cleanup_temp
 diagnostics_export
 
 account_get
@@ -210,6 +210,9 @@ account_login_qr_poll
 account_import_cookie
 account_logout
 account_verify
+account_library_list
+
+open_external_url
 ```
 
 Events:
@@ -233,6 +236,9 @@ useParseStore      parse sources, active source, frontend selection, create task
 useQueueStore      persisted task queue, logs, progress, filters, bulk actions
 useSettingsStore   settings defaults and draft/save behavior
 useAccountStore    account state and login flows
+useLibraryStore    paged account folders and account-library navigation
+useThemeStore      persisted system/light/dark appearance preference
+useUpdateStore     default-off update checks, release metadata, and signed install progress
 useUiStore         active tab, dialogs, toasts
 ```
 
@@ -240,16 +246,16 @@ UI rules:
 
 - Use Nuxt UI components through local wrappers where wrappers exist.
 - Use Tabler icons through icon names, not ad hoc SVG.
-- Keep `解析`, `传输`, and `设置` as the only primary navigation pages.
+- Primary navigation is `解析`, `内容库`, `传输`, `设置`, and `关于`; do not add another top-level page without a distinct frequent job.
 - Account belongs in the top-right account button, not settings.
 - Completed records live under Transfer's `已完成` filter, not a separate page.
 
 ## Developer Checks
 
-Before claiming backend-affecting work complete, run the narrow relevant Rust tests plus:
+Before claiming work complete, run narrow relevant tests while iterating and finish with the repository gate:
 
-```text
-cargo fmt
-cargo clippy -p bdl-core -p bdl-tauri --all-targets -- -D warnings -A clippy::too_many_arguments
-pnpm -C apps/desktop run build
+```powershell
+./scripts/check.ps1
 ```
+
+The gate covers workspace formatting, strict Clippy, all Rust tests, frontend type/build, ESLint, Stylelint and formatting, Vitest, deterministic Playwright screenshots, and whitespace.
