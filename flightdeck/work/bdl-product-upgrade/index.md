@@ -13,6 +13,7 @@ Have the maintainer exercise pause/resume, duplicate confirmation, environment r
 - ../../knowledge/bdl-downloader/architecture.md
 - ../../knowledge/bdl-downloader/product-flow.md
 - ../../knowledge/bdl-downloader/design-system.md
+- ../../knowledge/bdl-downloader/release-and-updates.md
 - design.md
 - plan.md
 - legacy-ui-followups.md
@@ -57,7 +58,7 @@ Done:
 - Blocked task creation on unhealthy environments, with inline directory creation and Settings routing for persisted FFmpeg repair.
 
 Current:
-- The first account-library slice is complete; real-world exercise and visual review are in progress. Watch later/history/follows remain later account slices, and the updater remains last.
+- The first account-library slice is complete; real-world exercise and visual review are in progress. Watch later/history/follows remain later account slices. The signed GitHub Release updater, default-off automatic checking, release workflow, and pink application icon are now implemented; the GitHub signing secret and first published update remain maintainer operations.
 
 Verified:
 - Git was clean on `main` at preflight.
