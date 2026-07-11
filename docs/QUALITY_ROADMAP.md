@@ -80,7 +80,7 @@ Exit condition: 10,000-item sources and long-running queues remain responsive an
 - Document module ownership and invariants beside each major crate/module.
 - [x] Add issue and pull-request templates with reproduction, screenshots, and verification fields.
 - [x] Publish a supported-platform test matrix and release checklist.
-- Keep generated frontend declarations out of semantic lint and review noise.
+- [x] Keep generated frontend declarations out of semantic lint and version-control review noise.
 
 ## Change discipline
 

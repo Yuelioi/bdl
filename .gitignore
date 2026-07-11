@@ -26,6 +26,8 @@ dist-ssr/
 .vite/
 .eslintcache
 *.tsbuildinfo
+apps/desktop/auto-imports.d.ts
+apps/desktop/components.d.ts
 npm-debug.log*
 yarn-debug.log*
 pnpm-debug.log*
