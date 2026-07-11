@@ -23,6 +23,7 @@ import { useSettingsStore } from './settings'
 import { useUiStore } from './ui'
 import type { InlineNotice, NoticeTone } from './feedback'
 import { NOTICE_CLEAR_DELAY } from './feedback'
+import { buildBatchSelectionBySource, selectedBatchSourceIds, toggleBatchEntrySelection } from './parseBatch'
 
 const MAX_BATCH_SOURCES = 20
 const PARSE_CONCURRENCY = 4
@@ -96,12 +97,7 @@ export const useParseStore = defineStore('parse', {
     },
     selectedSourceIds(state): string[] {
       if (state.batchMode) {
-        const selectedEntries = new Set(state.selectedBatchEntryIds)
-        return Array.from(new Set(
-          state.batchEntries
-            .filter((entry) => selectedEntries.has(entry.id))
-            .map((entry) => entry.sourceId),
-        ))
+        return selectedBatchSourceIds(state.batchEntries, state.selectedBatchEntryIds)
       }
       return state.sourceOrder.filter((sourceId) => (state.selectionBySource[sourceId]?.length ?? 0) > 0)
     },
@@ -354,13 +350,7 @@ export const useParseStore = defineStore('parse', {
       }
     },
     toggleBatchEntry(entryId: string) {
-      const selected = new Set(this.selectedBatchEntryIds)
-      if (selected.has(entryId)) {
-        selected.delete(entryId)
-      } else if (this.batchEntries.some((entry) => entry.id === entryId)) {
-        selected.add(entryId)
-      }
-      this.selectedBatchEntryIds = [...selected]
+      this.selectedBatchEntryIds = toggleBatchEntrySelection(this.batchEntries, this.selectedBatchEntryIds, entryId)
       this.syncBatchSelection()
     },
     selectAllBatchEntries() {
@@ -372,18 +362,11 @@ export const useParseStore = defineStore('parse', {
       this.syncBatchSelection()
     },
     syncBatchSelection() {
-      for (const sourceId of this.sourceOrder) {
-        this.selectionBySource[sourceId] = []
-      }
-      const selected = new Set(this.selectedBatchEntryIds)
-      for (const entry of this.batchEntries) {
-        if (selected.has(entry.id)) {
-          this.selectionBySource[entry.sourceId] = uniquePartIds([
-            ...(this.selectionBySource[entry.sourceId] ?? []),
-            entry.partId,
-          ])
-        }
-      }
+      this.selectionBySource = buildBatchSelectionBySource(
+        this.sourceOrder,
+        this.batchEntries,
+        this.selectedBatchEntryIds,
+      )
     },
     async removeBatchEntry(entryId: string) {
       const entry = this.batchEntries.find((candidate) => candidate.id === entryId)

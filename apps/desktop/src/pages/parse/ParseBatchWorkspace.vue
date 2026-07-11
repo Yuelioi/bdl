@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 
 import { useParseStore } from '../../stores/parse'
+import { allBatchEntriesSelected, filterParseBatchEntries } from '../../stores/parseBatch'
 import UiButton from '../../ui/Button.vue'
 import UiIconButton from '../../ui/IconButton.vue'
 import UiTextField from '../../ui/TextField.vue'
@@ -11,18 +12,10 @@ const { embedded = false } = defineProps<{ embedded?: boolean }>()
 const parse = useParseStore()
 const query = ref('')
 
-const normalizedQuery = computed(() => query.value.trim().toLowerCase())
-const entries = computed(() =>
-  parse.batchEntries.filter((entry) => {
-    if (!normalizedQuery.value) return true
-    return `${entry.title} ${entry.input}`.toLowerCase().includes(normalizedQuery.value)
-  }),
-)
+const entries = computed(() => filterParseBatchEntries(parse.batchEntries, query.value))
 const selectedSet = computed(() => new Set(parse.selectedBatchEntryIds))
 const selectedCount = computed(() => parse.selectedBatchEntryIds.length)
-const allSelected = computed(
-  () => parse.batchEntries.length > 0 && parse.batchEntries.every((entry) => selectedSet.value.has(entry.id)),
-)
+const allSelected = computed(() => allBatchEntriesSelected(parse.batchEntries, parse.selectedBatchEntryIds))
 const loading = computed(() => parse.sourceOrder.some((sourceId) => parse.loadingBySource[sourceId]))
 
 const toggleAll = () => {
