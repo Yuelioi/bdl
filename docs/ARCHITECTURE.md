@@ -22,6 +22,7 @@ BDL 按“领域真相在 Rust、会话交互在 Vue”的边界组织。跨边�
 | commands          | Tauri 参数校验、DTO 翻译和系统入口       | command 只做适配；领域规则下沉到专属模块            |
 | parse_session     | 来源分页、合并、选择映射和按需 hydration | 分页累计不重复；占位选择在展开后仍指向正确分 P      |
 | queue_coordinator | 重复任务、恢复与受保护状态转换           | 持久化成功后再发布状态；暂停/取消不会被 worker 覆盖 |
+| queue_worker      | 并发调度、限速器、定时等待与结果收割     | 同时只有一个调度循环；展示进度合并不延迟任务命令    |
 | media_finalize    | 附件选择、已完成资源定位和 NFO           | 只嵌入已完成且容器支持的文件；警告必须指出具体附件  |
 | diagnostic_export | 诊断脱敏                                 | Cookie、鉴权头、代理凭据与签名查询参数不得导出      |
 | secure_store      | 系统凭据存储与旧 Cookie 迁移             | Cookie 不进入普通文件、SQLite、日志或前端 DTO       |

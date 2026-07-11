@@ -4,6 +4,7 @@ pub mod events;
 mod media_finalize;
 mod parse_session;
 mod queue_coordinator;
+mod queue_worker;
 pub mod secure_store;
 pub mod state;
 mod task_failure;
