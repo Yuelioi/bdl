@@ -30,9 +30,10 @@ pub enum ArchiveMode {
     Custom,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DownloadMediaMode {
+    #[default]
     AudioVideo,
     VideoOnly,
     AudioOnly,
@@ -56,12 +57,6 @@ impl DownloadMediaMode {
 
     const fn includes_audio(self) -> bool {
         matches!(self, Self::AudioVideo | Self::AudioOnly)
-    }
-}
-
-impl Default for DownloadMediaMode {
-    fn default() -> Self {
-        Self::AudioVideo
     }
 }
 
