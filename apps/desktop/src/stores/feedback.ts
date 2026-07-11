@@ -6,4 +6,5 @@ export interface InlineNotice {
   actionLabel?: string
 }
 
-export const NOTICE_CLEAR_DELAY = 3000
+export const FEEDBACK_AUTO_DISMISS_MS = 5_000
+export const NOTICE_CLEAR_DELAY = FEEDBACK_AUTO_DISMISS_MS

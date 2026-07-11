@@ -9,7 +9,14 @@ const ui = useUiStore()
 <template>
   <Teleport to="body">
     <div class="toast-host" aria-live="polite" aria-atomic="false">
-      <div v-for="toast in ui.toasts" :key="toast.id" class="toast feedback-tone" :class="`tone-${toast.tone}`">
+      <div
+        v-for="toast in ui.toasts"
+        :key="toast.id"
+        class="toast feedback-tone"
+        :class="`tone-${toast.tone}`"
+        :role="toast.tone === 'danger' ? 'alert' : 'status'"
+        :aria-live="toast.tone === 'danger' ? 'assertive' : 'polite'"
+      >
         <span>{{ toast.message }}</span>
         <UiButton
           v-if="toast.action"

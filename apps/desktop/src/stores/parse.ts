@@ -20,7 +20,6 @@ import {
 } from '../api/tauri'
 import { useQueueStore } from './queue'
 import { useSettingsStore } from './settings'
-import { useUiStore } from './ui'
 import type { InlineNotice, NoticeTone } from './feedback'
 import { NOTICE_CLEAR_DELAY } from './feedback'
 import { buildBatchSelectionBySource, selectedBatchSourceIds, toggleBatchEntrySelection } from './parseBatch'
@@ -128,7 +127,6 @@ export const useParseStore = defineStore('parse', {
       }
     },
     async createSource(input?: string): Promise<boolean> {
-      const ui = useUiStore()
       const inputs = splitParseInputs(input ?? this.input)
 
       if (inputs.length === 0) {
@@ -171,7 +169,7 @@ export const useParseStore = defineStore('parse', {
         }
         const trees = uniqueSourceTrees(validOutcomes.map((outcome) => outcome.tree))
         if (trees.length === 0) {
-          ui.pushToast(failures[0]?.error ?? '解析失败', 'danger')
+          this.setNotice(failures[0]?.error ?? '解析失败', 'danger')
           return false
         }
 
@@ -223,7 +221,6 @@ export const useParseStore = defineStore('parse', {
       }
     },
     async loadMore(sourceId: string) {
-      const ui = useUiStore()
       this.loadingBySource[sourceId] = true
       try {
         const tree = await parseLoadMore({ source_id: sourceId })
@@ -231,13 +228,11 @@ export const useParseStore = defineStore('parse', {
         this.setNotice(loadedCountMessage(tree), 'success')
       } catch (error) {
         this.errorsBySource[sourceId] = errorMessage(error)
-        ui.pushToast(errorMessage(error), 'danger')
       } finally {
         this.loadingBySource[sourceId] = false
       }
     },
     async loadChunk(sourceId: string, chunkSize: number) {
-      const ui = useUiStore()
       const current = this.sources[sourceId]
       if (!current?.source.has_more) return
 
@@ -249,13 +244,11 @@ export const useParseStore = defineStore('parse', {
         this.setNotice(loadedCountMessage(tree), 'success')
       } catch (error) {
         this.errorsBySource[sourceId] = errorMessage(error)
-        ui.pushToast(errorMessage(error), 'danger')
       } finally {
         this.loadingBySource[sourceId] = false
       }
     },
     async parseAll(sourceId: string) {
-      const ui = useUiStore()
       this.loadingBySource[sourceId] = true
       try {
         const tree = await parseLoadAll({ source_id: sourceId })
@@ -263,13 +256,11 @@ export const useParseStore = defineStore('parse', {
         this.setNotice('已批量解析', 'success')
       } catch (error) {
         this.errorsBySource[sourceId] = errorMessage(error)
-        ui.pushToast(errorMessage(error), 'danger')
       } finally {
         this.loadingBySource[sourceId] = false
       }
     },
     async closeSource(sourceId: string) {
-      const ui = useUiStore()
       this.loadingBySource[sourceId] = true
       try {
         await parseCloseSource(sourceId)
@@ -286,7 +277,6 @@ export const useParseStore = defineStore('parse', {
         this.setNotice('已关闭解析源', 'info')
       } catch (error) {
         this.errorsBySource[sourceId] = errorMessage(error)
-        ui.pushToast(errorMessage(error), 'danger')
       } finally {
         this.loadingBySource[sourceId] = false
       }
@@ -309,14 +299,12 @@ export const useParseStore = defineStore('parse', {
       }
     },
     async refreshSource(sourceId: string) {
-      const ui = useUiStore()
       this.loadingBySource[sourceId] = true
       try {
         this.upsertSource(await parseRefreshSource({ source_id: sourceId }))
         this.setNotice('已刷新来源', 'success')
       } catch (error) {
         this.errorsBySource[sourceId] = errorMessage(error)
-        ui.pushToast(errorMessage(error), 'danger')
       } finally {
         this.loadingBySource[sourceId] = false
       }
@@ -408,7 +396,6 @@ export const useParseStore = defineStore('parse', {
       sourceIds: string[],
       options: CreateTaskOptions = {},
     ): Promise<CreateTasksForSourcesResult | null> {
-      const ui = useUiStore()
       const settings = useSettingsStore()
       const queue = useQueueStore()
       const targets = uniquePartIds(sourceIds).filter((sourceId) => (this.selectionBySource[sourceId]?.length ?? 0) > 0)
@@ -477,7 +464,7 @@ export const useParseStore = defineStore('parse', {
             '查看传输',
           )
         } else if (aggregate.failedSourceIds.length > 0) {
-          ui.pushToast('所选链接创建任务失败', 'danger')
+          this.setNotice('所选链接创建任务失败', 'danger')
         } else {
           this.setNotice('所选内容已在传输中', 'info', '查看传输')
         }

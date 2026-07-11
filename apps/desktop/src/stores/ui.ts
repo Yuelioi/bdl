@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import { FEEDBACK_AUTO_DISMISS_MS } from './feedback'
 
 export type AppTab = 'parse' | 'library' | 'transfer' | 'settings' | 'about'
 
@@ -38,7 +39,7 @@ export const useUiStore = defineStore('ui', {
       if (tone !== 'danger' && typeof window !== 'undefined') {
         window.setTimeout(() => {
           this.removeToast(id)
-        }, 3000)
+        }, FEEDBACK_AUTO_DISMISS_MS)
       }
     },
     removeToast(id: number) {
