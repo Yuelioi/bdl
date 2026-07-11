@@ -1,0 +1,31 @@
+name: Feature request
+description: 提议一个符合 BDL 下载工作流的新能力
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 用户问题
+      description: 请描述现在无法顺利完成的工作，而不只是期望的按钮或实现。
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 建议方案
+      description: 说明理想流程、常用操作和低频选项应该放在哪里。
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 替代方案与边界
+      description: 你尝试过什么？哪些内容明确不需要包含？
+  - type: dropdown
+    id: area
+    attributes:
+      label: 主要领域
+      options: [解析, 内容库, 传输队列, 媒体处理, 设置, 平台与发布, 其他]
+    validations:
+      required: true

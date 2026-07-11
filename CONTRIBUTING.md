@@ -49,3 +49,4 @@ pnpm --dir apps/desktop build
 
 保持提交小而完整，不要混入无关格式化或依赖升级。
 
+平台支持范围见 [docs/SUPPORTED_PLATFORMS.md](docs/SUPPORTED_PLATFORMS.md)，维护者发布前使用 [docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md)。

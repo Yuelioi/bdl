@@ -4,13 +4,13 @@ BDL is moving from an early product implementation toward a maintainable open-so
 
 ## Quality baseline
 
-| Area | Current score | Evidence | Target |
-| --- | ---: | --- | ---: |
-| Accessibility | 3 / 4 | Shared controls expose labels and focus states; end-to-end keyboard and automated accessibility coverage are still missing. | 4 / 4 |
-| Performance | 3 / 4 | Parsing is paged and media hydration is deferred; large lists still need measured rendering thresholds. | 4 / 4 |
-| Theming | 3 / 4 | Tokenized light/dark themes exist; a few state treatments remain local to pages. | 4 / 4 |
-| Responsive stability | 2 / 4 | Desktop widths are handled, but narrow-window and text-scaling contracts are not tested. | 3 / 4 |
-| UI consistency | 3 / 4 | Shared primitives and workspace patterns exist; settings and some dense toolbars still diverge. | 4 / 4 |
+| Area                 | Current score | Evidence                                                                                                                    | Target |
+| -------------------- | ------------: | --------------------------------------------------------------------------------------------------------------------------- | -----: |
+| Accessibility        |         3 / 4 | Shared controls expose labels and focus states; end-to-end keyboard and automated accessibility coverage are still missing. |  4 / 4 |
+| Performance          |         3 / 4 | Parsing is paged and media hydration is deferred; large lists still need measured rendering thresholds.                     |  4 / 4 |
+| Theming              |         3 / 4 | Tokenized light/dark themes exist; a few state treatments remain local to pages.                                            |  4 / 4 |
+| Responsive stability |         2 / 4 | Desktop widths are handled, but narrow-window and text-scaling contracts are not tested.                                    |  3 / 4 |
+| UI consistency       |         3 / 4 | Shared primitives and workspace patterns exist; settings and some dense toolbars still diverge.                             |  4 / 4 |
 
 Baseline: **14 / 20 — good, with structural risks that should be addressed before feature growth.**
 
@@ -78,8 +78,8 @@ Exit condition: 10,000-item sources and long-running queues remain responsive an
 ## P2 — contributor experience
 
 - Document module ownership and invariants beside each major crate/module.
-- Add issue and pull-request templates with reproduction, screenshots, and verification fields.
-- Publish a supported-platform test matrix and release checklist.
+- [x] Add issue and pull-request templates with reproduction, screenshots, and verification fields.
+- [x] Publish a supported-platform test matrix and release checklist.
 - Keep generated frontend declarations out of semantic lint and review noise.
 
 ## Change discipline

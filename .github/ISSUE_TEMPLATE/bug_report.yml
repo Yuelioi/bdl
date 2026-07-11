@@ -1,0 +1,53 @@
+name: Bug report
+description: 报告可复现的解析、下载、界面或平台问题
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: 安全问题请不要公开提交，改用 SECURITY.md 中的联系方式。
+  - type: textarea
+    id: summary
+    attributes:
+      label: 问题描述
+      description: 发生了什么？你原本期望什么？
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. 打开……
+        2. 输入……
+        3. 点击……
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: BDL 版本
+      placeholder: 例如 0.1.0
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: 操作系统
+      options: [Windows 11, Windows 10, macOS, Linux, 其他]
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 日志与截图
+      description: 优先附上脱敏诊断包、任务日志或截图；请移除 Cookie、鉴权头和签名 URL。
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 我已搜索现有 issue，没有找到相同问题。
+          required: true
+        - label: 我未在内容中粘贴 Cookie、令牌或其他凭据。
+          required: true
