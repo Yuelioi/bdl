@@ -12,10 +12,7 @@ use bdl_core::fetcher::{
 };
 use bdl_core::ids::{PartId, SourceId};
 use bdl_core::model::NormalizedSourceTree;
-use bdl_core::muxer::{
-    MediaMuxer, MediaMuxerConfig, MuxError, MuxRequest, supports_cover_embedding,
-    supports_subtitle_embedding,
-};
+use bdl_core::muxer::{MediaMuxer, MediaMuxerConfig, MuxError, MuxRequest};
 use bdl_core::planner::{
     ArchiveMode, DownloadMediaMode, DownloadOptions, MissingQualityPolicy, StreamPreference,
     parse_stream_codec, plan_selected_parts,
@@ -40,6 +37,9 @@ use crate::diagnostic_export::{
     redact_url,
 };
 use crate::events;
+use crate::media_finalize::{
+    completed_resource_by_intent, select_mux_attachments, task_has_resource_intent, write_nfo,
+};
 use crate::state::{AccountSnapshot, AppState, SettingsSnapshot, StartupRecoverySnapshot};
 
 pub type CommandResult<T> = Result<T, CommandError>;
@@ -1597,7 +1597,11 @@ async fn run_download_task_inner(
     )?;
 
     let latest = state.task_snapshot(&task.id)?;
-    let attachments = mux_attachments(&latest, &runtime_options);
+    let attachments = select_mux_attachments(
+        &latest,
+        runtime_options.embed_cover,
+        runtime_options.embed_subtitles,
+    );
     for warning in &attachments.warnings {
         emit_queue_log(app, state, &latest.id, QueueLogLevel::Warning, warning)?;
     }
@@ -1733,77 +1737,6 @@ fn emit_progress(app: &AppHandle, task_id: &str, progress: FetchProgress) {
     }
 }
 
-struct MuxAttachmentSelection {
-    cover_path: Option<PathBuf>,
-    subtitle_paths: Vec<PathBuf>,
-    warnings: Vec<String>,
-}
-
-fn mux_attachments(
-    task: &DownloadTask,
-    runtime_options: &DownloadRuntimeOptions,
-) -> MuxAttachmentSelection {
-    let mut selection = MuxAttachmentSelection {
-        cover_path: None,
-        subtitle_paths: Vec::new(),
-        warnings: Vec::new(),
-    };
-
-    if runtime_options.embed_cover && task_has_resource_intent(task, DownloadResourceIntent::Cover)
-    {
-        match completed_resource_by_intent(task, DownloadResourceIntent::Cover) {
-            Some(resource)
-                if supports_cover_embedding(&task.output_path, &resource.target_path) =>
-            {
-                selection.cover_path = Some(resource.target_path.clone());
-            }
-            Some(_) => selection
-                .warnings
-                .push("跳过封面嵌入：当前封面格式或封装格式不支持。".to_owned()),
-            None => selection
-                .warnings
-                .push("跳过封面嵌入：没有已下载的封面文件。".to_owned()),
-        }
-    }
-
-    if runtime_options.embed_subtitles
-        && task_has_resource_intent(task, DownloadResourceIntent::Subtitle)
-    {
-        match completed_resource_by_intent(task, DownloadResourceIntent::Subtitle) {
-            Some(resource)
-                if supports_subtitle_embedding(&task.output_path, &resource.target_path) =>
-            {
-                selection.subtitle_paths.push(resource.target_path.clone());
-            }
-            Some(_) => selection
-                .warnings
-                .push("跳过字幕嵌入：当前字幕格式或封装格式不支持。".to_owned()),
-            None => selection
-                .warnings
-                .push("跳过字幕嵌入：没有已下载的字幕文件。".to_owned()),
-        }
-    }
-
-    selection
-}
-
-fn task_has_resource_intent(task: &DownloadTask, intent: DownloadResourceIntent) -> bool {
-    task.resources
-        .iter()
-        .any(|resource| resource.intent == intent)
-}
-
-fn completed_resource_by_intent(
-    task: &DownloadTask,
-    intent: DownloadResourceIntent,
-) -> Option<&DownloadResource> {
-    task.resources.iter().find(|resource| {
-        resource.intent == intent
-            && resource.status == ResourceStatus::Completed
-            && resource.target_path.is_file()
-    })
-}
-
 async fn cleanup_raw_streams(
     app: &AppHandle,
     state: &AppState,
@@ -1878,39 +1811,6 @@ async fn finalize_archive_assets(
     }
 
     Ok(())
-}
-
-async fn write_nfo(task: &DownloadTask, resource: &DownloadResource) -> CommandResult<()> {
-    if let Some(parent) = resource.target_path.parent() {
-        fs::create_dir_all(parent).await.map_err(BdlError::from)?;
-    }
-    fs::write(&resource.target_path, nfo_content(task))
-        .await
-        .map_err(BdlError::from)?;
-    Ok(())
-}
-
-fn nfo_content(task: &DownloadTask) -> String {
-    format!(
-        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
-<movie>\n\
-  <title>{}</title>\n\
-  <source>{}</source>\n\
-  <filename>{}</filename>\n\
-</movie>\n",
-        escape_xml(&task.title),
-        escape_xml(&task.source_id),
-        escape_xml(&task.output_path.to_string_lossy())
-    )
-}
-
-fn escape_xml(value: &str) -> String {
-    value
-        .replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-        .replace('\'', "&apos;")
 }
 
 fn task_should_continue(state: &AppState, task_id: &str) -> CommandResult<bool> {
@@ -2108,9 +2008,8 @@ fn parse_archive_mode(value: &str) -> CommandResult<ArchiveMode> {
 #[cfg(test)]
 mod tests {
     use super::{
-        has_recoverable_completed_output, nfo_content, parse_future_schedule,
-        queue_task_launch_context, redact_log_for_diagnostics, redact_task_for_diagnostics,
-        should_fetch,
+        has_recoverable_completed_output, parse_future_schedule, queue_task_launch_context,
+        redact_log_for_diagnostics, redact_task_for_diagnostics, should_fetch,
     };
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -2197,27 +2096,6 @@ mod tests {
         assert!(launch.runtime_options.retain_raw_streams);
         assert!(launch.runtime_options.embed_cover);
         assert!(launch.runtime_options.embed_subtitles);
-    }
-
-    #[test]
-    fn nfo_content_escapes_xml_sensitive_fields() {
-        let task = DownloadTask {
-            id: "task:fixture".to_owned(),
-            title: "A&B <C>".to_owned(),
-            source_id: "video:\"source\"".to_owned(),
-            status: TaskStatus::Completed,
-            resources: Vec::new(),
-            output_path: PathBuf::from("downloads/A&B <C>.mp4"),
-            refresh_intent: None,
-            media_selection: DownloadTaskMediaSelection::default(),
-            scheduled_at: None,
-            speed_limit_bytes_per_second: None,
-        };
-
-        let nfo = nfo_content(&task);
-
-        assert!(nfo.contains("A&amp;B &lt;C&gt;"));
-        assert!(nfo.contains("video:&quot;source&quot;"));
     }
 
     #[test]

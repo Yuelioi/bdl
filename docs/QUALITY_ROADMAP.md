@@ -33,6 +33,7 @@ Progress:
 - [x] Move selection normalization and on-demand part hydration into `parse_session`.
 - [x] Extract duplicate handling, startup recovery, and guarded queue transitions into `QueueCoordinator`.
 - [x] Move diagnostic credential, URL, header, task, and log sanitization behind a tested export module.
+- [x] Extract media attachment selection, completed-resource lookup, and NFO generation from the command worker.
 - [ ] Reduce the remaining `commands.rs` worker/media processing to command adapters and dedicated modules.
 
 Planned seams:
