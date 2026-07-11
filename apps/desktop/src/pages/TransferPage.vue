@@ -14,14 +14,8 @@ import UiTextField from '../ui/TextField.vue';
 import BulkActionBar from '../ui/BulkActionBar.vue';
 import TaskInspector from '../ui/TaskInspector.vue';
 import TransferTaskTable from '../ui/TransferTaskTable.vue';
-import {
-  isCancellable,
-  isPausable,
-  isRetryable,
-  matchesTransferSearch,
-  sortTransferTasks,
-  type TransferSortMode,
-} from './transfer/transferQueries';
+import { matchesTransferSearch, sortTransferTasks, type TransferSortMode } from './transfer/transferQueries';
+import { useTransferBulkActions } from './transfer/useTransferBulkActions';
 import { useTransferDialogs } from './transfer/useTransferDialogs';
 import { contextIcon, useTransferContextMenu } from './transfer/useTransferContextMenu';
 
@@ -85,28 +79,26 @@ const taskViews = computed(() =>
     ),
   ),
 );
+const {
+  pausableTaskIds,
+  cancellableTaskIds,
+  resumableTaskIds,
+  retryableTaskIds,
+  removableTaskIds,
+  runBulkPause,
+  runBulkCancel,
+  runBulkResume,
+  runBulkRetry,
+  runBulkRefreshRetry,
+  runBulkRemove,
+  runClearCompleted,
+} = useTransferBulkActions(queue, visibleTasks);
 const completedTaskCount = computed(() => queue.tasks.filter((task) => task.status === 'completed').length);
 const selectedLogs = computed(() => (queue.selectedTaskId ? (queue.logsByTask[queue.selectedTaskId] ?? []) : []));
 const selectedLogsLoading = computed(() =>
   queue.selectedTaskId ? Boolean(queue.logsLoadingByTask[queue.selectedTaskId]) : false,
 );
 const selectedProgress = computed(() => (queue.selectedTask ? queue.taskProgress(queue.selectedTask) : 0));
-const selectedTaskSet = computed(() => new Set(queue.selectedTaskIds));
-const selectedTasks = computed(() => queue.tasks.filter((task) => selectedTaskSet.value.has(task.id)));
-const bulkScopeTasks = computed(() => (selectedTasks.value.length > 0 ? selectedTasks.value : visibleTasks.value));
-const pausableTaskIds = computed(() =>
-  bulkScopeTasks.value.filter((task) => isPausable(task.status)).map((task) => task.id),
-);
-const cancellableTaskIds = computed(() =>
-  bulkScopeTasks.value.filter((task) => isCancellable(task.status)).map((task) => task.id),
-);
-const resumableTaskIds = computed(() =>
-  bulkScopeTasks.value.filter((task) => task.status === 'paused').map((task) => task.id),
-);
-const retryableTaskIds = computed(() =>
-  bulkScopeTasks.value.filter((task) => isRetryable(task.status)).map((task) => task.id),
-);
-const removableTaskIds = computed(() => selectedTasks.value.map((task) => task.id));
 const selectedDetailTitle = computed(() => queue.selectedTask?.title ?? '任务详情');
 const emptyTitle = computed(() => {
   if (queue.tasks.length === 0) {
@@ -210,34 +202,6 @@ const refreshSelectedLogs = () => {
   if (queue.selectedTaskId) {
     void queue.loadLogs(queue.selectedTaskId);
   }
-};
-
-const runBulkPause = () => {
-  void queue.bulkPause(pausableTaskIds.value);
-};
-
-const runBulkCancel = () => {
-  void queue.bulkCancel(cancellableTaskIds.value);
-};
-
-const runBulkResume = () => {
-  void queue.bulkResume(resumableTaskIds.value);
-};
-
-const runBulkRetry = () => {
-  void queue.bulkRetry(retryableTaskIds.value);
-};
-
-const runBulkRefreshRetry = () => {
-  void queue.bulkRefreshUrlsAndRetry(retryableTaskIds.value);
-};
-
-const runBulkRemove = () => {
-  void queue.bulkRemove(removableTaskIds.value);
-};
-
-const runClearCompleted = () => {
-  void queue.clearCompleted();
 };
 </script>
 
