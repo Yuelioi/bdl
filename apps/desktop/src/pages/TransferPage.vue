@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 
 import { sourceReference, useQueueStore, type QueueFilter } from '../stores/queue';
-import { createTransferTaskView, type TaskActionKind } from '../stores/transferView';
+import { createTransferTaskView } from '../stores/transferView';
 import { useUiStore } from '../stores/ui';
 import UiButton from '../ui/Button.vue';
 import UiDialog from '../ui/Dialog.vue';
@@ -19,6 +19,7 @@ import { useTransferBulkActions } from './transfer/useTransferBulkActions';
 import { useTransferDialogs } from './transfer/useTransferDialogs';
 import { contextIcon, useTransferContextMenu } from './transfer/useTransferContextMenu';
 import { useTransferTaskDetail } from './transfer/useTransferTaskDetail';
+import { useTransferTaskActions } from './transfer/useTransferTaskActions';
 
 const queue = useQueueStore();
 const ui = useUiStore();
@@ -46,6 +47,10 @@ const {
   openSpeedLimitDialog,
   submitSpeedLimit,
 } = useTransferDialogs(queue);
+const { runTaskAction: handleTaskAction } = useTransferTaskActions(queue, {
+  openScheduleDialog,
+  openSpeedLimitDialog,
+});
 const queueFilter = computed({
   get: () => queue.activeFilter,
   set: (value: QueueFilter) => queue.setFilter(value),
@@ -135,56 +140,6 @@ onBeforeUnmount(() => {
   window.removeEventListener('keydown', closeContextMenuOnEscape);
   window.removeEventListener('blur', closeContextMenu);
 });
-
-const handleTaskAction = (taskId: string, action: Exclude<TaskActionKind, 'none'>) => {
-  if (action === 'pause') {
-    void queue.pause(taskId);
-    return;
-  }
-  if (action === 'resume') {
-    void queue.resume(taskId);
-    return;
-  }
-  if (action === 'unschedule') {
-    void queue.unschedule(taskId);
-    return;
-  }
-  if (action === 'schedule') {
-    openScheduleDialog(taskId);
-    return;
-  }
-  if (action === 'speed_limit') {
-    openSpeedLimitDialog(taskId);
-    return;
-  }
-  if (action === 'retry') {
-    void queue.retry(taskId);
-    return;
-  }
-  if (action === 'refresh_retry') {
-    void queue.refreshUrlsAndRetry(taskId);
-    return;
-  }
-  if (action === 'cancel') {
-    void queue.cancel(taskId);
-    return;
-  }
-  if (action === 'remove') {
-    void queue.remove(taskId);
-    return;
-  }
-  if (action === 'open_file') {
-    void queue.openFile(taskId);
-    return;
-  }
-  if (action === 'open_dir') {
-    void queue.openDir(taskId);
-    return;
-  }
-  if (action === 'copy_source') {
-    void queue.copySource(taskId);
-  }
-};
 
 const {
   contextMenu,
