@@ -12,8 +12,8 @@ use bdl_core::fetcher::FetchCancelToken;
 use bdl_core::ids::{PartId, SourceId};
 use bdl_core::input::{ClassifiedInput, classify_input};
 use bdl_core::model::{
-    MediaKind, MediaStream, NormalizedItem, NormalizedPart, NormalizedSourceTree, SourceKind,
-    StreamCodec, StreamQuality,
+    MediaKind, MediaStream, NormalizedPart, NormalizedSourceTree, SourceKind, StreamCodec,
+    StreamQuality,
 };
 use bdl_core::naming::unique_path;
 use bdl_core::queue::{
@@ -34,9 +34,13 @@ use chrono::{DateTime, Utc};
 use serde::Serialize;
 use tokio::sync::Notify;
 
+#[cfg(test)]
+use crate::parse_session::{PartHydrationRequest, find_part};
 use crate::parse_session::{
-    append_source_page, cheese_season_id, collection_ids, favorite_media_id, next_page_request,
-    series_ids, should_continue_loading, should_expand_initial_source, uploader_mid,
+    append_source_page, cheese_season_id, collection_ids, favorite_media_id,
+    hydrate_placeholder_part, next_page_request, normalize_selected_part_ids,
+    remap_selected_part_ids, selected_hydration_requests, series_ids, should_continue_loading,
+    should_expand_initial_source, uploader_mid,
 };
 use crate::secure_store::SecureStore;
 
@@ -1042,13 +1046,6 @@ fn ignores_status_transition(current: TaskStatus, next: TaskStatus) -> bool {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct PartHydrationRequest {
-    part_id: PartId,
-    input: ClassifiedInput,
-    target_cid: Option<u64>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 struct TaskMediaRefreshIds {
     input: ClassifiedInput,
     cid: u64,
@@ -1249,6 +1246,10 @@ fn episode_task_media_refresh_ids(
     Ok(Some(TaskMediaRefreshIds { input, cid }))
 }
 
+fn parse_positive_u64(value: Option<&str>) -> Option<u64> {
+    value?.parse::<u64>().ok().filter(|value| *value > 0)
+}
+
 fn find_part_by_cid(tree: &NormalizedSourceTree, cid: u64) -> Option<&NormalizedPart> {
     tree.groups
         .iter()
@@ -1330,293 +1331,6 @@ fn stream_codec_label(stream: &MediaStream) -> &'static str {
         StreamCodec::Av1 => "av1",
         StreamCodec::Unknown => "unknown",
     }
-}
-
-fn selected_hydration_requests(
-    tree: &NormalizedSourceTree,
-    selected_part_ids: &[PartId],
-) -> BdlResult<Vec<PartHydrationRequest>> {
-    let mut seen = HashSet::new();
-    let mut requests = Vec::new();
-
-    for part_id in selected_part_ids {
-        if !seen.insert(part_id.clone()) {
-            continue;
-        }
-
-        let Some(part) = find_part(tree, part_id) else {
-            continue;
-        };
-
-        if !part_needs_hydration(part) {
-            continue;
-        }
-
-        requests.push(PartHydrationRequest {
-            part_id: part_id.clone(),
-            input: hydration_input_for_part(tree.source.kind, part, part_id)?,
-            target_cid: part.cid,
-        });
-    }
-
-    Ok(requests)
-}
-
-fn normalize_selected_part_ids(
-    tree: &NormalizedSourceTree,
-    selected_part_ids: &[PartId],
-) -> Vec<PartId> {
-    let mut seen = HashSet::new();
-    let mut normalized = Vec::new();
-
-    for part_id in selected_part_ids {
-        if find_part(tree, part_id).is_some() {
-            if seen.insert(part_id.clone()) {
-                normalized.push(part_id.clone());
-            }
-            continue;
-        }
-
-        let hydrated_parts = list_placeholder_bvid(part_id)
-            .and_then(|bvid| {
-                tree.groups
-                    .iter()
-                    .flat_map(|group| &group.items)
-                    .find(|item| {
-                        item.parts
-                            .iter()
-                            .any(|part| part.bvid.as_deref() == Some(bvid))
-                    })
-            })
-            .map(|item| {
-                item.parts
-                    .iter()
-                    .map(|part| part.id.clone())
-                    .collect::<Vec<_>>()
-            });
-
-        if let Some(hydrated_parts) = hydrated_parts {
-            for hydrated_part_id in hydrated_parts {
-                if seen.insert(hydrated_part_id.clone()) {
-                    normalized.push(hydrated_part_id);
-                }
-            }
-        } else if seen.insert(part_id.clone()) {
-            normalized.push(part_id.clone());
-        }
-    }
-
-    normalized
-}
-
-fn list_placeholder_bvid(part_id: &PartId) -> Option<&str> {
-    let mut segments = part_id.0.strip_prefix("part:")?.split(':');
-    let kind = segments.next()?;
-    if !matches!(kind, "favorite" | "uploader" | "collection" | "series") {
-        return None;
-    }
-
-    segments.next_back().filter(|value| value.starts_with("BV"))
-}
-
-fn find_part<'a>(tree: &'a NormalizedSourceTree, part_id: &PartId) -> Option<&'a NormalizedPart> {
-    tree.groups
-        .iter()
-        .flat_map(|group| &group.items)
-        .flat_map(|item| &item.parts)
-        .find(|part| &part.id == part_id)
-}
-
-fn part_needs_hydration(part: &NormalizedPart) -> bool {
-    part.cid.is_none() || part.streams.is_empty()
-}
-
-fn hydration_input_for_part(
-    kind: SourceKind,
-    part: &NormalizedPart,
-    part_id: &PartId,
-) -> BdlResult<ClassifiedInput> {
-    match kind {
-        SourceKind::Bangumi => {
-            let ep_id = episode_id_from_part_id(part_id, "bangumi")?;
-            Ok(ClassifiedInput::Bangumi {
-                raw_url: format!("https://www.bilibili.com/bangumi/play/ep{ep_id}"),
-            })
-        }
-        SourceKind::Cheese => {
-            let ep_id = episode_id_from_part_id(part_id, "cheese")?;
-            Ok(ClassifiedInput::Cheese {
-                raw_url: format!("https://www.bilibili.com/cheese/play/ep{ep_id}"),
-            })
-        }
-        _ => {
-            let bvid = part.bvid.clone().ok_or_else(|| BdlError::Planning {
-                message: format!("选中的分 P `{}` 缺少 BV ID，无法补齐下载流。", part_id.0),
-            })?;
-            Ok(ClassifiedInput::VideoBvid(bvid))
-        }
-    }
-}
-
-fn episode_id_from_part_id(part_id: &PartId, expected_kind: &'static str) -> BdlResult<u64> {
-    let mut parts = part_id
-        .0
-        .strip_prefix("part:")
-        .into_iter()
-        .flat_map(|value| value.split(':'));
-    let kind = parts.next().ok_or_else(|| BdlError::Planning {
-        message: format!("选中的分 P `{}` 缺少来源类型。", part_id.0),
-    })?;
-    if kind != expected_kind {
-        return Err(BdlError::Planning {
-            message: format!("选中的分 P `{}` 不是 {expected_kind} 来源。", part_id.0),
-        });
-    }
-    let _season_id = parse_positive_u64(parts.next()).ok_or_else(|| BdlError::Planning {
-        message: format!("选中的分 P `{}` 缺少 season ID。", part_id.0),
-    })?;
-
-    parse_positive_u64(parts.next()).ok_or_else(|| BdlError::Planning {
-        message: format!("选中的分 P `{}` 缺少 ep ID。", part_id.0),
-    })
-}
-
-fn parse_positive_u64(value: Option<&str>) -> Option<u64> {
-    value?.parse::<u64>().ok().filter(|value| *value > 0)
-}
-
-fn hydrate_placeholder_part(
-    tree: &mut NormalizedSourceTree,
-    placeholder_id: &PartId,
-    target_cid: Option<u64>,
-    hydrated: NormalizedSourceTree,
-) -> BdlResult<Vec<PartId>> {
-    let mut hydrated_item = hydrated_item_for_target(hydrated, target_cid)?;
-    let hydrated_part_ids = selected_hydrated_part_ids(&hydrated_item.parts, target_cid)?;
-
-    if hydrated_part_ids.is_empty() {
-        return Err(BdlError::Planning {
-            message: format!("选中的分 P `{}` 没有可下载分 P。", placeholder_id.0),
-        });
-    }
-
-    for group in &mut tree.groups {
-        let Some(item_index) = group
-            .items
-            .iter()
-            .position(|item| item.parts.iter().any(|part| &part.id == placeholder_id))
-        else {
-            continue;
-        };
-
-        let existing_item = &mut group.items[item_index];
-        if let Some(target_cid) = target_cid {
-            if let Some(existing_part_index) = existing_item
-                .parts
-                .iter()
-                .position(|part| part.cid == Some(target_cid))
-            {
-                let hydrated_part_index = hydrated_item
-                    .parts
-                    .iter()
-                    .position(|part| part.cid == Some(target_cid))
-                    .ok_or_else(|| BdlError::Planning {
-                        message: format!("视频解析结果缺少 CID `{target_cid}`，无法创建下载任务。"),
-                    })?;
-                let mut hydrated_part = hydrated_item.parts.swap_remove(hydrated_part_index);
-                let existing_part_id = existing_item.parts[existing_part_index].id.clone();
-                hydrated_part.id = existing_part_id.clone();
-                merge_missing_item_metadata(existing_item, &hydrated_item);
-                existing_item.parts[existing_part_index] = hydrated_part;
-                return Ok(vec![existing_part_id]);
-            }
-        }
-
-        hydrated_item.id = existing_item.id.clone();
-        merge_missing_item_metadata(&mut hydrated_item, existing_item);
-        *existing_item = hydrated_item;
-        return Ok(hydrated_part_ids);
-    }
-
-    Err(BdlError::Planning {
-        message: format!(
-            "选中的分 P `{}` 未加载，请重新解析后再试。",
-            placeholder_id.0
-        ),
-    })
-}
-
-fn selected_hydrated_part_ids(
-    hydrated_parts: &[NormalizedPart],
-    target_cid: Option<u64>,
-) -> BdlResult<Vec<PartId>> {
-    if let Some(target_cid) = target_cid {
-        return hydrated_parts
-            .iter()
-            .find(|part| part.cid == Some(target_cid))
-            .map(|part| vec![part.id.clone()])
-            .ok_or_else(|| BdlError::Planning {
-                message: format!("视频解析结果缺少 CID `{target_cid}`，无法创建下载任务。"),
-            });
-    }
-
-    Ok(hydrated_parts
-        .iter()
-        .map(|part| part.id.clone())
-        .collect::<Vec<_>>())
-}
-
-fn hydrated_item_for_target(
-    hydrated: NormalizedSourceTree,
-    target_cid: Option<u64>,
-) -> BdlResult<NormalizedItem> {
-    let mut items = hydrated
-        .groups
-        .into_iter()
-        .flat_map(|group| group.items)
-        .collect::<Vec<_>>();
-
-    if let Some(target_cid) = target_cid {
-        let item_index = items
-            .iter()
-            .position(|item| item.parts.iter().any(|part| part.cid == Some(target_cid)))
-            .ok_or_else(|| BdlError::Planning {
-                message: format!("解析结果缺少 CID `{target_cid}`，无法创建下载任务。"),
-            })?;
-        return Ok(items.swap_remove(item_index));
-    }
-
-    items.into_iter().next().ok_or_else(|| BdlError::Planning {
-        message: "解析结果为空，无法创建下载任务。".to_owned(),
-    })
-}
-
-fn merge_missing_item_metadata(target: &mut NormalizedItem, fallback: &NormalizedItem) {
-    if target.owner_name.is_none() {
-        target.owner_name.clone_from(&fallback.owner_name);
-    }
-    if target.cover_url.is_none() {
-        target.cover_url.clone_from(&fallback.cover_url);
-    }
-    if target.duration_seconds.is_none() {
-        target.duration_seconds = fallback.duration_seconds;
-    }
-}
-
-fn remap_selected_part_ids(
-    selected_part_ids: &mut Vec<PartId>,
-    placeholder_id: &PartId,
-    hydrated_part_ids: &[PartId],
-) {
-    let mut remapped = Vec::with_capacity(selected_part_ids.len() + hydrated_part_ids.len());
-    for part_id in selected_part_ids.drain(..) {
-        if &part_id == placeholder_id {
-            remapped.extend(hydrated_part_ids.iter().cloned());
-        } else {
-            remapped.push(part_id);
-        }
-    }
-    *selected_part_ids = remapped;
 }
 
 fn source_kind_name(kind: SourceKind) -> &'static str {

@@ -30,7 +30,7 @@ Exit condition: a pull request cannot merge with a type, semantic lint, style, u
 Progress:
 
 - [x] Extract deterministic source paging, source identity parsing, page merging, and initial expansion rules into `parse_session`.
-- [ ] Move selection normalization and on-demand part hydration into `parse_session`.
+- [x] Move selection normalization and on-demand part hydration into `parse_session`.
 - [ ] Extract queue state transitions into `QueueCoordinator`.
 - [ ] Reduce `commands.rs` to command adapters and move worker/media processing behind dedicated modules.
 
