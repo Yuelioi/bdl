@@ -1697,7 +1697,7 @@ fn progress_sender(app: &AppHandle, task_id: &str) -> ProgressSender {
     let task_id = task_id.to_owned();
 
     tauri::async_runtime::spawn(async move {
-        let mut interval = tokio::time::interval(std::time::Duration::from_millis(200));
+        let mut interval = tokio::time::interval(PROGRESS_EMIT_INTERVAL);
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let mut latest = None;
 
@@ -1723,6 +1723,8 @@ fn progress_sender(app: &AppHandle, task_id: &str) -> ProgressSender {
 
     sender
 }
+
+const PROGRESS_EMIT_INTERVAL: std::time::Duration = std::time::Duration::from_millis(200);
 
 fn emit_progress(app: &AppHandle, task_id: &str, progress: FetchProgress) {
     let entry = QueueProgressEntry {
