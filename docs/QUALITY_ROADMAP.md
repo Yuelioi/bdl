@@ -27,6 +27,13 @@ Exit condition: a pull request cannot merge with a type, semantic lint, style, u
 
 `crates/bdl-tauri/src/state.rs` and `commands.rs` are the main growth risks. Their public Tauri command interface should remain stable while implementations move behind deeper modules.
 
+Progress:
+
+- [x] Extract deterministic source paging, source identity parsing, page merging, and initial expansion rules into `parse_session`.
+- [ ] Move selection normalization and on-demand part hydration into `parse_session`.
+- [ ] Extract queue state transitions into `QueueCoordinator`.
+- [ ] Reduce `commands.rs` to command adapters and move worker/media processing behind dedicated modules.
+
 Planned seams:
 
 1. `ParseSession` — source lifecycle, paging, hydration, and normalized selection.

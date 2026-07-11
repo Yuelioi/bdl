@@ -12,8 +12,8 @@ use bdl_core::fetcher::FetchCancelToken;
 use bdl_core::ids::{PartId, SourceId};
 use bdl_core::input::{ClassifiedInput, classify_input};
 use bdl_core::model::{
-    MediaKind, MediaStream, NormalizedItem, NormalizedPart, NormalizedSourceTree, PageState,
-    SourceKind, StreamCodec, StreamQuality,
+    MediaKind, MediaStream, NormalizedItem, NormalizedPart, NormalizedSourceTree, SourceKind,
+    StreamCodec, StreamQuality,
 };
 use bdl_core::naming::unique_path;
 use bdl_core::queue::{
@@ -22,11 +22,8 @@ use bdl_core::queue::{
 };
 use bdl_core::resolver::bangumi::BangumiResolver;
 use bdl_core::resolver::cheese::CheeseResolver;
-use bdl_core::resolver::collection::{
-    CollectionInputIds, CollectionResolver, SeriesInputIds, SeriesResolver,
-};
+use bdl_core::resolver::collection::{CollectionResolver, SeriesResolver};
 use bdl_core::resolver::favorite::FavoriteResolver;
-use bdl_core::resolver::paged::PageRequest;
 use bdl_core::resolver::uploader::UploaderResolver;
 use bdl_core::resolver::video::VideoResolver;
 use bdl_core::resolver::{ResolveOptions, Resolver};
@@ -37,6 +34,10 @@ use chrono::{DateTime, Utc};
 use serde::Serialize;
 use tokio::sync::Notify;
 
+use crate::parse_session::{
+    append_source_page, cheese_season_id, collection_ids, favorite_media_id, next_page_request,
+    series_ids, should_continue_loading, should_expand_initial_source, uploader_mid,
+};
 use crate::secure_store::SecureStore;
 
 pub struct AppState {
@@ -226,7 +227,7 @@ impl AppState {
         limit: Option<usize>,
     ) -> BdlResult<NormalizedSourceTree> {
         let mut tree = self.source_snapshot(source_id)?;
-        while should_continue_parse_all(tree.source.has_more, tree.source.loaded_count, limit) {
+        while should_continue_loading(tree.source.has_more, tree.source.loaded_count, limit) {
             let loaded_before = tree.source.loaded_count;
             self.append_next_page(&mut tree).await?;
             if tree.source.loaded_count == loaded_before {
@@ -1027,14 +1028,6 @@ impl AppState {
     }
 }
 
-fn should_continue_parse_all(has_more: bool, loaded_count: usize, limit: Option<usize>) -> bool {
-    has_more && limit.is_none_or(|limit| loaded_count < limit.max(1))
-}
-
-fn should_expand_initial_source(kind: SourceKind, has_more: bool) -> bool {
-    has_more && kind != SourceKind::Uploader
-}
-
 fn ignores_status_transition(current: TaskStatus, next: TaskStatus) -> bool {
     matches!(
         (current, next),
@@ -1337,160 +1330,6 @@ fn stream_codec_label(stream: &MediaStream) -> &'static str {
         StreamCodec::Av1 => "av1",
         StreamCodec::Unknown => "unknown",
     }
-}
-
-fn uploader_mid(tree: &NormalizedSourceTree) -> BdlResult<u64> {
-    match classify_input(&tree.source.input)? {
-        ClassifiedInput::Uploader { mid } => Ok(mid),
-        other => Err(BdlError::UnsupportedSource {
-            kind: source_kind_name(other.source_kind()).to_owned(),
-        }),
-    }
-}
-
-fn favorite_media_id(tree: &NormalizedSourceTree) -> BdlResult<u64> {
-    tree.source
-        .id
-        .0
-        .strip_prefix("favorite:")
-        .and_then(|value| value.parse::<u64>().ok())
-        .ok_or_else(|| BdlError::Planning {
-            message: format!("来源 `{}` 缺少收藏夹 ID。", tree.source.id.0),
-        })
-}
-
-fn collection_ids(tree: &NormalizedSourceTree) -> BdlResult<CollectionInputIds> {
-    let (mid, season_id) = parse_two_part_source_id(&tree.source.id, "collection")?;
-    Ok(CollectionInputIds { mid, season_id })
-}
-
-fn series_ids(tree: &NormalizedSourceTree) -> BdlResult<SeriesInputIds> {
-    let (mid, series_id) = parse_two_part_source_id(&tree.source.id, "series")?;
-    Ok(SeriesInputIds {
-        mid: Some(mid),
-        series_id,
-    })
-}
-
-fn cheese_season_id(tree: &NormalizedSourceTree) -> BdlResult<u64> {
-    tree.source
-        .id
-        .0
-        .strip_prefix("cheese:")
-        .and_then(|value| value.parse::<u64>().ok())
-        .ok_or_else(|| BdlError::Planning {
-            message: format!("来源 `{}` 缺少课程 season ID。", tree.source.id.0),
-        })
-}
-
-fn parse_two_part_source_id(source_id: &SourceId, prefix: &str) -> BdlResult<(u64, u64)> {
-    let mut parts = source_id
-        .0
-        .strip_prefix(prefix)
-        .and_then(|value| value.strip_prefix(':'))
-        .into_iter()
-        .flat_map(|value| value.split(':'));
-    let first = parts
-        .next()
-        .and_then(|value| value.parse::<u64>().ok())
-        .ok_or_else(|| BdlError::Planning {
-            message: format!("来源 `{}` 缺少 {prefix} mid。", source_id.0),
-        })?;
-    let second = parts
-        .next()
-        .and_then(|value| value.parse::<u64>().ok())
-        .ok_or_else(|| BdlError::Planning {
-            message: format!("来源 `{}` 缺少 {prefix} ID。", source_id.0),
-        })?;
-
-    Ok((first, second))
-}
-
-fn next_page_request(tree: &NormalizedSourceTree) -> BdlResult<PageRequest> {
-    let page = tree
-        .groups
-        .iter()
-        .find_map(|group| group.page.clone())
-        .ok_or_else(|| BdlError::Planning {
-            message: format!("来源 `{}` 没有分页状态。", tree.source.id.0),
-        })?;
-
-    if !page.has_more {
-        return Err(BdlError::Planning {
-            message: format!("来源 `{}` 没有更多可解析内容。", tree.source.title),
-        });
-    }
-
-    Ok(PageRequest {
-        page_number: page.page_number,
-        page_size: page.page_size,
-    }
-    .next())
-}
-
-fn append_source_page(
-    existing: &mut NormalizedSourceTree,
-    next_page: NormalizedSourceTree,
-) -> BdlResult<()> {
-    if existing.source.id != next_page.source.id {
-        return Err(BdlError::Planning {
-            message: format!(
-                "分页来源不匹配：`{}` != `{}`。",
-                existing.source.id.0, next_page.source.id.0
-            ),
-        });
-    }
-
-    let mut next_group = next_page
-        .groups
-        .into_iter()
-        .next()
-        .ok_or_else(|| BdlError::Planning {
-            message: "分页解析结果为空。".to_owned(),
-        })?;
-    let next_page_state = next_group.page.take().ok_or_else(|| BdlError::Planning {
-        message: "分页解析结果缺少分页状态。".to_owned(),
-    })?;
-
-    let group = existing
-        .groups
-        .iter_mut()
-        .find(|group| group.id == next_group.id)
-        .ok_or_else(|| BdlError::Planning {
-            message: format!("来源 `{}` 缺少目标分组。", existing.source.id.0),
-        })?;
-
-    let mut seen_ids = group
-        .items
-        .iter()
-        .map(|item| item.id.clone())
-        .collect::<HashSet<_>>();
-    group.items.extend(
-        next_group
-            .items
-            .into_iter()
-            .filter(|item| seen_ids.insert(item.id.clone())),
-    );
-
-    let total_count = next_page.source.total_count.or(existing.source.total_count);
-    let has_more = next_page.source.has_more
-        && total_count
-            .map(|total| group.items.len() < total)
-            .unwrap_or(next_page_state.loaded_count >= next_page_state.page_size as usize);
-    let page_state = PageState {
-        page_number: next_page_state.page_number,
-        page_size: next_page_state.page_size,
-        loaded_count: group.items.len(),
-        total_count,
-        has_more,
-    };
-
-    group.page = Some(page_state);
-    existing.source.loaded_count = existing.groups.iter().map(|group| group.items.len()).sum();
-    existing.source.total_count = total_count;
-    existing.source.has_more = has_more;
-
-    Ok(())
 }
 
 fn selected_hydration_requests(
@@ -1926,7 +1765,7 @@ mod tests {
         append_source_page, dedupe_tasks_by_id, hydrate_placeholder_part, load_account_snapshot,
         next_page_request, normalize_selected_part_ids, prepare_startup_recovery,
         remap_selected_part_ids, select_task_stream, selected_hydration_requests,
-        should_continue_parse_all, should_expand_initial_source, task_media_refresh_ids,
+        should_continue_loading, should_expand_initial_source, task_media_refresh_ids,
     };
     use crate::secure_store::SecureStore;
     use chrono::Utc;
@@ -2145,11 +1984,11 @@ mod tests {
 
     #[test]
     fn parse_all_without_limit_continues_beyond_the_legacy_hundred_item_cap() {
-        assert!(should_continue_parse_all(true, 100, None));
-        assert!(should_continue_parse_all(true, 149, None));
-        assert!(!should_continue_parse_all(false, 150, None));
-        assert!(should_continue_parse_all(true, 99, Some(100)));
-        assert!(!should_continue_parse_all(true, 100, Some(100)));
+        assert!(should_continue_loading(true, 100, None));
+        assert!(should_continue_loading(true, 149, None));
+        assert!(!should_continue_loading(false, 150, None));
+        assert!(should_continue_loading(true, 99, Some(100)));
+        assert!(!should_continue_loading(true, 100, Some(100)));
     }
 
     #[test]
