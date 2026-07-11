@@ -16,23 +16,24 @@ import UiTextField from '../ui/TextField.vue';
 import { speedLimitMibError, toBytesPerSecond, toMibPerSecondInput } from '../utils/speedLimit';
 import SettingsEnvironmentSummary from './settings/SettingsEnvironmentSummary.vue';
 import SettingsSectionNav from './settings/SettingsSectionNav.vue';
-import type { SettingsSection, SettingsSectionId } from './settings/settingsSections';
+import {
+  archiveModeOptions,
+  audioQualityOptions,
+  codecOptions,
+  concurrentTaskOptions,
+  duplicateNamingOptions,
+  logLevelOptions,
+  missingQualityOptions,
+  outputFormatOptions,
+  retryCountOptions,
+  segmentCountOptions,
+  settingsSections,
+  videoQualityOptions,
+} from './settings/settingsCatalog';
+import type { SettingsSectionId } from './settings/settingsSections';
 
 const settings = useSettingsStore();
 
-const settingsSections = [
-  { id: 'settings-download', label: '下载', description: '目录、并发与恢复', icon: 'i-tabler-download' },
-  { id: 'settings-media', label: '媒体', description: '清晰度与封装格式', icon: 'i-tabler-movie' },
-  { id: 'settings-naming', label: '文件命名', description: '模板与重名处理', icon: 'i-tabler-file-text' },
-  {
-    id: 'settings-media-advanced',
-    label: '编码与处理',
-    description: '编码、分段与 FFmpeg',
-    icon: 'i-tabler-adjustments-horizontal',
-  },
-  { id: 'settings-archive', label: '附加内容', description: '封面、字幕与弹幕', icon: 'i-tabler-files' },
-  { id: 'settings-maintenance', label: '网络与维护', description: '代理、日志与数据', icon: 'i-tabler-tool' },
-] as const satisfies readonly SettingsSection[];
 const activeSettingsSection = ref<SettingsSectionId>('settings-download');
 const currentSettingsSection = computed(
   () => settingsSections.find((section) => section.id === activeSettingsSection.value) ?? settingsSections[0],
@@ -288,26 +289,8 @@ onMounted(async () => {
               </UiButton>
             </div>
             <div class="settings-inline-grid">
-              <UiSelect
-                v-model="settingsConcurrentTasks"
-                label="同时下载任务数"
-                :options="[
-                  { label: '1', value: '1' },
-                  { label: '2', value: '2' },
-                  { label: '3', value: '3' },
-                  { label: '5', value: '5' },
-                ]"
-              />
-              <UiSelect
-                v-model="settingsRetryCount"
-                label="失败自动重试次数"
-                :options="[
-                  { label: '0', value: '0' },
-                  { label: '1', value: '1' },
-                  { label: '3', value: '3' },
-                  { label: '5', value: '5' },
-                ]"
-              />
+              <UiSelect v-model="settingsConcurrentTasks" label="同时下载任务数" :options="concurrentTaskOptions" />
+              <UiSelect v-model="settingsRetryCount" label="失败自动重试次数" :options="retryCountOptions" />
             </div>
             <UiTextField
               :model-value="settingsGlobalSpeedLimitMib"
@@ -343,40 +326,14 @@ onMounted(async () => {
 
           <section v-else-if="activeSettingsSection === 'settings-media'" class="settings-block">
             <div class="settings-inline-grid">
-              <UiSelect
-                v-model="settingsVideoQuality"
-                label="视频清晰度"
-                :options="[
-                  { label: '最佳可用', value: 'best' },
-                  { label: '8K / 127', value: '127' },
-                  { label: '4K / 120', value: '120' },
-                  { label: '1080P60 / 116', value: '116' },
-                  { label: '1080P+ / 112', value: '112' },
-                  { label: '1080P / 80', value: '80' },
-                  { label: '720P / 64', value: '64' },
-                  { label: '480P / 32', value: '32' },
-                  { label: '360P / 16', value: '16' },
-                ]"
-              />
-              <UiSelect
-                v-model="settingsAudioQuality"
-                label="音频质量"
-                :options="[
-                  { label: '最佳可用', value: 'best' },
-                  { label: '高音质 / 30280', value: '30280' },
-                  { label: '中音质 / 30232', value: '30232' },
-                  { label: '低音质 / 30216', value: '30216' },
-                ]"
-              />
+              <UiSelect v-model="settingsVideoQuality" label="视频清晰度" :options="videoQualityOptions" />
+              <UiSelect v-model="settingsAudioQuality" label="音频质量" :options="audioQualityOptions" />
             </div>
             <UiSelect
               v-model="settingsOutputFormat"
               label="封装格式"
               helper="嵌入封面和字幕时需使用 MKV"
-              :options="[
-                { label: 'MP4', value: 'mp4' },
-                { label: 'MKV', value: 'mkv' },
-              ]"
+              :options="outputFormatOptions"
             />
             <UiInlineNotice v-if="settingsEmbeddingFormatError" tone="danger">
               {{ settingsEmbeddingFormatError }}
@@ -401,14 +358,7 @@ onMounted(async () => {
               <span>文件名预览</span>
               <code>{{ settings.namingPreview }}</code>
             </div>
-            <UiSelect
-              v-model="settingsDuplicateNamingStrategy"
-              label="重名处理"
-              :options="[
-                { label: '自动加后缀（推荐）', value: 'append_suffix' },
-                { label: '覆盖已有文件', value: 'overwrite_existing' },
-              ]"
-            />
+            <UiSelect v-model="settingsDuplicateNamingStrategy" label="重名处理" :options="duplicateNamingOptions" />
             <p class="settings-note">{{ settingsDuplicateDescription }}</p>
             <details class="template-help">
               <summary>查看可用变量</summary>
@@ -423,36 +373,14 @@ onMounted(async () => {
 
           <section v-else-if="activeSettingsSection === 'settings-media-advanced'" class="settings-block">
             <div class="settings-inline-grid">
-              <UiSelect
-                v-model="settingsCodec"
-                label="视频编码偏好"
-                :options="[
-                  { label: '自动', value: 'auto' },
-                  { label: 'AVC / H.264', value: 'avc' },
-                  { label: 'HEVC / H.265', value: 'hevc' },
-                  { label: 'AV1', value: 'av1' },
-                ]"
-              />
+              <UiSelect v-model="settingsCodec" label="视频编码偏好" :options="codecOptions" />
               <UiSelect
                 v-model="settingsMissingQualityPolicy"
                 label="目标质量不可用"
-                :options="[
-                  { label: '选择接近的可用质量', value: 'lower' },
-                  { label: '阻止创建任务', value: 'skip' },
-                  { label: '提示后再处理', value: 'ask' },
-                ]"
+                :options="missingQualityOptions"
               />
             </div>
-            <UiSelect
-              v-model="settingsSegmentCount"
-              label="单任务分段数"
-              :options="[
-                { label: '1 段', value: '1' },
-                { label: '2 段', value: '2' },
-                { label: '4 段', value: '4' },
-                { label: '8 段', value: '8' },
-              ]"
-            />
+            <UiSelect v-model="settingsSegmentCount" label="单任务分段数" :options="segmentCountOptions" />
             <div class="directory-row">
               <UiTextField
                 v-model="settingsFfmpegPath"
@@ -482,15 +410,7 @@ onMounted(async () => {
           </section>
 
           <section v-else-if="activeSettingsSection === 'settings-archive'" class="settings-block">
-            <UiSelect
-              v-model="settingsArchiveMode"
-              label="下载范围"
-              :options="[
-                { label: '仅下载最终视频（最快）', value: 'fast' },
-                { label: '下载全部附加内容', value: 'complete_archive' },
-                { label: '自定义附加内容', value: 'custom' },
-              ]"
-            />
+            <UiSelect v-model="settingsArchiveMode" label="下载范围" :options="archiveModeOptions" />
             <div v-if="settings.draft.archive_mode === 'custom'" class="archive-option-grid">
               <UiCheckbox
                 v-model="settingsArchiveCover"
@@ -544,16 +464,7 @@ onMounted(async () => {
               label="代理地址"
               placeholder="例如 http://127.0.0.1:7890，留空为直连"
             />
-            <UiSelect
-              v-model="settingsLogLevel"
-              label="任务日志级别"
-              :options="[
-                { label: '调试', value: 'debug' },
-                { label: '信息', value: 'info' },
-                { label: '警告', value: 'warning' },
-                { label: '错误', value: 'error' },
-              ]"
-            />
+            <UiSelect v-model="settingsLogLevel" label="任务日志级别" :options="logLevelOptions" />
             <div class="directory-row">
               <UiTextField v-model="settingsDataDir" label="数据目录" placeholder="留空时使用当前工作目录下的 .bdl" />
               <UiButton

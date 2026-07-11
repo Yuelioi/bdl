@@ -48,6 +48,7 @@ Exit condition: command adapters contain validation and translation only, and ea
 
 ## P2 — frontend state and page structure
 
+- [x] Centralize settings navigation and select-option catalogs with uniqueness tests.
 - Split `SettingsPage.vue` by settings domain, while one settings store remains the source of truth.
 - Separate transfer query/filter state from task commands in `transferView.ts`.
 - Keep parse orchestration in the parse store, but move pure tree/selection transformations into tested modules.

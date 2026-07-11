@@ -1,19 +1,25 @@
 <script setup lang="ts">
-import UiFormField from './FormField.vue'
+import UiFormField from './FormField.vue';
 
 export interface SelectOption {
-  label: string
-  value: string
+  label: string;
+  value: string;
 }
 
-const model = defineModel<string>({ default: '' })
-const { label, options, disabled = false, error, helper } = defineProps<{
-  label: string
-  options: SelectOption[]
-  disabled?: boolean
-  error?: string
-  helper?: string
-}>()
+const model = defineModel<string>({ default: '' });
+const {
+  label,
+  options,
+  disabled = false,
+  error,
+  helper,
+} = defineProps<{
+  label: string;
+  options: readonly SelectOption[];
+  disabled?: boolean;
+  error?: string;
+  helper?: string;
+}>();
 </script>
 
 <template>
