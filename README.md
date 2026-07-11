@@ -61,7 +61,7 @@ BDL 依赖 FFmpeg 完成音视频合并。你可以在设置中指定 FFmpeg，�
 
 ### 环境要求
 
-- Rust `1.85+`
+- Rust `1.88+`
 - Node.js `22+`
 - pnpm `11+`
 - FFmpeg
