@@ -1,11 +1,11 @@
 import { mount } from '@vue/test-utils';
-import { defineComponent } from 'vue';
+import { defineComponent, h, KeepAlive, nextTick, ref } from 'vue';
 import { describe, expect, it, vi } from 'vitest';
 
 import { useTransferPageLifecycle } from './useTransferPageLifecycle';
 
 describe('transfer page lifecycle', () => {
-  it('refreshes the queue and owns its window listeners', () => {
+  it('refreshes the queue and owns its window listeners', async () => {
     const queue = { list: vi.fn().mockResolvedValue(undefined) };
     const handlers = {
       closeContextMenu: vi.fn(),
@@ -18,7 +18,14 @@ describe('transfer page lifecycle', () => {
       },
     });
 
-    const wrapper = mount(component);
+    const active = ref(true);
+    const host = defineComponent({
+      setup() {
+        return () => h(KeepAlive, null, { default: () => (active.value ? h(component) : null) });
+      },
+    });
+
+    const wrapper = mount(host);
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
     window.dispatchEvent(new Event('blur'));
 
@@ -26,11 +33,13 @@ describe('transfer page lifecycle', () => {
     expect(handlers.closeContextMenuOnEscape).toHaveBeenCalledOnce();
     expect(handlers.closeContextMenu).toHaveBeenCalledOnce();
 
-    wrapper.unmount();
+    active.value = false;
+    await nextTick();
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
     window.dispatchEvent(new Event('blur'));
 
     expect(handlers.closeContextMenuOnEscape).toHaveBeenCalledOnce();
     expect(handlers.closeContextMenu).toHaveBeenCalledOnce();
+    wrapper.unmount();
   });
 });

@@ -27,7 +27,9 @@ const library = useLibraryStore()
 const theme = useThemeStore()
 const loginDialogOpen = computed({
   get: () => ui.loginDialogOpen,
-  set: (value: boolean) => { ui.loginDialogOpen = value },
+  set: (value: boolean) => {
+    ui.loginDialogOpen = value
+  },
 })
 const startupRecoveryDialogOpen = ref(false)
 const loginMode = ref<'qr' | 'cookie'>('qr')
@@ -50,14 +52,17 @@ const activePageComponent = computed(() => {
   if (ui.activeTab === 'about') return AboutPage
   return ParsePage
 })
-const transferBadgeCount = computed(() =>
-  queue.tasks.filter((task) => task.status !== 'completed' && task.status !== 'cancelled').length,
+const transferBadgeCount = computed(
+  () => queue.tasks.filter((task) => task.status !== 'completed' && task.status !== 'cancelled').length,
 )
 const attentionCount = computed(
   () => queue.tasks.filter((task) => task.status === 'failed' || task.status === 'cancelled').length,
 )
 const scheduledTaskCount = computed(
-  () => queue.tasks.filter((task) => task.status === 'waiting' && task.scheduled_at && Date.parse(task.scheduled_at) > Date.now()).length,
+  () =>
+    queue.tasks.filter(
+      (task) => task.status === 'waiting' && task.scheduled_at && Date.parse(task.scheduled_at) > Date.now(),
+    ).length,
 )
 const queueHealthLabel = computed(() => {
   if (queue.loading) return '同步队列'
@@ -98,18 +103,21 @@ const accountMenuItems = computed(() => {
     onSelect: openLoginDialog,
   }
   if (!account.profile.logged_in) return [[accountAction]]
-  return [
-    [accountAction],
-    [{ label: '退出登录', icon: 'i-tabler-logout', onSelect: signOut }],
-  ]
+  return [[accountAction], [{ label: '退出登录', icon: 'i-tabler-logout', onSelect: signOut }]]
 })
 const openLoginDialog = () => {
   ui.openLoginDialog()
 }
 
-const minimizeWindow = () => { void appWindow.minimize() }
-const toggleMaximizeWindow = () => { void appWindow.toggleMaximize() }
-const closeWindow = () => { void appWindow.close() }
+const minimizeWindow = () => {
+  void appWindow.minimize()
+}
+const toggleMaximizeWindow = () => {
+  void appWindow.toggleMaximize()
+}
+const closeWindow = () => {
+  void appWindow.close()
+}
 
 const saveLogin = async () => {
   if (loginMode.value === 'qr') {
@@ -159,7 +167,13 @@ const dismissStartupRecovery = async () => {
 
 const handleAppShortcut = (event: KeyboardEvent) => {
   if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return
-  const tabByKey: Partial<Record<string, AppTab>> = { '1': 'parse', '2': 'library', '3': 'transfer', '4': 'settings', '5': 'about' }
+  const tabByKey: Partial<Record<string, AppTab>> = {
+    '1': 'parse',
+    '2': 'library',
+    '3': 'transfer',
+    '4': 'settings',
+    '5': 'about',
+  }
   const tab = tabByKey[event.key]
   if (!tab) return
   event.preventDefault()
@@ -196,7 +210,9 @@ watch(loginMode, (mode) => {
 
 watch(
   () => account.profile.avatar_url,
-  () => { avatarLoadFailed.value = false },
+  () => {
+    avatarLoadFailed.value = false
+  },
 )
 
 watch(
@@ -293,55 +309,55 @@ watch(
         </div>
       </aside>
 
-    <section class="main-region" :data-page="ui.activeTab">
-      <Suspense>
-        <Transition name="workspace" mode="out-in">
-          <component :is="activePageComponent" :key="ui.activeTab" />
-        </Transition>
-        <template #fallback>
-          <div class="workspace-loading" role="status">
-            <span></span>
-            正在准备工作区
+      <section class="main-region" :data-page="ui.activeTab">
+        <Suspense>
+          <Transition name="workspace" mode="out-in">
+            <KeepAlive>
+              <component :is="activePageComponent" :key="ui.activeTab" />
+            </KeepAlive>
+          </Transition>
+          <template #fallback>
+            <div class="workspace-loading" role="status">
+              <span></span>
+              正在准备工作区
+            </div>
+          </template>
+        </Suspense>
+      </section>
+
+      <UiDialog v-model="loginDialogOpen" title="登录">
+        <UiTabs
+          v-model="loginMode"
+          :tabs="[
+            { label: '扫码', value: 'qr' },
+            { label: 'Cookie', value: 'cookie' },
+          ]"
+        />
+        <div v-if="loginMode === 'qr'" class="qr-panel">
+          <div class="qr-box" :class="{ active: account.qrImageSrc }">
+            <img v-if="account.qrImageSrc" :src="account.qrImageSrc" alt="" />
+            <span v-else>QR</span>
           </div>
-        </template>
-      </Suspense>
-    </section>
-
-    <UiDialog v-model="loginDialogOpen" title="登录">
-      <UiTabs
-        v-model="loginMode"
-        :tabs="[
-          { label: '扫码', value: 'qr' },
-          { label: 'Cookie', value: 'cookie' },
-        ]"
-      />
-      <div v-if="loginMode === 'qr'" class="qr-panel">
-        <div class="qr-box" :class="{ active: account.qrImageSrc }">
-          <img v-if="account.qrImageSrc" :src="account.qrImageSrc" alt="" />
-          <span v-else>QR</span>
+          <p>{{ account.qrMessage || '等待扫码' }}</p>
         </div>
-        <p>{{ account.qrMessage || '等待扫码' }}</p>
-      </div>
-      <UiTextarea v-else v-model="cookieText" label="Cookie" placeholder="SESSDATA=..." />
-      <template #footer>
-        <UiButton variant="secondary" @click="loginDialogOpen = false">取消</UiButton>
-        <UiButton :disabled="cookieSaveDisabled" @click="saveLogin">{{ loginActionLabel }}</UiButton>
-      </template>
-    </UiDialog>
+        <UiTextarea v-else v-model="cookieText" label="Cookie" placeholder="SESSDATA=..." />
+        <template #footer>
+          <UiButton variant="secondary" @click="loginDialogOpen = false">取消</UiButton>
+          <UiButton :disabled="cookieSaveDisabled" @click="saveLogin">{{ loginActionLabel }}</UiButton>
+        </template>
+      </UiDialog>
 
-    <UiDialog v-model="startupRecoveryDialogOpen" title="恢复未完成任务">
-      <p class="dialog-copy">
-        检测到 {{ startupRecoveryCount }} 个上次未完成的任务。继续后会从保留的任务状态和临时文件恢复下载。
-      </p>
-      <template #footer>
-        <UiButton variant="secondary" :disabled="queue.startupRecoveryLoading" @click="dismissStartupRecovery">
-          保持暂停
-        </UiButton>
-        <UiButton :disabled="queue.startupRecoveryLoading" @click="resumeStartupRecovery">
-          继续任务
-        </UiButton>
-      </template>
-    </UiDialog>
+      <UiDialog v-model="startupRecoveryDialogOpen" title="恢复未完成任务">
+        <p class="dialog-copy">
+          检测到 {{ startupRecoveryCount }} 个上次未完成的任务。继续后会从保留的任务状态和临时文件恢复下载。
+        </p>
+        <template #footer>
+          <UiButton variant="secondary" :disabled="queue.startupRecoveryLoading" @click="dismissStartupRecovery">
+            保持暂停
+          </UiButton>
+          <UiButton :disabled="queue.startupRecoveryLoading" @click="resumeStartupRecovery"> 继续任务 </UiButton>
+        </template>
+      </UiDialog>
 
       <UiToastHost />
     </main>

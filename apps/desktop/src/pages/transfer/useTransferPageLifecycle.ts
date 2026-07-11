@@ -1,4 +1,4 @@
-import { onBeforeUnmount, onMounted } from 'vue';
+import { onActivated, onDeactivated } from 'vue';
 
 export interface TransferPageQueue {
   list(): Promise<unknown>;
@@ -14,13 +14,13 @@ export const useTransferPageLifecycle = (
   handlers: TransferPageLifecycleHandlers,
   eventTarget: Window = window,
 ) => {
-  onMounted(() => {
+  onActivated(() => {
     void queue.list();
     eventTarget.addEventListener('keydown', handlers.closeContextMenuOnEscape);
     eventTarget.addEventListener('blur', handlers.closeContextMenu);
   });
 
-  onBeforeUnmount(() => {
+  onDeactivated(() => {
     eventTarget.removeEventListener('keydown', handlers.closeContextMenuOnEscape);
     eventTarget.removeEventListener('blur', handlers.closeContextMenu);
   });
