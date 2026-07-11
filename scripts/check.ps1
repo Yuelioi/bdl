@@ -60,6 +60,10 @@ try {
         pnpm --dir apps/desktop test
     }
 
+    Invoke-Step "Desktop visual regression tests" {
+        pnpm --dir apps/desktop test:visual
+    }
+
     Invoke-Step "Git whitespace check" {
         git diff --check
     }

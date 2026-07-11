@@ -47,6 +47,3 @@ jobs:
       - name: Run workspace checks
         shell: pwsh
         run: ./scripts/check.ps1
-
-      - name: Run visual regression tests
-        run: pnpm --dir apps/desktop test:visual

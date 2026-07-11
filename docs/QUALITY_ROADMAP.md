@@ -16,8 +16,8 @@ Baseline: **14 / 20 — good, with structural risks that should be addressed bef
 
 ## P1 — automated quality gates
 
-- Keep Rust formatting, Clippy, tests, Vue type checking, style lint, and frontend tests mandatory in CI.
-- Run Vue and TypeScript semantic lint with zero warnings.
+- [x] Keep Rust formatting, Clippy, tests, Vue type checking, style lint, and frontend tests mandatory in CI.
+- [x] Run Vue and TypeScript semantic lint with zero warnings.
 - [x] Add component-level semantic and keyboard tests for dialogs, menus, tabs, pagination, selection, and virtualized tree focus.
 - [x] Add deterministic Playwright screenshots for light/dark and narrow/standard desktop workspaces.
 
@@ -53,7 +53,7 @@ Exit condition: command adapters contain validation and translation only, and ea
 - [x] Move settings bindings, validation, derived descriptions, initialization, save, reset, and restore behavior into `useSettingsForm` while the settings store remains the source of truth.
 - [x] Extract download and media settings sections behind the shared `SettingsForm` interface.
 - [x] Split naming, processing, archive, and maintenance sections without duplicating store ownership.
-- Separate transfer query/filter state from task commands in `transferView.ts`.
+- [x] Separate transfer queries, dialogs, menus, bulk actions, task details, lifecycle, and command dispatch into tested modules.
 - [x] Extract stable transfer sorting, search normalization, and bulk-action eligibility into tested pure queries.
 - [x] Extract scheduling and per-task speed-limit dialog state behind an injected queue interface.
 - [x] Extract context-menu positioning, lifecycle actions, task action composition, and dispatch behavior.
