@@ -41,7 +41,12 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm --dir apps/desktop install --frozen-lockfile
 
+      - name: Install visual test browser
+        run: pnpm --dir apps/desktop exec playwright install chromium
+
       - name: Run workspace checks
         shell: pwsh
         run: ./scripts/check.ps1
 
+      - name: Run visual regression tests
+        run: pnpm --dir apps/desktop test:visual

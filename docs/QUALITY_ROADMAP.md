@@ -19,7 +19,7 @@ Baseline: **14 / 20 — good, with structural risks that should be addressed bef
 - Keep Rust formatting, Clippy, tests, Vue type checking, style lint, and frontend tests mandatory in CI.
 - Run Vue and TypeScript semantic lint with zero warnings.
 - [x] Add component-level semantic and keyboard tests for dialogs, menus, tabs, pagination, selection, and virtualized tree focus.
-- Add a small set of deterministic screenshots for light/dark and narrow/standard desktop widths.
+- [x] Add deterministic Playwright screenshots for light/dark and narrow/standard desktop workspaces.
 
 Exit condition: a pull request cannot merge with a type, semantic lint, style, unit-test, or stable visual-state regression.
 
