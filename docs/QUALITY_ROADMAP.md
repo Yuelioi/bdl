@@ -59,6 +59,7 @@ Exit condition: command adapters contain validation and translation only, and ea
 - [x] Extract bulk-action scope, status eligibility, and queue dispatch behind a narrow queue interface.
 - [x] Extract task-detail selection, progress, logs, loading state, title, and refresh behavior.
 - [x] Extract exhaustive single-task command dispatch and local configuration actions behind a narrow queue interface.
+- [x] Centralize transfer-page refresh and window-listener ownership; keep global queue listeners at the app boundary.
 - Keep parse orchestration in the parse store, but move pure tree/selection transformations into tested modules.
 - Define one page shell, one filter toolbar, one selection action bar, and one empty/error pattern for all five pages.
 

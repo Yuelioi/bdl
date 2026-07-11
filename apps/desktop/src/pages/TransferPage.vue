@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, ref } from 'vue';
 
 import { sourceReference, useQueueStore, type QueueFilter } from '../stores/queue';
 import { createTransferTaskView } from '../stores/transferView';
@@ -18,6 +18,7 @@ import { matchesTransferSearch, sortTransferTasks, type TransferSortMode } from 
 import { useTransferBulkActions } from './transfer/useTransferBulkActions';
 import { useTransferDialogs } from './transfer/useTransferDialogs';
 import { contextIcon, useTransferContextMenu } from './transfer/useTransferContextMenu';
+import { useTransferPageLifecycle } from './transfer/useTransferPageLifecycle';
 import { useTransferTaskDetail } from './transfer/useTransferTaskDetail';
 import { useTransferTaskActions } from './transfer/useTransferTaskActions';
 
@@ -129,18 +130,6 @@ const emptyTitle = computed(() => {
 });
 const emptyDescription = computed(() => (queue.tasks.length === 0 ? '在解析页选择视频后，任务会出现在这里。' : ''));
 
-onMounted(() => {
-  void queue.startEventListeners();
-  void queue.list();
-  window.addEventListener('keydown', closeContextMenuOnEscape);
-  window.addEventListener('blur', closeContextMenu);
-});
-
-onBeforeUnmount(() => {
-  window.removeEventListener('keydown', closeContextMenuOnEscape);
-  window.removeEventListener('blur', closeContextMenu);
-});
-
 const {
   contextMenu,
   contextTaskView,
@@ -150,6 +139,7 @@ const {
   closeContextMenuOnEscape,
   runContextAction,
 } = useTransferContextMenu(taskViews, handleTaskAction);
+useTransferPageLifecycle(queue, { closeContextMenu, closeContextMenuOnEscape });
 </script>
 
 <template>
