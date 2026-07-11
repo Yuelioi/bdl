@@ -14,8 +14,6 @@ import UiTextField from '../ui/TextField.vue';
 import BulkActionBar from '../ui/BulkActionBar.vue';
 import TaskInspector from '../ui/TaskInspector.vue';
 import TransferTaskTable from '../ui/TransferTaskTable.vue';
-import { scheduledLocalError, toDateTimeLocalValue, toScheduledIso } from '../utils/schedule';
-import { speedLimitMibError, toBytesPerSecond, toMibPerSecondInput } from '../utils/speedLimit';
 import {
   isCancellable,
   isPausable,
@@ -24,20 +22,26 @@ import {
   sortTransferTasks,
   type TransferSortMode,
 } from './transfer/transferQueries';
+import { useTransferDialogs } from './transfer/useTransferDialogs';
 
 const queue = useQueueStore();
 const ui = useUiStore();
 const completedSearch = ref('');
 const transferSort = ref<TransferSortMode>('queue');
 const taskDetailOpen = ref(false);
-const scheduleDialogOpen = ref(false);
-const scheduleTaskId = ref<string | null>(null);
-const scheduleLocal = ref('');
-const scheduleMin = ref('');
-const scheduleValidationNow = ref(Date.now());
-const speedLimitDialogOpen = ref(false);
-const speedLimitTaskId = ref<string | null>(null);
-const speedLimitMib = ref('');
+const {
+  scheduleDialogOpen,
+  scheduleLocal,
+  scheduleMin,
+  scheduleError,
+  speedLimitDialogOpen,
+  speedLimitMib,
+  speedLimitError,
+  openScheduleDialog,
+  submitSchedule,
+  openSpeedLimitDialog,
+  submitSpeedLimit,
+} = useTransferDialogs(queue);
 const contextMenu = ref<{ taskId: string; x: number; y: number } | null>(null);
 const queueFilter = computed({
   get: () => queue.activeFilter,
@@ -119,10 +123,6 @@ const retryableTaskIds = computed(() =>
 );
 const removableTaskIds = computed(() => selectedTasks.value.map((task) => task.id));
 const selectedDetailTitle = computed(() => queue.selectedTask?.title ?? '任务详情');
-const scheduleError = computed(() => {
-  return scheduledLocalError(scheduleLocal.value, scheduleValidationNow.value, true);
-});
-const speedLimitError = computed(() => speedLimitMibError(speedLimitMib.value));
 const emptyTitle = computed(() => {
   if (queue.tasks.length === 0) {
     return '还没有传输任务';
@@ -209,42 +209,6 @@ const handleTaskAction = (taskId: string, action: Exclude<TaskActionKind, 'none'
 const openTaskDetail = (taskId: string) => {
   queue.selectTask(taskId);
   taskDetailOpen.value = true;
-};
-
-const openScheduleDialog = (taskId: string) => {
-  const task = queue.tasks.find((task) => task.id === taskId);
-  scheduleValidationNow.value = Date.now();
-  const minimum = new Date(scheduleValidationNow.value + 60_000);
-  scheduleTaskId.value = taskId;
-  scheduleMin.value = toDateTimeLocalValue(minimum);
-  scheduleLocal.value = toDateTimeLocalValue(
-    task?.scheduled_at ? new Date(task.scheduled_at) : new Date(Date.now() + 300_000),
-  );
-  scheduleDialogOpen.value = true;
-};
-
-const submitSchedule = async () => {
-  scheduleValidationNow.value = Date.now();
-  if (!scheduleTaskId.value || scheduleError.value) return;
-  const updated = await queue.schedule(scheduleTaskId.value, toScheduledIso(scheduleLocal.value));
-  if (updated) {
-    scheduleDialogOpen.value = false;
-  }
-};
-
-const openSpeedLimitDialog = (taskId: string) => {
-  const task = queue.tasks.find((task) => task.id === taskId);
-  speedLimitTaskId.value = taskId;
-  speedLimitMib.value = toMibPerSecondInput(task?.speed_limit_bytes_per_second);
-  speedLimitDialogOpen.value = true;
-};
-
-const submitSpeedLimit = async () => {
-  if (!speedLimitTaskId.value || speedLimitError.value) return;
-  const updated = await queue.setSpeedLimit(speedLimitTaskId.value, toBytesPerSecond(speedLimitMib.value));
-  if (updated) {
-    speedLimitDialogOpen.value = false;
-  }
 };
 
 const openContextMenu = (taskId: string, event: MouseEvent) => {
