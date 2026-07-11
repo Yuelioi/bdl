@@ -77,7 +77,7 @@ Exit condition: 10,000-item sources and long-running queues remain responsive an
 
 ## P2 — contributor experience
 
-- Document module ownership and invariants beside each major crate/module.
+- [x] Document module ownership, invariants, and change routing for each major backend and frontend area.
 - [x] Add issue and pull-request templates with reproduction, screenshots, and verification fields.
 - [x] Publish a supported-platform test matrix and release checklist.
 - [x] Keep generated frontend declarations out of semantic lint and version-control review noise.
