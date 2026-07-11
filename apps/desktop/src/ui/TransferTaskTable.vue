@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 
 import type { TaskActionKind, TransferTaskView } from '../stores/transferView'
 import UiIconButton from './IconButton.vue'
@@ -7,6 +7,9 @@ import UiProgressBar from './ProgressBar.vue'
 import UiStatusBadge from './StatusBadge.vue'
 import UiCheckbox from './Checkbox.vue'
 import TaskActionMenu from './TaskActionMenu.vue'
+import { calculateVirtualWindow } from '../utils/virtualWindow'
+
+const TASK_ROW_STRIDE = 62
 
 const {
   views,
@@ -35,6 +38,23 @@ const selectedSet = computed(() => new Set(selectedTaskIds))
 const allVisibleSelected = computed(
   () => visibleIds.value.length > 0 && visibleIds.value.every((taskId) => selectedSet.value.has(taskId)),
 )
+const scrollOffset = ref(0)
+const viewportSize = ref(600)
+const taskWindow = computed(() =>
+  calculateVirtualWindow(views.length, scrollOffset.value, viewportSize.value, TASK_ROW_STRIDE),
+)
+const renderedViews = computed(() =>
+  views.slice(taskWindow.value.start, taskWindow.value.end).map((view, offset) => ({
+    view,
+    index: taskWindow.value.start + offset,
+  })),
+)
+
+const updateViewport = (event: Event) => {
+  const element = event.currentTarget as HTMLElement
+  scrollOffset.value = element.scrollTop
+  viewportSize.value = element.clientHeight
+}
 
 const toggleVisible = () => {
   emit('toggleVisibleSelection', visibleIds.value, !allVisibleSelected.value)
@@ -42,7 +62,14 @@ const toggleVisible = () => {
 </script>
 
 <template>
-  <div class="transfer-table" :class="`${mode}-mode`" role="table" aria-label="传输任务">
+  <div
+    class="transfer-table"
+    :class="`${mode}-mode`"
+    role="table"
+    aria-label="传输任务"
+    :aria-rowcount="views.length + 1"
+    @scroll="updateViewport"
+  >
     <div class="transfer-table-row table-head" role="row">
       <div class="select-cell" role="columnheader">
         <UiCheckbox
@@ -64,62 +91,70 @@ const toggleVisible = () => {
       <div class="action-head" role="columnheader">操作</div>
     </div>
 
-    <div
-      v-for="view in views"
-      :key="view.id"
-      class="transfer-table-row task-table-row"
-      :class="{ selected: selectedTaskId === view.id }"
-      role="row"
-      :aria-selected="selectedTaskId === view.id"
-      @contextmenu.prevent="emit('openContextMenu', view.id, $event)"
-    >
-      <span class="select-cell" role="cell" @click.stop @keydown.stop>
-        <UiCheckbox
-          :model-value="selectedSet.has(view.id)"
-          :label="selectedSet.has(view.id) ? '取消选择' : '选择任务'"
-          compact
-          :disabled="loading"
-          @update:model-value="emit('toggleTaskSelection', view.id)"
-        />
-      </span>
+    <div class="virtual-task-list" :style="{ height: `${taskWindow.totalSize}px` }">
+      <div
+        v-for="row in renderedViews"
+        :key="row.view.id"
+        class="transfer-table-row task-table-row"
+        :class="{ selected: selectedTaskId === row.view.id }"
+        :style="{ transform: `translateY(${row.index * TASK_ROW_STRIDE}px)` }"
+        role="row"
+        :aria-rowindex="row.index + 2"
+        :aria-selected="selectedTaskId === row.view.id"
+        @contextmenu.prevent="emit('openContextMenu', row.view.id, $event)"
+      >
+        <template v-for="view in [row.view]" :key="view.id">
+          <span class="select-cell" role="cell" @click.stop @keydown.stop>
+            <UiCheckbox
+              :model-value="selectedSet.has(view.id)"
+              :label="selectedSet.has(view.id) ? '取消选择' : '选择任务'"
+              compact
+              :disabled="loading"
+              @update:model-value="emit('toggleTaskSelection', view.id)"
+            />
+          </span>
 
-      <span class="title-cell" role="cell">
-        <strong :title="view.displayTitle">{{ view.displayTitle }}</strong>
-        <small v-if="view.subtitle" :title="view.subtitle">{{ view.subtitle }}</small>
-        <small v-if="view.issueLabel !== '-'" class="issue-line" :title="view.issueLabel">{{ view.issueLabel }}</small>
-      </span>
+          <span class="title-cell" role="cell">
+            <strong :title="view.displayTitle">{{ view.displayTitle }}</strong>
+            <small v-if="view.subtitle" :title="view.subtitle">{{ view.subtitle }}</small>
+            <small v-if="view.issueLabel !== '-'" class="issue-line" :title="view.issueLabel">{{
+              view.issueLabel
+            }}</small>
+          </span>
 
-      <span class="status-cell" role="cell">
-        <UiStatusBadge :status="view.statusBadge">{{ view.statusLabel }}</UiStatusBadge>
-      </span>
+          <span class="status-cell" role="cell">
+            <UiStatusBadge :status="view.statusBadge">{{ view.statusLabel }}</UiStatusBadge>
+          </span>
 
-      <span v-if="mode === 'completed'" class="location-cell" role="cell" :title="view.fullLocation">
-        <UIcon name="i-tabler-folder" aria-hidden="true" />
-        {{ view.shortLocation }}
-      </span>
-      <template v-else>
-        <span class="progress-cell" role="cell">
-          <template v-if="!view.isCompleted">
-            <strong>{{ view.progressLabel }}</strong>
-            <small>{{ view.sizeLabel }}</small>
-            <UiProgressBar :value="view.progressValue" />
+          <span v-if="mode === 'completed'" class="location-cell" role="cell" :title="view.fullLocation">
+            <UIcon name="i-tabler-folder" aria-hidden="true" />
+            {{ view.shortLocation }}
+          </span>
+          <template v-else>
+            <span class="progress-cell" role="cell">
+              <template v-if="!view.isCompleted">
+                <strong>{{ view.progressLabel }}</strong>
+                <small>{{ view.sizeLabel }}</small>
+                <UiProgressBar :value="view.progressValue" />
+              </template>
+              <span v-else class="completed-result">已完成</span>
+            </span>
+            <span class="metric-cell" role="cell">{{ view.isCompleted ? '—' : view.speedLabel }}</span>
+            <span class="metric-cell" role="cell">{{ view.isCompleted ? '—' : view.etaLabel }}</span>
           </template>
-          <span v-else class="completed-result">已完成</span>
-        </span>
-        <span class="metric-cell" role="cell">{{ view.isCompleted ? '—' : view.speedLabel }}</span>
-        <span class="metric-cell" role="cell">{{ view.isCompleted ? '—' : view.etaLabel }}</span>
-      </template>
-      <span class="action-cell" role="cell" @click.stop @keydown.stop>
-        <UiIconButton
-          icon="info"
-          label="详情和诊断"
-          variant="ghost"
-          size="compact"
-          :disabled="loading"
-          @click="emit('inspectTask', view.id)"
-        />
-        <TaskActionMenu :view :disabled="loading" @action="(action) => emit('taskAction', view.id, action)" />
-      </span>
+          <span class="action-cell" role="cell" @click.stop @keydown.stop>
+            <UiIconButton
+              icon="info"
+              label="详情和诊断"
+              variant="ghost"
+              size="compact"
+              :disabled="loading"
+              @click="emit('inspectTask', view.id)"
+            />
+            <TaskActionMenu :view :disabled="loading" @action="(action) => emit('taskAction', view.id, action)" />
+          </span>
+        </template>
+      </div>
     </div>
   </div>
 </template>
@@ -146,6 +181,11 @@ const toggleVisible = () => {
   align-items: center;
 }
 
+.virtual-task-list {
+  position: relative;
+  min-width: 0;
+}
+
 .completed-mode .transfer-table-row {
   grid-template-columns: 30px minmax(260px, 1fr) 86px minmax(140px, 0.42fr) 96px;
 }
@@ -165,6 +205,9 @@ const toggleVisible = () => {
 }
 
 .task-table-row {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 58px;
   min-height: 58px;
   width: 100%;
   border: 1px solid var(--color-border);

@@ -68,7 +68,7 @@ Exit condition: pages compose domain modules and shared UI primitives instead of
 
 ## P2 — list stability and performance
 
-- Establish virtualization thresholds for parsed content and transfer history.
+- [x] Virtualize parsed content and transfer history at 200 rows with shared, tested window and overscan rules.
 - Preserve selection, scroll position, and filters across route changes and paging.
 - Lazy-load remote images and use fixed aspect-ratio placeholders to prevent layout shifts.
 - Measure queue event frequency and coalesce presentation-only updates without delaying task commands.

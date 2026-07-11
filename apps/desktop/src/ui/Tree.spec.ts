@@ -56,4 +56,20 @@ describe('Tree keyboard navigation', () => {
 
     expect(wrapper.emitted('toggle')).toEqual([['collection']])
   })
+
+  it('moves focus across a virtualized large tree', async () => {
+    const largeNodes = Array.from({ length: 250 }, (_, index) => ({
+      id: `part-${index}`,
+      label: `第 ${index + 1} 集`,
+      partIds: [`part-${index}`],
+    }))
+    const wrapper = mount(UiTree, { attachTo: document.body, props: { nodes: largeNodes } })
+
+    expect(wrapper.findAll('[role="treeitem"]').length).toBeLessThan(largeNodes.length)
+    await wrapper.find('[role="treeitem"]').trigger('keydown', { key: 'End' })
+
+    const lastRow = wrapper.find('[data-tree-index="249"]')
+    expect(lastRow.exists()).toBe(true)
+    expect(document.activeElement).toBe(lastRow.element)
+  })
 })

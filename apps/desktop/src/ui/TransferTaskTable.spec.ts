@@ -1,45 +1,51 @@
-import { shallowMount } from '@vue/test-utils'
+import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 
 import type { TransferTaskView } from '../stores/transferView'
 import TransferTaskTable from './TransferTaskTable.vue'
 
-const completedView = (): TransferTaskView => ({
-  id: 'task-1',
-  isCompleted: true,
-  displayTitle: '示例视频',
+const view = (index: number): TransferTaskView => ({
+  id: `task:${index}`,
+  isCompleted: false,
+  displayTitle: `任务 ${index}`,
   subtitle: '',
-  statusLabel: '已完成',
-  statusBadge: 'done',
-  progressValue: 100,
-  progressLabel: '100%',
+  statusLabel: '等待中',
+  statusBadge: 'queued',
+  progressValue: 0,
+  progressLabel: '0%',
   speedLabel: '--',
   etaLabel: '--',
-  sizeLabel: '20 MB / 20 MB',
+  sizeLabel: '--',
   issueLabel: '-',
   shortLocation: 'downloads',
-  fullLocation: 'E:\\downloads',
-  outputPath: 'E:\\downloads\\video.mp4',
-  sourceId: 'source-1',
-  primaryAction: 'open_file',
-  primaryActionLabel: '打开文件',
-  primaryActionIcon: 'file',
+  fullLocation: 'downloads',
+  outputPath: 'downloads',
+  sourceId: `video:${index}`,
+  primaryAction: 'cancel',
+  primaryActionLabel: '取消',
+  primaryActionIcon: 'x',
   secondaryActions: [],
 })
 
-describe('TransferTaskTable', () => {
-  it('shows result columns instead of transfer metrics for completed tasks', () => {
-    const wrapper = shallowMount(TransferTaskTable, {
-      props: {
-        views: [completedView()],
-        selectedTaskId: null,
-        selectedTaskIds: [],
-        mode: 'completed',
+describe('TransferTaskTable virtualization', () => {
+  it('keeps selection scope complete while rendering a bounded large-list window', () => {
+    const views = Array.from({ length: 250 }, (_, index) => view(index))
+    const wrapper = mount(TransferTaskTable, {
+      props: { views, selectedTaskId: null, selectedTaskIds: [] },
+      global: {
+        stubs: {
+          UiCheckbox: true,
+          UiIconButton: true,
+          UiProgressBar: true,
+          UiStatusBadge: true,
+          TaskActionMenu: true,
+          UIcon: true,
+        },
       },
-      global: { stubs: { UIcon: true } },
     })
 
-    expect(wrapper.text()).toContain('输出位置')
-    expect(wrapper.text()).not.toContain('剩余')
+    expect(wrapper.attributes('aria-rowcount')).toBe('251')
+    expect(wrapper.findAll('.task-table-row').length).toBeLessThan(views.length)
+    expect(wrapper.find('.virtual-task-list').attributes('style')).toContain('15500px')
   })
 })

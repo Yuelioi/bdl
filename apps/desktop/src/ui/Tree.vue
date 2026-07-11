@@ -1,5 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, useTemplateRef, watch } from 'vue'
+import { calculateVirtualWindow } from '../utils/virtualWindow'
+
+const TREE_ROW_STRIDE = 38
 
 export interface TreeNode {
   id: string
@@ -29,7 +32,9 @@ interface FlatTreeNode {
 
 const selectedSet = computed(() => new Set(props.selectedIds ?? []))
 const activeIndex = ref(0)
-const rowElements = useTemplateRef<HTMLElement[]>('rows')
+const listElement = useTemplateRef<HTMLElement>('tree-list')
+const scrollOffset = ref(0)
+const viewportSize = ref(600)
 
 const flatNodes = computed(() => {
   const rows: FlatTreeNode[] = []
@@ -44,11 +49,7 @@ const flatNodes = computed(() => {
       depth,
       hasChildren: Boolean(node.children?.length),
       checkState:
-        partIds.length > 0 && selectedCount === partIds.length
-          ? 'checked'
-          : selectedCount > 0
-            ? 'mixed'
-            : 'empty',
+        partIds.length > 0 && selectedCount === partIds.length ? 'checked' : selectedCount > 0 ? 'mixed' : 'empty',
     })
     node.children?.forEach((child) => visit(child, depth + 1))
   }
@@ -65,6 +66,22 @@ const partIdsForNode = (node: TreeNode): string[] => {
   return node.children?.flatMap(partIdsForNode) ?? []
 }
 
+const treeWindow = computed(() =>
+  calculateVirtualWindow(flatNodes.value.length, scrollOffset.value, viewportSize.value, TREE_ROW_STRIDE),
+)
+const renderedNodes = computed(() =>
+  flatNodes.value.slice(treeWindow.value.start, treeWindow.value.end).map((node, offset) => ({
+    node,
+    index: treeWindow.value.start + offset,
+  })),
+)
+
+const updateViewport = (event: Event) => {
+  const element = event.currentTarget as HTMLElement
+  scrollOffset.value = element.scrollTop
+  viewportSize.value = element.clientHeight
+}
+
 watch(
   () => flatNodes.value.length,
   (length) => {
@@ -76,8 +93,13 @@ const focusRow = async (index: number) => {
   if (flatNodes.value.length === 0) return
   const nextIndex = Math.min(Math.max(index, 0), flatNodes.value.length - 1)
   activeIndex.value = nextIndex
+  const element = listElement.value
+  if (element && (nextIndex < treeWindow.value.start || nextIndex >= treeWindow.value.end)) {
+    element.scrollTop = nextIndex * TREE_ROW_STRIDE
+    scrollOffset.value = element.scrollTop
+  }
   await nextTick()
-  rowElements.value?.[nextIndex]?.focus()
+  listElement.value?.querySelector<HTMLElement>(`[data-tree-index="${nextIndex}"]`)?.focus()
 }
 
 const handleKeydown = (event: KeyboardEvent, node: FlatTreeNode, index: number) => {
@@ -111,27 +133,32 @@ const handleKeydown = (event: KeyboardEvent, node: FlatTreeNode, index: number) 
 </script>
 
 <template>
-  <div class="tree-list" role="tree" aria-label="内容选择">
-    <div
-      v-for="(node, index) in flatNodes"
-      :key="node.id"
-      ref="rows"
-      class="tree-row"
-      :class="{ selected: node.checkState === 'checked', partial: node.checkState === 'mixed' }"
-      role="treeitem"
-      :aria-checked="node.checkState === 'mixed' ? 'mixed' : node.checkState === 'checked'"
-      :aria-expanded="node.hasChildren ? true : undefined"
-      :aria-level="node.depth + 1"
-      :style="{ paddingLeft: `${node.depth * 18 + 10}px` }"
-      :tabindex="index === activeIndex ? 0 : -1"
-      @focus="activeIndex = index"
-      @click="emit('toggle', node.id)"
-      @keydown="handleKeydown($event, node, index)"
-    >
-      <span class="tree-check" :class="node.checkState" aria-hidden="true"></span>
-      <span class="tree-arrow" aria-hidden="true">{{ node.hasChildren ? ">" : "" }}</span>
-      <span class="tree-label">{{ node.label }}</span>
-      <span v-if="node.meta" class="tree-meta">{{ node.meta }}</span>
+  <div ref="tree-list" class="tree-list" role="tree" aria-label="内容选择" @scroll="updateViewport">
+    <div class="tree-window" :style="{ height: `${treeWindow.totalSize}px` }">
+      <div
+        v-for="row in renderedNodes"
+        :key="row.node.id"
+        class="tree-row"
+        :class="{ selected: row.node.checkState === 'checked', partial: row.node.checkState === 'mixed' }"
+        role="treeitem"
+        :data-tree-index="row.index"
+        :aria-checked="row.node.checkState === 'mixed' ? 'mixed' : row.node.checkState === 'checked'"
+        :aria-expanded="row.node.hasChildren ? true : undefined"
+        :aria-level="row.node.depth + 1"
+        :style="{
+          paddingLeft: `${row.node.depth * 18 + 10}px`,
+          transform: `translateY(${row.index * TREE_ROW_STRIDE}px)`,
+        }"
+        :tabindex="row.index === activeIndex ? 0 : -1"
+        @focus="activeIndex = row.index"
+        @click="emit('toggle', row.node.id)"
+        @keydown="handleKeydown($event, row.node, row.index)"
+      >
+        <span class="tree-check" :class="row.node.checkState" aria-hidden="true"></span>
+        <span class="tree-arrow" aria-hidden="true">{{ row.node.hasChildren ? '>' : '' }}</span>
+        <span class="tree-label">{{ row.node.label }}</span>
+        <span v-if="row.node.meta" class="tree-meta">{{ row.node.meta }}</span>
+      </div>
     </div>
   </div>
 </template>
@@ -140,12 +167,18 @@ const handleKeydown = (event: KeyboardEvent, node: FlatTreeNode, index: number) 
 .tree-list {
   min-height: 0;
   overflow: auto;
-  display: grid;
-  align-content: start;
-  gap: var(--space-4);
+}
+
+.tree-window {
+  position: relative;
+  min-width: 0;
 }
 
 .tree-row {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 34px;
+  width: 100%;
   min-height: 34px;
   display: grid;
   grid-template-columns: 16px 14px minmax(0, 1fr) auto;
@@ -219,7 +252,7 @@ const handleKeydown = (event: KeyboardEvent, node: FlatTreeNode, index: number) 
 }
 
 .tree-check.checked::after {
-  content: "";
+  content: '';
   width: 7px;
   height: 4px;
   border-left: 2px solid var(--color-on-accent);
@@ -228,7 +261,7 @@ const handleKeydown = (event: KeyboardEvent, node: FlatTreeNode, index: number) 
 }
 
 .tree-check.mixed::after {
-  content: "";
+  content: '';
   width: 8px;
   height: 2px;
   border-radius: 999px;
