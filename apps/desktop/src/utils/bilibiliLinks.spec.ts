@@ -18,4 +18,11 @@ describe('Bilibili page links', () => {
     const task = { refresh_intent: { input: { kind: 'video_bvid', bvid: 'BV1xx411c7mD' }, cid: 1 } } as DownloadTask
     expect(bilibiliTaskUrl(task)).toBe('https://www.bilibili.com/video/BV1xx411c7mD')
   })
+
+  it('preserves the selected page for multi-part video tasks', () => {
+    const task = {
+      refresh_intent: { input: { kind: 'video_bvid', bvid: 'BV1xx411c7mD' }, cid: 2, page_number: 3 },
+    } as DownloadTask
+    expect(bilibiliTaskUrl(task)).toBe('https://www.bilibili.com/video/BV1xx411c7mD?p=3')
+  })
 })

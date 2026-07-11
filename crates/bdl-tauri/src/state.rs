@@ -2067,6 +2067,7 @@ mod tests {
                 bvid: "BV1refresh11".to_owned(),
             },
             cid: 42,
+            page_number: None,
         });
 
         let ids = task_media_refresh_ids(&task).expect("refresh intent should be used");

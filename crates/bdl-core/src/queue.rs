@@ -193,6 +193,8 @@ fn retarget_task_path(path: &Path, old_output: &Path, new_output: &Path) -> BdlR
 pub struct DownloadTaskRefreshIntent {
     pub input: DownloadTaskRefreshInput,
     pub cid: u64,
+    #[serde(default)]
+    pub page_number: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

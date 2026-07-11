@@ -320,7 +320,7 @@ fn plan_part(
         status: TaskStatus::Waiting,
         resources,
         output_path,
-        refresh_intent: media_refresh_intent(tree.source.kind, part),
+        refresh_intent: media_refresh_intent(tree.source.kind, part, selected.part_index + 1),
         media_selection: DownloadTaskMediaSelection {
             video_quality: video
                 .map(stream_quality_label)
@@ -487,26 +487,28 @@ fn media_resource(
 fn media_refresh_intent(
     source_kind: SourceKind,
     part: &NormalizedPart,
+    page_number: usize,
 ) -> Option<DownloadTaskRefreshIntent> {
     match source_kind {
-        SourceKind::Bangumi => {
-            episode_refresh_intent(part, "bangumi").or_else(|| video_refresh_intent(part))
-        }
-        SourceKind::Cheese => {
-            episode_refresh_intent(part, "cheese").or_else(|| video_refresh_intent(part))
-        }
+        SourceKind::Bangumi => episode_refresh_intent(part, "bangumi")
+            .or_else(|| video_refresh_intent(part, page_number)),
+        SourceKind::Cheese => episode_refresh_intent(part, "cheese")
+            .or_else(|| video_refresh_intent(part, page_number)),
         SourceKind::Video
         | SourceKind::Favorite
         | SourceKind::Collection
         | SourceKind::Series
         | SourceKind::Uploader
-        | SourceKind::Unknown => video_refresh_intent(part)
+        | SourceKind::Unknown => video_refresh_intent(part, page_number)
             .or_else(|| episode_refresh_intent(part, "bangumi"))
             .or_else(|| episode_refresh_intent(part, "cheese")),
     }
 }
 
-fn video_refresh_intent(part: &NormalizedPart) -> Option<DownloadTaskRefreshIntent> {
+fn video_refresh_intent(
+    part: &NormalizedPart,
+    page_number: usize,
+) -> Option<DownloadTaskRefreshIntent> {
     let cid = part.cid?;
     let input = if let Some(bvid) = part.bvid.as_ref().filter(|value| !value.is_empty()) {
         DownloadTaskRefreshInput::VideoBvid { bvid: bvid.clone() }
@@ -514,7 +516,11 @@ fn video_refresh_intent(part: &NormalizedPart) -> Option<DownloadTaskRefreshInte
         DownloadTaskRefreshInput::VideoAid { aid: part.aid? }
     };
 
-    Some(DownloadTaskRefreshIntent { input, cid })
+    Some(DownloadTaskRefreshIntent {
+        input,
+        cid,
+        page_number: u32::try_from(page_number).ok(),
+    })
 }
 
 fn episode_refresh_intent(part: &NormalizedPart, kind: &str) -> Option<DownloadTaskRefreshIntent> {
@@ -533,7 +539,11 @@ fn episode_refresh_intent(part: &NormalizedPart, kind: &str) -> Option<DownloadT
         _ => return None,
     };
 
-    Some(DownloadTaskRefreshIntent { input, cid })
+    Some(DownloadTaskRefreshIntent {
+        input,
+        cid,
+        page_number: None,
+    })
 }
 
 fn complete_archive_resources(

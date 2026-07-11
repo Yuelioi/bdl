@@ -171,7 +171,15 @@ watch(
         </div>
 
         <div v-else-if="visibleItems.length" class="library-grid">
-          <article v-for="item in visibleItems" :key="item.media_id" class="library-card">
+          <article
+            v-for="item in visibleItems"
+            :key="item.media_id"
+            class="library-card"
+            tabindex="0"
+            :aria-label="`双击查看 ${item.title} 的内容`"
+            @dblclick="openFolder(item)"
+            @keydown.enter="openFolder(item)"
+          >
             <div class="library-cover">
               <img
                 v-if="item.cover_url && !failedCoverIds.includes(item.media_id)"
@@ -202,14 +210,14 @@ watch(
               <p v-if="item.description" class="library-description">{{ item.description }}</p>
               <div class="library-card-meta">
                 <span>{{ item.media_count }} 个视频</span>
-                <div class="library-card-links">
-                  <button type="button" @click="openFolder(item)">
-                    查看内容 <UIcon name="i-tabler-arrow-right" aria-hidden="true" />
-                  </button>
-                  <ExternalLinkButton :href="item.source_url" :label="`在 Bilibili 打开 ${item.title}`" compact>
-                    B站页面
-                  </ExternalLinkButton>
-                </div>
+                <ExternalLinkButton
+                  class="library-source-link"
+                  :href="item.source_url"
+                  :label="`在 Bilibili 打开 ${item.title}`"
+                  compact
+                >
+                  <span class="sr-only">B站页面</span>
+                </ExternalLinkButton>
               </div>
             </div>
           </article>

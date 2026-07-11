@@ -53,6 +53,8 @@ Logged-out, loading, empty, API-error, pagination, cover-fallback, and narrow-wi
 
 External navigation is identity-based: the global account menu and UP labels use MID profile URLs, collection headers/cards use their canonical source URL, and video cards use BV (or AV fallback). Opening an external page never changes selection or starts a download.
 
+Folder cards keep navigation quiet: double-click (or focused Enter) opens the in-app detail, while one external-link icon opens the canonical Bilibili page. Do not repeat both actions as adjacent text links.
+
 Canonical account-library URLs preserve Bilibili's folder type: created favorites use `ftype=create`; collected favorites use `ftype=collect&ctype=21`. Do not collapse both kinds to a bare `fid` URL.
 
 ## Parse Flow

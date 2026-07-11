@@ -44,6 +44,31 @@ fn plan_selected_parts_creates_one_task_for_one_selected_part() {
 }
 
 #[test]
+fn plan_selected_parts_preserves_multi_part_page_number() {
+    let mut tree = fixture_tree(true);
+    let mut second = tree.groups[0].items[0].parts[0].clone();
+    second.id = PartId("part:BV1:101".to_owned());
+    second.title = "P2".to_owned();
+    second.cid = Some(101);
+    tree.groups[0].items[0].parts.push(second);
+
+    let tasks = plan_selected_parts(
+        &tree,
+        &[PartId("part:BV1:101".to_owned())],
+        &DownloadOptions::new(PathBuf::from("downloads")),
+    )
+    .expect("second part should plan");
+
+    assert_eq!(
+        tasks[0]
+            .refresh_intent
+            .as_ref()
+            .and_then(|intent| intent.page_number),
+        Some(2)
+    );
+}
+
+#[test]
 fn plan_selected_parts_fast_mode_creates_video_and_audio_resources_only() {
     let tree = fixture_tree(true);
     let options = DownloadOptions::new(PathBuf::from("downloads"));

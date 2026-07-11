@@ -353,6 +353,7 @@ fn sample_task() -> DownloadTask {
                 bvid: "BV1xx411c7mD".to_owned(),
             },
             cid: 100,
+            page_number: Some(2),
         }),
         media_selection: DownloadTaskMediaSelection {
             video_quality: "80".to_owned(),

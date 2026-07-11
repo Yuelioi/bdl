@@ -14,8 +14,10 @@ export const bilibiliVideoUrl = (item: NormalizedItem): string | null => {
 
 export const bilibiliTaskUrl = (task: DownloadTask): string | null => {
   const input = task.refresh_intent?.input
-  if (input?.kind === 'video_bvid') return `https://www.bilibili.com/video/${input.bvid}`
-  if (input?.kind === 'video_aid') return `https://www.bilibili.com/video/av${input.aid}`
+  const page = task.refresh_intent?.page_number
+  const pageQuery = page && page > 1 ? `?p=${page}` : ''
+  if (input?.kind === 'video_bvid') return `https://www.bilibili.com/video/${input.bvid}${pageQuery}`
+  if (input?.kind === 'video_aid') return `https://www.bilibili.com/video/av${input.aid}${pageQuery}`
   if (input?.kind === 'bangumi_episode') return `https://www.bilibili.com/bangumi/play/ep${input.ep_id}`
   if (input?.kind === 'cheese_episode') return `https://www.bilibili.com/cheese/play/ep${input.ep_id}`
 

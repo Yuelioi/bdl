@@ -48,6 +48,7 @@ Important invariants:
 - All source types normalize into this tree: video, favorites, uploader lists, collections, series, bangumi, and courses.
 - `SourceSummary.loaded_count`, `total_count`, and `has_more` drive progressive paging.
 - A part must preserve enough identity to refresh media URLs later: source id, item/part id, aid/bvid/cid, quality, codec, and media kind.
+- New video task refresh intents persist the one-based multi-P page number as well as BV/AV and CID. Canonical page links therefore reopen `?p=N`; older persisted intents without this optional field remain valid but can only reopen the main video page.
 - Normalized items preserve optional `owner_mid` alongside `owner_name`. UI links and naming use MID as identity; never infer a profile URL from the display name.
 - Settings defaults are applied by the planner and can be overridden per task creation request.
 

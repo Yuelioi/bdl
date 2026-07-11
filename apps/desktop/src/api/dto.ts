@@ -141,6 +141,7 @@ export interface SelectionCreateTasksResult {
 export interface DownloadTaskRefreshIntent {
   input: DownloadTaskRefreshInput
   cid: number
+  page_number?: number | null
 }
 
 export type DownloadTaskRefreshInput =
