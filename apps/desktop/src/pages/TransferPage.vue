@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 
 import { sourceReference, useQueueStore, type QueueFilter } from '../stores/queue';
-import { createTransferTaskView, type TaskActionDescriptor, type TaskActionKind } from '../stores/transferView';
+import { createTransferTaskView, type TaskActionKind } from '../stores/transferView';
 import { useUiStore } from '../stores/ui';
 import UiButton from '../ui/Button.vue';
 import UiDialog from '../ui/Dialog.vue';
@@ -23,6 +23,7 @@ import {
   type TransferSortMode,
 } from './transfer/transferQueries';
 import { useTransferDialogs } from './transfer/useTransferDialogs';
+import { contextIcon, useTransferContextMenu } from './transfer/useTransferContextMenu';
 
 const queue = useQueueStore();
 const ui = useUiStore();
@@ -42,7 +43,6 @@ const {
   openSpeedLimitDialog,
   submitSpeedLimit,
 } = useTransferDialogs(queue);
-const contextMenu = ref<{ taskId: string; x: number; y: number } | null>(null);
 const queueFilter = computed({
   get: () => queue.activeFilter,
   set: (value: QueueFilter) => queue.setFilter(value),
@@ -86,21 +86,6 @@ const taskViews = computed(() =>
   ),
 );
 const completedTaskCount = computed(() => queue.tasks.filter((task) => task.status === 'completed').length);
-const contextTaskView = computed(() => taskViews.value.find((view) => view.id === contextMenu.value?.taskId) ?? null);
-const contextActions = computed<TaskActionDescriptor[]>(() => {
-  const view = contextTaskView.value;
-  if (!view) return [];
-  const actions = [...view.secondaryActions];
-  if (view.primaryAction !== 'none') {
-    actions.unshift({
-      kind: view.primaryAction,
-      label: view.primaryActionLabel,
-      icon: view.primaryActionIcon,
-    });
-  }
-  return actions;
-});
-
 const selectedLogs = computed(() => (queue.selectedTaskId ? (queue.logsByTask[queue.selectedTaskId] ?? []) : []));
 const selectedLogsLoading = computed(() =>
   queue.selectedTaskId ? Boolean(queue.logsLoadingByTask[queue.selectedTaskId]) : false,
@@ -206,47 +191,19 @@ const handleTaskAction = (taskId: string, action: Exclude<TaskActionKind, 'none'
   }
 };
 
+const {
+  contextMenu,
+  contextTaskView,
+  contextActions,
+  openContextMenu,
+  closeContextMenu,
+  closeContextMenuOnEscape,
+  runContextAction,
+} = useTransferContextMenu(taskViews, handleTaskAction);
+
 const openTaskDetail = (taskId: string) => {
   queue.selectTask(taskId);
   taskDetailOpen.value = true;
-};
-
-const openContextMenu = (taskId: string, event: MouseEvent) => {
-  const menuWidth = 190;
-  const menuHeight = 260;
-  contextMenu.value = {
-    taskId,
-    x: Math.max(8, Math.min(event.clientX, window.innerWidth - menuWidth - 8)),
-    y: Math.max(8, Math.min(event.clientY, window.innerHeight - menuHeight - 8)),
-  };
-};
-
-function closeContextMenu() {
-  contextMenu.value = null;
-}
-
-function closeContextMenuOnEscape(event: KeyboardEvent) {
-  if (event.key === 'Escape') closeContextMenu();
-}
-
-const runContextAction = (action: Exclude<TaskActionKind, 'none'>) => {
-  const taskId = contextMenu.value?.taskId;
-  closeContextMenu();
-  if (taskId) handleTaskAction(taskId, action);
-};
-
-const contextIcon = (icon: string): string => {
-  const aliases: Record<string, string> = {
-    pause: 'player-pause',
-    play: 'player-play',
-    refresh: 'refresh',
-    x: 'x',
-    trash: 'trash',
-    file: 'file',
-    folder: 'folder',
-    copy: 'copy',
-  };
-  return `i-tabler-${aliases[icon] ?? icon}`;
 };
 
 const refreshSelectedLogs = () => {

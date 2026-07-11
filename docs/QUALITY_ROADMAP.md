@@ -55,6 +55,7 @@ Exit condition: command adapters contain validation and translation only, and ea
 - Separate transfer query/filter state from task commands in `transferView.ts`.
 - [x] Extract stable transfer sorting, search normalization, and bulk-action eligibility into tested pure queries.
 - [x] Extract scheduling and per-task speed-limit dialog state behind an injected queue interface.
+- [x] Extract context-menu positioning, lifecycle actions, task action composition, and dispatch behavior.
 - Keep parse orchestration in the parse store, but move pure tree/selection transformations into tested modules.
 - Define one page shell, one filter toolbar, one selection action bar, and one empty/error pattern for all five pages.
 
