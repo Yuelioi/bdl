@@ -17,6 +17,7 @@ const queue = (): TransferTaskActionQueue => ({
   openFile: vi.fn(),
   openDir: vi.fn(),
   copySource: vi.fn(),
+  openSource: vi.fn(),
 });
 
 describe('transfer task actions', () => {
@@ -31,6 +32,7 @@ describe('transfer task actions', () => {
     ['open_file', 'openFile'],
     ['open_dir', 'openDir'],
     ['copy_source', 'copySource'],
+    ['open_source', 'openSource'],
   ])('dispatches %s to queue.%s', (action, method) => {
     const store = queue();
     const taskActions = useTransferTaskActions(store, {

@@ -13,6 +13,7 @@ export interface TransferTaskActionQueue {
   openFile(taskId: string): Promise<unknown>;
   openDir(taskId: string): Promise<unknown>;
   copySource(taskId: string): Promise<unknown>;
+  openSource(taskId: string): Promise<unknown>;
 }
 
 export interface TransferTaskActionDialogs {
@@ -31,6 +32,7 @@ const queueActionByKind = {
   open_file: 'openFile',
   open_dir: 'openDir',
   copy_source: 'copySource',
+  open_source: 'openSource',
 } as const satisfies Partial<Record<TransferTaskAction, keyof TransferTaskActionQueue>>;
 
 export const useTransferTaskActions = (queue: TransferTaskActionQueue, dialogs: TransferTaskActionDialogs) => {

@@ -86,6 +86,18 @@ describe('completed transfer task warnings', () => {
     ])
 
     expect(view.statusLabel).toBe('部分失败')
+    expect(view.issueLabel).toBe('-')
+  })
+
+  it('offers the source page in the completed task menu when identity is available', () => {
+    const task = scheduledTask()
+    task.status = 'completed'
+    task.scheduled_at = null
+    task.refresh_intent = { input: { kind: 'video_bvid', bvid: 'BV1xx411c7mD' }, cid: 1 }
+
+    const view = createTransferTaskView(task, 100)
+
+    expect(view.secondaryActions.map((action) => action.kind)).toContain('open_source')
   })
 
   it('does not present historical pause logs as an archive warning', () => {

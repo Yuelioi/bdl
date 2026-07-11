@@ -136,7 +136,11 @@ impl AccountLibraryFolder {
             owner_name: None,
             owner_mid: Some(folder.mid.to_string()),
             media_count: folder.media_count,
-            source_url: favorite_source_url(folder.mid, folder.id),
+            source_url: favorite_source_url(
+                folder.mid,
+                folder.id,
+                AccountLibraryFolderKind::CreatedFavorite,
+            ),
         }
     }
 
@@ -150,7 +154,11 @@ impl AccountLibraryFolder {
             owner_name: non_blank(folder.upper.name),
             owner_mid: Some(folder.mid.to_string()),
             media_count: folder.media_count,
-            source_url: favorite_source_url(folder.mid, folder.id),
+            source_url: favorite_source_url(
+                folder.mid,
+                folder.id,
+                AccountLibraryFolderKind::CollectedFavorite,
+            ),
         }
     }
 }
@@ -198,8 +206,15 @@ pub async fn account_library_page(
     }
 }
 
-fn favorite_source_url(mid: u64, media_id: u64) -> String {
-    format!("https://space.bilibili.com/{mid}/favlist?fid={media_id}")
+fn favorite_source_url(mid: u64, media_id: u64, kind: AccountLibraryFolderKind) -> String {
+    match kind {
+        AccountLibraryFolderKind::CreatedFavorite => {
+            format!("https://space.bilibili.com/{mid}/favlist?fid={media_id}&ftype=create")
+        }
+        AccountLibraryFolderKind::CollectedFavorite => format!(
+            "https://space.bilibili.com/{mid}/favlist?fid={media_id}&ftype=collect&ctype=21"
+        ),
+    }
 }
 
 fn non_blank(value: String) -> Option<String> {

@@ -13,6 +13,7 @@ export type TaskActionKind =
   | 'open_file'
   | 'open_dir'
   | 'copy_source'
+  | 'open_source'
   | 'unschedule'
   | 'schedule'
   | 'speed_limit'
@@ -104,7 +105,7 @@ export const createTransferTaskView = (
         ? etaLabel(transferProgress)
         : '--',
     sizeLabel: transferProgress ? sizeLabel(transferProgress) : '--',
-    issueLabel: issue.label,
+    issueLabel: completedWithWarnings ? '-' : issue.label,
     shortLocation: shortLocation(task.output_path),
     fullLocation: outputDir(task.output_path),
     outputPath: task.output_path,
@@ -590,6 +591,7 @@ const secondaryActionsForTask = (task: DownloadTask, primaryAction: TaskActionKi
     actions.push(
       actionDescriptor('open_dir'),
       actionDescriptor('retry', '重新下载'),
+      ...(taskSourcePageAvailable(task) ? [actionDescriptor('open_source')] : []),
       actionDescriptor('copy_source'),
       actionDescriptor('remove'),
     )
@@ -652,6 +654,7 @@ const actionLabel = (action: TaskActionKind): string => {
     open_file: '打开文件',
     open_dir: '打开文件夹',
     copy_source: '复制来源',
+    open_source: '打开来源页面',
     unschedule: '立即开始',
     schedule: '定时开始',
     speed_limit: '设置限速',
@@ -672,6 +675,7 @@ const actionIcon = (action: TaskActionKind): string => {
     open_file: 'file',
     open_dir: 'folder',
     copy_source: 'copy',
+    open_source: 'external-link',
     unschedule: 'play',
     schedule: 'clock',
     speed_limit: 'gauge',
@@ -683,6 +687,11 @@ const actionIcon = (action: TaskActionKind): string => {
 
 const isScheduledTask = (task: DownloadTask): boolean =>
   task.status === 'waiting' && Boolean(task.scheduled_at) && Date.parse(task.scheduled_at ?? '') > Date.now()
+
+const taskSourcePageAvailable = (task: DownloadTask): boolean => {
+  if (task.refresh_intent) return true
+  return /^uploader:\d+:videos$/.test(task.source_id)
+}
 
 const scheduleLabel = (scheduledAt: string | null, includeDate = false): string => {
   if (!scheduledAt) return '--'

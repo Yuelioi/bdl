@@ -33,6 +33,8 @@ import {
   queueUnschedule,
 } from '../api/tauri'
 import { useUiStore } from './ui'
+import { openExternalUrl } from '../api/tauri'
+import { bilibiliTaskUrl } from '../utils/bilibiliLinks'
 import type { InlineNotice, NoticeTone } from './feedback'
 import { NOTICE_CLEAR_DELAY } from './feedback'
 import {
@@ -437,6 +439,21 @@ export const useQueueStore = defineStore('queue', {
       try {
         await navigator.clipboard.writeText(sourceReference(task.source_id))
         this.setNotice('已复制来源', 'success')
+      } catch (error) {
+        ui.pushToast(errorMessage(error), 'danger')
+      }
+    },
+    async openSource(taskId: string) {
+      const ui = useUiStore()
+      const task = this.tasks.find((candidate) => candidate.id === taskId)
+      const url = task ? bilibiliTaskUrl(task) : null
+      if (!url) {
+        this.setNotice('这个旧任务没有可定位的来源页面', 'warning')
+        return
+      }
+
+      try {
+        await openExternalUrl(url)
       } catch (error) {
         ui.pushToast(errorMessage(error), 'danger')
       }

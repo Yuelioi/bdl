@@ -53,6 +53,8 @@ Logged-out, loading, empty, API-error, pagination, cover-fallback, and narrow-wi
 
 External navigation is identity-based: the global account menu and UP labels use MID profile URLs, collection headers/cards use their canonical source URL, and video cards use BV (or AV fallback). Opening an external page never changes selection or starts a download.
 
+Canonical account-library URLs preserve Bilibili's folder type: created favorites use `ftype=create`; collected favorites use `ftype=collect&ctype=21`. Do not collapse both kinds to a bare `fid` URL.
+
 ## Parse Flow
 
 1. User enters BV/AV, URL, short link, or multi-line text.
@@ -166,6 +168,7 @@ Transfer controls:
 - details open in a modal inspector
 - bulk actions support pause, cancel, resume, retry, refresh links and retry, remove, clear completed
 - A completed task only shows `有警告` for completion or archive warnings. Historical control-flow notices such as pause, cancel, and automatic URL refresh remain in the timeline but do not contaminate the final status.
+- Completed warning rows express the condition once in the status badge; the title cell must not repeat a generic `附加内容失败` line. Details remain available in the inspector.
 - list sorting supports default, name, progress, speed, and issue priority
 - completed records support search by title, source, or output path
 
@@ -218,6 +221,8 @@ The inspector should prioritize:
 Raw logs must be behind an explicit tab and redacted.
 
 Overview exposes a concise `在 Bilibili 查看来源` action when the persisted refresh identity can reconstruct a video, bangumi episode, course episode, or uploader page. It must never expose signed media CDN URLs as user-facing source links.
+
+The same identity-aware action appears in the task overflow menu as `打开来源页面`. Very old tasks without a reconstructable page identity omit the action instead of opening an invalid URL.
 
 ## Account UX
 
