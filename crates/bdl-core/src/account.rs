@@ -63,6 +63,7 @@ pub struct AccountLibraryFolder {
     pub description: Option<String>,
     pub cover_url: Option<String>,
     pub owner_name: Option<String>,
+    pub owner_mid: Option<String>,
     pub media_count: u32,
     pub source_url: String,
 }
@@ -133,6 +134,7 @@ impl AccountLibraryFolder {
             description: None,
             cover_url: None,
             owner_name: None,
+            owner_mid: Some(folder.mid.to_string()),
             media_count: folder.media_count,
             source_url: favorite_source_url(folder.mid, folder.id),
         }
@@ -146,6 +148,7 @@ impl AccountLibraryFolder {
             description: non_blank(folder.intro),
             cover_url: normalize_remote_url(folder.cover),
             owner_name: non_blank(folder.upper.name),
+            owner_mid: Some(folder.mid.to_string()),
             media_count: folder.media_count,
             source_url: favorite_source_url(folder.mid, folder.id),
         }

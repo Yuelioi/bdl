@@ -30,6 +30,7 @@ impl VideoApi for CountingVideoApi {
             default_cid: 62131,
             title: "large fixture".to_owned(),
             owner_name: None,
+            owner_mid: None,
             cover_url: None,
             pages: (62131..62321)
                 .enumerate()
@@ -293,6 +294,7 @@ fn fake_api() -> FakeVideoApi {
             default_cid: 62131,
             title: "fixture video".to_owned(),
             owner_name: Some("fixture owner".to_owned()),
+            owner_mid: Some(1001),
             cover_url: Some("https://example.invalid/cover.jpg".to_owned()),
             pages: vec![ResolvedVideoPage {
                 cid: 62131,

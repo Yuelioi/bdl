@@ -8,6 +8,8 @@ import { useLibraryStore } from './stores/library'
 import { useThemeStore } from './stores/theme'
 import { useUpdateStore } from './stores/update'
 import { useUiStore, type AppTab } from './stores/ui'
+import { openExternalUrl } from './api/tauri'
+import { bilibiliUserUrl } from './utils/bilibiliLinks'
 import UiButton from './ui/Button.vue'
 import AppearanceMenu from './ui/AppearanceMenu.vue'
 import UiDialog from './ui/Dialog.vue'
@@ -105,8 +107,27 @@ const accountMenuItems = computed(() => {
     onSelect: openLoginDialog,
   }
   if (!account.profile.logged_in) return [[accountAction]]
-  return [[accountAction], [{ label: '退出登录', icon: 'i-tabler-logout', onSelect: signOut }]]
+  return [
+    [
+      {
+        label: 'Bilibili 主页',
+        icon: 'i-tabler-external-link',
+        onSelect: openAccountProfile,
+      },
+      accountAction,
+    ],
+    [{ label: '退出登录', icon: 'i-tabler-logout', onSelect: signOut }],
+  ]
 })
+const openAccountProfile = async () => {
+  const url = bilibiliUserUrl(account.profile.mid)
+  if (!url) return
+  try {
+    await openExternalUrl(url)
+  } catch (error) {
+    ui.pushToast(error instanceof Error ? error.message : String(error), 'danger')
+  }
+}
 const openLoginDialog = () => {
   ui.openLoginDialog()
 }

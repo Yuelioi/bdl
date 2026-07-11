@@ -2309,6 +2309,7 @@ mod tests {
                     id: ItemId("item:uploader:1001:BV1xx411c7mD".to_owned()),
                     title: "fixture upload".to_owned(),
                     owner_name: Some("fixture owner".to_owned()),
+                    owner_mid: Some(1001),
                     cover_url: Some("https://example.invalid/list-cover.jpg".to_owned()),
                     duration_seconds: Some(62),
                     parts: vec![NormalizedPart {
@@ -2352,6 +2353,7 @@ mod tests {
                     id: ItemId(format!("item:{label}:123:456")),
                     title: "fixture episode".to_owned(),
                     owner_name: None,
+                    owner_mid: None,
                     cover_url: None,
                     duration_seconds: Some(62),
                     parts: vec![NormalizedPart {
@@ -2389,6 +2391,7 @@ mod tests {
                     id: ItemId("item:uploader:1001:BV1yy411c7mD".to_owned()),
                     title: "fixture upload page 2".to_owned(),
                     owner_name: Some("fixture owner".to_owned()),
+                    owner_mid: Some(1001),
                     cover_url: None,
                     duration_seconds: None,
                     parts: vec![NormalizedPart {
@@ -2432,6 +2435,7 @@ mod tests {
                     id: ItemId("item:BV1xx411c7mD".to_owned()),
                     title: "fixture upload".to_owned(),
                     owner_name: None,
+                    owner_mid: None,
                     cover_url: None,
                     duration_seconds: None,
                     parts: vec![

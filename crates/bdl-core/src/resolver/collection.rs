@@ -512,6 +512,7 @@ fn map_archive_item(source_key: &str, video: ResolvedArchiveVideo) -> Normalized
         id: ItemId(format!("item:{video_key}")),
         title: video.title.clone(),
         owner_name: video.owner_name.clone(),
+        owner_mid: Some(video.owner_mid),
         cover_url: video.cover_url.clone(),
         duration_seconds: video.duration_seconds,
         parts: vec![NormalizedPart {

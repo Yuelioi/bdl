@@ -52,6 +52,7 @@ pub struct ResolvedVideo {
     pub default_cid: u64,
     pub title: String,
     pub owner_name: Option<String>,
+    pub owner_mid: Option<u64>,
     pub cover_url: Option<String>,
     pub pages: Vec<ResolvedVideoPage>,
 }
@@ -185,6 +186,7 @@ where
             id: ItemId(format!("item:{canonical_key}")),
             title: video.title.clone(),
             owner_name: video.owner_name.clone(),
+            owner_mid: video.owner_mid,
             cover_url: video.cover_url.clone(),
             duration_seconds: total_duration_seconds(&video.pages),
             parts,
@@ -258,6 +260,7 @@ impl VideoApi for BpiVideoApi {
             default_cid: view.cid.get(),
             title: view.title,
             owner_name: non_empty(view.owner.name),
+            owner_mid: Some(view.owner.mid.get()),
             cover_url: non_empty(view.pic),
             pages: view
                 .pages

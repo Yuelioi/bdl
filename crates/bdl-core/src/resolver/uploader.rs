@@ -189,6 +189,7 @@ fn map_video_item(source_mid: u64, video: ResolvedUploaderVideo) -> NormalizedIt
         id: ItemId(format!("item:{video_key}")),
         title: video.title.clone(),
         owner_name: video.owner_name.clone(),
+        owner_mid: Some(video.owner_mid),
         cover_url: video.cover_url.clone(),
         duration_seconds: video.duration_seconds,
         parts: vec![NormalizedPart {

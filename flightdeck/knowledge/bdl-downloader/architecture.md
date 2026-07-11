@@ -48,6 +48,7 @@ Important invariants:
 - All source types normalize into this tree: video, favorites, uploader lists, collections, series, bangumi, and courses.
 - `SourceSummary.loaded_count`, `total_count`, and `has_more` drive progressive paging.
 - A part must preserve enough identity to refresh media URLs later: source id, item/part id, aid/bvid/cid, quality, codec, and media kind.
+- Normalized items preserve optional `owner_mid` alongside `owner_name`. UI links and naming use MID as identity; never infer a profile URL from the display name.
 - Settings defaults are applied by the planner and can be overridden per task creation request.
 
 ## Download Tasks
@@ -248,6 +249,7 @@ UI rules:
 - Use Tabler icons through icon names, not ad hoc SVG.
 - Primary navigation is `解析`, `内容库`, `传输`, `设置`, and `关于`; do not add another top-level page without a distinct frequent job.
 - Account belongs in the top-right account button, not settings.
+- User, video, episode, course, favorite, and project links open through the Tauri external-link command. The backend accepts HTTPS only and exact trusted hosts; the frontend must not call the opener plugin directly.
 - Completed records live under Transfer's `已完成` filter, not a separate page.
 
 ## Developer Checks

@@ -18,6 +18,8 @@ import UiInlineNotice from './InlineNotice.vue'
 import UiSectionToolbar from './SectionToolbar.vue'
 import UiStatusBadge from './StatusBadge.vue'
 import UiTabs from './Tabs.vue'
+import ExternalLinkButton from './ExternalLinkButton.vue'
+import { bilibiliTaskUrl } from '../utils/bilibiliLinks'
 
 const { task, progress, logs, logsLoading = false } = defineProps<{
   task: DownloadTask | null
@@ -62,6 +64,7 @@ const overviewFacts = computed(() => [
   { label: '输出文件', value: task?.output_path ?? '--' },
   { label: '任务 ID', value: task?.id ?? '--' },
 ])
+const taskPageUrl = computed(() => (task ? bilibiliTaskUrl(task) : null))
 const redactedLogs = computed(() =>
   logs.map((log) => ({
     ...log,
@@ -253,6 +256,9 @@ const errorMessage = (error: unknown): string => {
           </div>
         </div>
         <UiDefinitionList :items="overviewFacts" />
+        <ExternalLinkButton v-if="taskPageUrl" :href="taskPageUrl" label="在 Bilibili 打开来源页面">
+          在 Bilibili 查看来源
+        </ExternalLinkButton>
       </section>
 
       <section v-else-if="selectedTab === 'tracks'" class="tab-panel tracks-panel">

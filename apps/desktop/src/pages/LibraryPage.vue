@@ -11,6 +11,8 @@ import UiEmptyState from '../ui/EmptyState.vue'
 import UiIconButton from '../ui/IconButton.vue'
 import UiPagination from '../ui/Pagination.vue'
 import UiTabs from '../ui/Tabs.vue'
+import ExternalLinkButton from '../ui/ExternalLinkButton.vue'
+import { bilibiliUserUrl } from '../utils/bilibiliLinks'
 import LibraryFolderDetail from './library/LibraryFolderDetail.vue'
 import ParseDownloadPlanner from './parse/ParseDownloadPlanner.vue'
 
@@ -187,14 +189,27 @@ watch(
             <div class="library-card-copy">
               <div>
                 <h3 :title="item.title">{{ item.title }}</h3>
-                <p>{{ item.owner_name || '我的收藏夹' }}</p>
+                <ExternalLinkButton
+                  v-if="item.owner_name && item.owner_mid"
+                  :href="bilibiliUserUrl(item.owner_mid) ?? item.source_url"
+                  :label="`打开 ${item.owner_name} 的 Bilibili 主页`"
+                  compact
+                >
+                  {{ item.owner_name }}
+                </ExternalLinkButton>
+                <p v-else>{{ item.owner_name || '我的收藏夹' }}</p>
               </div>
               <p v-if="item.description" class="library-description">{{ item.description }}</p>
               <div class="library-card-meta">
                 <span>{{ item.media_count }} 个视频</span>
-                <button type="button" @click="openFolder(item)">
-                  查看内容 <UIcon name="i-tabler-arrow-right" aria-hidden="true" />
-                </button>
+                <div class="library-card-links">
+                  <button type="button" @click="openFolder(item)">
+                    查看内容 <UIcon name="i-tabler-arrow-right" aria-hidden="true" />
+                  </button>
+                  <ExternalLinkButton :href="item.source_url" :label="`在 Bilibili 打开 ${item.title}`" compact>
+                    B站页面
+                  </ExternalLinkButton>
+                </div>
               </div>
             </div>
           </article>

@@ -469,6 +469,7 @@ fn fixture_tree(include_audio: bool) -> NormalizedSourceTree {
                 id: ItemId("item:BV1".to_owned()),
                 title: "Fixture Video".to_owned(),
                 owner_name: Some("owner".to_owned()),
+                owner_mid: Some(42),
                 cover_url: Some("https://example.invalid/cover.jpg?token=fixture".to_owned()),
                 duration_seconds: Some(42),
                 parts: vec![NormalizedPart {

@@ -159,6 +159,7 @@ fn account_library_created_folders_are_paginated_and_linkable() {
         page.items[0].source_url,
         "https://space.bilibili.com/42/favlist?fid=13"
     );
+    assert_eq!(page.items[0].owner_mid.as_deref(), Some("42"));
     assert!(!page.has_more);
 }
 
@@ -199,6 +200,7 @@ fn account_library_collected_folders_keep_cover_and_owner() {
         Some("https://example.test/cover.jpg")
     );
     assert_eq!(page.items[0].owner_name.as_deref(), Some("创作者"));
+    assert_eq!(page.items[0].owner_mid.as_deref(), Some("84"));
     assert_eq!(
         page.items[0].source_url,
         "https://space.bilibili.com/84/favlist?fid=21"

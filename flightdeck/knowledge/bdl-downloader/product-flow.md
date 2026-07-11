@@ -51,6 +51,8 @@ Account lives in the top-right account button. It must not be placed in settings
 
 Logged-out, loading, empty, API-error, pagination, cover-fallback, and narrow-window states are explicit. Cached account-library pages are cleared whenever the active account changes.
 
+External navigation is identity-based: the global account menu and UP labels use MID profile URLs, collection headers/cards use their canonical source URL, and video cards use BV (or AV fallback). Opening an external page never changes selection or starts a download.
+
 ## Parse Flow
 
 1. User enters BV/AV, URL, short link, or multi-line text.
@@ -214,6 +216,8 @@ The inspector should prioritize:
 6. raw logs
 
 Raw logs must be behind an explicit tab and redacted.
+
+Overview exposes a concise `在 Bilibili 查看来源` action when the persisted refresh identity can reconstruct a video, bangumi episode, course episode, or uploader page. It must never expose signed media CDN URLs as user-facing source links.
 
 ## Account UX
 

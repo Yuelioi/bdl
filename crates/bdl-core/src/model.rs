@@ -56,6 +56,8 @@ pub struct NormalizedItem {
     pub id: ItemId,
     pub title: String,
     pub owner_name: Option<String>,
+    #[serde(default)]
+    pub owner_mid: Option<u64>,
     pub cover_url: Option<String>,
     pub duration_seconds: Option<u64>,
     pub parts: Vec<NormalizedPart>,

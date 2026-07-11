@@ -27,6 +27,7 @@ fn normalized_source_tree_serializes_stable_shape() {
                 id: ItemId::from("item_1"),
                 title: "Example".into(),
                 owner_name: Some("owner".into()),
+                owner_mid: Some(42),
                 cover_url: None,
                 duration_seconds: None,
                 parts: vec![NormalizedPart {
@@ -103,6 +104,7 @@ fn normalized_source_tree_serializes_stable_shape() {
                             "id": "item_1",
                             "title": "Example",
                             "owner_name": "owner",
+                            "owner_mid": 42,
                             "cover_url": null,
                             "duration_seconds": null,
                             "parts": [

@@ -182,6 +182,11 @@
   font-size: var(--font-11);
   font-variant-numeric: tabular-nums;
 }
+.library-card-links {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
 .library-card-meta button {
   display: inline-flex;
   align-items: center;

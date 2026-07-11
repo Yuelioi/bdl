@@ -43,6 +43,7 @@ export interface NormalizedItem {
   id: string
   title: string
   owner_name: string | null
+  owner_mid?: number | null
   cover_url: string | null
   duration_seconds: number | null
   parts: NormalizedPart[]
@@ -292,6 +293,7 @@ export interface AccountLibraryFolder {
   description: string | null
   cover_url: string | null
   owner_name: string | null
+  owner_mid: string | null
   media_count: number
   source_url: string
 }

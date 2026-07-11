@@ -8,6 +8,8 @@ import UiEmptyState from '../../ui/EmptyState.vue'
 import UiInlineNotice from '../../ui/InlineNotice.vue'
 import UiPagination from '../../ui/Pagination.vue'
 import SelectionActionBar from '../../ui/SelectionActionBar.vue'
+import ExternalLinkButton from '../../ui/ExternalLinkButton.vue'
+import { bilibiliUserUrl, bilibiliVideoUrl } from '../../utils/bilibiliLinks'
 
 const { folder } = defineProps<{ folder: AccountLibraryFolder }>()
 const emit = defineEmits<{ back: []; download: [] }>()
@@ -122,7 +124,11 @@ const formatDuration = (seconds: number | null): string => {
           referrerpolicy="no-referrer"
         />
         <div class="grid min-w-0 gap-1">
-          <h2 class="truncate m-0 text-base text-(--color-text)" :title="folder.title">{{ folder.title }}</h2>
+          <h2 class="truncate m-0 text-base text-(--color-text)" :title="folder.title">
+            <ExternalLinkButton :href="folder.source_url" :label="`在 Bilibili 打开 ${folder.title}`">
+              <span class="truncate text-(--color-text)">{{ folder.title }}</span>
+            </ExternalLinkButton>
+          </h2>
           <p class="m-0 text-xs text-(--color-muted)">{{ folder.media_count }} 个视频 · {{ loadedLabel }}</p>
         </div>
       </div>
@@ -186,19 +192,40 @@ const formatDuration = (seconds: number | null): string => {
               aria-hidden="true"
             />
           </button>
+          <ExternalLinkButton
+            v-if="bilibiliVideoUrl(item)"
+            class="absolute top-2 right-2 grid size-7 place-items-center rounded-full border border-(--color-border-strong) bg-(--color-surface-raised) p-0"
+            :href="bilibiliVideoUrl(item) ?? ''"
+            :label="`在 Bilibili 打开 ${item.title}`"
+            compact
+          >
+            <span class="sr-only">打开视频</span>
+          </ExternalLinkButton>
           <span
             class="absolute right-1.5 bottom-1.5 rounded bg-black/70 px-1.5 py-0.5 text-[11px] font-bold text-white"
           >
             {{ formatDuration(item.duration_seconds) }}
           </span>
         </div>
-        <h3 class="line-clamp-2 m-0 min-h-10 text-[13px] leading-5 text-(--color-text)" :title="item.title">
+        <ExternalLinkButton
+          v-if="bilibiliVideoUrl(item)"
+          :href="bilibiliVideoUrl(item) ?? ''"
+          :label="`在 Bilibili 打开 ${item.title}`"
+        >
+          <span class="line-clamp-2 min-h-10 leading-5 text-(--color-text)" :title="item.title">{{ item.title }}</span>
+        </ExternalLinkButton>
+        <h3 v-else class="line-clamp-2 m-0 min-h-10 text-[13px] leading-5 text-(--color-text)" :title="item.title">
           {{ item.title }}
         </h3>
         <div class="flex min-w-0 items-center justify-between gap-2">
-          <span class="truncate text-[11px] text-(--color-muted)" :title="item.owner_name ?? undefined">{{
-            item.owner_name ?? '未知 UP 主'
-          }}</span>
+          <ExternalLinkButton
+            v-if="item.owner_name && item.owner_mid"
+            class="truncate text-[11px] text-(--color-muted)"
+            :href="bilibiliUserUrl(item.owner_mid) ?? ''"
+            :label="`打开 ${item.owner_name} 的 Bilibili 主页`"
+            compact
+          >{{ item.owner_name }}</ExternalLinkButton>
+          <span v-else class="truncate text-[11px] text-(--color-muted)">{{ item.owner_name ?? '未知 UP 主' }}</span>
           <UiButton size="compact" variant="ghost" :disabled="loading" @click="downloadItem(item)">下载</UiButton>
         </div>
       </article>

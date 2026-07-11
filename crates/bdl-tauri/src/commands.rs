@@ -28,6 +28,7 @@ use tauri_plugin_opener::OpenerExt;
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::mpsc::unbounded_channel;
+use url::Url;
 
 use crate::diagnostic_export::{
     redact_log as redact_log_for_diagnostics, redact_task as redact_task_for_diagnostics,
@@ -851,11 +852,7 @@ pub fn queue_open_dir(
 
 #[tauri::command]
 pub fn open_external_url(app: AppHandle, url: String) -> CommandResult<()> {
-    const ALLOWED_URLS: [&str; 2] = [
-        "https://space.bilibili.com/4279370",
-        "https://www.yuelili.com",
-    ];
-    if !ALLOWED_URLS.contains(&url.as_str()) {
+    if !is_allowed_external_url(&url) {
         return Err(CommandError {
             code: "external_url_not_allowed".to_owned(),
             message: "该链接不在允许打开的列表中。".to_owned(),
@@ -868,6 +865,26 @@ pub fn open_external_url(app: AppHandle, url: String) -> CommandResult<()> {
             code: "open_url_failed".to_owned(),
             message: format!("打开链接失败：{error}"),
         })
+}
+
+fn is_allowed_external_url(value: &str) -> bool {
+    let Ok(url) = Url::parse(value) else {
+        return false;
+    };
+    if url.scheme() != "https" || !url.username().is_empty() || url.password().is_some() {
+        return false;
+    }
+
+    matches!(
+        url.host_str(),
+        Some(
+            "bilibili.com"
+                | "www.bilibili.com"
+                | "space.bilibili.com"
+                | "github.com"
+                | "www.yuelili.com"
+        )
+    )
 }
 
 #[tauri::command]
@@ -1808,8 +1825,9 @@ fn parse_archive_mode(value: &str) -> CommandResult<ArchiveMode> {
 #[cfg(test)]
 mod tests {
     use super::{
-        has_recoverable_completed_output, parse_future_schedule, queue_task_launch_context,
-        redact_log_for_diagnostics, redact_task_for_diagnostics, should_fetch,
+        has_recoverable_completed_output, is_allowed_external_url, parse_future_schedule,
+        queue_task_launch_context, redact_log_for_diagnostics, redact_task_for_diagnostics,
+        should_fetch,
     };
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -1822,6 +1840,24 @@ mod tests {
         DownloadTaskMediaSelection, QueueLogEntry, QueueLogLevel, ResourceStatus, TaskStatus,
     };
     use chrono::{TimeZone, Utc};
+
+    #[test]
+    fn external_links_allow_only_trusted_https_hosts() {
+        assert!(is_allowed_external_url(
+            "https://www.bilibili.com/video/BV1xx411c7mD"
+        ));
+        assert!(is_allowed_external_url(
+            "https://space.bilibili.com/4279370"
+        ));
+        assert!(is_allowed_external_url("https://github.com/Yuelioi/bdl"));
+        assert!(!is_allowed_external_url(
+            "http://www.bilibili.com/video/BV1"
+        ));
+        assert!(!is_allowed_external_url(
+            "https://bilibili.com.example.test/video/BV1"
+        ));
+        assert!(!is_allowed_external_url("javascript:alert(1)"));
+    }
 
     #[test]
     fn future_schedule_parses_and_normalizes_to_utc() {

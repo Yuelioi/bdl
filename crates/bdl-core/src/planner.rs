@@ -624,7 +624,7 @@ fn output_path_for(
         aid: part.aid,
         cid: part.cid,
         owner_name: item.owner_name.as_deref(),
-        owner_mid: None,
+        owner_mid: item.owner_mid,
         series_title: Some(&tree.source.title),
         season_index: None,
         episode_index: Some(selected.item_index + 1),

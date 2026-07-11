@@ -464,6 +464,7 @@ fn map_episode_item(
         id: ItemId(format!("item:{item_key}")),
         title: episode.title.clone(),
         owner_name,
+        owner_mid: None,
         cover_url: cover_url.clone(),
         duration_seconds: episode.duration_seconds,
         parts: vec![NormalizedPart {
