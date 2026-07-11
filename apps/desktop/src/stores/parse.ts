@@ -127,18 +127,18 @@ export const useParseStore = defineStore('parse', {
         this.noticeTimer = null
       }
     },
-    async createSource(input?: string) {
+    async createSource(input?: string): Promise<boolean> {
       const ui = useUiStore()
       const inputs = splitParseInputs(input ?? this.input)
 
       if (inputs.length === 0) {
         this.setNotice('请输入链接或 BV/AV', 'warning')
-        return
+        return false
       }
 
       if (inputs.length > MAX_BATCH_SOURCES) {
         this.setNotice(`一次最多解析 ${MAX_BATCH_SOURCES} 个链接`, 'warning')
-        return
+        return false
       }
 
       this.loadingBySource.__create__ = true
@@ -172,7 +172,7 @@ export const useParseStore = defineStore('parse', {
         const trees = uniqueSourceTrees(validOutcomes.map((outcome) => outcome.tree))
         if (trees.length === 0) {
           ui.pushToast(failures[0]?.error ?? '解析失败', 'danger')
-          return
+          return false
         }
 
         const nextSourceIds = new Set(trees.map((tree) => tree.source.id))
@@ -193,26 +193,31 @@ export const useParseStore = defineStore('parse', {
         this.batchEntries = batch
           ? validOutcomes.flatMap((outcome, index) => {
               const part = batchPart(outcome.tree, outcome.input)
-              return part ? [{
-                id: `batch:${index}:${outcome.tree.source.id}:${part.id}`,
-                sourceId: outcome.tree.source.id,
-                partId: part.id,
-                title: outcome.tree.groups.flatMap((group) => group.items).flatMap((item) => item.parts).length > 1
-                  ? part.title
-                  : outcome.tree.source.title,
-                input: outcome.input,
-              }] : []
+              return part
+                ? [
+                    {
+                      id: `batch:${index}:${outcome.tree.source.id}:${part.id}`,
+                      sourceId: outcome.tree.source.id,
+                      partId: part.id,
+                      title:
+                        outcome.tree.groups.flatMap((group) => group.items).flatMap((item) => item.parts).length > 1
+                          ? part.title
+                          : outcome.tree.source.title,
+                      input: outcome.input,
+                    },
+                  ]
+                : []
             })
           : []
         this.selectedBatchEntryIds = this.batchEntries.map((entry) => entry.id)
         this.syncBatchSelection()
         this.input = failures.map((failure) => failure.input).join('\n')
-        this.setNotice(
-          failures.length > 0
-            ? `已解析 ${validOutcomes.length} 个链接，${failures.length} 个失败已保留`
-            : batch ? `已解析 ${validOutcomes.length} 个链接` : '解析完成',
-          failures.length > 0 ? 'warning' : 'success',
-        )
+        if (failures.length > 0) {
+          this.setNotice(`已解析 ${validOutcomes.length} 个链接，${failures.length} 个失败已保留`, 'warning')
+        } else {
+          this.clearNotice()
+        }
+        return true
       } finally {
         this.loadingBySource.__create__ = false
       }
@@ -274,7 +279,8 @@ export const useParseStore = defineStore('parse', {
         this.sourceOrder = this.sourceOrder.filter((id) => id !== sourceId)
         this.batchEntries = this.batchEntries.filter((entry) => entry.sourceId !== sourceId)
         this.selectedBatchEntryIds = this.selectedBatchEntryIds.filter((entryId) =>
-          this.batchEntries.some((entry) => entry.id === entryId))
+          this.batchEntries.some((entry) => entry.id === entryId),
+        )
         this.batchMode = this.batchMode && this.batchEntries.length > 0
         this.activeSourceId = this.sourceOrder[0] ?? null
         this.setNotice('已关闭解析源', 'info')
@@ -295,7 +301,8 @@ export const useParseStore = defineStore('parse', {
         this.sourceOrder = this.sourceOrder.filter((id) => id !== sourceId)
         this.batchEntries = this.batchEntries.filter((entry) => entry.sourceId !== sourceId)
         this.selectedBatchEntryIds = this.selectedBatchEntryIds.filter((entryId) =>
-          this.batchEntries.some((entry) => entry.id === entryId))
+          this.batchEntries.some((entry) => entry.id === entryId),
+        )
         if (this.activeSourceId === sourceId) {
           this.activeSourceId = this.sourceOrder[0] ?? null
         }
@@ -461,9 +468,14 @@ export const useParseStore = defineStore('parse', {
           return aggregate
         }
         const duplicateSuffix = aggregate.duplicates.length > 0 ? `，处理 ${aggregate.duplicates.length} 个重复项` : ''
-        const failureSuffix = aggregate.failedSourceIds.length > 0 ? `，${aggregate.failedSourceIds.length} 个链接失败` : ''
+        const failureSuffix =
+          aggregate.failedSourceIds.length > 0 ? `，${aggregate.failedSourceIds.length} 个链接失败` : ''
         if (aggregate.created.length > 0) {
-          this.setNotice(`已创建 ${aggregate.created.length} 个任务${duplicateSuffix}${failureSuffix}`, failureSuffix ? 'warning' : 'success', '查看传输')
+          this.setNotice(
+            `已创建 ${aggregate.created.length} 个任务${duplicateSuffix}${failureSuffix}`,
+            failureSuffix ? 'warning' : 'success',
+            '查看传输',
+          )
         } else if (aggregate.failedSourceIds.length > 0) {
           ui.pushToast('所选链接创建任务失败', 'danger')
         } else {
@@ -549,7 +561,8 @@ const splitParseInputs = (input: string): string[] =>
     ),
   )
 
-const defaultSelection = (tree: NormalizedSourceTree): string[] => (tree.source.kind === 'video' ? collectPartIds(tree) : [])
+const defaultSelection = (tree: NormalizedSourceTree): string[] =>
+  tree.source.kind === 'video' ? collectPartIds(tree) : []
 
 const partIdsForNode = (tree: NormalizedSourceTree, nodeId: string): string[] => {
   for (const group of tree.groups) {

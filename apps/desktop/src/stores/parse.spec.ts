@@ -24,29 +24,35 @@ const sourceTree = (id: string, title: string): NormalizedSourceTree => ({
     total_count: 0,
     has_more: false,
   },
-  groups: [{
-    id: `group:${id}`,
-    kind: 'video',
-    title,
-    page: null,
-    items: [{
-      id: `item:${id}`,
+  groups: [
+    {
+      id: `group:${id}`,
+      kind: 'video',
       title,
-      owner_name: null,
-      cover_url: null,
-      duration_seconds: 60,
-      parts: [{
-        id: `part:${id}`,
-        title,
-        aid: null,
-        bvid: id,
-        cid: null,
-        duration_seconds: 60,
-        streams: [],
-        assets: [],
-      }],
-    }],
-  }],
+      page: null,
+      items: [
+        {
+          id: `item:${id}`,
+          title,
+          owner_name: null,
+          cover_url: null,
+          duration_seconds: 60,
+          parts: [
+            {
+              id: `part:${id}`,
+              title,
+              aid: null,
+              bvid: id,
+              cid: null,
+              duration_seconds: 60,
+              streams: [],
+              assets: [],
+            },
+          ],
+        },
+      ],
+    },
+  ],
 })
 
 vi.mock('../api/tauri', () => api)
@@ -116,9 +122,32 @@ describe('parse store', () => {
     })
   })
 
+  it('rejects an empty submission without treating an existing result as a new parse', async () => {
+    const parse = useParseStore()
+    parse.upsertSource(sourceTree('source:existing', '已有结果'))
+
+    const parsed = await parse.createSource('   ')
+
+    expect(parsed).toBe(false)
+    expect(api.parseCreateSource).not.toHaveBeenCalled()
+    expect(parse.activeSource?.source.id).toBe('source:existing')
+    expect(parse.notice?.message).toBe('请输入链接或 BV/AV')
+  })
+
+  it('uses the button transition as success feedback instead of a redundant completion notice', async () => {
+    api.parseCreateSource.mockResolvedValue(sourceTree('source:new', '新来源'))
+    const parse = useParseStore()
+
+    const parsed = await parse.createSource('BV-new')
+
+    expect(parsed).toBe(true)
+    expect(parse.notice).toBeNull()
+  })
+
   it('parses multiple inputs into selected link-level batch items', async () => {
     api.parseCreateSource.mockImplementation(({ input }: { input: string }) =>
-      Promise.resolve(sourceTree(`source:${input}`, input)))
+      Promise.resolve(sourceTree(`source:${input}`, input)),
+    )
     const parse = useParseStore()
 
     await parse.createSource('BV1\nBV2')
@@ -172,12 +201,14 @@ describe('parse store', () => {
     api.selectionCreateTasks
       .mockResolvedValueOnce({
         created: [],
-        duplicates: [{
-          proposed_task_id: 'task:one',
-          title: '视频一',
-          existing_task_id: 'task:existing',
-          existing_status: 'completed',
-        }],
+        duplicates: [
+          {
+            proposed_task_id: 'task:one',
+            title: '视频一',
+            existing_task_id: 'task:existing',
+            existing_status: 'completed',
+          },
+        ],
         requires_confirmation: true,
       })
       .mockResolvedValueOnce({ created: [], duplicates: [], requires_confirmation: false })
@@ -203,8 +234,10 @@ describe('parse store', () => {
       namingTemplate: '{title} - P{part_index} - {part_title}.{ext}',
     })
 
-    expect(api.selectionCreateTasks).toHaveBeenCalledWith(expect.objectContaining({
-      naming_template: '{title} - P{part_index} - {part_title}.{ext}',
-    }))
+    expect(api.selectionCreateTasks).toHaveBeenCalledWith(
+      expect.objectContaining({
+        naming_template: '{title} - P{part_index} - {part_title}.{ext}',
+      }),
+    )
   })
 })

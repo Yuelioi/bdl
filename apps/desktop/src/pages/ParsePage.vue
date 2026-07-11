@@ -29,8 +29,8 @@ const workflowSteps = computed<WorkflowStep[]>(() => [
 ])
 
 const submitInput = async () => {
-  await parse.createSource()
-  if (hasResults.value) activeStage.value = 'content'
+  const parsed = await parse.createSource()
+  if (parsed) activeStage.value = 'content'
 }
 const openDownloadSettings = () => void downloadPlanner.value?.openDialog()
 
@@ -125,7 +125,7 @@ const runNoticeAction = () => {
                 媒体地址会在创建下载任务时获取
               </span>
               <UiButton class="min-w-28" type="submit" :disabled="createLoading">
-                {{ createLoading ? '正在解析' : '开始解析' }}
+                {{ createLoading ? '解析中' : '开始解析' }}
               </UiButton>
             </div>
           </form>
