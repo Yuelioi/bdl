@@ -1,13 +1,20 @@
 /* eslint-disable vue/one-component-per-file -- KeepAlive lifecycle requires a host and cached fixture. */
 import { mount } from '@vue/test-utils';
 import { defineComponent, h, KeepAlive, nextTick, ref } from 'vue';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { useTransferPageLifecycle } from './useTransferPageLifecycle';
 
 describe('transfer page lifecycle', () => {
+  afterEach(() => vi.useRealTimers());
+
   it('refreshes the queue and owns its window listeners', async () => {
-    const queue = { list: vi.fn().mockResolvedValue(undefined) };
+    vi.useFakeTimers();
+    const queue = {
+      list: vi.fn().mockResolvedValue(undefined),
+      reconcile: vi.fn().mockResolvedValue(undefined),
+      hasInFlightTasks: true,
+    };
     const handlers = {
       closeContextMenu: vi.fn(),
       closeContextMenuOnEscape: vi.fn(),
@@ -33,6 +40,8 @@ describe('transfer page lifecycle', () => {
     expect(queue.list).toHaveBeenCalledOnce();
     expect(handlers.closeContextMenuOnEscape).toHaveBeenCalledOnce();
     expect(handlers.closeContextMenu).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(queue.reconcile).toHaveBeenCalledOnce();
 
     active.value = false;
     await nextTick();
@@ -41,6 +50,8 @@ describe('transfer page lifecycle', () => {
 
     expect(handlers.closeContextMenuOnEscape).toHaveBeenCalledOnce();
     expect(handlers.closeContextMenu).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(queue.reconcile).toHaveBeenCalledOnce();
     wrapper.unmount();
   });
 });

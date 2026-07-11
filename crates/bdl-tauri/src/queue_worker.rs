@@ -139,6 +139,8 @@ async fn handle_download_outcome(
             emit_queue_log(app, state, &task.id, QueueLogLevel::Warning, "任务已停止")?;
         }
         Ok(TaskStatus::Completed) => {
+            let completed = state.task_snapshot(&task.id)?;
+            events::emit(app, events::QUEUE_TASK_UPDATED, &completed)?;
             emit_queue_log(
                 app,
                 state,

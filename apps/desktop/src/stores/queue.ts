@@ -57,6 +57,7 @@ interface QueueState {
   startupRecoveryLoading: boolean
   startupRecoveryDismissed: boolean
   loading: boolean
+  reconciling: boolean
   notice: InlineNotice | null
   noticeTimer: number | null
   listening: boolean
@@ -95,6 +96,7 @@ export const useQueueStore = defineStore('queue', {
     startupRecoveryLoading: false,
     startupRecoveryDismissed: false,
     loading: false,
+    reconciling: false,
     notice: null,
     noticeTimer: null,
     listening: false,
@@ -107,6 +109,9 @@ export const useQueueStore = defineStore('queue', {
     selectedTask(state): DownloadTask | null {
       return state.selectedTaskId ? (state.tasks.find((task) => task.id === state.selectedTaskId) ?? null) : null
     },
+    hasInFlightTasks(state): boolean {
+      return state.tasks.some((task) => task.status === 'downloading' || task.status === 'muxing')
+    },
   },
   actions: {
     async list() {
@@ -115,9 +120,7 @@ export const useQueueStore = defineStore('queue', {
       try {
         this.tasks = await queueList()
         this.applyDefaultFilter()
-        this.selectedTaskIds = this.selectedTaskIds.filter((taskId) =>
-          this.tasks.some((task) => task.id === taskId),
-        )
+        this.selectedTaskIds = this.selectedTaskIds.filter((taskId) => this.tasks.some((task) => task.id === taskId))
         this.ensureSelectedTask(true)
         if (this.selectedTaskId) {
           await this.loadLogs(this.selectedTaskId)
@@ -168,6 +171,20 @@ export const useQueueStore = defineStore('queue', {
           this.notice = null
           this.noticeTimer = null
         }, NOTICE_CLEAR_DELAY)
+      }
+    },
+    async reconcile() {
+      if (this.loading || this.reconciling) return
+      this.reconciling = true
+      try {
+        this.tasks = await queueList()
+        this.selectedTaskIds = this.selectedTaskIds.filter((taskId) => this.tasks.some((task) => task.id === taskId))
+        this.applyDefaultFilter()
+        this.ensureSelectedTask(true)
+      } catch {
+        // Events are primary; a later interval retries this silent consistency check.
+      } finally {
+        this.reconciling = false
       }
     },
     clearNotice() {
@@ -256,11 +273,7 @@ export const useQueueStore = defineStore('queue', {
       return this.progressByTask[taskId] ?? null
     },
     totalSpeedBytesPerSecond(): number {
-      const activeTaskIds = new Set(
-        this.tasks
-          .filter((task) => task.status === 'downloading')
-          .map((task) => task.id),
-      )
+      const activeTaskIds = new Set(this.tasks.filter((task) => task.status === 'downloading').map((task) => task.id))
 
       return Object.entries(this.progressByTask).reduce((total, [taskId, progress]) => {
         if (!activeTaskIds.has(taskId)) {
@@ -291,9 +304,10 @@ export const useQueueStore = defineStore('queue', {
       const baseline = speedSamples.find((sample) => updatedAt - sample.at >= MIN_SPEED_SAMPLE_INTERVAL_MS)
       const elapsedSeconds = baseline ? (updatedAt - baseline.at) / 1000 : 0
       const downloadedDelta = baseline ? downloadedBytes - baseline.downloadedBytes : 0
-      const speedBytesPerSecond = elapsedSeconds > 0 && downloadedDelta >= 0
-        ? downloadedDelta / elapsedSeconds
-        : existing?.speedBytesPerSecond ?? 0
+      const speedBytesPerSecond =
+        elapsedSeconds > 0 && downloadedDelta >= 0
+          ? downloadedDelta / elapsedSeconds
+          : (existing?.speedBytesPerSecond ?? 0)
 
       this.progressByTask[entry.task_id] = {
         resources,
@@ -526,8 +540,7 @@ const mergeLogs = (...sources: QueueLogEntry[][]): QueueLogEntry[] => {
   return merged.sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, LOG_LIMIT)
 }
 
-const logKey = (log: QueueLogEntry): string =>
-  `${log.task_id}\n${log.created_at}\n${log.level}\n${log.message}`
+const logKey = (log: QueueLogEntry): string => `${log.task_id}\n${log.created_at}\n${log.level}\n${log.message}`
 
 const sumDownloadedBytes = (resources: Record<string, ResourceProgressState>): number =>
   Object.values(resources).reduce((total, resource) => total + resource.downloadedBytes, 0)
