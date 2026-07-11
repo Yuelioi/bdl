@@ -117,6 +117,7 @@ const formatDuration = (seconds: number | null): string => {
           :src="folder.cover_url"
           alt=""
           class="h-12 w-20 shrink-0 rounded-md object-cover"
+          loading="lazy"
           referrerpolicy="no-referrer"
         />
         <div class="grid min-w-0 gap-1">

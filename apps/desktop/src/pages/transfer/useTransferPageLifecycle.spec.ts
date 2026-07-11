@@ -1,3 +1,4 @@
+/* eslint-disable vue/one-component-per-file -- KeepAlive lifecycle requires a host and cached fixture. */
 import { mount } from '@vue/test-utils';
 import { defineComponent, h, KeepAlive, nextTick, ref } from 'vue';
 import { describe, expect, it, vi } from 'vitest';

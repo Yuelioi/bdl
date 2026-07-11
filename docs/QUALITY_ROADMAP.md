@@ -18,7 +18,7 @@ Baseline: **14 / 20 — good, with structural risks that should be addressed bef
 
 - Keep Rust formatting, Clippy, tests, Vue type checking, style lint, and frontend tests mandatory in CI.
 - Run Vue and TypeScript semantic lint with zero warnings.
-- Add component-level accessibility tests for dialogs, menus, tabs, pagination, selection, and keyboard focus.
+- [x] Add component-level semantic and keyboard tests for dialogs, menus, tabs, pagination, selection, and virtualized tree focus.
 - Add a small set of deterministic screenshots for light/dark and narrow/standard desktop widths.
 
 Exit condition: a pull request cannot merge with a type, semantic lint, style, unit-test, or stable visual-state regression.
@@ -70,7 +70,7 @@ Exit condition: pages compose domain modules and shared UI primitives instead of
 
 - [x] Virtualize parsed content and transfer history at 200 rows with shared, tested window and overscan rules.
 - [x] Preserve page-local selection, scroll position, and filters across workspace changes with cached page instances.
-- Lazy-load remote images and use fixed aspect-ratio placeholders to prevent layout shifts.
+- [x] Lazy-load remote content images and reserve fixed cover aspect ratios to prevent layout shifts.
 - [x] Coalesce presentation-only progress events to at most 5 Hz per channel in the worker while task commands remain immediate.
 
 Exit condition: 10,000-item sources and long-running queues remain responsive and memory use is bounded.
