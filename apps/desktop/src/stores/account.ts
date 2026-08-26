@@ -17,9 +17,11 @@ interface AccountState {
   qrSession: QrLoginSession | null
   qrStatus: QrLoginStatus | null
   qrMessage: string
+  qrError: string
   qrLoading: boolean
   qrPolling: boolean
   qrPollTimer: number | null
+  qrRequestId: number
   loading: boolean
   saving: boolean
   listening: boolean
@@ -40,9 +42,11 @@ export const useAccountStore = defineStore('account', {
     qrSession: null,
     qrStatus: null,
     qrMessage: '',
+    qrError: '',
     qrLoading: false,
     qrPolling: false,
     qrPollTimer: null,
+    qrRequestId: 0,
     loading: false,
     saving: false,
     listening: false,
@@ -117,20 +121,36 @@ export const useAccountStore = defineStore('account', {
     },
     async startQrLogin() {
       const ui = useUiStore()
+      const requestId = this.qrRequestId + 1
+      this.qrRequestId = requestId
       this.stopQrPolling()
       this.qrSession = null
       this.qrStatus = null
       this.qrMessage = ''
+      this.qrError = ''
       this.qrLoading = true
       try {
-        this.qrSession = await accountLoginQrStart()
+        const session = await accountLoginQrStart()
+        if (requestId !== this.qrRequestId) {
+          return
+        }
+
+        this.qrSession = session
         this.qrStatus = 'waiting'
         this.qrMessage = '等待扫码'
         this.startQrPolling()
       } catch (error) {
-        ui.pushToast(errorMessage(error), 'danger')
+        if (requestId !== this.qrRequestId) {
+          return
+        }
+
+        this.qrError = errorMessage(error)
+        this.qrMessage = '二维码获取失败，请检查网络后重试'
+        ui.pushToast(this.qrError, 'danger')
       } finally {
-        this.qrLoading = false
+        if (requestId === this.qrRequestId) {
+          this.qrLoading = false
+        }
       }
     },
     startQrPolling() {
@@ -179,10 +199,13 @@ export const useAccountStore = defineStore('account', {
       }
     },
     resetQrLogin() {
+      this.qrRequestId += 1
       this.stopQrPolling()
       this.qrSession = null
       this.qrStatus = null
       this.qrMessage = ''
+      this.qrError = ''
+      this.qrLoading = false
       this.qrPolling = false
     },
     async logout() {

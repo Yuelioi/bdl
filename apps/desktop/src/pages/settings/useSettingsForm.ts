@@ -185,7 +185,6 @@ export function useSettingsForm() {
   onMounted(async () => {
     await settings.ensureLoaded();
     settingsGlobalSpeedLimitMib.value = toMibPerSecondInput(settings.draft.global_speed_limit_bytes_per_second);
-    await settings.checkEnvironment();
   });
 
   return {

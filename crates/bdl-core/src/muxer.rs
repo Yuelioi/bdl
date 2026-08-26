@@ -3,7 +3,8 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use tokio::process::Command;
+
+use crate::process::hidden_command;
 
 #[derive(Debug, thiserror::Error)]
 pub enum MuxError {
@@ -65,7 +66,10 @@ impl MediaMuxer {
 
     pub async fn probe(&self) -> Result<FfmpegProbe, MuxError> {
         let ffmpeg_path = ensure_executable(self.ffmpeg_path.clone())?;
-        let output = Command::new(&ffmpeg_path).arg("-version").output().await?;
+        let output = hidden_command(&ffmpeg_path)
+            .arg("-version")
+            .output()
+            .await?;
         if !output.status.success() {
             return Err(MuxError::CommandFailed {
                 code: output.status.code(),
@@ -99,7 +103,7 @@ impl MediaMuxer {
 
     pub async fn mux(&self, request: &MuxRequest) -> Result<(), MuxError> {
         let ffmpeg_path = ensure_executable(self.ffmpeg_path.clone())?;
-        let mut command = Command::new(ffmpeg_path);
+        let mut command = hidden_command(ffmpeg_path);
         for arg in ffmpeg_args(request)? {
             command.arg(arg);
         }

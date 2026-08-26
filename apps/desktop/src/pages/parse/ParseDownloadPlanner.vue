@@ -10,7 +10,6 @@ import { statusBadge, statusLabel } from '../../stores/transferView'
 import UiButton from '../../ui/Button.vue'
 import UiDialog from '../../ui/Dialog.vue'
 import UiDisclosure from '../../ui/Disclosure.vue'
-import UiEnvironmentHealthPanel from '../../ui/EnvironmentHealthPanel.vue'
 import UiInlineNotice from '../../ui/InlineNotice.vue'
 import UiSelect from '../../ui/Select.vue'
 import UiStatusBadge from '../../ui/StatusBadge.vue'
@@ -103,6 +102,11 @@ const downloadSettingsSummary = computed(() => {
 })
 
 const openDialog = async () => {
+  if (!settings.environmentReady) {
+    ui.openEnvironmentDialog()
+    return
+  }
+
   if (selectedSourceIds.value.length === 0 || selectedCount.value === 0) {
     parse.setNotice('请选择要下载的内容', 'warning')
     return
@@ -125,25 +129,13 @@ const openDialog = async () => {
   duplicateMatches.value = []
   duplicatePendingSourceIds.value = []
   downloadDialogOpen.value = true
-  await checkDownloadEnvironment()
 }
 
 defineExpose({ openDialog })
 
-const checkDownloadEnvironment = () => settings.checkEnvironment({
-  downloadDir: downloadDir.value.trim() || null,
-  ffmpegPath: settings.saved.ffmpeg_path,
-})
-
 const updateDownloadDir = (value: string) => {
   downloadDir.value = value
-  settings.invalidateEnvironmentHealth()
 }
-
-const createDownloadDirectory = () => settings.createDownloadDirectory({
-  downloadDir: downloadDir.value.trim() || null,
-  ffmpegPath: settings.saved.ffmpeg_path,
-})
 
 const createTasks = async (duplicatePolicy: DuplicateTaskPolicy = 'ask') => {
   const sourceIds = duplicatePolicy === 'ask' ? selectedSourceIds.value : duplicatePendingSourceIds.value
@@ -153,9 +145,8 @@ const createTasks = async (duplicatePolicy: DuplicateTaskPolicy = 'ask') => {
     parse.setNotice(scheduleError.value ?? taskSpeedLimitError.value ?? embeddingFormatError.value ?? '请检查下载设置', 'warning')
     return
   }
-  const health = await checkDownloadEnvironment()
-  if (!health?.ready) {
-    parse.setNotice('请先修复保存目录或 FFmpeg 环境', 'warning')
+  if (!settings.environmentReady) {
+    ui.openEnvironmentDialog()
     return
   }
   const result = await parse.createTasksForSources(sourceIds, {
@@ -195,16 +186,10 @@ const chooseDownloadDir = async () => {
     })
     if (typeof selected === 'string') {
       downloadDir.value = selected
-      await checkDownloadEnvironment()
     }
   } catch (error) {
     parse.setNotice(error instanceof Error ? error.message : String(error), 'warning')
   }
-}
-
-const openEnvironmentSettings = () => {
-  downloadDialogOpen.value = false
-  ui.setTab('settings')
 }
 
 function optionLabel(options: Array<{ label: string; value: string }>, value: string): string {
@@ -259,22 +244,12 @@ function optionLabel(options: Array<{ label: string; value: string }>, value: st
       <p class="m-0 wrap-anywhere rounded-md border border-(--color-border) bg-(--color-panel) px-3 py-2 text-xs leading-5 text-(--color-muted)">
         {{ downloadSettingsSummary }}
       </p>
-      <UiEnvironmentHealthPanel
-        compact
-        :health="settings.environmentHealth"
-        :checking="settings.environmentChecking"
-        @check="checkDownloadEnvironment"
-        @create-directory="createDownloadDirectory"
-        @choose-directory="chooseDownloadDir"
-        @choose-ffmpeg="openEnvironmentSettings"
-        @use-system-ffmpeg="openEnvironmentSettings"
-      />
     </div>
 
     <template #footer>
       <UiButton variant="secondary" :disabled="activeLoading" @click="downloadDialogOpen = false">取消</UiButton>
       <UiButton
-        :disabled="selectedSourceIds.length === 0 || Boolean(scheduleError) || Boolean(taskSpeedLimitError) || Boolean(embeddingFormatError) || settings.environmentChecking || settings.environmentHealth?.ready === false"
+        :disabled="selectedSourceIds.length === 0 || Boolean(scheduleError) || Boolean(taskSpeedLimitError) || Boolean(embeddingFormatError) || !settings.environmentReady"
         @click="createTasks()"
       >加入传输</UiButton>
     </template>

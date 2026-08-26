@@ -100,17 +100,18 @@ fn task_storage_reloads_refresh_intent_after_reopen() -> BdlResult<()> {
 fn task_storage_reloads_task_logs_after_reopen() -> BdlResult<()> {
     let fixture = StorageFixture::new()?;
     let task = sample_task();
+    let now = Utc::now();
     let first = sample_log(
         &task.id,
         QueueLogLevel::Info,
         "开始下载任务",
-        "2026-07-09T01:00:00Z",
+        &(now - Duration::seconds(1)).to_rfc3339(),
     );
     let second = sample_log(
         &task.id,
         QueueLogLevel::Error,
         "fetch error: HTTP 403",
-        "2026-07-09T01:00:01Z",
+        &now.to_rfc3339(),
     );
 
     {
@@ -268,7 +269,7 @@ fn task_storage_keeps_task_logs_when_replacing_existing_task() -> BdlResult<()> 
         &task.id,
         QueueLogLevel::Info,
         "下载资源 视频",
-        "2026-07-09T01:00:00Z",
+        &Utc::now().to_rfc3339(),
     );
 
     {

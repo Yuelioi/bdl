@@ -2,6 +2,7 @@
 import { computed, ref, useTemplateRef, watch } from 'vue'
 
 import { useParseStore } from '../stores/parse'
+import { useSettingsStore } from '../stores/settings'
 import { useUiStore } from '../stores/ui'
 import UiButton from '../ui/Button.vue'
 import UiInlineNotice from '../ui/InlineNotice.vue'
@@ -13,6 +14,7 @@ import ParseBatchWorkspace from './parse/ParseBatchWorkspace.vue'
 import ParseResultWorkspace from './parse/ParseResultWorkspace.vue'
 
 const parse = useParseStore()
+const settings = useSettingsStore()
 const ui = useUiStore()
 const downloadPlanner = useTemplateRef<{ openDialog: () => Promise<void> }>('download-planner')
 const createLoading = computed(() => Boolean(parse.loadingBySource.__create__))
@@ -29,10 +31,22 @@ const workflowSteps = computed<WorkflowStep[]>(() => [
 ])
 
 const submitInput = async () => {
+  if (!settings.environmentReady) {
+    ui.openEnvironmentDialog()
+    return
+  }
+
   const parsed = await parse.createSource()
   if (parsed) activeStage.value = 'content'
 }
-const openDownloadSettings = () => void downloadPlanner.value?.openDialog()
+const openDownloadSettings = () => {
+  if (!settings.environmentReady) {
+    ui.openEnvironmentDialog()
+    return
+  }
+
+  void downloadPlanner.value?.openDialog()
+}
 
 watch(hasResults, (available) => {
   activeStage.value = available ? 'content' : 'source'
@@ -57,6 +71,15 @@ const runNoticeAction = () => {
         @action="runNoticeAction"
         >{{ parse.notice.message }}</UiInlineNotice
       >
+
+      <UiInlineNotice
+        v-if="!settings.environmentReady"
+        :tone="settings.environmentChecking ? 'info' : 'warning'"
+        action-label="修复环境"
+        @action="ui.openEnvironmentDialog()"
+      >
+        {{ settings.environmentChecking ? '正在检查下载环境，完成后即可解析。' : '下载环境未就绪，修复保存目录或 FFmpeg 后才能解析。' }}
+      </UiInlineNotice>
 
       <section
         v-if="activeStage === 'source'"
@@ -116,7 +139,7 @@ const runNoticeAction = () => {
               label="链接或 BV / AV"
               :rows="6"
               placeholder="https://www.bilibili.com/video/BV...&#10;https://space.bilibili.com/..."
-              :disabled="createLoading"
+              :disabled="createLoading || !settings.environmentReady"
             />
 
             <div class="flex min-w-0 items-center justify-between gap-4 max-[620px]:items-stretch max-[620px]:flex-col">
@@ -124,8 +147,8 @@ const runNoticeAction = () => {
                 <UIcon name="i-tabler-bolt" class="size-4 shrink-0 text-(--color-accent-strong)" aria-hidden="true" />
                 媒体地址会在创建下载任务时获取
               </span>
-              <UiButton class="min-w-28" type="submit" :disabled="createLoading">
-                {{ createLoading ? '解析中' : '开始解析' }}
+              <UiButton class="min-w-28" type="submit" :disabled="createLoading || !settings.environmentReady">
+                {{ createLoading ? '解析中' : settings.environmentChecking ? '检查环境中' : '开始解析' }}
               </UiButton>
             </div>
           </form>

@@ -3,10 +3,11 @@
 [![CI](https://github.com/Yuelioi/bdl/actions/workflows/ci.yml/badge.svg)](https://github.com/Yuelioi/bdl/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/Yuelioi/bdl?display_name=tag&sort=semver)](https://github.com/Yuelioi/bdl/releases/latest)
 [![License](https://img.shields.io/github/license/Yuelioi/bdl)](LICENSE)
+[![Powered by bpi-rs](https://img.shields.io/badge/Powered%20by-bpi--rs-ff6699)](https://github.com/Yuelioi/bpi-rs)
 
-一个专注、可靠、本地优先的哔哩哔哩桌面下载工具。BDL 使用 Rust、Tauri 与 Vue 构建，把来源解析、批量选择、下载队列、失败恢复和媒体后处理整合在统一的工作区中。
+一个专注、可靠、本地优先的哔哩哔哩桌面下载工具。BDL 基于 [bpi-rs](https://github.com/Yuelioi/bpi-rs) 实现 Bilibili API 能力，并使用 Rust、Tauri 与 Vue 构建，把来源解析、批量选择、下载队列、失败恢复和媒体后处理整合在统一的工作区中。
 
-> 当前版本：`0.1.2` · Windows 优先 · 项目处于早期开发阶段
+> 当前版本：`0.2.0` · Windows 优先 · 项目处于早期开发阶段
 
 ![BDL 解析页面](preview/home.png)
 

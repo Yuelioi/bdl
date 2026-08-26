@@ -8,6 +8,7 @@ pub mod model;
 pub mod muxer;
 pub mod naming;
 pub mod planner;
+mod process;
 pub mod queue;
 pub mod resolver;
 pub mod settings;

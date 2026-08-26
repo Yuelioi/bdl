@@ -277,7 +277,7 @@ checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
 name = "bdl-cli"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "bdl-core",
@@ -287,7 +287,7 @@ dependencies = [
 
 [[package]]
 name = "bdl-core"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "bpi-rs",
@@ -309,7 +309,7 @@ dependencies = [
 
 [[package]]
 name = "bdl-desktop"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "bdl-tauri",
  "serde_json",
@@ -323,7 +323,7 @@ dependencies = [
 
 [[package]]
 name = "bdl-tauri"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "bdl-core",
  "chrono",
@@ -411,9 +411,9 @@ dependencies = [
 
 [[package]]
 name = "bpi-rs"
-version = "0.2.4"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c6c7f9be2ddc1c3d180c96e9fcf69caf49c22b124102b6a06327b2ef7687890a"
+checksum = "ad00c453b1fbcca051726a41c56f20c9411dfed059400d8eb8659bc60a2a0082"
 dependencies = [
  "base64 0.22.1",
  "bitflags 2.13.0",

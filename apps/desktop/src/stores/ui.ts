@@ -23,6 +23,7 @@ export const useUiStore = defineStore('ui', {
     toasts: [] as ToastMessage[],
     nextToastId: 1,
     loginDialogOpen: false,
+    environmentDialogOpen: false,
   }),
   actions: {
     setTab(tab: AppTab) {
@@ -30,6 +31,9 @@ export const useUiStore = defineStore('ui', {
     },
     openLoginDialog() {
       this.loginDialogOpen = true
+    },
+    openEnvironmentDialog() {
+      this.environmentDialogOpen = true
     },
     pushToast(message: string, tone: ToastMessage['tone'] = 'info', action?: ToastAction) {
       const id = this.nextToastId

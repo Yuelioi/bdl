@@ -40,6 +40,10 @@ try {
         cargo test --workspace
     }
 
+    Invoke-Step "Windows child process policy" {
+        & (Join-Path $PSScriptRoot "verify-windows-child-processes.ps1")
+    }
+
     Invoke-Step "Desktop frontend build" {
         pnpm --dir apps/desktop build
     }

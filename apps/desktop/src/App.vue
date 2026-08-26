@@ -5,6 +5,7 @@ import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch 
 import { useAccountStore } from './stores/account'
 import { useQueueStore } from './stores/queue'
 import { useLibraryStore } from './stores/library'
+import { useSettingsStore } from './stores/settings'
 import { useThemeStore } from './stores/theme'
 import { useUpdateStore } from './stores/update'
 import { useUiStore, type AppTab } from './stores/ui'
@@ -13,6 +14,7 @@ import { bilibiliUserUrl } from './utils/bilibiliLinks'
 import UiButton from './ui/Button.vue'
 import AppearanceMenu from './ui/AppearanceMenu.vue'
 import UiDialog from './ui/Dialog.vue'
+import UiEnvironmentHealthPanel from './ui/EnvironmentHealthPanel.vue'
 import UiTabs from './ui/Tabs.vue'
 import UiTextarea from './ui/Textarea.vue'
 import UiToastHost from './ui/ToastHost.vue'
@@ -27,12 +29,19 @@ const ui = useUiStore()
 const account = useAccountStore()
 const queue = useQueueStore()
 const library = useLibraryStore()
+const settings = useSettingsStore()
 const theme = useThemeStore()
 const updater = useUpdateStore()
 const loginDialogOpen = computed({
   get: () => ui.loginDialogOpen,
   set: (value: boolean) => {
     ui.loginDialogOpen = value
+  },
+})
+const environmentDialogOpen = computed({
+  get: () => ui.environmentDialogOpen,
+  set: (value: boolean) => {
+    ui.environmentDialogOpen = value
   },
 })
 const startupRecoveryDialogOpen = ref(false)
@@ -89,16 +98,7 @@ const aggregateSpeedLabel = computed(() => {
   }
   return `${value >= 100 || unitIndex === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[unitIndex]}`
 })
-const cookieSaveDisabled = computed(
-  () => account.saving || account.qrLoading || (loginMode.value === 'cookie' && !cookieText.value.trim()),
-)
-const loginActionLabel = computed(() => {
-  if (loginMode.value === 'cookie') {
-    return '保存'
-  }
-
-  return account.qrSession ? '刷新二维码' : '开始扫码'
-})
+const cookieSaveDisabled = computed(() => account.saving || !cookieText.value.trim())
 const startupRecoveryCount = computed(() => queue.startupRecovery?.task_ids.length ?? 0)
 const accountMenuItems = computed(() => {
   const accountAction = {
@@ -142,12 +142,7 @@ const closeWindow = () => {
   void appWindow.close()
 }
 
-const saveLogin = async () => {
-  if (loginMode.value === 'qr') {
-    await account.startQrLogin()
-    return
-  }
-
+const saveCookieLogin = async () => {
   const saved = await account.importCookie(cookieText.value)
   if (saved) {
     cookieText.value = ''
@@ -155,11 +150,38 @@ const saveLogin = async () => {
   }
 }
 
+const startQrLogin = () => {
+  void account.startQrLogin()
+}
+
 const signOut = async () => {
   await account.logout()
 }
 
+const openEnvironmentSettings = () => {
+  environmentDialogOpen.value = false
+  ui.setTab('settings')
+}
+
+const chooseDownloadDirectoryFromEnvironment = async () => {
+  if (await settings.chooseDownloadDir()) await settings.save()
+}
+
+const chooseFfmpegFromEnvironment = async () => {
+  if (await settings.chooseFfmpegPath()) await settings.save()
+}
+
+const useSystemFfmpegFromEnvironment = async () => {
+  settings.clearFfmpegPath()
+  await settings.save()
+}
+
 const initializeApp = async () => {
+  const environment = await settings.initializeEnvironment()
+  if (!environment?.ready) {
+    ui.openEnvironmentDialog()
+  }
+
   await updater.initialize()
   await account.startEventListeners()
   void account.load()
@@ -221,9 +243,7 @@ onBeforeUnmount(() => {
 })
 
 watch(loginDialogOpen, (open) => {
-  if (!open) {
-    account.resetQrLogin()
-  }
+  if (!open) account.resetQrLogin()
 })
 
 watch(startupRecoveryDialogOpen, (open, previous) => {
@@ -233,10 +253,15 @@ watch(startupRecoveryDialogOpen, (open, previous) => {
 })
 
 watch(loginMode, (mode) => {
-  if (mode !== 'qr') {
-    account.resetQrLogin()
-  }
+  if (mode !== 'qr') account.resetQrLogin()
 })
+
+watch(
+  () => settings.environmentReady,
+  (ready) => {
+    if (ready) environmentDialogOpen.value = false
+  },
+)
 
 watch(
   () => account.profile.avatar_url,
@@ -368,17 +393,70 @@ watch(
             { label: 'Cookie', value: 'cookie' },
           ]"
         />
-        <div v-if="loginMode === 'qr'" class="qr-panel">
-          <div class="qr-box" :class="{ active: account.qrImageSrc }">
-            <img v-if="account.qrImageSrc" :src="account.qrImageSrc" alt="" />
-            <span v-else>QR</span>
+        <div v-if="loginMode === 'qr'" class="qr-panel" :aria-busy="account.qrLoading">
+          <div v-if="account.qrImageSrc" class="qr-stage">
+            <div class="qr-box active">
+              <img :src="account.qrImageSrc" alt="用于登录 Bilibili 的二维码" />
+            </div>
+            <button
+              class="qr-refresh-button"
+              type="button"
+              aria-label="刷新二维码"
+              title="刷新二维码"
+              @click="startQrLogin"
+            >
+              <UIcon name="i-tabler-refresh" class="qr-refresh-icon" aria-hidden="true" />
+            </button>
           </div>
-          <p>{{ account.qrMessage || '等待扫码' }}</p>
+          <button
+            v-else
+            class="qr-box qr-box-action"
+            :class="{ error: account.qrError }"
+            type="button"
+            :disabled="account.qrLoading"
+            :aria-label="account.qrError ? '重新获取二维码' : '获取登录二维码'"
+            @click="startQrLogin"
+          >
+            <UIcon
+              :name="account.qrLoading ? 'i-tabler-loader-2' : 'i-tabler-refresh'"
+              class="qr-action-icon"
+              :class="{ 'qr-spinner': account.qrLoading }"
+              aria-hidden="true"
+            />
+            <span>{{ account.qrLoading ? '正在获取' : account.qrError ? '重新获取' : '获取二维码' }}</span>
+          </button>
+          <p
+            :class="{ 'qr-error-message': account.qrError }"
+            :role="account.qrError ? 'alert' : 'status'"
+            aria-live="polite"
+            aria-atomic="true"
+          >
+            {{ account.qrMessage || (account.qrLoading ? '正在生成二维码' : '点击上方获取登录二维码') }}
+          </p>
         </div>
         <UiTextarea v-else v-model="cookieText" label="Cookie" placeholder="SESSDATA=..." />
         <template #footer>
           <UiButton variant="secondary" @click="loginDialogOpen = false">取消</UiButton>
-          <UiButton :disabled="cookieSaveDisabled" @click="saveLogin">{{ loginActionLabel }}</UiButton>
+          <UiButton v-if="loginMode === 'cookie'" :disabled="cookieSaveDisabled" @click="saveCookieLogin">保存</UiButton>
+        </template>
+      </UiDialog>
+
+      <UiDialog v-model="environmentDialogOpen" title="下载环境未就绪">
+        <p class="dialog-copy">
+          BDL 会在启动时检查一次保存目录和 FFmpeg。修复环境并重新检测后，解析与下载功能会立即恢复。
+        </p>
+        <UiEnvironmentHealthPanel
+          :health="settings.environmentHealth"
+          :checking="settings.environmentChecking"
+          @check="settings.checkEnvironment"
+          @create-directory="settings.createDownloadDirectory"
+          @choose-directory="chooseDownloadDirectoryFromEnvironment"
+          @choose-ffmpeg="chooseFfmpegFromEnvironment"
+          @use-system-ffmpeg="useSystemFfmpegFromEnvironment"
+        />
+        <template #footer>
+          <UiButton variant="secondary" @click="environmentDialogOpen = false">稍后处理</UiButton>
+          <UiButton @click="openEnvironmentSettings">前往设置</UiButton>
         </template>
       </UiDialog>
 

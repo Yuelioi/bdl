@@ -2,7 +2,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { DownloadDirectoryHealth, EnvironmentHealthSnapshot } from '../api/dto'
-import { environmentCreateDownloadDirectory, environmentHealth } from '../api/tauri'
+import { environmentCreateDownloadDirectory, environmentHealth, settingsGet } from '../api/tauri'
 import { embeddingContainerError, useSettingsStore } from './settings'
 
 vi.mock('../api/tauri', () => ({
@@ -17,6 +17,7 @@ vi.mock('../api/tauri', () => ({
 
 const mockedEnvironmentHealth = vi.mocked(environmentHealth)
 const mockedCreateDirectory = vi.mocked(environmentCreateDownloadDirectory)
+const mockedSettingsGet = vi.mocked(settingsGet)
 
 const healthSnapshot = (path: string, status: 'ready' | 'missing'): EnvironmentHealthSnapshot => ({
   ready: status === 'ready',
@@ -44,6 +45,7 @@ const deferred = <T>() => {
 
 describe('settings environment health', () => {
   beforeEach(() => {
+    vi.resetAllMocks()
     setActivePinia(createPinia())
   })
 
@@ -58,6 +60,35 @@ describe('settings environment health', () => {
     await store.createDownloadDirectory({ downloadDir: 'C:\\current' })
 
     expect(mockedCreateDirectory).toHaveBeenCalledWith('C:\\current')
+  })
+
+  it('initializes the application environment only once per session', async () => {
+    const store = useSettingsStore()
+    mockedSettingsGet.mockResolvedValueOnce(JSON.parse(JSON.stringify(store.saved)))
+    mockedEnvironmentHealth.mockResolvedValueOnce(healthSnapshot('C:\\downloads', 'ready'))
+
+    await store.initializeEnvironment()
+    await store.initializeEnvironment()
+
+    expect(mockedSettingsGet).toHaveBeenCalledTimes(1)
+    expect(mockedEnvironmentHealth).toHaveBeenCalledTimes(1)
+    expect(store.environmentReady).toBe(true)
+  })
+
+  it('checks the saved runtime configuration instead of unsaved draft paths', async () => {
+    const store = useSettingsStore()
+    store.saved.download_dir = 'C:\\saved'
+    store.saved.ffmpeg_path = 'C:\\saved\\ffmpeg.exe'
+    store.draft.download_dir = 'C:\\draft'
+    store.draft.ffmpeg_path = 'C:\\draft\\ffmpeg.exe'
+    mockedEnvironmentHealth.mockResolvedValueOnce(healthSnapshot('C:\\saved', 'ready'))
+
+    await store.checkEnvironment()
+
+    expect(mockedEnvironmentHealth).toHaveBeenCalledWith({
+      download_dir: 'C:\\saved',
+      ffmpeg_path: 'C:\\saved\\ffmpeg.exe',
+    })
   })
 
   it('does not let an older directory repair overwrite a newer health check', async () => {

@@ -111,6 +111,7 @@ interface SettingsState {
   noticeTimer: number | null
   environmentHealth: EnvironmentHealthSnapshot | null
   environmentChecking: boolean
+  environmentInitialized: boolean
   environmentCheckId: number
 }
 
@@ -131,6 +132,7 @@ export const useSettingsStore = defineStore('settings', {
     noticeTimer: null,
     environmentHealth: null,
     environmentChecking: false,
+    environmentInitialized: false,
     environmentCheckId: 0,
   }),
   getters: {
@@ -143,6 +145,9 @@ export const useSettingsStore = defineStore('settings', {
     namingTemplateError(state): string | null {
       return validateNamingTemplate(state.draft.naming_template)
     },
+    environmentReady(state): boolean {
+      return state.environmentInitialized && state.environmentHealth?.ready === true
+    },
   },
   actions: {
     async ensureLoaded() {
@@ -151,6 +156,19 @@ export const useSettingsStore = defineStore('settings', {
       }
 
       await this.load()
+    },
+    async initializeEnvironment(): Promise<EnvironmentHealthSnapshot | null> {
+      if (this.environmentInitialized) {
+        return this.environmentHealth
+      }
+
+      await this.ensureLoaded()
+      if (!this.loaded) {
+        this.environmentInitialized = true
+        return null
+      }
+
+      return this.checkEnvironment()
     },
     setNotice(message: string, tone: NoticeTone = 'info') {
       this.notice = { message, tone }
@@ -199,7 +217,7 @@ export const useSettingsStore = defineStore('settings', {
       try {
         this.apply(await settingsUpdate(normalizeSettings(this.draft)))
         this.setNotice('设置已保存', 'success')
-        void this.checkEnvironment()
+        await this.checkEnvironment()
       } catch (error) {
         this.error = errorMessage(error)
         ui.pushToast(this.error, 'danger')
@@ -207,7 +225,7 @@ export const useSettingsStore = defineStore('settings', {
         this.saving = false
       }
     },
-    async chooseDownloadDir() {
+    async chooseDownloadDir(): Promise<boolean> {
       const ui = useUiStore()
       try {
         const selected = await open({
@@ -219,14 +237,16 @@ export const useSettingsStore = defineStore('settings', {
 
         if (typeof selected === 'string') {
           this.setDownloadDir(selected)
-          void this.checkEnvironment()
+          return true
         }
+        return false
       } catch (error) {
         this.error = errorMessage(error)
         ui.pushToast(this.error, 'danger')
+        return false
       }
     },
-    async chooseFfmpegPath() {
+    async chooseFfmpegPath(): Promise<boolean> {
       const ui = useUiStore()
       try {
         const selected = await open({
@@ -238,11 +258,13 @@ export const useSettingsStore = defineStore('settings', {
 
         if (typeof selected === 'string') {
           this.setFfmpegPath(selected)
-          void this.checkEnvironment()
+          return true
         }
+        return false
       } catch (error) {
         this.error = errorMessage(error)
         ui.pushToast(this.error, 'danger')
+        return false
       }
     },
     async chooseDataDir() {
@@ -278,16 +300,18 @@ export const useSettingsStore = defineStore('settings', {
       this.environmentChecking = true
       try {
         const health = await environmentHealth({
-          download_dir: overrides.downloadDir !== undefined ? overrides.downloadDir : this.draft.download_dir,
-          ffmpeg_path: overrides.ffmpegPath !== undefined ? overrides.ffmpegPath : this.draft.ffmpeg_path,
+          download_dir: overrides.downloadDir !== undefined ? overrides.downloadDir : this.saved.download_dir,
+          ffmpeg_path: overrides.ffmpegPath !== undefined ? overrides.ffmpegPath : this.saved.ffmpeg_path,
         })
         if (checkId !== this.environmentCheckId) {
           return null
         }
         this.environmentHealth = health
+        this.environmentInitialized = true
         return health
       } catch (error) {
         if (checkId === this.environmentCheckId) {
+          this.environmentInitialized = true
           ui.pushToast(errorMessage(error), 'danger')
         }
         return null
@@ -352,23 +376,13 @@ export const useSettingsStore = defineStore('settings', {
     },
     resetDraft() {
       this.draft = cloneSettings(this.saved)
-      this.invalidateEnvironmentHealth()
-      void this.checkEnvironment()
     },
     restoreDefaults() {
       this.draft = defaultSettings()
-      this.invalidateEnvironmentHealth()
-      void this.checkEnvironment()
-    },
-    invalidateEnvironmentHealth() {
-      this.environmentCheckId += 1
-      this.environmentHealth = null
-      this.environmentChecking = false
     },
     setDownloadDir(value: string) {
       const trimmed = value.trim()
       this.draft.download_dir = trimmed ? trimmed : null
-      this.invalidateEnvironmentHealth()
     },
     setNamingTemplate(value: string) {
       this.draft.naming_template = value
@@ -454,12 +468,9 @@ export const useSettingsStore = defineStore('settings', {
     setFfmpegPath(value: string) {
       const trimmed = value.trim()
       this.draft.ffmpeg_path = trimmed ? trimmed : null
-      this.invalidateEnvironmentHealth()
     },
     clearFfmpegPath() {
       this.draft.ffmpeg_path = null
-      this.invalidateEnvironmentHealth()
-      void this.checkEnvironment()
     },
     setRetainRawStreams(value: boolean) {
       this.draft.retain_raw_streams = value
