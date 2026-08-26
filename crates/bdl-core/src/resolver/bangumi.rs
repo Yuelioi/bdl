@@ -1,7 +1,9 @@
 use async_trait::async_trait;
 use bpi_rs::bangumi::{BangumiDetailParams, BangumiVideoStreamParams};
-use bpi_rs::ids::{EpisodeId, SeasonId};
+use bpi_rs::danmaku::DanmakuXmlListParams;
+use bpi_rs::ids::{Aid, Bvid, Cid, EpisodeId, SeasonId};
 use bpi_rs::models::{DashTrack, Fnval, VideoQuality};
+use bpi_rs::video::VideoPlayerInfoParams;
 use bpi_rs::{BpiClient, BpiError};
 use chrono::{DateTime, Utc};
 use url::Url;
@@ -11,8 +13,9 @@ use crate::error::{BdlError, BdlResult};
 use crate::ids::{GroupId, ItemId, PartId, SourceId};
 use crate::input::ClassifiedInput;
 use crate::model::{
-    AssetKind, FetchPolicy, HeaderPair, MediaKind, MediaStream, NormalizedGroup, NormalizedItem,
-    NormalizedPart, NormalizedSourceTree, SourceKind, SourceSummary, StreamCodec, StreamQuality,
+    AssetKind, DerivedAsset, FetchPolicy, HeaderPair, MediaKind, MediaStream, NormalizedGroup,
+    NormalizedItem, NormalizedPart, NormalizedSourceTree, SourceKind, SourceSummary, StreamCodec,
+    StreamQuality,
 };
 
 const DEFAULT_REFERER: &str = "https://www.bilibili.com/";
@@ -51,6 +54,14 @@ pub struct ResolvedBangumiEpisode {
 pub struct ResolvedBangumiPlayUrl {
     pub video: Vec<ResolvedBangumiDashStream>,
     pub audio: Vec<ResolvedBangumiDashStream>,
+    pub subtitles: Vec<ResolvedBangumiSubtitle>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedBangumiSubtitle {
+    pub lan: String,
+    pub lan_doc: String,
+    pub url: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -151,11 +162,15 @@ where
                 "bangumi:{}:{}:{}",
                 season.season_id, episode.ep_id, episode.cid
             );
-            let streams = if should_fetch_streams {
+            let (streams, assets) = if should_fetch_streams {
                 let play_url = self.api.play_url(&episode).await?;
-                map_play_url(&part_key, play_url, Utc::now())
+                let assets = archive_assets(episode.cid, &play_url.subtitles);
+                (map_play_url(&part_key, play_url, Utc::now()), assets)
             } else {
-                Vec::new()
+                (
+                    Vec::new(),
+                    vec![AssetKind::Cover.with_policy(FetchPolicy::OnDemand)],
+                )
             };
 
             items.push(map_episode_item(
@@ -164,6 +179,7 @@ where
                 episode,
                 season.owner_name.clone(),
                 streams,
+                assets,
             ));
         }
 
@@ -278,7 +294,39 @@ impl BangumiApi for BpiBangumiApi {
             .await
             .map_err(bpi_error)?;
 
-        Ok(ResolvedBangumiPlayUrl::from_dash(data.base.dash))
+        let subtitles = match self
+            .client
+            .video()
+            .player_info_v2(bangumi_player_info_params(episode)?)
+            .await
+        {
+            Ok(player_info) => player_info
+                .subtitle
+                .map(|info| {
+                    info.subtitles
+                        .into_iter()
+                        .filter_map(|subtitle| {
+                            normalize_asset_url(&subtitle.subtitle_url).map(|url| {
+                                ResolvedBangumiSubtitle {
+                                    lan: subtitle.lan,
+                                    lan_doc: subtitle.lan_doc,
+                                    url,
+                                }
+                            })
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
+            Err(error) => {
+                tracing::warn!(
+                    ep_id = episode.ep_id,
+                    "failed to load optional bangumi subtitles: {error}"
+                );
+                Vec::new()
+            }
+        };
+
+        Ok(ResolvedBangumiPlayUrl::from_dash(data.base.dash, subtitles))
     }
 }
 
@@ -307,9 +355,15 @@ impl ResolvedBangumiEpisode {
 }
 
 impl ResolvedBangumiPlayUrl {
-    fn from_dash(dash: Option<bpi_rs::models::DashStreams>) -> Self {
+    fn from_dash(
+        dash: Option<bpi_rs::models::DashStreams>,
+        subtitles: Vec<ResolvedBangumiSubtitle>,
+    ) -> Self {
         let Some(dash) = dash else {
-            return Self::default();
+            return Self {
+                subtitles,
+                ..Self::default()
+            };
         };
 
         Self {
@@ -323,6 +377,7 @@ impl ResolvedBangumiPlayUrl {
                 .into_iter()
                 .map(ResolvedBangumiDashStream::from)
                 .collect(),
+            subtitles,
         }
     }
 }
@@ -369,6 +424,7 @@ fn map_episode_item(
     episode: ResolvedBangumiEpisode,
     owner_name: Option<String>,
     streams: Vec<MediaStream>,
+    assets: Vec<DerivedAsset>,
 ) -> NormalizedItem {
     let item_key = format!("{source_key}:{}", episode.ep_id);
 
@@ -387,8 +443,64 @@ fn map_episode_item(
             cid: Some(episode.cid),
             duration_seconds: episode.duration_seconds,
             streams,
-            assets: vec![AssetKind::Cover.with_policy(FetchPolicy::OnDemand)],
+            assets,
         }],
+    }
+}
+
+fn bangumi_player_info_params(
+    episode: &ResolvedBangumiEpisode,
+) -> BdlResult<VideoPlayerInfoParams> {
+    let cid = Cid::new(episode.cid).map_err(bpi_error)?;
+    if !episode.bvid.trim().is_empty() {
+        return episode
+            .bvid
+            .parse::<Bvid>()
+            .map(|bvid| VideoPlayerInfoParams::from_bvid(bvid, cid))
+            .map_err(bpi_error);
+    }
+
+    Aid::new(episode.aid)
+        .map(|aid| VideoPlayerInfoParams::from_aid(aid, cid))
+        .map_err(bpi_error)
+}
+
+fn archive_assets(cid: u64, subtitles: &[ResolvedBangumiSubtitle]) -> Vec<DerivedAsset> {
+    let mut assets = vec![AssetKind::Cover.with_policy(FetchPolicy::OnDemand)];
+    let subtitle_urls = subtitles
+        .iter()
+        .filter_map(|subtitle| normalize_asset_url(&subtitle.url))
+        .collect::<Vec<_>>();
+    if !subtitle_urls.is_empty() {
+        assets.push(DerivedAsset::with_urls(
+            AssetKind::Subtitle,
+            FetchPolicy::OnDemand,
+            "json",
+            subtitle_urls,
+            default_stream_headers(),
+        ));
+    }
+    if let Ok(cid) = Cid::new(cid) {
+        assets.push(DerivedAsset::with_urls(
+            AssetKind::Danmaku,
+            FetchPolicy::OnDemand,
+            "xml",
+            vec![DanmakuXmlListParams::new(cid).comment_xml_url()],
+            default_stream_headers(),
+        ));
+    }
+    assets.push(AssetKind::Nfo.with_policy(FetchPolicy::OnDemand));
+    assets
+}
+
+fn normalize_asset_url(url: &str) -> Option<String> {
+    let trimmed = url.trim();
+    if trimmed.is_empty() {
+        None
+    } else if trimmed.starts_with("//") {
+        Some(format!("https:{trimmed}"))
+    } else {
+        Some(trimmed.to_owned())
     }
 }
 

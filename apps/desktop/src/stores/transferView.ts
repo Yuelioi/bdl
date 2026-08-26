@@ -546,9 +546,24 @@ const classifyTaskIssue = (task: DownloadTask, logs: QueueLogEntry[]): Classifie
 }
 
 const transientWarningMessages = new Set(['任务已停止', '任务已暂停或取消', '自动刷新过期链接'])
+const unavailableOptionalAssetMessages = new Set([
+  '跳过封面：暂无可用地址',
+  '跳过字幕：暂无可用地址',
+  '跳过弹幕：暂无可用地址',
+  '跳过封面：当前视频未提供可下载封面',
+  '跳过字幕：当前视频未提供可下载字幕',
+  '跳过弹幕：未能获取弹幕地址',
+])
 
 const completionWarningLogs = (logs: QueueLogEntry[]): QueueLogEntry[] =>
-  logs.filter((log) => log.level === 'warning' && !transientWarningMessages.has(log.message.trim()))
+  logs.filter((log) => {
+    const message = log.message.trim()
+    return (
+      log.level === 'warning' &&
+      !transientWarningMessages.has(message) &&
+      !unavailableOptionalAssetMessages.has(message)
+    )
+  })
 
 const hasWarningLogs = (logs: QueueLogEntry[]): boolean => completionWarningLogs(logs).length > 0
 

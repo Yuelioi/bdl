@@ -154,11 +154,15 @@ export function useSettingsForm() {
 
     return `仅下载最终视频${rawStreamCopy.value}${embeddingCopy.value}；不下载封面、字幕、弹幕或 NFO。`;
   });
-  const settingsDuplicateDescription = computed(() =>
-    settings.draft.duplicate_naming_strategy === 'overwrite_existing'
-      ? '新任务会使用模板渲染出的原始路径；如果磁盘上已有同名文件，下载完成后会覆盖它。批量任务内部路径冲突仍会自动加后缀。'
-      : '新任务遇到同名文件时自动生成“文件名 (1)”这类路径，不覆盖已有文件。',
-  );
+  const settingsDuplicateDescription = computed(() => {
+    if (settings.draft.duplicate_naming_strategy === 'skip_existing') {
+      return '最终文件已存在时跳过整个任务；未完成的分段缓存仍会继续恢复。';
+    }
+    if (settings.draft.duplicate_naming_strategy === 'overwrite_existing') {
+      return '使用原始路径重新生成最终文件。覆盖合并期间若异常退出，原有文件可能受损。';
+    }
+    return '保留已有文件，并生成“文件名 (1)”这类新路径。';
+  });
 
   const resetNamingTemplate = () => {
     settings.setNamingTemplate(defaultNamingTemplate);

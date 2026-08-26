@@ -11,6 +11,7 @@ pub const DEFAULT_NAMING_TEMPLATE: &str = "{title}/P{part_index} - {part_title}.
 #[serde(rename_all = "snake_case")]
 pub enum DuplicateNamingStrategy {
     #[default]
+    SkipExisting,
     AppendSuffix,
     OverwriteExisting,
 }
@@ -109,10 +110,13 @@ pub fn resolve_duplicate_path(
     path: PathBuf,
     reserved: &mut HashSet<PathBuf>,
     strategy: DuplicateNamingStrategy,
-) -> PathBuf {
+) -> Option<PathBuf> {
     match strategy {
-        DuplicateNamingStrategy::AppendSuffix => unique_path(path, reserved),
-        DuplicateNamingStrategy::OverwriteExisting => overwrite_existing_path(path, reserved),
+        DuplicateNamingStrategy::SkipExisting if path.exists() => None,
+        DuplicateNamingStrategy::SkipExisting | DuplicateNamingStrategy::OverwriteExisting => {
+            Some(overwrite_existing_path(path, reserved))
+        }
+        DuplicateNamingStrategy::AppendSuffix => Some(unique_path(path, reserved)),
     }
 }
 

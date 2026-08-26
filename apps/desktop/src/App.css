@@ -283,16 +283,28 @@
 }
 
 .status-beacon {
-  width: 8px;
-  height: 8px;
+  width: 16px;
+  height: 16px;
+  display: grid;
+  place-items: center;
   border-radius: 50%;
+  background: color-mix(in oklab, var(--color-success) 16%, transparent);
+}
+
+.status-beacon::after {
+  width: 7px;
+  height: 7px;
+  border-radius: inherit;
   background: var(--color-success);
-  box-shadow: 0 0 0 4px color-mix(in oklab, var(--color-success) 16%, transparent);
+  content: '';
 }
 
 .status-beacon.attention {
+  background: color-mix(in oklab, var(--color-warning) 16%, transparent);
+}
+
+.status-beacon.attention::after {
   background: var(--color-warning);
-  box-shadow: 0 0 0 4px color-mix(in oklab, var(--color-warning) 16%, transparent);
 }
 
 .nav-status > span:last-child {
@@ -532,9 +544,11 @@
   }
 
   .nav-status {
-    grid-template-columns: 1fr;
-    justify-items: center;
-    padding-inline: 0;
+    min-height: 54px;
+    grid-template-columns: minmax(0, 1fr);
+    place-items: center;
+    gap: 0;
+    padding: 0;
   }
 }
 

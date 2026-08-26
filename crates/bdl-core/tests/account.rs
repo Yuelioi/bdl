@@ -203,7 +203,7 @@ fn account_library_collected_folders_keep_cover_and_owner() {
     assert_eq!(page.items[0].owner_mid.as_deref(), Some("84"));
     assert_eq!(
         page.items[0].source_url,
-        "https://space.bilibili.com/84/favlist?fid=21&ftype=collect&ctype=21"
+        "https://space.bilibili.com/84/lists/21?type=season"
     );
 }
 

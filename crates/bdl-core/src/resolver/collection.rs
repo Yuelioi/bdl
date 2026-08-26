@@ -407,6 +407,7 @@ pub fn collection_ids_from_url(raw_url: &str) -> BdlResult<CollectionInputIds> {
         })?;
     let season_id = query_u64(&url, &["season_id"])
         .or_else(|| list_id_from_space_path(&url, &segments, &["season", "collection"]))
+        .or_else(|| collected_favorite_id(&url, &segments))
         .ok_or_else(|| BdlError::InvalidInput {
             message: "合集链接缺少 season_id 参数。".to_owned(),
         })?;
@@ -575,6 +576,20 @@ fn list_id_from_space_path(url: &Url, segments: &[&str], allowed_types: &[&str])
     }
 
     segments.get(2)?.parse::<u64>().ok()
+}
+
+fn collected_favorite_id(url: &Url, segments: &[&str]) -> Option<u64> {
+    if !is_space_host(url.host_str()?)
+        || !segments
+            .get(1)
+            .is_some_and(|segment| segment.eq_ignore_ascii_case("favlist"))
+        || !query_value(url, "ftype")?.eq_ignore_ascii_case("collect")
+        || !query_value(url, "ctype")?.eq_ignore_ascii_case("21")
+    {
+        return None;
+    }
+
+    query_u64(url, &["fid"])
 }
 
 fn query_u64(url: &Url, keys: &[&str]) -> Option<u64> {

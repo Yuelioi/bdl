@@ -4,19 +4,13 @@ import { computed, ref } from 'vue'
 import { useParseStore } from '../../stores/parse'
 import UiButton from '../../ui/Button.vue'
 import UiEmptyState from '../../ui/EmptyState.vue'
-import UiIconButton from '../../ui/IconButton.vue'
 import UiInlineNotice from '../../ui/InlineNotice.vue'
-import UiSelect from '../../ui/Select.vue'
-import UiTextField from '../../ui/TextField.vue'
-import UiTree from '../../ui/Tree.vue'
 import SelectionActionBar from '../../ui/SelectionActionBar.vue'
+import ParseResultTable from './ParseResultTable.vue'
+import SourceLoadStatus from './SourceLoadStatus.vue'
+import SourceParseControls from './SourceParseControls.vue'
 import {
-  filterTreeNodes,
-  flattenVisibleParts,
-  numberVisibleParts,
-  parseRangeExpression,
-  type ResultSortMode,
-  sortTreeNodes,
+  flattenResultRows,
   sourceKindLabels,
   sourcePartCount,
   toTreeNodes,
@@ -25,64 +19,49 @@ import {
 const emit = defineEmits<{ download: [] }>()
 const { embedded = false } = defineProps<{ embedded?: boolean }>()
 const parse = useParseStore()
-const resultQuery = ref('')
-const resultSort = ref<ResultSortMode>('source')
 const loadBatchSize = ref('200')
-const rangeExpression = ref('')
-const rangeError = ref('')
-
-const resultSortOptions = [
-  { label: '原始顺序', value: 'source' },
-  { label: '标题 A-Z', value: 'title_asc' },
-  { label: '时长优先', value: 'duration_desc' },
-]
-const loadBatchOptions = [
-  { label: '每批 200', value: '200' },
-  { label: '每批 500', value: '500' },
-  { label: '每批 1000', value: '1000' },
-]
-
 const activeSource = computed(() => parse.activeSource)
 const selectedIds = computed(() => parse.activeSelection)
 const selectedCount = computed(() => selectedIds.value.length)
 const totalPartCount = computed(() => (activeSource.value ? sourcePartCount(activeSource.value) : 0))
-const treeNodes = computed(() => {
-  if (!activeSource.value) return []
-  const filtered = filterTreeNodes(toTreeNodes(activeSource.value), resultQuery.value)
-  return numberVisibleParts(sortTreeNodes(filtered, resultSort.value))
-})
-const visiblePartEntries = computed(() => flattenVisibleParts(treeNodes.value))
-const visiblePartCount = computed(() => visiblePartEntries.value.length)
-const activeLoading = computed(() => Boolean(activeSource.value && parse.loadingBySource[activeSource.value.source.id]))
+const tableRows = computed(() => (activeSource.value ? flattenResultRows(toTreeNodes(activeSource.value)) : []))
+const sourceRequestLoading = computed(() =>
+  Boolean(activeSource.value && parse.loadingBySource[activeSource.value.source.id]),
+)
+const pacedParsing = computed(() =>
+  Boolean(activeSource.value && parse.pacedParsingBySource[activeSource.value.source.id]),
+)
+const pacedWaiting = computed(() =>
+  Boolean(activeSource.value && parse.pacedParsingWaitingBySource[activeSource.value.source.id]),
+)
+const pacedStopping = computed(() =>
+  Boolean(activeSource.value && parse.pacedParsingStopRequestedBySource[activeSource.value.source.id]),
+)
+const activeLoading = computed(() => sourceRequestLoading.value || pacedParsing.value)
 const activeError = computed(() => (activeSource.value ? parse.errorsBySource[activeSource.value.source.id] : null))
 const hasMore = computed(() => Boolean(activeSource.value?.source.has_more))
-const hasResultQuery = computed(() => resultQuery.value.trim().length > 0)
+const allRowsSelected = computed(
+  () =>
+    tableRows.value.length > 0 &&
+    tableRows.value.flatMap((row) => row.partIds).every((partId) => selectedIds.value.includes(partId)),
+)
 const canCreateTasks = computed(() => Boolean(activeSource.value && selectedCount.value > 0 && !activeLoading.value))
-const canSelectResults = computed(() =>
-  Boolean(activeSource.value && visiblePartCount.value > 0 && !activeLoading.value),
-)
-const canSelectRange = computed(() =>
-  Boolean(activeSource.value && rangeExpression.value.trim() && visiblePartCount.value > 0 && !activeLoading.value),
-)
-const createTaskLabel = computed(() =>
-  activeLoading.value ? '处理中' : selectedCount.value > 0 ? `下载所选 (${selectedCount.value})` : '请先选择',
-)
-const selectAllLabel = computed(() => (hasResultQuery.value ? `全选搜索结果 (${visiblePartCount.value})` : '全选全部'))
+const createTaskLabel = computed(() => `下载所选 (${selectedCount.value})`)
 
-const selectAllResults = () => {
+const toggleAllResults = () => {
   if (!activeSource.value) return
+  if (allRowsSelected.value) {
+    parse.clearSelection(activeSource.value.source.id)
+    return
+  }
   parse.selectPartIds(
     activeSource.value.source.id,
-    visiblePartEntries.value.map((entry) => entry.id),
+    tableRows.value.flatMap((row) => row.partIds),
   )
 }
 
 const clearSelection = () => {
   if (activeSource.value) parse.clearSelection(activeSource.value.source.id)
-}
-
-const refreshSource = () => {
-  if (activeSource.value) void parse.refreshSource(activeSource.value.source.id)
 }
 
 const loadMore = () => {
@@ -91,26 +70,39 @@ const loadMore = () => {
   }
 }
 
-const closeSource = () => {
-  if (activeSource.value) void parse.closeSource(activeSource.value.source.id)
+const parseAll = () => {
+  if (activeSource.value?.source.has_more) {
+    void parse.parseAllPaced(activeSource.value.source.id, Number(loadBatchSize.value))
+  }
+}
+
+const stopParsing = () => {
+  if (activeSource.value) parse.stopPacedParsing(activeSource.value.source.id)
+}
+
+const downloadAllLoaded = () => {
+  if (!activeSource.value) return
+  parse.selectAllLoaded(activeSource.value.source.id)
+  emit('download')
+}
+
+const parseAndDownload = async () => {
+  if (!activeSource.value) return
+  const sourceId = activeSource.value.source.id
+  const result = await parse.parseAllPaced(sourceId, Number(loadBatchSize.value))
+  if (result !== 'completed') return
+  parse.selectAllLoaded(sourceId)
+  emit('download')
+}
+
+const returnToSource = () => {
+  if (!activeLoading.value) void parse.clearWorkspace()
 }
 
 const toggleNode = (nodeId: string) => {
   if (activeSource.value) parse.toggleNode(activeSource.value.source.id, nodeId)
 }
 
-const selectRange = () => {
-  if (!activeSource.value) return
-  rangeError.value = ''
-  try {
-    const indexes = parseRangeExpression(rangeExpression.value, visiblePartEntries.value.length)
-    const partIds = indexes.map((index) => visiblePartEntries.value[index].id)
-    parse.selectPartIds(activeSource.value.source.id, partIds)
-    parse.setNotice(`已选中 ${partIds.length} 个结果`, 'success')
-  } catch (error) {
-    rangeError.value = error instanceof Error ? error.message : String(error)
-  }
-}
 </script>
 
 <template>
@@ -120,9 +112,18 @@ const selectRange = () => {
     :class="embedded ? 'flex flex-1 flex-col gap-3' : 'panel'"
   >
     <div
-      class="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-3 border-b border-(--color-border) pb-3 max-[840px]:grid-cols-1"
+      class="source-result-header grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-3 border-b border-(--color-border) pb-3 max-[840px]:grid-cols-1"
     >
-      <div class="grid min-w-0 gap-1">
+      <div class="flex min-w-0 items-center gap-3">
+        <button
+          type="button"
+          class="grid size-8 shrink-0 place-items-center rounded-md text-(--color-muted) hover:bg-(--color-panel) hover:text-(--color-text) disabled:cursor-not-allowed disabled:opacity-55"
+          aria-label="返回解析首页"
+          :disabled="activeLoading"
+          @click="returnToSource"
+        >
+          <UIcon name="i-tabler-arrow-left" class="size-4" aria-hidden="true" />
+        </button>
         <div class="flex min-w-0 items-center gap-2">
           <strong class="truncate text-base text-(--color-text)" :title="activeSource.source.title">
             {{ activeSource.source.title }}
@@ -131,92 +132,50 @@ const selectRange = () => {
             {{ sourceKindLabels[activeSource.source.kind] }}
           </span>
         </div>
-        <div class="flex flex-wrap items-center gap-3 text-xs text-(--color-muted)" aria-label="内容选择统计">
-          <span v-if="hasMore"
-            >已加载 <b class="font-bold text-(--color-text)">{{ activeSource.source.loaded_count }}</b> 项</span
-          >
-          <span v-if="hasMore && activeSource.source.total_count !== null"
-            >共 <b class="font-bold text-(--color-text)">{{ activeSource.source.total_count }}</b> 项</span
-          >
-          <span v-if="!hasMore"
-            >共 <b class="font-bold text-(--color-text)">{{ totalPartCount }}</b> 项</span
-          >
-          <span
-            >已选 <b class="font-bold text-(--color-text)">{{ selectedCount }}</b> 项</span
-          >
-          <span v-if="hasResultQuery"
-            >搜索找到 <b class="font-bold text-(--color-text)">{{ visiblePartCount }}</b> 项</span
-          >
-        </div>
       </div>
 
-      <div class="flex flex-wrap justify-end gap-1 max-[840px]:justify-start">
-        <UiButton size="compact" variant="ghost" :disabled="!canSelectResults" @click="selectAllResults">{{
-          selectAllLabel
-        }}</UiButton>
-        <div v-if="hasMore" class="flex items-center gap-1.5">
-          <USelect
-            v-model="loadBatchSize"
-            :items="loadBatchOptions"
-            value-key="value"
-            label-key="label"
-            size="xs"
-            color="neutral"
-            variant="outline"
-            trailing-icon="i-tabler-chevron-down"
-            :disabled="activeLoading"
-            :portal="true"
-            aria-label="每次解析数量"
-            :content="{ side: 'bottom', align: 'end', sideOffset: 4, collisionPadding: 12, position: 'popper' }"
-            :ui="{ base: 'h-7 min-h-7 w-25 py-0', content: 'z-50 shadow-md', item: 'font-medium' }"
-          />
-          <UiButton size="compact" variant="secondary" :disabled="activeLoading" @click="loadMore">
-            {{ activeLoading ? '解析中' : '解析更多' }}
-          </UiButton>
-        </div>
-        <UiIconButton
-          icon="refresh"
-          label="刷新当前来源"
-          variant="ghost"
-          size="compact"
-          :disabled="activeLoading"
-          @click="refreshSource"
+      <div class="source-function-toolbar flex flex-wrap items-center justify-end gap-2 max-[840px]:justify-start">
+        <SourceLoadStatus :loaded="activeSource.source.loaded_count" :total="activeSource.source.total_count" />
+        <SourceParseControls
+          v-if="hasMore || pacedParsing"
+          v-model:batch-size="loadBatchSize"
+          :has-more="hasMore"
+          :loading="sourceRequestLoading"
+          :parsing-all="pacedParsing"
+          :waiting="pacedWaiting"
+          :stopping="pacedStopping"
+          @parse-batch="loadMore"
+          @parse-all="parseAll"
+          @parse-and-download="parseAndDownload"
+          @stop="stopParsing"
         />
-        <UiIconButton icon="x" label="关闭解析结果" variant="ghost" size="compact" @click="closeSource" />
-      </div>
-
-      <div
-        class="col-span-full grid min-w-0 grid-cols-[minmax(180px,1fr)_minmax(150px,180px)_minmax(220px,280px)] items-end gap-2.5 max-[840px]:grid-cols-1"
-      >
-        <UiTextField v-model="resultQuery" label="搜索内容" placeholder="标题 / UP 主 / BV" :disabled="activeLoading" />
-        <UiSelect v-model="resultSort" label="排序" :options="resultSortOptions" :disabled="activeLoading" />
-        <div class="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-end gap-2">
-          <UiTextField
-            v-model="rangeExpression"
-            label="序号范围"
-            placeholder="1-5,7,9-12"
-            :disabled="activeLoading || visiblePartCount === 0"
-          />
-          <UiButton class="h-9" variant="secondary" :disabled="!canSelectRange" @click="selectRange">选中</UiButton>
-        </div>
-        <p v-if="rangeError" class="col-span-full -mt-2 m-0 text-xs font-bold text-(--color-danger)">
-          {{ rangeError }}
-        </p>
+        <UiButton
+          v-if="!hasMore"
+          size="compact"
+          variant="secondary"
+          :disabled="activeLoading || totalPartCount === 0"
+          @click="downloadAllLoaded"
+        >
+          下载全部
+        </UiButton>
+        <UiButton size="compact" :disabled="!canCreateTasks" @click="emit('download')">{{ createTaskLabel }}</UiButton>
       </div>
     </div>
 
-    <UiTree
-      v-if="treeNodes.length"
+    <ParseResultTable
+      v-if="tableRows.length"
       class="min-h-0 flex-1"
-      :nodes="treeNodes"
+      :rows="tableRows"
       :selected-ids="selectedIds"
+      :disabled="activeLoading"
       @toggle="toggleNode"
+      @toggle-all="toggleAllResults"
     />
     <UiEmptyState
       v-else
-      title="没有匹配结果"
-      description="换一个关键词，或清除搜索与范围条件。"
-      icon="i-tabler-filter-off"
+      title="没有可选择内容"
+      description="当前来源没有可下载的视频或分集。"
+      icon="i-tabler-folder-open"
       layout="stacked"
       compact
       embedded
@@ -224,11 +183,16 @@ const selectRange = () => {
     <UiInlineNotice v-if="activeError" tone="danger">{{ activeError }}</UiInlineNotice>
 
     <SelectionActionBar :selected-count="selectedCount" :total-count="totalPartCount">
-      <template #actions>
-        <UiButton variant="ghost" :disabled="selectedCount === 0 || activeLoading" @click="clearSelection"
-          >取消选择</UiButton
+      <template #selection>
+        <UiButton
+          v-if="selectedCount > 0"
+          size="compact"
+          variant="ghost"
+          :disabled="activeLoading"
+          @click="clearSelection"
         >
-        <UiButton :disabled="!canCreateTasks" @click="emit('download')">{{ createTaskLabel }}</UiButton>
+          取消选择
+        </UiButton>
       </template>
     </SelectionActionBar>
   </section>

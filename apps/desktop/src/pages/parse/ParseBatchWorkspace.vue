@@ -32,21 +32,40 @@ const handleRowKeydown = (event: KeyboardEvent, entryId: string) => {
   event.preventDefault()
   parse.toggleBatchEntry(entryId)
 }
+
+const returnToSource = () => {
+  if (!loading.value) void parse.clearWorkspace()
+}
 </script>
 
 <template>
   <section class="min-h-0 overflow-hidden" :class="embedded ? 'flex flex-1 flex-col gap-3' : 'panel'">
-    <header class="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-4 border-b border-(--color-border) pb-3">
-      <div class="grid min-w-0 gap-1">
-        <div class="flex items-center gap-2">
-          <strong class="text-base text-(--color-text)">批量视频</strong>
-          <span class="text-xs font-bold text-(--color-muted)">{{ parse.batchEntries.length }} 个链接</span>
+    <header
+      class="batch-result-header grid min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-4 border-b border-(--color-border) pb-3"
+    >
+      <div class="flex min-w-0 items-center gap-3">
+        <button
+          type="button"
+          class="grid size-8 shrink-0 place-items-center rounded-md text-(--color-muted) hover:bg-(--color-panel) hover:text-(--color-text) disabled:cursor-not-allowed disabled:opacity-55"
+          aria-label="返回解析首页"
+          :disabled="loading"
+          @click="returnToSource"
+        >
+          <UIcon name="i-tabler-arrow-left" class="size-4" aria-hidden="true" />
+        </button>
+        <div class="grid min-w-0 gap-1">
+          <div class="flex items-center gap-2">
+            <strong class="text-base text-(--color-text)">批量视频</strong>
+            <span class="text-xs font-bold text-(--color-muted)">{{ parse.batchEntries.length }} 个链接</span>
+          </div>
+          <p class="m-0 text-xs leading-5 text-(--color-muted)">每个链接作为一个视频条目，下载设置会统一应用。</p>
         </div>
-        <p class="m-0 text-xs leading-5 text-(--color-muted)">每个链接作为一个视频条目，下载设置会统一应用。</p>
       </div>
-      <UiButton size="compact" variant="ghost" :disabled="loading" @click="toggleAll">
-        {{ allSelected ? '取消全选' : '全选全部' }}
-      </UiButton>
+      <div class="source-function-toolbar flex items-start justify-end">
+        <UiButton size="compact" :disabled="selectedCount === 0 || loading" @click="emit('download')">
+          下载所选 ({{ selectedCount }})
+        </UiButton>
+      </div>
       <UiTextField
         v-model="query"
         class="col-span-full"
@@ -102,13 +121,19 @@ const handleRowKeydown = (event: KeyboardEvent, entryId: string) => {
     </div>
 
     <SelectionActionBar :selected-count="selectedCount" :total-count="parse.batchEntries.length" unit="个视频">
-      <template #actions>
-        <UiButton variant="ghost" :disabled="selectedCount === 0 || loading" @click="parse.clearBatchSelection()"
-          >取消选择</UiButton
+      <template #selection>
+        <UiButton size="compact" variant="ghost" :disabled="loading" @click="toggleAll">
+          {{ allSelected ? '取消全选' : '全选全部' }}
+        </UiButton>
+        <UiButton
+          v-if="selectedCount > 0 && !allSelected"
+          size="compact"
+          variant="ghost"
+          :disabled="loading"
+          @click="parse.clearBatchSelection()"
         >
-        <UiButton :disabled="selectedCount === 0 || loading" @click="emit('download')"
-          >下载所选 ({{ selectedCount }})</UiButton
-        >
+          取消选择
+        </UiButton>
       </template>
     </SelectionActionBar>
   </section>

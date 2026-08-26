@@ -129,6 +129,34 @@ describe('completed transfer task warnings', () => {
     expect(diagnostic.tone).toBe('success')
   })
 
+  it('does not treat known missing optional assets as a partial failure', () => {
+    const task = scheduledTask()
+    task.status = 'completed'
+    task.scheduled_at = null
+    const logs = [
+      {
+        task_id: task.id,
+        level: 'warning' as const,
+        message: '跳过字幕：暂无可用地址',
+        created_at: '2026-07-10T12:00:00Z',
+      },
+      {
+        task_id: task.id,
+        level: 'warning' as const,
+        message: '跳过弹幕：暂无可用地址',
+        created_at: '2026-07-10T12:00:01Z',
+      },
+    ]
+
+    const view = createTransferTaskView(task, 100, logs)
+    const diagnostic = createTaskDiagnosticView(task, logs)
+
+    expect(view.statusLabel).toBe('已完成')
+    expect(view.statusBadge).toBe('done')
+    expect(diagnostic.summary).toBe('任务已完成')
+    expect(diagnostic.tone).toBe('success')
+  })
+
   it('does not show stale transfer speed after completion', () => {
     const task = scheduledTask()
     task.status = 'completed'

@@ -211,9 +211,9 @@ fn favorite_source_url(mid: u64, media_id: u64, kind: AccountLibraryFolderKind) 
         AccountLibraryFolderKind::CreatedFavorite => {
             format!("https://space.bilibili.com/{mid}/favlist?fid={media_id}&ftype=create")
         }
-        AccountLibraryFolderKind::CollectedFavorite => format!(
-            "https://space.bilibili.com/{mid}/favlist?fid={media_id}&ftype=collect&ctype=21"
-        ),
+        AccountLibraryFolderKind::CollectedFavorite => {
+            format!("https://space.bilibili.com/{mid}/lists/{media_id}?type=season")
+        }
     }
 }
 

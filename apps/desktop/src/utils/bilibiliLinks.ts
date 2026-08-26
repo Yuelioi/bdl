@@ -1,8 +1,17 @@
-import type { DownloadTask, NormalizedItem } from '../api/dto'
+import type { AccountLibraryFolderKind, DownloadTask, NormalizedItem } from '../api/dto'
 
 export const bilibiliUserUrl = (mid: string | number | null | undefined): string | null => {
   const value = String(mid ?? '').trim()
   return /^\d+$/.test(value) ? `https://space.bilibili.com/${value}` : null
+}
+
+export const bilibiliFavoriteCategoryUrl = (
+  mid: string | number | null | undefined,
+  kind: AccountLibraryFolderKind,
+): string | null => {
+  const profileUrl = bilibiliUserUrl(mid)
+  if (!profileUrl) return null
+  return `${profileUrl}/favlist?ftype=${kind === 'created_favorite' ? 'create' : 'collect'}`
 }
 
 export const bilibiliVideoUrl = (item: NormalizedItem): string | null => {

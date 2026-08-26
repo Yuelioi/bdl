@@ -1,12 +1,22 @@
 import { describe, expect, it } from 'vitest'
 
 import type { DownloadTask, NormalizedItem } from '../api/dto'
-import { bilibiliTaskUrl, bilibiliUserUrl, bilibiliVideoUrl } from './bilibiliLinks'
+import { bilibiliFavoriteCategoryUrl, bilibiliTaskUrl, bilibiliUserUrl, bilibiliVideoUrl } from './bilibiliLinks'
 
 describe('Bilibili page links', () => {
   it('builds safe user profile links only from numeric MID values', () => {
     expect(bilibiliUserUrl('4279370')).toBe('https://space.bilibili.com/4279370')
     expect(bilibiliUserUrl('javascript:alert(1)')).toBeNull()
+  })
+
+  it('builds one account-level link for each favorite category', () => {
+    expect(bilibiliFavoriteCategoryUrl('4279370', 'created_favorite')).toBe(
+      'https://space.bilibili.com/4279370/favlist?ftype=create',
+    )
+    expect(bilibiliFavoriteCategoryUrl('4279370', 'collected_favorite')).toBe(
+      'https://space.bilibili.com/4279370/favlist?ftype=collect',
+    )
+    expect(bilibiliFavoriteCategoryUrl('javascript:alert(1)', 'created_favorite')).toBeNull()
   })
 
   it('prefers a BV page for normalized video items', () => {

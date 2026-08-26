@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue';
 
 import UiButton from '../ui/Button.vue';
+import UiInlineNotice from '../ui/InlineNotice.vue';
 import SettingsArchiveSection from './settings/SettingsArchiveSection.vue';
 import SettingsDownloadSection from './settings/SettingsDownloadSection.vue';
 import SettingsMaintenanceSection from './settings/SettingsMaintenanceSection.vue';
@@ -43,9 +44,7 @@ const currentSettingsSection = computed(
     <section class="panel settings-panel">
       <div class="panel-heading settings-heading">
         <div class="settings-heading-copy">
-          <span>偏好与维护</span>
           <h2>设置</h2>
-          <p>调整新任务的默认行为，当前下载只会立即应用全局限速。</p>
         </div>
         <div class="settings-actions">
           <span v-if="settingsFormChanged" class="dirty-indicator">未保存</span>

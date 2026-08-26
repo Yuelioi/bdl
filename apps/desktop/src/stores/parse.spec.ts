@@ -1,5 +1,5 @@
 import { createPinia, setActivePinia } from 'pinia'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useParseStore } from './parse'
 import type { NormalizedSourceTree } from '../api/dto'
@@ -63,13 +63,60 @@ describe('parse store', () => {
     Object.values(api).forEach((mock) => mock.mockReset())
   })
 
-  it('requests every remaining page without the legacy 100-item limit', async () => {
-    api.parseLoadAll.mockRejectedValue(new Error('request captured'))
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('parses all remaining items in paced chunks', async () => {
+    vi.useFakeTimers()
+    const firstPage = sourceTree('favorite:42', '大型收藏夹')
+    firstPage.source.kind = 'favorite'
+    firstPage.source.loaded_count = 40
+    firstPage.source.total_count = 440
+    firstPage.source.has_more = true
+    const secondPage = structuredClone(firstPage)
+    secondPage.source.loaded_count = 240
+    const finalPage = structuredClone(firstPage)
+    finalPage.source.loaded_count = 440
+    finalPage.source.has_more = false
+    api.parseLoadAll.mockResolvedValueOnce(secondPage).mockResolvedValueOnce(finalPage)
     const parse = useParseStore()
+    parse.upsertSource(firstPage)
 
-    await parse.parseAll('favorite:42')
+    const parsing = parse.parseAllPaced('favorite:42', 200, 3_000)
+    await vi.advanceTimersByTimeAsync(3_000)
 
-    expect(api.parseLoadAll).toHaveBeenCalledWith({ source_id: 'favorite:42' })
+    await expect(parsing).resolves.toBe('completed')
+    expect(api.parseLoadAll.mock.calls).toEqual([
+      [{ source_id: 'favorite:42', limit: 240 }],
+      [{ source_id: 'favorite:42', limit: 440 }],
+    ])
+    expect(parse.pacedParsingBySource['favorite:42']).toBe(false)
+    vi.useRealTimers()
+  })
+
+  it('stops paced parsing before the next chunk', async () => {
+    vi.useFakeTimers()
+    const firstPage = sourceTree('favorite:42', '大型收藏夹')
+    firstPage.source.kind = 'favorite'
+    firstPage.source.loaded_count = 40
+    firstPage.source.total_count = 440
+    firstPage.source.has_more = true
+    const secondPage = structuredClone(firstPage)
+    secondPage.source.loaded_count = 240
+    api.parseLoadAll.mockResolvedValueOnce(secondPage)
+    const parse = useParseStore()
+    parse.upsertSource(firstPage)
+
+    const parsing = parse.parseAllPaced('favorite:42', 200, 3_000)
+    await vi.advanceTimersByTimeAsync(0)
+    parse.stopPacedParsing('favorite:42')
+    await vi.advanceTimersByTimeAsync(100)
+
+    await expect(parsing).resolves.toBe('stopped')
+    expect(api.parseLoadAll).toHaveBeenCalledOnce()
+    expect(parse.sources['favorite:42']?.source.loaded_count).toBe(240)
+    vi.useRealTimers()
   })
 
   it('loads only the next page when parsing more from a large source', async () => {
@@ -89,7 +136,7 @@ describe('parse store', () => {
     expect(api.parseLoadMore).toHaveBeenCalledOnce()
     expect(api.parseLoadMore).toHaveBeenCalledWith({ source_id: 'uploader:42' })
     expect(parse.activeSource?.source.loaded_count).toBe(100)
-    expect(parse.notice?.message).toBe('已加载 100 / 20000 项')
+    expect(parse.notice).toBeNull()
   })
 
   it('loads a configurable chunk relative to the currently loaded uploader items', async () => {
@@ -107,7 +154,7 @@ describe('parse store', () => {
     await parse.loadChunk('uploader:42', 200)
 
     expect(api.parseLoadAll).toHaveBeenCalledWith({ source_id: 'uploader:42', limit: 230 })
-    expect(parse.notice?.message).toBe('已加载 240 / 20000 项')
+    expect(parse.notice).toBeNull()
   })
 
   it('keeps initial parsing metadata-only so large multi-part videos stay fast', async () => {
@@ -192,6 +239,27 @@ describe('parse store', () => {
     expect(parse.activeSource?.source.title).toBe('新来源')
   })
 
+  it('clears the entire parse workspace when returning to the source step', async () => {
+    api.parseCloseSource.mockResolvedValue(undefined)
+    const parse = useParseStore()
+    parse.input = 'BV-old'
+    parse.upsertSource(sourceTree('source:one', '来源一'))
+    parse.upsertSource(sourceTree('source:two', '来源二'))
+    parse.selectionBySource['source:one'] = ['part:source:one']
+    parse.errorsBySource['source:one'] = '旧错误'
+
+    await parse.clearWorkspace()
+
+    expect(parse.input).toBe('')
+    expect(parse.sourceOrder).toEqual([])
+    expect(parse.sources).toEqual({})
+    expect(parse.selectionBySource).toEqual({})
+    expect(parse.errorsBySource).toEqual({})
+    expect(parse.activeSource).toBeNull()
+    expect(api.parseCloseSource).toHaveBeenCalledTimes(2)
+    expect(api.parseCloseSource.mock.calls.flat()).toEqual(expect.arrayContaining(['source:one', 'source:two']))
+  })
+
   it('aggregates duplicate confirmation across selected sources', async () => {
     const parse = useParseStore()
     const settings = useSettingsStore()
@@ -209,9 +277,10 @@ describe('parse store', () => {
             existing_status: 'completed',
           },
         ],
+        skipped_existing: 0,
         requires_confirmation: true,
       })
-      .mockResolvedValueOnce({ created: [], duplicates: [], requires_confirmation: false })
+      .mockResolvedValueOnce({ created: [], duplicates: [], skipped_existing: 0, requires_confirmation: false })
 
     const result = await parse.createTasksForSources(['source:one', 'source:two'])
 
@@ -227,6 +296,7 @@ describe('parse store', () => {
     api.selectionCreateTasks.mockResolvedValue({
       created: [],
       duplicates: [],
+      skipped_existing: 0,
       requires_confirmation: false,
     })
 
@@ -239,5 +309,45 @@ describe('parse store', () => {
         naming_template: '{title} - P{part_index} - {part_title}.{ext}',
       }),
     )
+  })
+
+  it('reports existing final outputs skipped during task creation', async () => {
+    const parse = useParseStore()
+    const settings = useSettingsStore()
+    settings.loaded = true
+    parse.upsertSource(sourceTree('source:skip-existing', '已有下载'))
+    parse.selectPartIds('source:skip-existing', ['part:source:skip-existing'])
+    api.selectionCreateTasks.mockResolvedValue({
+      created: [],
+      duplicates: [],
+      skipped_existing: 1,
+      requires_confirmation: false,
+    })
+
+    const result = await parse.createTasksForSelection('source:skip-existing')
+
+    expect(result?.skipped_existing).toBe(1)
+    expect(parse.notice?.message).toBe('已跳过 1 个已有文件')
+  })
+
+  it('returns task-creation failures without polluting parse-page feedback', async () => {
+    const parse = useParseStore()
+    const settings = useSettingsStore()
+    settings.loaded = true
+    parse.upsertSource(sourceTree('source:failed-download', '下载失败来源'))
+    api.selectionCreateTasks.mockRejectedValue(
+      new Error('Bilibili 暂时拒绝了请求（HTTP 412），请稍后重试。'),
+    )
+
+    const result = await parse.createTasksForSources(['source:failed-download'])
+
+    expect(result?.failures).toEqual([
+      {
+        sourceId: 'source:failed-download',
+        message: 'Bilibili 暂时拒绝了请求（HTTP 412），请稍后重试。',
+      },
+    ])
+    expect(parse.notice).toBeNull()
+    expect(parse.errorsBySource['source:failed-download']).toBeNull()
   })
 })

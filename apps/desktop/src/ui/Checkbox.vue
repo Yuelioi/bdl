@@ -1,5 +1,5 @@
 <script setup lang="ts">
-const model = defineModel<boolean>({ default: false })
+const model = defineModel<boolean | 'indeterminate'>({ default: false })
 const { label, disabled = false, compact = false } = defineProps<{
   label: string
   disabled?: boolean

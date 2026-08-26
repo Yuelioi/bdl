@@ -6,6 +6,7 @@ import type { DownloadMediaMode, DuplicateTaskMatch, DuplicateTaskPolicy, VideoC
 import { useParseStore } from '../../stores/parse'
 import { useSettingsStore } from '../../stores/settings'
 import { useUiStore } from '../../stores/ui'
+import type { InlineNotice } from '../../stores/feedback'
 import { statusBadge, statusLabel } from '../../stores/transferView'
 import UiButton from '../../ui/Button.vue'
 import UiDialog from '../../ui/Dialog.vue'
@@ -24,6 +25,7 @@ const downloadDialogOpen = ref(false)
 const duplicateDialogOpen = ref(false)
 const duplicateMatches = ref<DuplicateTaskMatch[]>([])
 const duplicatePendingSourceIds = ref<string[]>([])
+const downloadNotice = ref<InlineNotice | null>(null)
 const downloadDir = ref('')
 const archiveMode = ref<'fast' | 'complete_archive' | 'custom'>('fast')
 const outputExtension = ref<'mp4' | 'mkv'>('mp4')
@@ -128,6 +130,7 @@ const openDialog = async () => {
   scheduleMin.value = toDateTimeLocalValue(new Date(scheduleValidationNow.value + 60_000))
   duplicateMatches.value = []
   duplicatePendingSourceIds.value = []
+  downloadNotice.value = null
   downloadDialogOpen.value = true
 }
 
@@ -138,11 +141,15 @@ const updateDownloadDir = (value: string) => {
 }
 
 const createTasks = async (duplicatePolicy: DuplicateTaskPolicy = 'ask') => {
+  downloadNotice.value = null
   const sourceIds = duplicatePolicy === 'ask' ? selectedSourceIds.value : duplicatePendingSourceIds.value
   if (sourceIds.length === 0) return
   scheduleValidationNow.value = Date.now()
   if (scheduleError.value || taskSpeedLimitError.value || embeddingFormatError.value) {
-    parse.setNotice(scheduleError.value ?? taskSpeedLimitError.value ?? embeddingFormatError.value ?? '请检查下载设置', 'warning')
+    downloadNotice.value = {
+      message: scheduleError.value ?? taskSpeedLimitError.value ?? embeddingFormatError.value ?? '请检查下载设置',
+      tone: 'warning',
+    }
     return
   }
   if (!settings.environmentReady) {
@@ -162,6 +169,17 @@ const createTasks = async (duplicatePolicy: DuplicateTaskPolicy = 'ask') => {
     scheduledAt: scheduledLocal.value ? toScheduledIso(scheduledLocal.value) : undefined,
     speedLimitBytesPerSecond: toBytesPerSecond(taskSpeedLimitMib.value),
   })
+  if (result?.failures.length) {
+    const firstFailure = result.failures[0]
+    downloadNotice.value = {
+      message:
+        result.failures.length === 1
+          ? firstFailure.message
+          : `${result.failures.length} 个来源创建任务失败：${firstFailure.message}`,
+      tone: result.created.length > 0 ? 'warning' : 'danger',
+    }
+    return
+  }
   if (result?.requires_confirmation) {
     duplicateMatches.value = result.duplicates
     duplicatePendingSourceIds.value = result.pendingSourceIds
@@ -188,7 +206,10 @@ const chooseDownloadDir = async () => {
       downloadDir.value = selected
     }
   } catch (error) {
-    parse.setNotice(error instanceof Error ? error.message : String(error), 'warning')
+    downloadNotice.value = {
+      message: error instanceof Error ? error.message : String(error),
+      tone: 'warning',
+    }
   }
 }
 
@@ -206,6 +227,10 @@ function optionLabel(options: Array<{ label: string; value: string }>, value: st
         <p class="m-0 truncate text-[13px] font-bold text-(--color-text)">{{ selectionTitle }}</p>
       </div>
     </section>
+
+    <UiInlineNotice v-if="downloadNotice" :tone="downloadNotice.tone">
+      {{ downloadNotice.message }}
+    </UiInlineNotice>
 
     <div class="grid gap-3">
       <div class="directory-row">

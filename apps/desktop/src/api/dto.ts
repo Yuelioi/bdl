@@ -135,6 +135,7 @@ export interface DuplicateTaskMatch {
 export interface SelectionCreateTasksResult {
   created: DownloadTask[]
   duplicates: DuplicateTaskMatch[]
+  skipped_existing: number
   requires_confirmation: boolean
 }
 
@@ -203,7 +204,7 @@ export interface StartupRecoverySnapshot {
   auto_recovery_enabled: boolean
 }
 
-export type DuplicateNamingStrategy = 'append_suffix' | 'overwrite_existing'
+export type DuplicateNamingStrategy = 'skip_existing' | 'overwrite_existing' | 'append_suffix'
 export type VideoCodecPreference = 'auto' | 'avc' | 'hevc' | 'av1'
 export type MissingQualityPolicy = 'lower' | 'skip' | 'ask'
 export type LogLevel = 'debug' | 'info' | 'warning' | 'error'

@@ -70,6 +70,12 @@ fn classify_url(raw_url: &str, url: &Url) -> Option<ClassifiedInput> {
     }
 
     if is_space_host(&host) {
+        if is_collected_favorite_path(url, &segments) {
+            return Some(ClassifiedInput::Collection {
+                raw_url: raw_url.to_string(),
+            });
+        }
+
         if is_favorite_path(&segments) {
             return Some(ClassifiedInput::Favorite {
                 raw_url: raw_url.to_string(),
@@ -190,6 +196,12 @@ fn is_uploader_path(segments: &[&str]) -> bool {
         || segments
             .get(1)
             .is_some_and(|segment| segment.eq_ignore_ascii_case("video"))
+}
+
+fn is_collected_favorite_path(url: &Url, segments: &[&str]) -> bool {
+    is_favorite_path(segments)
+        && query_param_eq(url, "ftype", "collect")
+        && query_param_eq(url, "ctype", "21")
 }
 
 fn is_space_list_path(segments: &[&str]) -> bool {

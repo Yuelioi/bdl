@@ -23,7 +23,16 @@ pub(crate) fn should_continue_loading(
 }
 
 pub(crate) fn should_expand_initial_source(kind: SourceKind, has_more: bool) -> bool {
-    has_more && kind != SourceKind::Uploader
+    // Large library containers become interactive after their first page.
+    // Loading every page is reserved for explicit "download all" actions.
+    has_more
+        && !matches!(
+            kind,
+            SourceKind::Uploader
+                | SourceKind::Favorite
+                | SourceKind::Collection
+                | SourceKind::Series
+        )
 }
 
 pub(crate) fn uploader_mid(tree: &NormalizedSourceTree) -> BdlResult<u64> {

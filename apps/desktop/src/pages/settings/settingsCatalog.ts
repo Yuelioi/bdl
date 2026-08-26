@@ -52,8 +52,9 @@ export const outputFormatOptions = options([
   { label: 'MKV', value: 'mkv' },
 ]);
 export const duplicateNamingOptions = options([
-  { label: '自动加后缀（推荐）', value: 'append_suffix' },
+  { label: '已有文件则跳过（推荐）', value: 'skip_existing' },
   { label: '覆盖已有文件', value: 'overwrite_existing' },
+  { label: '扩展文件名', value: 'append_suffix' },
 ]);
 export const codecOptions = options([
   { label: '自动', value: 'auto' },

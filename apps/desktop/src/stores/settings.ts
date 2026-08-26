@@ -65,7 +65,7 @@ const defaultSettings = (): SettingsSnapshot => ({
     nfo: true,
   },
   output_extension: 'mp4',
-  duplicate_naming_strategy: 'append_suffix',
+  duplicate_naming_strategy: 'skip_existing',
   audio_quality: 'best',
   codec: 'auto',
   missing_quality_policy: 'lower',
@@ -89,8 +89,9 @@ const audioQualities = new Set(['best', '30280', '30232', '30216'])
 const archiveModes = new Set<SettingsSnapshot['archive_mode']>(['fast', 'complete_archive', 'custom'])
 const outputExtensions = new Set<SettingsSnapshot['output_extension']>(['mp4', 'mkv'])
 const duplicateNamingStrategies = new Set<SettingsSnapshot['duplicate_naming_strategy']>([
-  'append_suffix',
+  'skip_existing',
   'overwrite_existing',
+  'append_suffix',
 ])
 const codecPreferences = new Set<SettingsSnapshot['codec']>(['auto', 'avc', 'hevc', 'av1'])
 const missingQualityPolicies = new Set<SettingsSnapshot['missing_quality_policy']>(['lower', 'skip', 'ask'])
@@ -426,7 +427,7 @@ export const useSettingsStore = defineStore('settings', {
         value as SettingsSnapshot['duplicate_naming_strategy'],
       )
         ? (value as SettingsSnapshot['duplicate_naming_strategy'])
-        : 'append_suffix'
+        : 'skip_existing'
     },
     setConcurrentTasks(value: string) {
       const count = Number(value)
@@ -500,7 +501,7 @@ const normalizeSettings = (settings: SettingsSnapshot): SettingsSnapshot => ({
   output_extension: outputExtensions.has(settings.output_extension) ? settings.output_extension : 'mp4',
   duplicate_naming_strategy: duplicateNamingStrategies.has(settings.duplicate_naming_strategy)
     ? settings.duplicate_naming_strategy
-    : 'append_suffix',
+    : 'skip_existing',
   audio_quality: audioQualities.has(settings.audio_quality) ? settings.audio_quality : 'best',
   codec: codecPreferences.has(settings.codec) ? settings.codec : 'auto',
   missing_quality_policy: missingQualityPolicies.has(settings.missing_quality_policy)

@@ -17,30 +17,13 @@
 
 .settings-heading-copy {
   min-width: 0;
-  display: grid;
-  gap: 2px;
-}
-
-.settings-heading-copy > span {
-  color: var(--color-accent-strong);
-  font-size: var(--font-11);
-  font-weight: 720;
-}
-
-.settings-heading-copy h2,
-.settings-heading-copy p {
-  margin: 0;
+  display: flex;
+  align-items: center;
 }
 
 .settings-heading-copy h2 {
+  margin: 0;
   font-size: var(--font-18);
-}
-
-.settings-heading-copy p {
-  max-width: 64ch;
-  color: var(--color-muted);
-  font-size: var(--font-12);
-  line-height: 1.5;
 }
 
 .dirty-indicator {
@@ -282,10 +265,6 @@
 }
 
 @media (width <= 620px) {
-  .settings-heading-copy p {
-    display: none;
-  }
-
   .settings-inline-grid,
   .archive-option-grid,
   .template-help div {

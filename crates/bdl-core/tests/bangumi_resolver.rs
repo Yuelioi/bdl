@@ -4,7 +4,7 @@ use bdl_core::input::ClassifiedInput;
 use bdl_core::model::{AssetKind, FetchPolicy, MediaKind, SourceKind};
 use bdl_core::resolver::bangumi::{
     BangumiApi, BangumiInputId, BangumiResolver, ResolvedBangumiDashStream, ResolvedBangumiEpisode,
-    ResolvedBangumiPlayUrl, ResolvedBangumiSeason, bangumi_id_from_url,
+    ResolvedBangumiPlayUrl, ResolvedBangumiSeason, ResolvedBangumiSubtitle, bangumi_id_from_url,
 };
 use bdl_core::resolver::{ResolveOptions, Resolver};
 
@@ -108,7 +108,56 @@ async fn bangumi_resolver_fetches_streams_for_episode_input_only() -> Result<(),
             .iter()
             .any(|stream| stream.kind == MediaKind::Audio)
     );
+    let danmaku = focused_part
+        .assets
+        .iter()
+        .find(|asset| asset.kind == AssetKind::Danmaku)
+        .expect("focused bangumi episode should expose its CID danmaku URL");
+    assert_eq!(
+        danmaku.urls,
+        vec!["https://comment.bilibili.com/9002.xml".to_owned()]
+    );
+    let subtitle = focused_part
+        .assets
+        .iter()
+        .find(|asset| asset.kind == AssetKind::Subtitle)
+        .expect("focused bangumi episode should expose player-info subtitles");
+    assert_eq!(
+        subtitle.urls,
+        vec!["https://subtitle.example.invalid/zh.json".to_owned()]
+    );
 
+    Ok(())
+}
+
+#[tokio::test]
+async fn bangumi_resolver_omits_subtitle_asset_when_player_info_has_none() -> Result<(), BdlError> {
+    let mut api = fake_api(BangumiInputId::Episode(456));
+    api.play_url.subtitles.clear();
+    let tree = BangumiResolver::with_api(api)
+        .resolve(
+            ClassifiedInput::Bangumi {
+                raw_url: "https://www.bilibili.com/bangumi/play/ep456".to_owned(),
+            },
+            ResolveOptions {
+                fetch_streams: true,
+            },
+        )
+        .await?;
+    let focused_part = &tree.groups[0].items[1].parts[0];
+
+    assert!(
+        focused_part
+            .assets
+            .iter()
+            .all(|asset| asset.kind != AssetKind::Subtitle)
+    );
+    assert!(
+        focused_part
+            .assets
+            .iter()
+            .any(|asset| asset.kind == AssetKind::Danmaku)
+    );
     Ok(())
 }
 
@@ -163,6 +212,11 @@ fn fake_api(expected_id: BangumiInputId) -> FakeBangumiApi {
         play_url: ResolvedBangumiPlayUrl {
             video: vec![dash_stream(80, "video", "avc1.640032")],
             audio: vec![dash_stream(30280, "audio", "mp4a.40.2")],
+            subtitles: vec![ResolvedBangumiSubtitle {
+                lan: "zh-CN".to_owned(),
+                lan_doc: "中文（简体）".to_owned(),
+                url: "//subtitle.example.invalid/zh.json".to_owned(),
+            }],
         },
     }
 }

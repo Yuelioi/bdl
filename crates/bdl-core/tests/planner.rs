@@ -216,6 +216,29 @@ fn plan_selected_parts_complete_archive_uses_asset_urls_and_formats() {
 }
 
 #[test]
+fn plan_selected_parts_omits_optional_assets_that_are_known_to_be_unavailable() {
+    let mut tree = fixture_tree(true);
+    let part = fixture_part_mut(&mut tree);
+    part.assets
+        .retain(|asset| !matches!(asset.kind, AssetKind::Subtitle | AssetKind::Danmaku));
+    let options = DownloadOptions::new(PathBuf::from("downloads"))
+        .with_archive_mode(ArchiveMode::CompleteArchive);
+
+    let tasks = plan_selected_parts(&tree, &[PartId("part:BV1:100".to_owned())], &options)
+        .expect("missing optional assets should not block task planning");
+    let intents = tasks[0]
+        .resources
+        .iter()
+        .map(|resource| resource.intent)
+        .collect::<Vec<_>>();
+
+    assert!(!intents.contains(&DownloadResourceIntent::Subtitle));
+    assert!(!intents.contains(&DownloadResourceIntent::Danmaku));
+    assert!(intents.contains(&DownloadResourceIntent::Cover));
+    assert!(intents.contains(&DownloadResourceIntent::Nfo));
+}
+
+#[test]
 fn plan_selected_parts_custom_archive_uses_selected_asset_intents_only() {
     let tree = fixture_tree(true);
     let mut options =
@@ -326,6 +349,28 @@ fn plan_selected_parts_can_overwrite_existing_files_without_batch_path_collision
     assert_eq!(
         tasks[1].output_path,
         output_dir.join("Fixture Video").join("P1 - P1 (1).mp4")
+    );
+
+    let _ = fs::remove_dir_all(output_dir);
+}
+
+#[test]
+fn plan_selected_parts_skips_an_existing_final_output_by_default() {
+    let tree = fixture_tree(true);
+    let output_dir = unique_temp_dir();
+    let existing_output = output_dir.join("Fixture Video").join("P1 - P1.mp4");
+    fs::create_dir_all(existing_output.parent().expect("output should have parent"))
+        .expect("test output dir should be created");
+    fs::write(&existing_output, b"complete output").expect("existing output should be written");
+    let options = DownloadOptions::new(output_dir.clone());
+
+    let tasks = plan_selected_parts(&tree, &[PartId("part:BV1:100".to_owned())], &options)
+        .expect("existing output should be handled without an error");
+
+    assert!(tasks.is_empty());
+    assert_eq!(
+        fs::read(&existing_output).expect("existing output remains"),
+        b"complete output"
     );
 
     let _ = fs::remove_dir_all(output_dir);

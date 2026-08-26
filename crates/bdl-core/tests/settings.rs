@@ -46,7 +46,7 @@ fn settings_deserialize_old_config_defaults_duplicate_naming_strategy() {
 
     assert_eq!(
         settings.duplicate_naming_strategy,
-        DuplicateNamingStrategy::AppendSuffix
+        DuplicateNamingStrategy::SkipExisting
     );
     assert_eq!(settings.audio_quality, "best");
     assert_eq!(settings.codec, "auto");

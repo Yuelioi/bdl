@@ -1555,8 +1555,10 @@ mod tests {
     }
 
     #[test]
-    fn workspace_parse_still_expands_bounded_container_sources() {
-        assert!(should_expand_initial_source(SourceKind::Favorite, true));
+    fn workspace_parse_keeps_container_sources_paged() {
+        assert!(!should_expand_initial_source(SourceKind::Favorite, true));
+        assert!(!should_expand_initial_source(SourceKind::Collection, true));
+        assert!(!should_expand_initial_source(SourceKind::Series, true));
     }
 
     #[test]

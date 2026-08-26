@@ -15,14 +15,18 @@ const slots = useSlots()
 
 <template>
   <footer class="selection-action-bar">
-    <slot name="leading">
-      <p class="selection-summary">
-        <strong>{{ selectedCount }}</strong> {{ unit }}已选
-        <span>共 {{ totalCount }} {{ unit }}</span>
-      </p>
-    </slot>
-    <div v-if="slots.actions" class="selection-actions">
-      <slot name="actions" />
+    <div class="selection-leading">
+      <slot name="leading">
+        <p class="selection-summary">
+          已选 <strong>{{ selectedCount }}</strong> {{ unit }}
+          <span>共 {{ totalCount }} {{ unit }}</span>
+        </p>
+      </slot>
+    </div>
+    <div v-if="slots.selection" class="selection-actions">
+      <div class="selection-action-group selection-control-group">
+        <slot name="selection" />
+      </div>
     </div>
   </footer>
 </template>
@@ -42,6 +46,7 @@ const slots = useSlots()
   margin: 0;
   color: var(--color-muted);
   font-size: var(--font-13);
+  line-height: 1.4;
 }
 
 .selection-summary strong {
@@ -54,20 +59,34 @@ const slots = useSlots()
   font-size: var(--font-12);
 }
 
+.selection-leading,
 .selection-actions {
   min-width: 0;
+  min-height: 28px;
   display: flex;
+  align-items: center;
+}
+
+.selection-actions {
   flex-wrap: wrap;
   justify-content: flex-end;
+  gap: var(--space-12);
+}
+
+.selection-action-group {
+  min-height: 28px;
+  display: flex;
+  align-items: center;
   gap: var(--space-8);
 }
 
 @media (width <= 700px) {
   .selection-action-bar {
-    align-items: flex-start;
+    align-items: stretch;
     flex-direction: column;
   }
 
+  .selection-leading,
   .selection-actions {
     justify-content: flex-start;
   }

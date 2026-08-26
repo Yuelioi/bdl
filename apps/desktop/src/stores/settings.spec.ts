@@ -132,6 +132,14 @@ describe('settings media compatibility', () => {
 })
 
 describe('settings defaults', () => {
+  it('defaults name collisions to skipping an existing final output', () => {
+    setActivePinia(createPinia())
+    const store = useSettingsStore()
+
+    expect(store.saved.duplicate_naming_strategy).toBe('skip_existing')
+    expect(store.draft.duplicate_naming_strategy).toBe('skip_existing')
+  })
+
   it('restores the editable draft without overwriting the saved settings', () => {
     setActivePinia(createPinia())
     const store = useSettingsStore()

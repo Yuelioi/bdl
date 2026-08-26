@@ -233,6 +233,15 @@ fn collection_ids_from_url_accepts_medialist_and_space_list_urls() -> Result<(),
             season_id: 679,
         }
     );
+    assert_eq!(
+        collection_ids_from_url(
+            "https://space.bilibili.com/1001/favlist?fid=680&ftype=collect&ctype=21"
+        )?,
+        CollectionInputIds {
+            mid: 1001,
+            season_id: 680,
+        }
+    );
     Ok(())
 }
 

@@ -11,14 +11,24 @@
   flex-direction: column;
   gap: var(--space-md);
   flex: 1;
-  padding: 0;
+  padding: 0 var(--space-xs) 0 0;
   overflow: auto;
+  scrollbar-gutter: stable;
 }
 .library-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--space-md);
+}
+.library-heading-line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+}
+.library-heading-link {
+  color: inherit;
+  font: inherit;
 }
 .library-header h2 {
   margin: 0;
@@ -106,19 +116,23 @@
   border: 1px solid var(--color-border);
   border-radius: var(--radius-8);
   background: var(--color-surface-raised);
+  cursor: pointer;
   transition:
     border-color var(--duration-fast) var(--ease-out),
-    transform var(--duration-fast) var(--ease-out),
     background var(--duration-fast) var(--ease-out);
 }
-.library-card:hover {
+.library-card:hover,
+.library-card:focus-visible {
   border-color: var(--color-border-strong);
-  transform: translateY(-1px);
+  background: var(--color-panel);
 }
 .library-card:focus-visible {
-  border-color: var(--color-accent);
   outline: 2px solid var(--color-focus-outline);
-  outline-offset: -2px;
+  outline-offset: 2px;
+}
+.library-card:hover .library-card-copy h3,
+.library-card:focus-visible .library-card-copy h3 {
+  color: var(--color-accent-strong);
 }
 .library-cover {
   aspect-ratio: 4 / 3;
@@ -164,6 +178,7 @@
   font-size: var(--font-14);
   line-height: 1.4;
   text-overflow: ellipsis;
+  transition: color var(--duration-fast) var(--ease-out);
   white-space: nowrap;
 }
 .library-card-copy p {
@@ -182,37 +197,11 @@
   margin-top: auto;
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: var(--space-xs);
   color: var(--color-dimmed);
   font-size: var(--font-11);
   font-variant-numeric: tabular-nums;
 }
-.library-source-link {
-  width: 28px;
-  height: 28px;
-  justify-content: center;
-  padding: 0;
-}
-.library-card-meta button {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2xs);
-  padding: var(--space-2xs) 0;
-  border: 0;
-  color: var(--color-accent);
-  background: transparent;
-  font-size: var(--font-12);
-  font-weight: 650;
-}
-.library-card-meta button:hover {
-  color: var(--color-accent-strong);
-}
-.library-card-meta svg {
-  width: 13px;
-  height: 13px;
-}
-
 .library-pagination {
   display: flex;
   align-items: center;

@@ -15,7 +15,6 @@ import {
   parseCreateSource,
   parseLoadAll,
   parseLoadMore,
-  parseRefreshSource,
   selectionCreateTasks,
 } from '../api/tauri'
 import { useQueueStore } from './queue'
@@ -26,6 +25,7 @@ import { buildBatchSelectionBySource, selectedBatchSourceIds, toggleBatchEntrySe
 
 const MAX_BATCH_SOURCES = 20
 const PARSE_CONCURRENCY = 4
+const PACED_PARSE_POLL_INTERVAL_MS = 100
 
 interface ParseState {
   input: string
@@ -37,6 +37,9 @@ interface ParseState {
   selectedBatchEntryIds: string[]
   selectionBySource: Record<string, string[]>
   loadingBySource: Record<string, boolean>
+  pacedParsingBySource: Record<string, boolean>
+  pacedParsingWaitingBySource: Record<string, boolean>
+  pacedParsingStopRequestedBySource: Record<string, boolean>
   errorsBySource: Record<string, string | null>
   notice: InlineNotice | null
   noticeTimer: number | null
@@ -67,7 +70,10 @@ export interface CreateTaskOptions {
 export interface CreateTasksForSourcesResult extends SelectionCreateTasksResult {
   pendingSourceIds: string[]
   failedSourceIds: string[]
+  failures: Array<{ sourceId: string; message: string }>
 }
+
+export type PacedParsingResult = 'completed' | 'stopped' | 'failed'
 
 export const useParseStore = defineStore('parse', {
   state: (): ParseState => ({
@@ -80,6 +86,9 @@ export const useParseStore = defineStore('parse', {
     selectedBatchEntryIds: [],
     selectionBySource: {},
     loadingBySource: {},
+    pacedParsingBySource: {},
+    pacedParsingWaitingBySource: {},
+    pacedParsingStopRequestedBySource: {},
     errorsBySource: {},
     notice: null,
     noticeTimer: null,
@@ -225,61 +234,92 @@ export const useParseStore = defineStore('parse', {
       try {
         const tree = await parseLoadMore({ source_id: sourceId })
         this.upsertSource(tree)
-        this.setNotice(loadedCountMessage(tree), 'success')
       } catch (error) {
         this.errorsBySource[sourceId] = errorMessage(error)
       } finally {
         this.loadingBySource[sourceId] = false
       }
     },
-    async loadChunk(sourceId: string, chunkSize: number) {
+    async loadChunk(sourceId: string, chunkSize: number): Promise<boolean> {
       const current = this.sources[sourceId]
-      if (!current?.source.has_more) return
+      if (!current?.source.has_more) return false
 
+      const loadedBefore = current.source.loaded_count
       const limit = current.source.loaded_count + Math.max(1, Math.floor(chunkSize))
       this.loadingBySource[sourceId] = true
       try {
         const tree = await parseLoadAll({ source_id: sourceId, limit })
         this.upsertSource(tree)
-        this.setNotice(loadedCountMessage(tree), 'success')
+        return tree.source.loaded_count > loadedBefore
       } catch (error) {
         this.errorsBySource[sourceId] = errorMessage(error)
+        return false
       } finally {
         this.loadingBySource[sourceId] = false
       }
     },
-    async parseAll(sourceId: string) {
-      this.loadingBySource[sourceId] = true
+    async parseAllPaced(sourceId: string, chunkSize = 200, delayMs = 3_000): Promise<PacedParsingResult> {
+      const source = this.sources[sourceId]
+      if (!source?.source.has_more) return 'completed'
+      if (this.pacedParsingBySource[sourceId]) return 'stopped'
+
+      this.pacedParsingBySource[sourceId] = true
+      this.pacedParsingWaitingBySource[sourceId] = false
+      this.pacedParsingStopRequestedBySource[sourceId] = false
       try {
-        const tree = await parseLoadAll({ source_id: sourceId })
-        this.upsertSource(tree)
-        this.setNotice('已批量解析', 'success')
-      } catch (error) {
-        this.errorsBySource[sourceId] = errorMessage(error)
+        while (this.sources[sourceId]?.source.has_more) {
+          if (this.pacedParsingStopRequestedBySource[sourceId]) {
+            return 'stopped'
+          }
+
+          const progressed = await this.loadChunk(sourceId, chunkSize)
+          if (!progressed) {
+            return this.sources[sourceId]?.source.has_more ? 'failed' : 'completed'
+          }
+          if (!this.sources[sourceId]?.source.has_more) break
+
+          this.pacedParsingWaitingBySource[sourceId] = true
+          const shouldContinue = await waitForPacedParsing(delayMs, () =>
+            Boolean(this.pacedParsingStopRequestedBySource[sourceId]),
+          )
+          this.pacedParsingWaitingBySource[sourceId] = false
+          if (!shouldContinue) {
+            return 'stopped'
+          }
+        }
+
+        return 'completed'
       } finally {
-        this.loadingBySource[sourceId] = false
+        this.pacedParsingBySource[sourceId] = false
+        this.pacedParsingWaitingBySource[sourceId] = false
+        this.pacedParsingStopRequestedBySource[sourceId] = false
       }
     },
-    async closeSource(sourceId: string) {
-      this.loadingBySource[sourceId] = true
-      try {
-        await parseCloseSource(sourceId)
-        delete this.sources[sourceId]
-        delete this.selectionBySource[sourceId]
-        delete this.errorsBySource[sourceId]
-        this.sourceOrder = this.sourceOrder.filter((id) => id !== sourceId)
-        this.batchEntries = this.batchEntries.filter((entry) => entry.sourceId !== sourceId)
-        this.selectedBatchEntryIds = this.selectedBatchEntryIds.filter((entryId) =>
-          this.batchEntries.some((entry) => entry.id === entryId),
-        )
-        this.batchMode = this.batchMode && this.batchEntries.length > 0
-        this.activeSourceId = this.sourceOrder[0] ?? null
-        this.setNotice('已关闭解析源', 'info')
-      } catch (error) {
-        this.errorsBySource[sourceId] = errorMessage(error)
-      } finally {
-        this.loadingBySource[sourceId] = false
+    stopPacedParsing(sourceId: string) {
+      if (this.pacedParsingBySource[sourceId]) {
+        this.pacedParsingStopRequestedBySource[sourceId] = true
       }
+    },
+    async clearWorkspace() {
+      const sourceIds = [...this.sourceOrder]
+      sourceIds.forEach((sourceId) => this.stopPacedParsing(sourceId))
+
+      this.input = ''
+      this.clearNotice()
+      this.sources = {}
+      this.sourceOrder = []
+      this.activeSourceId = null
+      this.batchMode = false
+      this.batchEntries = []
+      this.selectedBatchEntryIds = []
+      this.selectionBySource = {}
+      this.loadingBySource = {}
+      this.pacedParsingBySource = {}
+      this.pacedParsingWaitingBySource = {}
+      this.pacedParsingStopRequestedBySource = {}
+      this.errorsBySource = {}
+
+      await Promise.allSettled(sourceIds.map((sourceId) => parseCloseSource(sourceId)))
     },
     async removeSource(sourceId: string) {
       try {
@@ -288,6 +328,9 @@ export const useParseStore = defineStore('parse', {
         delete this.sources[sourceId]
         delete this.selectionBySource[sourceId]
         delete this.errorsBySource[sourceId]
+        delete this.pacedParsingBySource[sourceId]
+        delete this.pacedParsingWaitingBySource[sourceId]
+        delete this.pacedParsingStopRequestedBySource[sourceId]
         this.sourceOrder = this.sourceOrder.filter((id) => id !== sourceId)
         this.batchEntries = this.batchEntries.filter((entry) => entry.sourceId !== sourceId)
         this.selectedBatchEntryIds = this.selectedBatchEntryIds.filter((entryId) =>
@@ -296,17 +339,6 @@ export const useParseStore = defineStore('parse', {
         if (this.activeSourceId === sourceId) {
           this.activeSourceId = this.sourceOrder[0] ?? null
         }
-      }
-    },
-    async refreshSource(sourceId: string) {
-      this.loadingBySource[sourceId] = true
-      try {
-        this.upsertSource(await parseRefreshSource({ source_id: sourceId }))
-        this.setNotice('已刷新来源', 'success')
-      } catch (error) {
-        this.errorsBySource[sourceId] = errorMessage(error)
-      } finally {
-        this.loadingBySource[sourceId] = false
       }
     },
     toggleNode(sourceId: string, nodeId: string) {
@@ -415,9 +447,11 @@ export const useParseStore = defineStore('parse', {
         const aggregate: CreateTasksForSourcesResult = {
           created: [],
           duplicates: [],
+          skipped_existing: 0,
           requires_confirmation: false,
           pendingSourceIds: [],
           failedSourceIds: [],
+          failures: [],
         }
 
         for (const sourceId of targets) {
@@ -437,17 +471,18 @@ export const useParseStore = defineStore('parse', {
               scheduled_at: options.scheduledAt,
               speed_limit_bytes_per_second: options.speedLimitBytesPerSecond,
             })
-            this.errorsBySource[sourceId] = null
             aggregate.created.push(...result.created)
             aggregate.duplicates.push(...result.duplicates)
+            aggregate.skipped_existing += result.skipped_existing
             if (result.requires_confirmation) {
               aggregate.requires_confirmation = true
               aggregate.pendingSourceIds.push(sourceId)
             }
             queue.applyCreatedTasks(result.created)
           } catch (error) {
-            this.errorsBySource[sourceId] = errorMessage(error)
+            const message = errorMessage(error)
             aggregate.failedSourceIds.push(sourceId)
+            aggregate.failures.push({ sourceId, message })
           }
         }
 
@@ -455,17 +490,16 @@ export const useParseStore = defineStore('parse', {
           return aggregate
         }
         const duplicateSuffix = aggregate.duplicates.length > 0 ? `，处理 ${aggregate.duplicates.length} 个重复项` : ''
-        const failureSuffix =
-          aggregate.failedSourceIds.length > 0 ? `，${aggregate.failedSourceIds.length} 个链接失败` : ''
+        const skippedSuffix = aggregate.skipped_existing > 0 ? `，跳过 ${aggregate.skipped_existing} 个已有文件` : ''
         if (aggregate.created.length > 0) {
           this.setNotice(
-            `已创建 ${aggregate.created.length} 个任务${duplicateSuffix}${failureSuffix}`,
-            failureSuffix ? 'warning' : 'success',
+            `已创建 ${aggregate.created.length} 个任务${skippedSuffix}${duplicateSuffix}`,
+            'success',
             '查看传输',
           )
-        } else if (aggregate.failedSourceIds.length > 0) {
-          this.setNotice('所选链接创建任务失败', 'danger')
-        } else {
+        } else if (aggregate.skipped_existing > 0 && aggregate.failedSourceIds.length === 0) {
+          this.setNotice(`已跳过 ${aggregate.skipped_existing} 个已有文件`, 'info')
+        } else if (aggregate.failedSourceIds.length === 0) {
           this.setNotice('所选内容已在传输中', 'info', '查看传输')
         }
         return aggregate
@@ -493,9 +527,15 @@ const collectPartIds = (tree: NormalizedSourceTree): string[] =>
 
 const uniquePartIds = (partIds: string[]): string[] => Array.from(new Set(partIds))
 
-const loadedCountMessage = (tree: NormalizedSourceTree): string => {
-  const total = tree.source.total_count
-  return total === null ? `已加载 ${tree.source.loaded_count} 项` : `已加载 ${tree.source.loaded_count} / ${total} 项`
+const waitForPacedParsing = async (delayMs: number, stopRequested: () => boolean): Promise<boolean> => {
+  let remaining = Math.max(0, delayMs)
+  while (remaining > 0) {
+    if (stopRequested()) return false
+    const waitMs = Math.min(PACED_PARSE_POLL_INTERVAL_MS, remaining)
+    await new Promise<void>((resolve) => window.setTimeout(resolve, waitMs))
+    remaining -= waitMs
+  }
+  return !stopRequested()
 }
 
 const uniqueSourceTrees = (trees: NormalizedSourceTree[]): NormalizedSourceTree[] => {

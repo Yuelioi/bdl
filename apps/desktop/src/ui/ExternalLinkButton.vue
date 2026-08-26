@@ -2,7 +2,17 @@
 import { openExternalUrl } from '../api/tauri'
 import { useUiStore } from '../stores/ui'
 
-const { href, label, compact = false } = defineProps<{ href: string; label: string; compact?: boolean }>()
+const {
+  href,
+  label,
+  compact = false,
+  showIcon = true,
+} = defineProps<{
+  href: string
+  label: string
+  compact?: boolean
+  showIcon?: boolean
+}>()
 const ui = useUiStore()
 
 const open = async () => {
@@ -24,6 +34,6 @@ const open = async () => {
     @click.stop="open"
   >
     <slot />
-    <UIcon name="i-tabler-external-link" class="size-3.5 shrink-0" aria-hidden="true" />
+    <UIcon v-if="showIcon" name="i-tabler-external-link" class="size-3.5 shrink-0" aria-hidden="true" />
   </button>
 </template>

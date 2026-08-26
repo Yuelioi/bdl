@@ -49,14 +49,17 @@ onMounted(async () => {
 <template>
   <section class="page-grid grid-cols-1">
     <section class="panel mx-auto w-full max-w-3xl gap-8 p-8">
-      <header class="flex min-w-0 items-start gap-4 border-b border-(--color-border) pb-6">
-        <span class="grid size-12 shrink-0 place-items-center rounded-xl bg-(--color-accent) text-(--color-on-accent)" aria-hidden="true">
+      <header class="about-header flex min-w-0 items-center gap-4 border-b border-(--color-border) pb-6">
+        <span
+          class="about-icon grid size-12 shrink-0 place-items-center rounded-xl bg-(--color-accent) text-(--color-on-accent)"
+          aria-hidden="true"
+        >
           <UIcon class="size-6" name="i-tabler-chart-bar" />
         </span>
-        <div class="grid min-w-0 gap-1">
-          <span class="text-xs font-bold text-(--color-accent-strong)">BILIBILI DOWNLOAD LAB</span>
+        <div class="grid min-w-0 gap-0.5">
+          <span class="about-brand text-xs font-bold text-(--color-accent-strong)">BILIBILI DOWNLOAD LAB</span>
           <h1 class="text-balance m-0 text-2xl text-(--color-text-strong)">BDL</h1>
-          <p class="text-pretty m-0 max-w-2xl text-sm leading-6 text-(--color-muted)">
+          <p class="about-tagline text-pretty m-0 text-xs leading-5 text-(--color-muted)">
             一个专注解析、选择和稳定下载的 Bilibili 桌面工具。
           </p>
         </div>

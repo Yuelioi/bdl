@@ -55,6 +55,12 @@ fn classifies_supported_url_kinds_without_extracting_final_ids() {
         SourceKind::Favorite
     );
     assert_eq!(
+        classify_input("https://space.bilibili.com/12345/favlist?fid=678&ftype=collect&ctype=21")
+            .unwrap()
+            .source_kind(),
+        SourceKind::Collection
+    );
+    assert_eq!(
         classify_input("https://www.bilibili.com/bangumi/play/ss123")
             .unwrap()
             .source_kind(),

@@ -219,7 +219,9 @@ pub fn plan_selected_parts(
                 part_id.0
             ),
         })?;
-        tasks.push(plan_part(tree, selected, options, &mut reserved_paths)?);
+        if let Some(task) = plan_part(tree, selected, options, &mut reserved_paths)? {
+            tasks.push(task);
+        }
     }
 
     Ok(tasks)
@@ -256,7 +258,7 @@ fn plan_part(
     selected: SelectedPart<'_>,
     options: &DownloadOptions,
     reserved_paths: &mut HashSet<PathBuf>,
-) -> BdlResult<DownloadTask> {
+) -> BdlResult<Option<DownloadTask>> {
     let item = selected.item;
     let part = selected.part;
     let task_id = format!("task:{}:{}", tree.source.id.0, part.id.0);
@@ -271,7 +273,11 @@ fn plan_part(
     } else {
         None
     };
-    let output_path = output_path_for(tree, &selected, video, audio, options, reserved_paths)?;
+    let Some(output_path) =
+        output_path_for(tree, &selected, video, audio, options, reserved_paths)?
+    else {
+        return Ok(None);
+    };
 
     let mut resources = Vec::with_capacity(2);
     if let Some(video) = video {
@@ -308,7 +314,7 @@ fn plan_part(
         ));
     }
 
-    Ok(DownloadTask {
+    Ok(Some(DownloadTask {
         id: task_id,
         title,
         source_id: tree.source.id.0.clone(),
@@ -328,7 +334,7 @@ fn plan_part(
         },
         scheduled_at: None,
         speed_limit_bytes_per_second: None,
-    })
+    }))
 }
 
 fn select_video_stream<'a>(
@@ -555,9 +561,30 @@ fn complete_archive_resources(
         DownloadResourceIntent::Nfo,
     ]
     .into_iter()
-    .filter(|intent| selection.includes(*intent))
+    .filter(|intent| selection.includes(*intent) && asset_is_available(item, part, *intent))
     .map(|intent| asset_resource(task_id, output_path, item, part, intent))
     .collect()
+}
+
+fn asset_is_available(
+    item: &NormalizedItem,
+    part: &NormalizedPart,
+    intent: DownloadResourceIntent,
+) -> bool {
+    match intent {
+        DownloadResourceIntent::Cover => {
+            part_asset(part, intent).is_some_and(|asset| !asset.urls.is_empty())
+                || item
+                    .cover_url
+                    .as_ref()
+                    .is_some_and(|url| !url.trim().is_empty())
+        }
+        DownloadResourceIntent::Subtitle | DownloadResourceIntent::Danmaku => {
+            part_asset(part, intent).is_some_and(|asset| !asset.urls.is_empty())
+        }
+        DownloadResourceIntent::Nfo => true,
+        DownloadResourceIntent::Video | DownloadResourceIntent::Audio => false,
+    }
 }
 
 fn asset_resource(
@@ -612,7 +639,7 @@ fn output_path_for(
     audio: Option<&MediaStream>,
     options: &DownloadOptions,
     reserved_paths: &mut HashSet<PathBuf>,
-) -> BdlResult<PathBuf> {
+) -> BdlResult<Option<PathBuf>> {
     let item = selected.item;
     let part = selected.part;
     let today = Utc::now().date_naive().to_string();

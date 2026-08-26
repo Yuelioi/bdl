@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, useTemplateRef, watch } from 'vue'
+import { computed, onDeactivated, onMounted, ref, useTemplateRef, watch } from 'vue'
 
 import type { AccountLibraryFolder, AccountLibraryFolderKind } from '../api/dto'
 import { useAccountStore } from '../stores/account'
@@ -12,7 +12,7 @@ import UiIconButton from '../ui/IconButton.vue'
 import UiPagination from '../ui/Pagination.vue'
 import UiTabs from '../ui/Tabs.vue'
 import ExternalLinkButton from '../ui/ExternalLinkButton.vue'
-import { bilibiliUserUrl } from '../utils/bilibiliLinks'
+import { bilibiliFavoriteCategoryUrl } from '../utils/bilibiliLinks'
 import LibraryFolderDetail from './library/LibraryFolderDetail.vue'
 import ParseDownloadPlanner from './parse/ParseDownloadPlanner.vue'
 
@@ -23,7 +23,9 @@ const ui = useUiStore()
 const query = ref('')
 const failedCoverIds = ref<string[]>([])
 const detailFolder = ref<AccountLibraryFolder | null>(null)
+const detailLoading = ref(false)
 const downloadPlanner = useTemplateRef<{ openDialog: () => Promise<void> }>('download-planner')
+let detailRequestId = 0
 
 const categories: Array<{
   kind: AccountLibraryFolderKind
@@ -36,6 +38,7 @@ const categories: Array<{
 ]
 
 const activeCategory = computed(() => categories.find((item) => item.kind === library.activeKind) ?? categories[0])
+const activeCategoryUrl = computed(() => bilibiliFavoriteCategoryUrl(account.profile.mid, library.activeKind))
 const categoryFilter = computed({
   get: () => library.activeKind,
   set: (value: string) => void selectCategory(value as AccountLibraryFolderKind),
@@ -62,23 +65,36 @@ const load = async (kind = library.activeKind, targetPage = 1) => {
 }
 
 const selectCategory = async (kind: AccountLibraryFolderKind) => {
-  if (parse.activeSourceId) await parse.removeSource(parse.activeSourceId)
-  detailFolder.value = null
+  if (detailFolder.value || detailLoading.value) await closeFolder()
   query.value = ''
   await library.selectKind(kind)
 }
 
-const openFolder = async (item: AccountLibraryFolder) => {
-  await parse.createSource(item.source_url)
-  if (parse.activeSource) {
-    detailFolder.value = item
-    parse.clearNotice()
+const loadFolder = async (item: AccountLibraryFolder, requestId: number) => {
+  const opened = await parse.createSource(item.source_url)
+  if (requestId !== detailRequestId) {
+    if (opened && parse.activeSource?.source.input === item.source_url && parse.activeSourceId) {
+      await parse.clearWorkspace()
+    }
+    return
   }
+  detailLoading.value = false
+  if (opened) parse.clearNotice()
+}
+
+const openFolder = (item: AccountLibraryFolder) => {
+  const requestId = ++detailRequestId
+  detailFolder.value = item
+  detailLoading.value = true
+  parse.clearNotice()
+  void loadFolder(item, requestId)
 }
 
 const closeFolder = async () => {
-  if (parse.activeSourceId) await parse.removeSource(parse.activeSourceId)
+  detailRequestId += 1
   detailFolder.value = null
+  detailLoading.value = false
+  await parse.clearWorkspace()
 }
 
 const openDownloadSettings = () => void downloadPlanner.value?.openDialog()
@@ -87,12 +103,16 @@ onMounted(() => {
   if (account.profile.logged_in) void load()
 })
 
+onDeactivated(() => {
+  if (detailFolder.value || detailLoading.value) void closeFolder()
+})
+
 watch(
   () => [account.profile.logged_in, account.profile.mid] as const,
   ([loggedIn, mid], previous) => {
     if (!loggedIn) {
+      if (detailFolder.value || detailLoading.value) void closeFolder()
       library.clear()
-      detailFolder.value = null
       return
     }
     if (!previous?.[0] || previous[1] !== mid) void load()
@@ -110,6 +130,7 @@ watch(
       <LibraryFolderDetail
         v-if="detailFolder"
         :folder="detailFolder"
+        :loading-initial="detailLoading"
         @back="closeFolder"
         @download="openDownloadSettings"
       />
@@ -117,7 +138,20 @@ watch(
       <section v-else class="library-content" aria-labelledby="library-heading" :aria-busy="library.loading">
         <header class="library-header">
           <div>
-            <h2 id="library-heading">{{ activeCategory.label }}</h2>
+            <div class="library-heading-line">
+              <h2 id="library-heading">
+                <ExternalLinkButton
+                  v-if="activeCategoryUrl"
+                  class="library-heading-link"
+                  :href="activeCategoryUrl"
+                  :label="`在 Bilibili 打开我的${activeCategory.label}`"
+                  :show-icon="false"
+                >
+                  {{ activeCategory.label }}
+                </ExternalLinkButton>
+                <span v-else>{{ activeCategory.label }}</span>
+              </h2>
+            </div>
             <p v-if="page">{{ activeCategory.description }} · 共 {{ page.total }} 个内容集合</p>
             <p v-else>选择内容集合，随后可继续筛选具体视频。</p>
           </div>
@@ -175,10 +209,12 @@ watch(
             v-for="item in visibleItems"
             :key="item.media_id"
             class="library-card"
+            role="button"
             tabindex="0"
-            :aria-label="`双击查看 ${item.title} 的内容`"
-            @dblclick="openFolder(item)"
+            :aria-label="`进入 ${item.title}`"
+            @click="openFolder(item)"
             @keydown.enter="openFolder(item)"
+            @keydown.space.prevent="openFolder(item)"
           >
             <div class="library-cover">
               <img
@@ -197,27 +233,11 @@ watch(
             <div class="library-card-copy">
               <div>
                 <h3 :title="item.title">{{ item.title }}</h3>
-                <ExternalLinkButton
-                  v-if="item.owner_name && item.owner_mid"
-                  :href="bilibiliUserUrl(item.owner_mid) ?? item.source_url"
-                  :label="`打开 ${item.owner_name} 的 Bilibili 主页`"
-                  compact
-                >
-                  {{ item.owner_name }}
-                </ExternalLinkButton>
-                <p v-else>{{ item.owner_name || '我的收藏夹' }}</p>
+                <p>{{ item.owner_name || '我的收藏夹' }}</p>
               </div>
               <p v-if="item.description" class="library-description">{{ item.description }}</p>
               <div class="library-card-meta">
                 <span>{{ item.media_count }} 个视频</span>
-                <ExternalLinkButton
-                  class="library-source-link"
-                  :href="item.source_url"
-                  :label="`在 Bilibili 打开 ${item.title}`"
-                  compact
-                >
-                  <span class="sr-only">B站页面</span>
-                </ExternalLinkButton>
               </div>
             </div>
           </article>

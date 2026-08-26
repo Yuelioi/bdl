@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { NormalizedSourceTree } from '../../api/dto'
-import { filterTreeNodes, flattenVisibleParts, numberVisibleParts, parseRangeExpression, toTreeNodes } from './parseResultTree'
+import { flattenResultRows, toTreeNodes } from './parseResultTree'
 
 const tree: NormalizedSourceTree = {
   source: { id: 'source-1', kind: 'video', input: 'BV1', title: '示例视频', loaded_count: 2, total_count: 2, has_more: false },
@@ -25,21 +25,23 @@ const tree: NormalizedSourceTree = {
 }
 
 describe('parse result tree', () => {
-  it('numbers the visible video parts in display order', () => {
-    const entries = flattenVisibleParts(numberVisibleParts(toTreeNodes(tree)))
-    expect(entries.map((entry) => entry.label)).toEqual(['01  开场', '02  正片'])
+  it('flattens video parts into table rows without mixing sequence numbers into titles', () => {
+    const rows = flattenResultRows(toTreeNodes(tree))
+    expect(rows.map((row) => row.title)).toEqual(['开场', '正片'])
+    expect(rows.map((row) => row.partIds)).toEqual([['part-1'], ['part-2']])
+    expect(rows.map((row) => row.meta)).toEqual(['测试 UP', '测试 UP'])
   })
 
-  it('filters by title and identifiers without changing the source tree', () => {
-    const nodes = toTreeNodes(tree)
-    expect(flattenVisibleParts(filterTreeNodes(nodes, '正片')).map((entry) => entry.id)).toEqual(['part-2'])
-  })
+  it('keeps the UP column empty instead of substituting part durations when the owner is unavailable', () => {
+    const ownerlessTree: NormalizedSourceTree = {
+      ...tree,
+      groups: tree.groups.map((group) => ({
+        ...group,
+        items: group.items.map((item) => ({ ...item, owner_name: null })),
+      })),
+    }
 
-  it('parses reversed and comma-separated ranges into zero-based indexes', () => {
-    expect(parseRangeExpression('3-1, 5', 5)).toEqual([0, 1, 2, 4])
-  })
-
-  it('rejects a range outside the visible result count', () => {
-    expect(() => parseRangeExpression('1-6', 5)).toThrow('范围超出当前结果数量')
+    const rows = flattenResultRows(toTreeNodes(ownerlessTree))
+    expect(rows.map((row) => row.meta)).toEqual(['', ''])
   })
 })

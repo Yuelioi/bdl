@@ -68,6 +68,11 @@ fn command_error_code(error: &BdlError) -> &'static str {
             "unwritable_save_directory"
         }
         BdlError::Fetch { message } | BdlError::Bpi(message)
+            if is_bilibili_request_rejected(message) =>
+        {
+            "bilibili_request_rejected"
+        }
+        BdlError::Fetch { message } | BdlError::Bpi(message)
             if is_private_resource_error(message) =>
         {
             "private_resource"
@@ -90,6 +95,14 @@ fn command_error_message(error: &BdlError) -> Option<String> {
             Some("保存目录不可写，请检查权限或更换保存目录。".to_owned())
         }
         BdlError::Fetch { message } | BdlError::Bpi(message)
+            if is_bilibili_request_rejected(message) =>
+        {
+            Some(
+                "Bilibili 暂时拒绝了请求（HTTP 412），可能是访问过于频繁或触发风控。请稍后重试；持续出现时请重新登录。"
+                    .to_owned(),
+            )
+        }
+        BdlError::Fetch { message } | BdlError::Bpi(message)
             if is_private_resource_error(message) =>
         {
             Some("资源不可访问，可能是私密稿件、已失效或当前账号无权访问。".to_owned())
@@ -99,6 +112,13 @@ fn command_error_message(error: &BdlError) -> Option<String> {
         }
         _ => None,
     }
+}
+
+fn is_bilibili_request_rejected(message: &str) -> bool {
+    let lower = message.to_ascii_lowercase();
+    lower.contains("status 412")
+        || lower.contains("http 412")
+        || lower.contains("412 precondition failed")
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -198,6 +218,7 @@ pub struct DuplicateTaskMatch {
 pub struct SelectionCreateTasksResult {
     pub created: Vec<DownloadTask>,
     pub duplicates: Vec<DuplicateTaskMatch>,
+    pub skipped_existing: usize,
     pub requires_confirmation: bool,
 }
 
@@ -457,6 +478,7 @@ pub async fn selection_create_tasks(
         .prepare_selection(&source_id, &selected_part_ids)
         .await?;
     let mut planned_tasks = plan_selected_parts(&prepared.tree, &prepared.part_ids, &options)?;
+    let skipped_existing = prepared.part_ids.len().saturating_sub(planned_tasks.len());
     for task in &mut planned_tasks {
         task.scheduled_at = scheduled_at;
         task.speed_limit_bytes_per_second = speed_limit_bytes_per_second;
@@ -489,6 +511,7 @@ pub async fn selection_create_tasks(
     Ok(SelectionCreateTasksResult {
         created: tasks,
         duplicates,
+        skipped_existing,
         requires_confirmation: outcome.requires_confirmation,
     })
 }
@@ -1650,8 +1673,8 @@ async fn finalize_archive_assets(
                     app,
                     state,
                     &latest.id,
-                    QueueLogLevel::Warning,
-                    &format!("跳过{}：暂无可用地址", resource_label(resource)),
+                    missing_asset_log_level(),
+                    missing_asset_message(resource.intent),
                 )?;
             }
             _ => {}
@@ -1677,6 +1700,21 @@ fn resource_label(resource: &DownloadResource) -> &'static str {
         DownloadResourceIntent::Danmaku => "弹幕",
         DownloadResourceIntent::Nfo => "NFO",
     }
+}
+
+fn missing_asset_message(intent: DownloadResourceIntent) -> &'static str {
+    match intent {
+        DownloadResourceIntent::Cover => "跳过封面：当前视频未提供可下载封面",
+        DownloadResourceIntent::Subtitle => "跳过字幕：当前视频未提供可下载字幕",
+        DownloadResourceIntent::Danmaku => "跳过弹幕：未能获取弹幕地址",
+        DownloadResourceIntent::Video
+        | DownloadResourceIntent::Audio
+        | DownloadResourceIntent::Nfo => "跳过附加内容：暂无可用地址",
+    }
+}
+
+fn missing_asset_log_level() -> QueueLogLevel {
+    QueueLogLevel::Info
 }
 
 fn task_mux_label(task: &DownloadTask) -> &'static str {
@@ -1956,6 +1994,23 @@ mod tests {
         assert!(should_fetch(&danmaku));
     }
 
+    #[test]
+    fn missing_optional_asset_messages_explain_why_the_resource_was_skipped() {
+        assert_eq!(
+            super::missing_asset_message(DownloadResourceIntent::Subtitle),
+            "跳过字幕：当前视频未提供可下载字幕"
+        );
+        assert_eq!(
+            super::missing_asset_message(DownloadResourceIntent::Danmaku),
+            "跳过弹幕：未能获取弹幕地址"
+        );
+        assert_eq!(
+            super::missing_asset_log_level(),
+            QueueLogLevel::Info,
+            "known-missing optional assets are not partial failures"
+        );
+    }
+
     #[tokio::test]
     async fn completed_output_with_cleaned_media_inputs_is_recoverable() {
         let nonce = SystemTime::now()
@@ -2107,12 +2162,17 @@ mod tests {
             message: "HTTP 403 Forbidden".to_owned(),
         });
         let private = super::CommandError::from(BdlError::Bpi("稿件不可见".to_owned()));
+        let rejected = super::CommandError::from(BdlError::Bpi(
+            "HTTP request failed with status 412".to_owned(),
+        ));
 
         assert_eq!(parse.code, "parse_unrecognized");
         assert_eq!(ffmpeg.code, "missing_ffmpeg");
         assert_eq!(permission.code, "unwritable_save_directory");
         assert_eq!(login.code, "login_required");
         assert_eq!(private.code, "private_resource");
+        assert_eq!(rejected.code, "bilibili_request_rejected");
+        assert!(rejected.message.contains("稍后重试"));
     }
 
     fn resource(intent: DownloadResourceIntent, current_urls: Vec<String>) -> DownloadResource {
