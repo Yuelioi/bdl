@@ -1,10 +1,5 @@
 # BDL Architecture
 
-SUMMARY: BDL is a Rust/Tauri/Vue downloader where Rust owns Bilibili resolution, task state, downloading, persistence, and OS integration; Vue owns presentation and selection interaction.
-READ WHEN: changing crates, normalized DTOs, queue/download behavior, Tauri commands/events, storage, account persistence, or frontend/backend boundaries.
-
----
-
 ## Core Boundary
 
 BDL follows one pipeline:

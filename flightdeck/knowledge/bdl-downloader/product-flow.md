@@ -1,10 +1,5 @@
 # BDL Product Flow
 
-SUMMARY: BDL is a desktop Bilibili downloader focused on parsing links, selecting normalized media parts, controlling transfers, recovering failures, and producing predictable files.
-READ WHEN: changing page structure, parse UX, transfer UX, settings, account UX, task actions, or user-facing copy.
-
----
-
 ## Product Position
 
 BDL is a downloader, not a media library, browser, player, or recommendation client.

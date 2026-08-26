@@ -1,8 +1,4 @@
 # BDL design-system checklist
-SUMMARY: Always shape BDL as a quiet desktop control room: achromatic cool-neutral chrome, restrained Bilibili-pink signal color, clear command hierarchy, adaptive navigation, stable transfer rows, and progressive disclosure.
-READ WHEN: before any BDL UI, interaction, visual-token, responsive-layout, or user-facing copy change.
-
----
 
 ## Direction
 

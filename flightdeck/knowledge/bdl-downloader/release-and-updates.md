@@ -1,10 +1,5 @@
 # BDL release and update operations
 
-SUMMARY: BDL versions, Windows releases, and in-app updates are one signed pipeline: bump every manifest together, pass the repository gate, tag the commit, let GitHub Actions create signed updater artifacts, then publish the draft release.
-READ WHEN: changing versions, packaging, release automation, updater UI or settings, signing keys, update endpoints, mirrors, CDN/proxy routing, or application icons.
-
----
-
 ## Version source of truth
 
 Run the repository helper from the root:

@@ -1,9 +1,4 @@
 # ⚠ Inline Nuxt UI select content shifts BDL forms
-SUMMARY: Keep BDL `USelect` content portalled; `portal=false` inserts the popup into the field layout and pushes later settings downward when the menu opens.
-READ WHEN: when a select menu opening moves nearby fields, changes scroll position, clips inside a panel, or when editing the local Select wrapper.
-RECHECK WHEN: Nuxt UI changes the default USelect portal or popper contract.
-
----
 
 ## Symptom
 
@@ -21,4 +16,3 @@ Opening a select such as audio quality moves the controls below it downward. The
 - Give every local field wrapper the same label-row height and label/control gap.
 
 Verify by capturing the settings layout before and after opening the menu: fields below the trigger must keep identical coordinates.
-

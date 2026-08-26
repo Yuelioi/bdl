@@ -1,8 +1,4 @@
 # BDL dropdown dismissal checklist
-SUMMARY: Always use the shared Nuxt UI dropdown primitive for transient menus so outside click, Escape, focus return, keyboard navigation, and portal positioning remain consistent.
-READ WHEN: before adding or changing any account, overflow, source-switcher, context, or other transient popup menu.
-
----
 
 ## Rules
 
@@ -15,4 +11,3 @@ READ WHEN: before adding or changing any account, overflow, source-switcher, con
 ## Why
 
 The previous account menu used a custom `v-if` popover and the Transfer "More" menu used native `<details>`. Neither had the correct transient-menu dismissal lifecycle, so clicking elsewhere left menus open over the work surface.
-
