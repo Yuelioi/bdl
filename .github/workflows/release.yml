@@ -4,7 +4,10 @@ on:
   push:
     tags:
       - "v*.*.*"
-  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -18,6 +21,29 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+
+      - name: Verify release tag matches app version
+        shell: pwsh
+        run: |
+          $version = (Get-Content -Raw apps/desktop/package.json | ConvertFrom-Json).version
+          $expectedTag = "v$version"
+          if ($env:GITHUB_REF_NAME -ne $expectedTag) {
+            throw "Release tag '$env:GITHUB_REF_NAME' does not match app version '$expectedTag'."
+          }
+
+      - name: Find existing GitHub release
+        id: existing-release
+        uses: actions/github-script@v9
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const releases = await github.paginate(
+              github.rest.repos.listReleases,
+              { ...context.repo, per_page: 100 },
+            );
+            const tag = context.ref.replace('refs/tags/', '');
+            const release = releases.find(({ tag_name }) => tag_name === tag);
+            core.setOutput('id', release?.id ?? '');
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
@@ -40,7 +66,8 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm --dir apps/desktop install --frozen-lockfile
 
-      - name: Build signed release and updater manifest
+      - name: Build and stage signed release
+        id: tauri
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -48,7 +75,8 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: apps/desktop
-          tagName: v__VERSION__
+          releaseId: ${{ steps.existing-release.outputs.id }}
+          tagName: ${{ github.ref_name }}
           releaseName: BDL v__VERSION__
           releaseBody: 下载适用于 Windows 的安装包。应用内更新将使用同一发布中的签名清单。
           releaseDraft: true
@@ -57,3 +85,24 @@ jobs:
       - name: Verify Windows GUI subsystem
         shell: pwsh
         run: ./scripts/verify-windows-gui.ps1 ./target/release/bdl-desktop.exe
+
+      - name: Publish GitHub release
+        uses: actions/github-script@v9
+        env:
+          RELEASE_ID: ${{ steps.tauri.outputs.releaseId || steps.existing-release.outputs.id }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const releaseId = Number(process.env.RELEASE_ID);
+            if (!Number.isSafeInteger(releaseId)) {
+              throw new Error(`Invalid release ID: ${process.env.RELEASE_ID}`);
+            }
+
+            const { data: release } = await github.rest.repos.updateRelease({
+              ...context.repo,
+              release_id: releaseId,
+              draft: false,
+              prerelease: false,
+              make_latest: 'true',
+            });
+            core.info(`Published ${release.tag_name} as the latest release.`);
