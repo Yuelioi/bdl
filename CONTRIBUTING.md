@@ -11,10 +11,7 @@
 
 ## 本地开发
 
-```powershell
-pnpm --dir apps/desktop install --frozen-lockfile
-pnpm --dir apps/desktop tauri dev
-```
+环境准备、依赖安装、本地启动和打包方法见 [开发指南](docs/DEVELOPMENT.md)。
 
 ## 提交前检查
 

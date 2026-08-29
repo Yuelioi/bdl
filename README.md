@@ -47,7 +47,33 @@
 
 首次发布完成前，Release 页面可能暂时没有可下载文件。BDL 当前未购买 Windows 代码签名证书，因此 Windows SmartScreen 可能显示未知发布者；应用内更新包仍会通过内置的 Tauri 签名密钥验证完整性。
 
-BDL 依赖 FFmpeg 完成音视频合并。你可以在设置中指定 FFmpeg，也可以让应用使用系统 `PATH` 中的版本。
+BDL 依赖 FFmpeg 完成音视频合并。你可以在设置中直接指定 `ffmpeg.exe`，也可以让应用使用系统 `PATH` 中的版本。
+
+### 安装 FFmpeg（Windows）
+
+FFmpeg 官网本身主要发布源码，所以下载页看起来会比较复杂。普通 Windows 用户不需要下载源码或自己编译，下面两种方式任选一种即可。
+
+**方式一：下载 ZIP 后在 BDL 中选择（推荐）**
+
+1. 下载 [ffmpeg-release-essentials.zip](https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip)。这是 [FFmpeg 官网列出的 Windows 构建](https://ffmpeg.org/download.html#build-windows)，`essentials` 版已足够 BDL 使用。
+2. 将 ZIP 解压到一个固定位置，例如 `C:\Tools\ffmpeg`。不要解压后再移动或删除该文件夹。
+3. 打开 BDL 的“设置 → 编码与处理 → FFmpeg 路径”，点击“选择”，找到解压目录中的 `bin\ffmpeg.exe` 并保存。启动时的环境检查窗口也可以直接点击“选择 FFmpeg”。
+
+**方式二：使用 winget 安装**
+
+在 PowerShell 中运行：
+
+```powershell
+winget install --id Gyan.FFmpeg.Essentials -e
+```
+
+安装完成后重新打开 BDL，将“FFmpeg 路径”留空即可使用系统 FFmpeg。也可在新的 PowerShell 窗口中验证：
+
+```powershell
+ffmpeg -version
+```
+
+如果提示找不到 `ffmpeg`，请先重启 BDL 或终端；仍无法识别时，使用方式一在 BDL 中直接选择 `ffmpeg.exe` 即可，无需手动配置环境变量。
 
 ## 使用方式
 
@@ -60,52 +86,7 @@ BDL 依赖 FFmpeg 完成音视频合并。你可以在设置中指定 FFmpeg，�
 
 ## 开发
 
-### 环境要求
-
-- Rust `1.88+`
-- Node.js `22+`
-- pnpm `11+`
-- FFmpeg
-- 对应平台的 [Tauri 2 prerequisites](https://v2.tauri.app/start/prerequisites/)
-
-### 启动桌面应用
-
-```powershell
-pnpm --dir apps/desktop install --frozen-lockfile
-pnpm --dir apps/desktop tauri dev
-```
-
-只运行前端：
-
-```powershell
-pnpm --dir apps/desktop dev
-```
-
-### 检查与打包
-
-```powershell
-./scripts/check.ps1
-./scripts/package.ps1
-```
-
-完整检查包含 Rust 格式化与 Clippy、工作区测试、Vue 类型检查、ESLint、Stylelint、Vitest、生产构建和视觉回归测试。
-
-## 项目结构
-
-```text
-crates/bdl-core       领域模型、解析、任务规划、下载、存储与诊断
-crates/bdl-tauri      队列编排、Tauri 命令、事件、系统与凭据集成
-crates/bdl-cli        开发和故障诊断使用的命令行入口
-apps/desktop          Vue 3 + Tailwind CSS + Tauri 桌面界面
-```
-
-下载链路：
-
-```text
-来源 → 解析器 → 统一内容模型 → 下载规划 → 持久化队列 → 下载器 → 后处理 → 完成记录
-```
-
-Rust 核心维护可恢复任务的真实状态，Vue 前端负责展示和发送用户指令。更完整的模块边界与不变量见 [架构文档](docs/ARCHITECTURE.md)。
+本地运行、环境要求、项目检查、打包方法和代码结构见 [开发指南](docs/DEVELOPMENT.md)。准备提交代码时，请同时阅读 [贡献指南](CONTRIBUTING.md)。
 
 ## 数据与安全
 
