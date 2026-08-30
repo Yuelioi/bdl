@@ -35,6 +35,8 @@ git push origin main --tags
 
 The `.github/workflows/release.yml` workflow builds Windows x64 plus separate macOS Apple Silicon and Intel bundles with `tauri-apps/tauri-action`. Each matrix leg stages signed updater artifacts in one draft GitHub Release; a dependent job publishes it only after every build and signature check succeeds.
 
+GitHub's `getReleaseByTag` endpoint does not resolve the staged draft reliably. The publish job must use the authenticated `listReleases` endpoint, select the matching `tag_name`, and then call `updateRelease` with that draft's numeric ID. Keep publication dependent on every matrix build so a partial release never becomes public.
+
 On macOS, the same sequence uses `./scripts/version.sh` and `./scripts/check.sh`. `./scripts/package.sh` is the local package entry point; it disables updater artifacts unless `--updater-artifacts` is passed so a developer can build without the private updater key.
 
 ## Signing trust root
@@ -93,4 +95,4 @@ Commit the SVG master and generated icon set together. The mark is deliberately 
 
 ## Verification
 
-Before tagging, `./scripts/check.ps1` must pass on Windows and `./scripts/check.sh` must pass on macOS. macOS package smoke checks must include `codesign --verify --deep --strict BDL.app`, confirmation that `codesign -dv --verbose=4` reports `Signature=adhoc`, and `hdiutil verify BDL_<version>_<arch>.dmg`. Update-specific coverage includes the Pinia preference/check tests and deterministic Playwright workspace screenshots. A real end-to-end install still requires a published release newer than the installed build and valid GitHub and Tauri updater signing credentials; Apple credentials are not part of the current release policy.
+Before tagging, `./scripts/check.ps1` must pass on Windows and `./scripts/check.sh` must pass on macOS. Portable shell checks may prefer ripgrep when installed but must provide a system-tool fallback for clean GitHub-hosted macOS runners. macOS package smoke checks must include `codesign --verify --deep --strict BDL.app`, confirmation that `codesign -dv --verbose=4` reports `Signature=adhoc`, and `hdiutil verify BDL_<version>_<arch>.dmg`. Update-specific coverage includes the Pinia preference/check tests and deterministic Playwright workspace screenshots. A real end-to-end install still requires a published release newer than the installed build and valid GitHub and Tauri updater signing credentials; Apple credentials are not part of the current release policy.

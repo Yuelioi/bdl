@@ -10,15 +10,15 @@ Open
 
 ## Current
 
-The macOS implementation and no-fee distribution policy are complete and locally verified on macOS 15.5 Apple Silicon. The application uses native app-data and Downloads locations, discovers common Homebrew/MacPorts FFmpeg installs, renders native macOS window controls, and passes the cross-platform check script. Version `0.3.0` produces a valid ad-hoc signed Apple Silicon `.app` and DMG plus an ad-hoc signed Intel `x86_64-apple-darwin` `.app`; CI and release workflows cover both architectures without Apple credentials. GitHub Releases explicitly identify Mac packages as unnotarized and direct users to a safe per-app Gatekeeper exception flow.
+The macOS implementation and no-fee distribution policy are complete and locally verified on macOS 15.5 Apple Silicon. Version `0.3.0` is tagged and publicly released with Apple Silicon and Intel DMGs, signed updater archives, Windows installers, and `latest.json`. Both macOS release jobs succeeded without Apple credentials, and the latest `main` CI passes its Windows and macOS jobs. The release identifies Mac packages as unnotarized and directs users to a safe per-app Gatekeeper exception flow.
 
 ## Next
 
-Push the branch to run GitHub-hosted macOS CI (including the Intel target), then cut tag `v0.3.0` and confirm both architecture downloads, the documented Gatekeeper flow, updater metadata, and a real Keychain-backed login on a clean Mac.
+On a separate clean Mac, confirm the documented Gatekeeper flow, a real Keychain-backed login, and an application update from an older installed version. No repository implementation remains for the selected release policy.
 
 ## Execution
 
-Implementation is complete. Remaining execution needs the existing Tauri updater key, a pushed GitHub ref, and clean-Mac verification of the public unnotarized package flow; Apple credentials are intentionally not required.
+Implementation, publication, and hosted CI are complete. Remaining execution is independent clean-Mac acceptance testing; Apple credentials are intentionally not required.
 
 ## Progress
 
@@ -34,6 +34,9 @@ Implementation is complete. Remaining execution needs the existing Tauri updater
 - Bumped all release version sources from `0.2.1` to `0.3.0`; tag verification and the complete macOS check gate pass at the new version.
 - Replaced the paid Apple credential gate with an explicit ad-hoc release policy, removed all `APPLE_*` workflow inputs, and expanded cross-platform installation documentation with safe macOS Gatekeeper instructions.
 - Re-ran the complete check gate, built `BDL_0.3.0_aarch64.dmg`, verified its checksum and `Signature=adhoc`, and rebuilt the Intel application as a signed Mach-O x86_64 bundle at version `0.3.0`.
+- Pushed `9e3189c` and annotated tag `v0.3.0`; both macOS Release matrix jobs, the Windows Release job, and all updater artifact uploads succeeded.
+- Fixed macOS CI for runners without ripgrep in `d7d4536`; the latest hosted Windows and macOS CI jobs pass.
+- Fixed draft publication lookup in `fc5beee`, recovered the already-staged release once, verified eleven public assets, and removed the one-time recovery workflow.
 
 ## References
 
