@@ -30,14 +30,23 @@ run_step() {
 verify_windows_child_process_policy() {
   local helper="$repo_root/crates/bdl-core/src/process.rs"
   local raw_launches
-  raw_launches="$(cd "$repo_root/crates" && rg -n 'Command::new\s*\(' -g '*.rs' -g '!bdl-core/src/process.rs' || true)"
+  if command -v rg >/dev/null 2>&1; then
+    raw_launches="$(cd "$repo_root/crates" && rg -n 'Command::new[[:space:]]*\(' -g '*.rs' -g '!bdl-core/src/process.rs' || true)"
+  else
+    raw_launches="$(find "$repo_root/crates" -type f -name '*.rs' ! -path "$helper" -exec grep -nHE 'Command::new[[:space:]]*\(' {} + || true)"
+  fi
   if [[ -n "$raw_launches" ]]; then
     echo "Runtime child processes bypass the hidden-window command helper:" >&2
     echo "$raw_launches" >&2
     return 1
   fi
-  rg -q 'CREATE_NO_WINDOW' "$helper"
-  rg -q '\.creation_flags\s*\(' "$helper"
+  if command -v rg >/dev/null 2>&1; then
+    rg -q 'CREATE_NO_WINDOW' "$helper"
+    rg -q '\.creation_flags[[:space:]]*\(' "$helper"
+  else
+    grep -q 'CREATE_NO_WINDOW' "$helper"
+    grep -Eq '\.creation_flags[[:space:]]*\(' "$helper"
+  fi
   echo "Windows child-process policy verified."
 }
 
