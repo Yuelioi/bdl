@@ -117,13 +117,17 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const tag = context.ref.replace('refs/tags/', '');
-            const release = await github.rest.repos.getReleaseByTag({
-              ...context.repo,
-              tag,
-            });
+            const releases = await github.paginate(
+              github.rest.repos.listReleases,
+              { ...context.repo, per_page: 100 },
+            );
+            const release = releases.find(({ tag_name }) => tag_name === tag);
+            if (!release) {
+              throw new Error(`Draft release for ${tag} was not found.`);
+            }
             const published = await github.rest.repos.updateRelease({
               ...context.repo,
-              release_id: release.data.id,
+              release_id: release.id,
               draft: false,
               prerelease: false,
               make_latest: 'true',
