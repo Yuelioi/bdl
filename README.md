@@ -7,7 +7,7 @@
 
 一个专注、可靠、本地优先的哔哩哔哩桌面下载工具。BDL 基于 [bpi-rs](https://github.com/Yuelioi/bpi-rs) 实现 Bilibili API 能力，并使用 Rust、Tauri 与 Vue 构建，把来源解析、批量选择、下载队列、失败恢复和媒体后处理整合在统一的工作区中。
 
-> 当前版本：`0.2.1` · Windows 优先 · 项目处于早期开发阶段
+> 当前版本：`0.3.0` · 支持 Windows 与 macOS · 项目处于早期开发阶段
 
 ![BDL 解析页面](preview/home.png)
 
@@ -21,17 +21,17 @@
 - **清晰的任务诊断**：提供任务事件、媒体轨道、原始日志与脱敏诊断包，方便定位失败原因。
 - **账号内容入口**：登录后可浏览自己的收藏夹和订阅合集，并直接选择其中内容下载。
 - **本地优先与隐私保护**：设置和任务数据保存在本机，Cookie 存入操作系统凭据存储。
-- **浅色与深色主题**：统一的粉色品牌色、原生无边框窗口和系统主题跟随。
-- **签名更新能力**：支持手动检查更新；自动检查默认关闭，安装前始终由用户确认。
+- **浅色与深色主题**：统一的粉色品牌色、平台适配的原生窗口控制和系统主题跟随。
+- **可控的应用更新**：更新包使用项目内置公钥验证完整性；自动检查默认关闭，安装前始终由用户确认。
 
 ## 界面预览
 
-| 解析与选择 | 下载选项 |
-| --- | --- |
+| 解析与选择                      | 下载选项                                 |
+| ------------------------------- | ---------------------------------------- |
 | ![解析与选择](preview/home.png) | ![下载选项](preview/download-option.png) |
 
-| 下载队列 | 设置 |
-| --- | --- |
+| 下载队列                             | 设置                          |
+| ------------------------------------ | ----------------------------- |
 | ![下载队列](preview/downloading.png) | ![设置](preview/settings.png) |
 
 <details>
@@ -43,13 +43,21 @@
 
 ## 下载与安装
 
-前往 [Releases](https://github.com/Yuelioi/bdl/releases/latest) 下载最新的 Windows 安装包。
+前往 [Releases](https://github.com/Yuelioi/bdl/releases/latest) 下载适合系统的安装包。
 
-首次发布完成前，Release 页面可能暂时没有可下载文件。BDL 当前未购买 Windows 代码签名证书，因此 Windows SmartScreen 可能显示未知发布者；应用内更新包仍会通过内置的 Tauri 签名密钥验证完整性。
+| 系统                    | 支持范围 | 安装包                                 |
+| ----------------------- | -------- | -------------------------------------- |
+| Windows 10/11 x64       | 正式支持 | `.exe` / `.msi`                        |
+| macOS 13+ Apple Silicon | 正式支持 | 文件名包含 `aarch64` 的 `.dmg`         |
+| macOS 13+ Intel         | 兼容支持 | 文件名包含 `x64` 或 `x86_64` 的 `.dmg` |
 
-BDL 依赖 FFmpeg 完成音视频合并。你可以在设置中直接指定 `ffmpeg.exe`，也可以让应用使用系统 `PATH` 中的版本。
+BDL 依赖 FFmpeg 完成音视频合并。你可以在设置中直接指定 FFmpeg，也可以让应用发现系统 `PATH` 和 macOS 常见包管理器路径中的版本。
 
-### 安装 FFmpeg（Windows）
+### Windows
+
+下载并运行 `.exe` 或 `.msi` 安装包。项目目前没有购买 Windows 代码签名证书，因此 SmartScreen 可能显示“未知发布者”；请只使用本仓库 GitHub Releases 中的文件。
+
+#### 安装 FFmpeg
 
 FFmpeg 官网本身主要发布源码，所以下载页看起来会比较复杂。普通 Windows 用户不需要下载源码或自己编译，下面两种方式任选一种即可。
 
@@ -74,6 +82,29 @@ ffmpeg -version
 ```
 
 如果提示找不到 `ffmpeg`，请先重启 BDL 或终端；仍无法识别时，使用方式一在 BDL 中直接选择 `ffmpeg.exe` 即可，无需手动配置环境变量。
+
+### macOS
+
+项目目前没有加入付费 Apple Developer Program。Release 中的 macOS 应用使用 ad-hoc 签名，**没有经过 Apple Developer ID 签名与公证**，因此首次运行时出现开发者验证提示属于预期行为。
+
+#### 安装并首次打开
+
+1. 在“苹果菜单 → 关于本机”查看芯片类型，下载 Apple Silicon 的 `aarch64` DMG 或 Intel 的 `x64`/`x86_64` DMG。
+2. 打开 DMG，将 BDL 拖入“应用程序”文件夹。
+3. 在 Finder 的“应用程序”中按住 Control 点击 BDL，选择“打开”，然后在确认窗口中再次选择“打开”。
+4. 如果没有出现“打开”按钮，前往“系统设置 → 隐私与安全性”，在安全性提示旁选择“仍要打开”，按系统要求完成确认。
+
+通常只需在首次运行时确认一次。请不要全局关闭 Gatekeeper；只为从本项目官方 Releases 下载的 BDL 添加例外。具体界面随 macOS 版本可能略有变化，可参考 [Apple 的“打开来自身份不明开发者的 App”说明](https://support.apple.com/guide/mac-help/open-a-mac-app-from-an-unidentified-developer-mh40616/mac)。
+
+#### 安装 FFmpeg
+
+使用 Homebrew 安装：
+
+```bash
+brew install ffmpeg
+```
+
+从 Finder 启动时，BDL 会额外检查 Apple Silicon Homebrew 的 `/opt/homebrew/bin/ffmpeg`、Intel Homebrew 的 `/usr/local/bin/ffmpeg` 和 MacPorts 的 `/opt/local/bin/ffmpeg`。如果使用自定义位置，可在“设置 → 编码与处理 → FFmpeg 路径”中直接选择可执行文件。
 
 ## 使用方式
 

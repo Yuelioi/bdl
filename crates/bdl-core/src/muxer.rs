@@ -290,17 +290,19 @@ fn ensure_executable(path: PathBuf) -> Result<PathBuf, MuxError> {
 }
 
 fn find_in_path(name: &str) -> Result<PathBuf, MuxError> {
-    let Some(paths) = env::var_os("PATH") else {
-        return Err(MuxError::FfmpegNotFound {
-            path: name.to_owned(),
-        });
-    };
-
-    for dir in env::split_paths(&paths) {
-        for candidate in executable_candidates(&dir, name) {
-            if candidate.is_file() {
-                return Ok(candidate);
+    if let Some(paths) = env::var_os("PATH") {
+        for dir in env::split_paths(&paths) {
+            for candidate in executable_candidates(&dir, name) {
+                if candidate.is_file() {
+                    return Ok(candidate);
+                }
             }
+        }
+    }
+
+    for candidate in platform_executable_candidates(name) {
+        if candidate.is_file() {
+            return Ok(candidate);
         }
     }
 
@@ -324,6 +326,24 @@ fn executable_candidates(dir: &Path, name: &str) -> Vec<PathBuf> {
     vec![dir.join(name)]
 }
 
+#[cfg(target_os = "macos")]
+fn platform_executable_candidates(name: &str) -> Vec<PathBuf> {
+    [
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+        "/opt/local/bin",
+        "/usr/local/opt/ffmpeg/bin",
+    ]
+    .into_iter()
+    .map(|dir| Path::new(dir).join(name))
+    .collect()
+}
+
+#[cfg(not(target_os = "macos"))]
+fn platform_executable_candidates(_name: &str) -> Vec<PathBuf> {
+    Vec::new()
+}
+
 fn stderr_summary(stderr: &[u8]) -> String {
     let text = String::from_utf8_lossy(stderr);
     let trimmed = text.trim();
@@ -331,5 +351,24 @@ fn stderr_summary(stderr: &[u8]) -> String {
         trimmed.to_owned()
     } else {
         format!("{}...", &trimmed[..500])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_ffmpeg_fallbacks_cover_common_package_managers() {
+        use std::path::PathBuf;
+
+        assert_eq!(
+            super::platform_executable_candidates("ffmpeg"),
+            vec![
+                PathBuf::from("/opt/homebrew/bin/ffmpeg"),
+                PathBuf::from("/usr/local/bin/ffmpeg"),
+                PathBuf::from("/opt/local/bin/ffmpeg"),
+                PathBuf::from("/usr/local/opt/ffmpeg/bin/ffmpeg"),
+            ]
+        );
     }
 }

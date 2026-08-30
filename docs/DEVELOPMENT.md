@@ -10,37 +10,59 @@
 - FFmpeg
 - 对应平台的 [Tauri 2 prerequisites](https://v2.tauri.app/start/prerequisites/)
 
-BDL 当前以 Windows 为主要开发和发布目标；其他系统的支持状态见 [支持平台](SUPPORTED_PLATFORMS.md)。
+BDL 的桌面开发与发布目标包括 Windows 和 macOS；具体范围见 [支持平台](SUPPORTED_PLATFORMS.md)。
 
 ## 启动桌面应用
 
 在仓库根目录中运行：
 
-```powershell
+```bash
 pnpm --dir apps/desktop install --frozen-lockfile
 pnpm --dir apps/desktop tauri dev
 ```
 
 只运行前端：
 
-```powershell
+```bash
 pnpm --dir apps/desktop dev
 ```
 
 ## 检查与打包
 
-运行完整项目检查：
+在 Windows 上运行完整项目检查（包含 Windows 视觉基线）：
 
 ```powershell
 ./scripts/check.ps1
 ```
 
-完整检查包含 Rust 格式化与 Clippy、工作区测试、Vue 类型检查、ESLint、Stylelint、Vitest、生产构建和视觉回归测试。
+在 macOS 上运行对应检查：
 
-检查通过后构建安装包：
+```bash
+./scripts/check.sh
+```
+
+两者都包含 Rust 格式化、Clippy、工作区测试、Vue 类型检查、ESLint、Stylelint、Vitest 和生产构建。Windows 是当前的规范视觉快照平台；macOS 如需主动运行视觉测试，可使用 `./scripts/check.sh --visual` 并单独评估平台渲染差异。
+
+检查通过后构建本机安装包：
 
 ```powershell
 ./scripts/package.ps1
+```
+
+```bash
+./scripts/package.sh
+```
+
+`package.sh` 默认关闭本地 updater artifact 生成，因此不需要 Tauri 私钥。需要验证签名更新包时，先配置签名环境变量，再传入 `--updater-artifacts`。项目当前采用无需付费 Apple 账号的 macOS 发布流程：`tauri.macos.conf.json` 使用 ad-hoc identity `-`，发布包不会进行 Developer ID 签名或 Apple 公证。相关验证和用户提示见 [发布检查清单](RELEASE_CHECKLIST.md)。
+
+版本同步脚本也提供两个平台入口：
+
+```powershell
+./scripts/version.ps1 patch
+```
+
+```bash
+./scripts/version.sh patch
 ```
 
 ## 项目结构

@@ -1,0 +1,23 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "BDL",
+        "width": 1080,
+        "height": 720,
+        "resizable": true,
+        "decorations": true,
+        "hiddenTitle": true,
+        "titleBarStyle": "Overlay"
+      }
+    ]
+  },
+  "bundle": {
+    "macOS": {
+      "minimumSystemVersion": "13.0",
+      "signingIdentity": "-"
+    }
+  }
+}

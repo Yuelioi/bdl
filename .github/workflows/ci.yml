@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   check:
-    name: Workspace checks
+    name: Windows workspace checks
     runs-on: windows-latest
     timeout-minutes: 30
 
@@ -48,3 +48,44 @@ jobs:
       - name: Run workspace checks
         shell: pwsh
         run: ./scripts/check.ps1
+
+  macos-check:
+    name: macOS workspace and bundle checks
+    runs-on: macos-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.1.2
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: apps/desktop/pnpm-lock.yaml
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@1.88
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install frontend dependencies
+        run: pnpm --dir apps/desktop install --frozen-lockfile
+
+      - name: Run macOS workspace checks
+        run: ./scripts/check.sh
+
+      - name: Build macOS application bundle
+        run: pnpm --dir apps/desktop tauri build --bundles app --config '{"bundle":{"createUpdaterArtifacts":false}}'
+
+      - name: Verify macOS application signature
+        run: codesign --verify --deep --strict ./target/release/bundle/macos/BDL.app

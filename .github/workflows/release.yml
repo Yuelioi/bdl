@@ -13,37 +13,34 @@ permissions:
   contents: write
 
 jobs:
-  windows:
-    name: Build Windows release
-    runs-on: windows-latest
-    timeout-minutes: 45
+  build:
+    name: Build ${{ matrix.name }} release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows x64
+            platform: windows-latest
+            target: ""
+            args: ""
+          - name: macOS Apple Silicon
+            platform: macos-latest
+            target: aarch64-apple-darwin
+            args: --target aarch64-apple-darwin
+          - name: macOS Intel
+            platform: macos-latest
+            target: x86_64-apple-darwin
+            args: --target x86_64-apple-darwin
+
+    runs-on: ${{ matrix.platform }}
+    timeout-minutes: 60
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
 
       - name: Verify release tag matches app version
-        shell: pwsh
-        run: |
-          $version = (Get-Content -Raw apps/desktop/package.json | ConvertFrom-Json).version
-          $expectedTag = "v$version"
-          if ($env:GITHUB_REF_NAME -ne $expectedTag) {
-            throw "Release tag '$env:GITHUB_REF_NAME' does not match app version '$expectedTag'."
-          }
-
-      - name: Find existing GitHub release
-        id: existing-release
-        uses: actions/github-script@v9
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const releases = await github.paginate(
-              github.rest.repos.listReleases,
-              { ...context.repo, per_page: 100 },
-            );
-            const tag = context.ref.replace('refs/tags/', '');
-            const release = releases.find(({ tag_name }) => tag_name === tag);
-            core.setOutput('id', release?.id ?? '');
+        run: node ./scripts/verify-release-tag.mjs "${{ github.ref_name }}"
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
@@ -59,15 +56,18 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@1.88
+        with:
+          targets: ${{ matrix.target }}
 
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.name }}
 
       - name: Install frontend dependencies
         run: pnpm --dir apps/desktop install --frozen-lockfile
 
-      - name: Build and stage signed release
-        id: tauri
+      - name: Build and stage release
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -75,34 +75,57 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: apps/desktop
-          releaseId: ${{ steps.existing-release.outputs.id }}
           tagName: ${{ github.ref_name }}
           releaseName: BDL v__VERSION__
-          releaseBody: 下载适用于 Windows 的安装包。应用内更新将使用同一发布中的签名清单。
+          releaseBody: |
+            下载适用于 Windows 或 macOS 的安装包。
+            macOS 安装包使用 ad-hoc 签名，未经 Apple Developer ID 签名与公证；首次打开请按 README 指引操作。
+            应用内更新包使用项目的 Tauri 签名验证完整性。
           releaseDraft: true
           prerelease: false
+          args: ${{ matrix.args }}
 
       - name: Verify Windows GUI subsystem
+        if: runner.os == 'Windows'
         shell: pwsh
         run: ./scripts/verify-windows-gui.ps1 ./target/release/bdl-desktop.exe
 
+      - name: Verify macOS ad-hoc signature
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          app_path="./target/${{ matrix.target }}/release/bundle/macos/BDL.app"
+          codesign --verify --deep --strict "$app_path"
+          signature_details="$(codesign -dv --verbose=4 "$app_path" 2>&1)"
+          printf '%s\n' "$signature_details"
+          if [[ "$signature_details" != *"Signature=adhoc"* ]]; then
+            echo "Expected an ad-hoc macOS signature." >&2
+            exit 1
+          fi
+
+  publish:
+    name: Publish staged release
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
       - name: Publish GitHub release
         uses: actions/github-script@v9
-        env:
-          RELEASE_ID: ${{ steps.tauri.outputs.releaseId || steps.existing-release.outputs.id }}
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const releaseId = Number(process.env.RELEASE_ID);
-            if (!Number.isSafeInteger(releaseId)) {
-              throw new Error(`Invalid release ID: ${process.env.RELEASE_ID}`);
-            }
-
-            const { data: release } = await github.rest.repos.updateRelease({
+            const tag = context.ref.replace('refs/tags/', '');
+            const release = await github.rest.repos.getReleaseByTag({
               ...context.repo,
-              release_id: releaseId,
+              tag,
+            });
+            const published = await github.rest.repos.updateRelease({
+              ...context.repo,
+              release_id: release.data.id,
               draft: false,
               prerelease: false,
               make_latest: 'true',
             });
-            core.info(`Published ${release.tag_name} as the latest release.`);
+            core.info(`Published ${published.data.tag_name} as the latest release.`);

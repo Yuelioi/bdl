@@ -2,7 +2,7 @@
 
 ## Open Work
 
-None.
+- **Focus:** [macOS support](work/macos-support/index.md)
 
 ## Project knowledge
 

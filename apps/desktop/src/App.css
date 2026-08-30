@@ -31,6 +31,10 @@
   pointer-events: none;
 }
 
+.platform-macos .titlebar-brand {
+  padding-left: 78px;
+}
+
 .titlebar-brand strong {
   font-family: var(--font-display);
   font-size: var(--font-13);
@@ -95,6 +99,10 @@
   display: flex;
   align-items: center;
   gap: var(--space-6);
+}
+
+.platform-macos .titlebar-actions {
+  padding-right: var(--space-sm);
 }
 
 .account-button {
@@ -560,5 +568,10 @@
 
   .account-button {
     padding-right: var(--space-xs);
+  }
+
+  .platform-macos .titlebar-mark,
+  .platform-macos .titlebar-name {
+    display: none;
   }
 }

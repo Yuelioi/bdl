@@ -384,7 +384,7 @@ async fn fetcher_restarts_when_saved_etag_differs_from_remote_etag() {
 
 #[tokio::test]
 async fn cancellation_interrupts_a_stalled_download_request() {
-    let (url, request_started) = spawn_stalled_get_server().await;
+    let (url, request_started) = spawn_stalled_server().await;
     let dir = temp_case_dir("cancel-stalled").await;
     let resource = resource(url, &dir, "cancel-stalled.bin");
     let fetcher = ReqwestFetcher::with_config(FetchConfig {
@@ -463,7 +463,7 @@ async fn temp_case_dir(name: &str) -> PathBuf {
     dir
 }
 
-async fn spawn_stalled_get_server() -> (String, oneshot::Receiver<()>) {
+async fn spawn_stalled_server() -> (String, oneshot::Receiver<()>) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let (started_tx, started_rx) = oneshot::channel();
@@ -475,22 +475,9 @@ async fn spawn_stalled_get_server() -> (String, oneshot::Receiver<()>) {
                 return;
             };
             let mut buffer = vec![0_u8; 4096];
-            let Ok(read) = stream.read(&mut buffer).await else {
+            let Ok(_) = stream.read(&mut buffer).await else {
                 return;
             };
-            let request = String::from_utf8_lossy(&buffer[..read]);
-            if request.starts_with("HEAD ") {
-                write_response(
-                    &mut stream,
-                    200,
-                    "OK",
-                    &[("Content-Length", "1024".to_owned())],
-                    b"",
-                )
-                .await;
-                continue;
-            }
-
             if let Some(sender) = started_tx.take() {
                 let _ = sender.send(());
             }
@@ -731,4 +718,6 @@ async fn write_response(
     response.push_str("\r\n");
     stream.write_all(response.as_bytes()).await.unwrap();
     stream.write_all(body).await.unwrap();
+    stream.flush().await.unwrap();
+    stream.shutdown().await.unwrap();
 }

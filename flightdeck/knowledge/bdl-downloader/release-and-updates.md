@@ -11,6 +11,15 @@ Run the repository helper from the root:
 ./scripts/version.ps1 0.2.0
 ```
 
+On macOS or Linux, use the equivalent Bash entry point:
+
+```bash
+./scripts/version.sh patch
+./scripts/version.sh minor
+./scripts/version.sh major
+./scripts/version.sh 0.2.0
+```
+
 The helper refuses inconsistent starting versions and synchronizes all Rust package manifests, `apps/desktop/package.json`, `apps/desktop/src-tauri/tauri.conf.json`, `Cargo.lock`, and the README version. Do not edit only one manifest.
 
 ## Release sequence
@@ -24,7 +33,9 @@ git tag v0.1.1
 git push origin main --tags
 ```
 
-The `.github/workflows/release.yml` workflow builds Windows bundles with `tauri-apps/tauri-action`, signs updater artifacts, generates `latest.json`, and creates a draft GitHub Release. Inspect the draft artifacts and notes before publishing it. The client only sees a draft after it is published.
+The `.github/workflows/release.yml` workflow builds Windows x64 plus separate macOS Apple Silicon and Intel bundles with `tauri-apps/tauri-action`. Each matrix leg stages signed updater artifacts in one draft GitHub Release; a dependent job publishes it only after every build and signature check succeeds.
+
+On macOS, the same sequence uses `./scripts/version.sh` and `./scripts/check.sh`. `./scripts/package.sh` is the local package entry point; it disables updater artifacts unless `--updater-artifacts` is passed so a developer can build without the private updater key.
 
 ## Signing trust root
 
@@ -33,6 +44,8 @@ The `.github/workflows/release.yml` workflow builds Windows bundles with `tauri-
 - The private key currently lives at `C:\Users\yl\.tauri\bdl.key`; never copy its contents into the repository, Flightdeck, logs, issues, or chat.
 - GitHub Actions needs the private key as the `TAURI_SIGNING_PRIVATE_KEY` repository secret. The current key has no password, so `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` may be absent.
 - Keep at least one offline backup of the private key. Losing it prevents future releases from updating already-installed clients. Rotating it requires an explicitly designed trust migration.
+
+The project's current no-fee macOS distribution policy uses the ad-hoc identity `-` for local and GitHub-hosted release builds. Release CI must not require `APPLE_*` secrets and must verify both `codesign --verify --deep --strict` and `Signature=adhoc`. Every release and the README must disclose that the DMG is not Apple-notarized and document the per-app Control-click/Open or Privacy & Security/Open Anyway flow. Never advise users to disable Gatekeeper globally. If the maintainer later adopts paid Developer ID distribution, treat that as an explicit policy migration: add Apple credentials, notarization, stapling, Gatekeeper assessment, and clean-Mac verification together.
 
 ## Client update policy
 
@@ -80,4 +93,4 @@ Commit the SVG master and generated icon set together. The mark is deliberately 
 
 ## Verification
 
-Before tagging, `./scripts/check.ps1` must pass. Update-specific coverage includes the Pinia preference/check tests and deterministic Playwright workspace screenshots. A real end-to-end install still requires a published release newer than the installed build and valid GitHub signing secrets.
+Before tagging, `./scripts/check.ps1` must pass on Windows and `./scripts/check.sh` must pass on macOS. macOS package smoke checks must include `codesign --verify --deep --strict BDL.app`, confirmation that `codesign -dv --verbose=4` reports `Signature=adhoc`, and `hdiutil verify BDL_<version>_<arch>.dmg`. Update-specific coverage includes the Pinia preference/check tests and deterministic Playwright workspace screenshots. A real end-to-end install still requires a published release newer than the installed build and valid GitHub and Tauri updater signing credentials; Apple credentials are not part of the current release policy.

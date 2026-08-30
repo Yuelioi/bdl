@@ -15,8 +15,16 @@
 
 ## 提交前检查
 
+Windows：
+
 ```powershell
 ./scripts/check.ps1
+```
+
+macOS：
+
+```bash
+./scripts/check.sh
 ```
 
 如果只改前端，至少运行：

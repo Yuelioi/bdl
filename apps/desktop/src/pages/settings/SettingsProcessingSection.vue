@@ -17,7 +17,11 @@ const { settings, settingsCodec, settingsMissingQualityPolicy, settingsSegmentCo
     </div>
     <UiSelect v-model="settingsSegmentCount" label="单任务分段数" :options="segmentCountOptions" />
     <div class="directory-row">
-      <UiTextField v-model="settingsFfmpegPath" label="FFmpeg 路径" placeholder="留空时使用系统 PATH 中的 ffmpeg" />
+      <UiTextField
+        v-model="settingsFfmpegPath"
+        label="FFmpeg 路径"
+        placeholder="留空时自动发现系统或常见包管理器中的 ffmpeg"
+      />
       <UiButton variant="secondary" :disabled="settings.loading || settings.saving" @click="settings.chooseFfmpegPath"
         >选择</UiButton
       >

@@ -74,14 +74,24 @@ pub struct PreparedSelection {
 }
 
 impl AppState {
-    pub fn new() -> BdlResult<Self> {
-        let settings_path = default_settings_path()?;
-        let settings = load_settings(&settings_path)?;
+    pub fn new(
+        preferred_data_dir: impl Into<PathBuf>,
+        default_download_dir: impl Into<PathBuf>,
+    ) -> BdlResult<Self> {
+        let preferred_data_dir = preferred_data_dir.into();
+        let legacy_data_dir = std::env::current_dir()?.join(".bdl");
+        let default_data_dir = select_startup_data_dir(&preferred_data_dir, &legacy_data_dir);
+        let settings_path = default_data_dir.join("settings.json");
+        let mut settings = load_settings(&settings_path)?;
+        if settings.download_dir.is_none() {
+            settings.download_dir =
+                Some(default_download_dir.into().to_string_lossy().into_owned());
+        }
         let data_dir = settings
             .data_dir
             .as_deref()
             .map(PathBuf::from)
-            .unwrap_or(default_data_dir()?);
+            .unwrap_or(default_data_dir);
         let mut storage = TaskStorage::open(data_dir.join("tasks.sqlite"))?;
         let mut queue = storage.load_tasks()?;
         let startup_recovery = prepare_startup_recovery(&mut queue, settings.startup_auto_recovery);
@@ -1037,12 +1047,16 @@ fn account_session_changed() -> BdlError {
     }
 }
 
-fn default_data_dir() -> BdlResult<PathBuf> {
-    Ok(std::env::current_dir()?.join(".bdl"))
+fn select_startup_data_dir(preferred: &std::path::Path, legacy: &std::path::Path) -> PathBuf {
+    if has_persisted_state(preferred) || !has_persisted_state(legacy) {
+        preferred.to_path_buf()
+    } else {
+        legacy.to_path_buf()
+    }
 }
 
-fn default_settings_path() -> BdlResult<PathBuf> {
-    Ok(std::env::current_dir()?.join(".bdl").join("settings.json"))
+fn has_persisted_state(path: &std::path::Path) -> bool {
+    path.join("settings.json").is_file() || path.join("tasks.sqlite").is_file()
 }
 
 fn load_settings(path: &PathBuf) -> BdlResult<SettingsSnapshot> {
@@ -1322,8 +1336,9 @@ mod tests {
         AppState, PartHydrationRequest, StartupRecoverySnapshot, append_new_tasks,
         append_source_page, dedupe_tasks_by_id, hydrate_placeholder_part, load_account_snapshot,
         next_page_request, normalize_selected_part_ids, prepare_startup_recovery,
-        remap_selected_part_ids, select_task_stream, selected_hydration_requests,
-        should_continue_loading, should_expand_initial_source, task_media_refresh_ids,
+        remap_selected_part_ids, select_startup_data_dir, select_task_stream,
+        selected_hydration_requests, should_continue_loading, should_expand_initial_source,
+        task_media_refresh_ids,
     };
     use crate::secure_store::SecureStore;
     use chrono::Utc;
@@ -1349,6 +1364,24 @@ mod tests {
     use bdl_core::settings::AppSettings;
     use bdl_core::storage::TaskStorage;
     use tokio::sync::Notify;
+
+    #[test]
+    fn startup_data_dir_uses_legacy_state_only_when_preferred_state_is_absent() {
+        let root = temp_state_dir();
+        let preferred = root.join("preferred");
+        let legacy = root.join("legacy");
+        std::fs::create_dir_all(&legacy).expect("legacy directory should be created");
+        std::fs::write(legacy.join("tasks.sqlite"), []).expect("legacy marker should be written");
+
+        assert_eq!(select_startup_data_dir(&preferred, &legacy), legacy);
+
+        std::fs::create_dir_all(&preferred).expect("preferred directory should be created");
+        std::fs::write(preferred.join("settings.json"), "{}")
+            .expect("preferred marker should be written");
+        assert_eq!(select_startup_data_dir(&preferred, &legacy), preferred);
+
+        let _ = std::fs::remove_dir_all(root);
+    }
 
     #[test]
     fn append_new_tasks_skips_existing_and_incoming_duplicate_ids() {

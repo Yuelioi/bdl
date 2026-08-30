@@ -11,6 +11,7 @@ import { useUpdateStore } from './stores/update'
 import { useUiStore, type AppTab } from './stores/ui'
 import { openExternalUrl } from './api/tauri'
 import { bilibiliUserUrl } from './utils/bilibiliLinks'
+import { isMacPlatform } from './utils/platform'
 import UiButton from './ui/Button.vue'
 import AppearanceMenu from './ui/AppearanceMenu.vue'
 import UiDialog from './ui/Dialog.vue'
@@ -48,6 +49,7 @@ const startupRecoveryDialogOpen = ref(false)
 const loginMode = ref<'qr' | 'cookie'>('qr')
 const cookieText = ref('')
 const avatarLoadFailed = ref(false)
+const isMacOs = isMacPlatform()
 
 const navItems: Array<{ value: AppTab; label: string; description: string; icon: string; shortcut: string }> = [
   { value: 'parse', label: '解析', description: '添加与选择', icon: 'i-tabler-link', shortcut: '1' },
@@ -289,7 +291,7 @@ watch(
 
 <template>
   <UApp>
-    <main class="app-shell">
+    <main class="app-shell" :class="{ 'platform-macos': isMacOs }">
       <header class="app-titlebar" data-tauri-drag-region @dblclick="toggleMaximizeWindow">
         <div class="titlebar-brand" data-tauri-drag-region>
           <span class="titlebar-mark" aria-hidden="true"><i></i><i></i></span>
@@ -323,7 +325,7 @@ watch(
               <UIcon name="i-tabler-chevron-down" class="account-chevron" aria-hidden="true" />
             </button>
           </UDropdownMenu>
-          <div class="window-controls" aria-label="窗口控制">
+          <div v-if="!isMacOs" class="window-controls" aria-label="窗口控制">
             <button type="button" aria-label="最小化" @click.stop="minimizeWindow">
               <UIcon name="i-tabler-minus" aria-hidden="true" />
             </button>

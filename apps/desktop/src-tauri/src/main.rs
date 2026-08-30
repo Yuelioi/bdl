@@ -1,9 +1,13 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use tauri::Manager;
+
 fn main() {
     tauri::Builder::default()
-        .manage(bdl_tauri::state::AppState::new().expect("failed to initialize BDL app state"))
         .setup(|app| {
+            let data_dir = app.path().app_data_dir()?;
+            let download_dir = app.path().download_dir()?.join("BDL");
+            app.manage(bdl_tauri::state::AppState::new(data_dir, download_dir)?);
             bdl_tauri::commands::start_account_startup_verification(app.handle());
             Ok(())
         })

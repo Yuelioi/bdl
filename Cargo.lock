@@ -277,7 +277,7 @@ checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
 name = "bdl-cli"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "bdl-core",
@@ -287,7 +287,7 @@ dependencies = [
 
 [[package]]
 name = "bdl-core"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "async-trait",
  "bpi-rs",
@@ -309,7 +309,7 @@ dependencies = [
 
 [[package]]
 name = "bdl-desktop"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "bdl-tauri",
  "serde_json",
@@ -323,7 +323,7 @@ dependencies = [
 
 [[package]]
 name = "bdl-tauri"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "bdl-core",
  "chrono",
