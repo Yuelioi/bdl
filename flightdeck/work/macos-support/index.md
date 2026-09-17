@@ -10,7 +10,7 @@ Open
 
 ## Current
 
-`main` is synchronized with `origin/main` at `2189ca6`, including the released v0.3.0 macOS implementation and its deliberate no-fee ad-hoc signing policy. The working tree removes macOS Keychain access entirely: macOS persists the account Cookie with ChaCha20-Poly1305 under the application-data directory, using a separate random key file and private filesystem permissions. Windows and Linux keep their existing OS credential backends. No pre-release credential format is migrated because the application has no deployed user base. Startup restores the non-secret account summary first and loads the persistent Cookie lazily when authenticated state is needed. Strict Clippy passes and the `bdl-tauri` test suite passes on Windows.
+BDL v0.3.1 is publicly released from `e6c3a42`. macOS no longer accesses Keychain: it persists the account Cookie with ChaCha20-Poly1305 under the application-data directory, using a separate random key file and private filesystem permissions. Windows and Linux keep their existing OS credential backends. No pre-release credential format is migrated because the application has no deployed user base. Startup restores the non-secret account summary first and loads the persistent Cookie lazily when authenticated state is needed. The complete local release gate passed before tagging, and the hosted Windows, macOS Apple Silicon, macOS Intel, and publish jobs all succeeded.
 
 ## Next
 
@@ -18,7 +18,7 @@ Validate the encrypted macOS credential backend on a clean Mac: log in, restart 
 
 ## Execution
 
-The v0.3.0 release workflow is complete and still verifies `Signature=adhoc`. The encrypted macOS credential change is present only in the working tree and has not been committed or published. Other pre-existing local edits remain untouched.
+The v0.3.1 release workflow completed successfully and still verifies `Signature=adhoc` for both macOS architectures. The public release contains eleven assets plus `latest.json` metadata/signatures as expected. Other pre-existing local edits remain uncommitted and were intentionally excluded from the release commit.
 
 ## Progress
 
@@ -40,6 +40,7 @@ The v0.3.0 release workflow is complete and still verifies `Signature=adhoc`. Th
 - Synchronized the local `main` branch from `26866f9` to `2189ca6`, preserving and restoring the pre-existing working-tree edits around the upstream macOS changes.
 - Reworked startup account restoration locally so opening BDL does not read credential secrets immediately; Cookie access is deferred until authenticated state is actually needed.
 - Replaced the macOS `apple-native` Keychain backend with an application-owned ChaCha20-Poly1305 encrypted file backend. The random 32-byte key and encrypted Cookie are separate private files and logout removes both. Pre-release credential formats are intentionally unsupported. `cargo clippy -p bdl-tauri --all-targets -- -D warnings` and the `bdl-tauri` library tests pass on Windows.
+- Bumped all release version sources to `0.3.1`, passed the complete Windows release gate (Rust format/clippy/tests, frontend build/lints, 127 Vitest tests, 30 Playwright visual tests, whitespace), pushed `e6c3a42` and annotated tag `v0.3.1`, and published BDL v0.3.1 with successful Windows, Apple Silicon, Intel, and publish jobs.
 
 ## References
 
