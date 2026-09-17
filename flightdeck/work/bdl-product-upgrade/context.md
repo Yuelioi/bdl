@@ -10,7 +10,7 @@ BDL is a Chinese-first, local-first desktop workspace for turning Bilibili sourc
 - Tauri commands remain a narrow adapter; Vue owns presentation, selection, and interaction state.
 - The desktop UI must remain usable offline, at narrow Windows sizes, with keyboard navigation and reduced motion.
 - Signed updater artifacts use the embedded Tauri public key; Windows Authenticode remains separate and optional.
-- User credentials stay in operating-system secure storage and never enter ordinary files, SQLite, or diagnostics.
+- User credentials never enter plaintext files, SQLite, or diagnostics. Windows and Linux use operating-system credential storage; macOS ad-hoc builds use application-owned encrypted credential files to avoid unstable Keychain authorization across unsigned updates.
 
 ## Delivered product shape
 

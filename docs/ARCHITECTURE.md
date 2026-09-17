@@ -25,7 +25,7 @@ BDL 按“领域真相在 Rust、会话交互在 Vue”的边界组织。跨边�
 | queue_worker      | 并发调度、限速器、定时等待与结果收割     | 同时只有一个调度循环；展示进度合并不延迟任务命令    |
 | media_finalize    | 附件选择、已完成资源定位和 NFO           | 只嵌入已完成且容器支持的文件；警告必须指出具体附件  |
 | diagnostic_export | 诊断脱敏                                 | Cookie、鉴权头、代理凭据与签名查询参数不得导出      |
-| secure_store      | 系统凭据存储与旧 Cookie 迁移             | Cookie 不进入普通文件、SQLite、日志或前端 DTO       |
+| secure_store      | 平台凭据持久化、加密与旧 Cookie 迁移     | Cookie 不进入 SQLite、日志或前端 DTO；macOS 仅落加密凭据文件 |
 | state             | 持久状态组合与共享并发资源               | 不新增可独立测试的领域规则；新规则优先进入上述模块  |
 
 ## Desktop frontend

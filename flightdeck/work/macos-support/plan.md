@@ -2,7 +2,8 @@
 
 - [x] Audit platform assumptions and define a concrete macOS acceptance matrix.
 - [x] Make development checks and helper scripts work on macOS while preserving Windows entry points.
-- [x] Fix Rust/Tauri runtime integrations for macOS paths, Keychain, FFmpeg, file actions, child processes, and updater behavior.
+- [x] Fix Rust/Tauri runtime integrations for macOS paths, credential persistence, FFmpeg, file actions, child processes, and updater behavior.
+- [ ] Validate application-owned encrypted credentials on a clean Mac, including restart persistence, logout deletion, and no Keychain prompt.
 - [x] Adapt and verify the desktop shell, title bar, native window controls, permissions, icons, and bundle configuration on macOS.
 - [x] Add macOS CI for Rust and frontend checks plus package smoke builds.
 - [x] Add macOS release bundles and document signing, notarization, architecture choices, and updater metadata.

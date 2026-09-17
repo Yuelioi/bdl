@@ -31,7 +31,7 @@
 - [ ] `codesign --verify --deep --strict BDL.app` 通过，且 `codesign -dv --verbose=4 BDL.app` 显示 `Signature=adhoc`。
 - [ ] 在干净 Mac 上确认 Gatekeeper 会提示该应用未经 Apple 验证，并确认 README 中的 Control-点击“打开”或“隐私与安全性 → 仍要打开”流程有效。
 - [ ] 首次启动使用 `~/Library/Application Support/com.yueli.bdl`，默认输出使用 `~/Downloads/BDL`。
-- [ ] QR/Cookie 登录写入 Keychain，重启后可读取，注销后凭据被删除。
+- [ ] macOS QR/Cookie 登录写入本地加密凭据，重启后可读取，注销后密文与密钥被删除，整个流程不出现钥匙串授权弹窗。
 - [ ] Finder 启动可发现 Homebrew/MacPorts FFmpeg；显式选择路径同样可用。
 - [ ] 原生窗口控制、拖动、缩放、全屏、打开成品和打开目录行为正确。
 - [ ] Release 正文明确标记 macOS 包为 ad-hoc 签名且未经 Apple 公证；README 安装指引仍与当前 macOS 界面一致。

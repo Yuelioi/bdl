@@ -120,7 +120,7 @@ The generic fetcher disables Reqwest's automatic `deflate` decoder and handles `
 
 ## Persistence
 
-SQLite persists tasks, resources, completed transfer records, task logs, and account summaries. Settings are JSON. Cookies are stored in the OS credential store, not SQLite or settings JSON.
+SQLite persists tasks, resources, completed transfer records, task logs, and account summaries. Settings are JSON. Cookies never enter SQLite or settings JSON. Windows and Linux use the OS credential store. macOS ad-hoc builds persist the Cookie as a ChaCha20-Poly1305 encrypted credential under the application-data directory, with a locally generated key kept in a separate private file.
 
 Scheduled tasks remain backend-owned waiting tasks. `AppState` excludes future schedules from worker pickup and startup recovery, persists the UTC start time, and notifies a capacity-aware Tokio worker when schedules, queue state, or settings change. The worker races active-task completion against the next due time so a scheduled task can fill an available concurrency slot without waiting for the current batch to finish. It re-reads settings before filling worker slots, ensuring a long-sleeping schedule uses the latest concurrency, network, FFmpeg, and archive configuration. The frontend only submits local time as RFC 3339 and renders backend task state.
 

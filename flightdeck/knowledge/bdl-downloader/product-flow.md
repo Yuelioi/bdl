@@ -237,7 +237,7 @@ Supported flows:
 - verify account
 - logout
 
-Cookie storage must persist through OS credential storage. SQLite stores only account summaries.
+Cookie storage must persist across restarts without entering SQLite. Windows and Linux use OS credential storage; macOS uses the application's encrypted credential files so ad-hoc updates do not trigger Keychain authorization prompts. SQLite stores only account summaries.
 
 Logged-out parsing should degrade by available streams. Missing high quality is not an error unless the resource itself requires login.
 

@@ -57,13 +57,19 @@ pub struct AppState {
     settings_path: PathBuf,
     data_dir: PathBuf,
     account: Mutex<AccountSnapshot>,
-    account_cookie: Mutex<Option<String>>,
+    account_cookie: Mutex<AccountCookieCache>,
     account_session_revision: AtomicU64,
     queue_worker_active: AtomicBool,
     queue_changed: Notify,
     queue_cancellations: Mutex<HashMap<String, FetchCancelToken>>,
     startup_recovery: Mutex<StartupRecoverySnapshot>,
     secure_store: SecureStore,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum AccountCookieCache {
+    Unloaded,
+    Loaded(Option<String>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -98,9 +104,13 @@ impl AppState {
         if !startup_recovery.task_ids.is_empty() {
             storage.replace_tasks(&queue)?;
         }
-        let secure_store = SecureStore::new();
-        let (account, account_cookie) =
-            load_account_snapshot(&mut storage, &secure_store, &data_dir)?;
+        let account = load_account_snapshot(&storage)?;
+        let account_cookie = if account.logged_in {
+            AccountCookieCache::Unloaded
+        } else {
+            AccountCookieCache::Loaded(None)
+        };
+        let secure_store = SecureStore::new(&data_dir);
 
         Ok(Self {
             parse_sources: Mutex::new(HashMap::new()),
@@ -766,7 +776,7 @@ impl AppState {
             .account_cookie
             .lock()
             .map_err(|_| state_poisoned("account_cookie"))? =
-            Some(imported_cookie.as_header().to_owned());
+            AccountCookieCache::Loaded(Some(imported_cookie.as_header().to_owned()));
         *self.account.lock().map_err(|_| state_poisoned("account"))? = account.clone();
         self.account_session_revision.fetch_add(1, Ordering::SeqCst);
 
@@ -778,12 +788,10 @@ impl AppState {
     }
 
     pub async fn verify_account(&self) -> BdlResult<AccountSnapshot> {
-        let Some(raw_cookie) = self
-            .account_cookie
-            .lock()
-            .map_err(|_| state_poisoned("account_cookie"))?
-            .clone()
-        else {
+        let Some(raw_cookie) = self.account_cookie()? else {
+            if self.account()?.logged_in {
+                return self.clear_account_state();
+            }
             return self.account();
         };
 
@@ -812,14 +820,9 @@ impl AppState {
             });
         }
         let revision = self.account_session_revision.load(Ordering::SeqCst);
-        let cookie = self
-            .account_cookie
-            .lock()
-            .map_err(|_| state_poisoned("account_cookie"))?
-            .clone()
-            .ok_or_else(|| BdlError::Account {
-                message: "请先登录，再浏览账号内容。".to_owned(),
-            })?;
+        let cookie = self.account_cookie()?.ok_or_else(|| BdlError::Account {
+            message: "请先登录，再浏览账号内容。".to_owned(),
+        })?;
         let mid = ImportedCookie::parse(cookie.clone())?
             .dede_user_id()
             .and_then(|value| value.parse::<u64>().ok())
@@ -846,7 +849,7 @@ impl AppState {
         *self
             .account_cookie
             .lock()
-            .map_err(|_| state_poisoned("account_cookie"))? = None;
+            .map_err(|_| state_poisoned("account_cookie"))? = AccountCookieCache::Loaded(None);
         *self.account.lock().map_err(|_| state_poisoned("account"))? = AccountSnapshot::default();
         self.account_session_revision.fetch_add(1, Ordering::SeqCst);
 
@@ -942,86 +945,85 @@ impl AppState {
     }
 
     fn video_resolver(&self) -> BdlResult<VideoResolver> {
-        match self
-            .account_cookie
-            .lock()
-            .map_err(|_| state_poisoned("account_cookie"))?
-            .clone()
-        {
+        match self.account_cookie()? {
             Some(cookie) => VideoResolver::from_cookie(&cookie),
             None => VideoResolver::new(),
         }
     }
 
     fn uploader_resolver(&self) -> BdlResult<UploaderResolver> {
-        match self
-            .account_cookie
-            .lock()
-            .map_err(|_| state_poisoned("account_cookie"))?
-            .clone()
-        {
+        match self.account_cookie()? {
             Some(cookie) => UploaderResolver::from_cookie(&cookie),
             None => UploaderResolver::new(),
         }
     }
 
     fn favorite_resolver(&self) -> BdlResult<FavoriteResolver> {
-        match self
-            .account_cookie
-            .lock()
-            .map_err(|_| state_poisoned("account_cookie"))?
-            .clone()
-        {
+        match self.account_cookie()? {
             Some(cookie) => FavoriteResolver::from_cookie(&cookie),
             None => FavoriteResolver::new(),
         }
     }
 
     fn collection_resolver(&self) -> BdlResult<CollectionResolver> {
-        match self
-            .account_cookie
-            .lock()
-            .map_err(|_| state_poisoned("account_cookie"))?
-            .clone()
-        {
+        match self.account_cookie()? {
             Some(cookie) => CollectionResolver::from_cookie(&cookie),
             None => CollectionResolver::new(),
         }
     }
 
     fn series_resolver(&self) -> BdlResult<SeriesResolver> {
-        match self
-            .account_cookie
-            .lock()
-            .map_err(|_| state_poisoned("account_cookie"))?
-            .clone()
-        {
+        match self.account_cookie()? {
             Some(cookie) => SeriesResolver::from_cookie(&cookie),
             None => SeriesResolver::new(),
         }
     }
 
     fn bangumi_resolver(&self) -> BdlResult<BangumiResolver> {
-        match self
-            .account_cookie
-            .lock()
-            .map_err(|_| state_poisoned("account_cookie"))?
-            .clone()
-        {
+        match self.account_cookie()? {
             Some(cookie) => BangumiResolver::from_cookie(&cookie),
             None => BangumiResolver::new(),
         }
     }
 
     fn cheese_resolver(&self) -> BdlResult<CheeseResolver> {
-        match self
-            .account_cookie
-            .lock()
-            .map_err(|_| state_poisoned("account_cookie"))?
-            .clone()
-        {
+        match self.account_cookie()? {
             Some(cookie) => CheeseResolver::from_cookie(&cookie),
             None => CheeseResolver::new(),
+        }
+    }
+
+    fn account_cookie(&self) -> BdlResult<Option<String>> {
+        let revision = self.account_session_revision.load(Ordering::SeqCst);
+        {
+            let cache = self
+                .account_cookie
+                .lock()
+                .map_err(|_| state_poisoned("account_cookie"))?;
+            if let AccountCookieCache::Loaded(cookie) = &*cache {
+                return Ok(cookie.clone());
+            }
+        }
+
+        let loaded = load_persisted_account_cookie(&self.secure_store)?;
+        let mut cache = self
+            .account_cookie
+            .lock()
+            .map_err(|_| state_poisoned("account_cookie"))?;
+
+        if revision != self.account_session_revision.load(Ordering::SeqCst) {
+            return match &*cache {
+                AccountCookieCache::Loaded(cookie) => Ok(cookie.clone()),
+                AccountCookieCache::Unloaded => Ok(None),
+            };
+        }
+
+        match &*cache {
+            AccountCookieCache::Loaded(cookie) => Ok(cookie.clone()),
+            AccountCookieCache::Unloaded => {
+                *cache = AccountCookieCache::Loaded(loaded.clone());
+                Ok(loaded)
+            }
         }
     }
 }
@@ -1078,54 +1080,25 @@ fn save_settings(path: &PathBuf, settings: &SettingsSnapshot) -> BdlResult<()> {
     Ok(())
 }
 
-fn load_account_snapshot(
-    storage: &mut TaskStorage,
-    secure_store: &SecureStore,
-    data_dir: &std::path::Path,
-) -> BdlResult<(AccountSnapshot, Option<String>)> {
-    let legacy_cookie_path = data_dir.join("account.cookie");
-    let persisted_cookie = match secure_store.load_cookie()? {
-        Some(cookie) => {
-            SecureStore::clear_legacy_cookie_file(&legacy_cookie_path)?;
-            Some(cookie)
-        }
-        None => secure_store.migrate_legacy_cookie_file(&legacy_cookie_path)?,
-    };
+fn load_account_snapshot(storage: &TaskStorage) -> BdlResult<AccountSnapshot> {
+    Ok(storage
+        .load_account_summary()?
+        .filter(|account| account.logged_in)
+        .unwrap_or_default())
+}
 
-    let Some(raw_cookie) = persisted_cookie else {
-        storage.clear_account_summary()?;
-        return Ok((AccountSnapshot::default(), None));
+fn load_persisted_account_cookie(secure_store: &SecureStore) -> BdlResult<Option<String>> {
+    let Some(raw_cookie) = secure_store.load_cookie()? else {
+        return Ok(None);
     };
 
     match ImportedCookie::parse(&raw_cookie) {
-        Ok(imported_cookie) => {
-            let account = stored_or_imported_account(storage, &imported_cookie)?;
-            storage.save_account_summary(&account)?;
-            Ok((account, Some(raw_cookie)))
-        }
+        Ok(_) => Ok(Some(raw_cookie)),
         Err(_) => {
             secure_store.clear_cookie()?;
-            storage.clear_account_summary()?;
-            Ok((AccountSnapshot::default(), None))
+            Ok(None)
         }
     }
-}
-
-fn stored_or_imported_account(
-    storage: &TaskStorage,
-    imported_cookie: &ImportedCookie,
-) -> BdlResult<AccountSnapshot> {
-    let mut account = storage
-        .load_account_summary()?
-        .filter(|account| account.logged_in)
-        .unwrap_or_else(|| AccountSummary::from_imported_cookie(imported_cookie));
-
-    account.logged_in = true;
-    if account.mid.is_none() {
-        account.mid = imported_cookie.dede_user_id().map(str::to_owned);
-    }
-
-    Ok(account)
 }
 
 fn task_media_refresh_ids(task: &DownloadTask) -> BdlResult<TaskMediaRefreshIds> {
@@ -1333,12 +1306,12 @@ fn source_kind_name(kind: SourceKind) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::{
-        AppState, PartHydrationRequest, StartupRecoverySnapshot, append_new_tasks,
-        append_source_page, dedupe_tasks_by_id, hydrate_placeholder_part, load_account_snapshot,
-        next_page_request, normalize_selected_part_ids, prepare_startup_recovery,
-        remap_selected_part_ids, select_startup_data_dir, select_task_stream,
-        selected_hydration_requests, should_continue_loading, should_expand_initial_source,
-        task_media_refresh_ids,
+        AccountCookieCache, AppState, PartHydrationRequest, StartupRecoverySnapshot,
+        append_new_tasks, append_source_page, dedupe_tasks_by_id, hydrate_placeholder_part,
+        load_account_snapshot, next_page_request, normalize_selected_part_ids,
+        prepare_startup_recovery, remap_selected_part_ids, select_startup_data_dir,
+        select_task_stream, selected_hydration_requests, should_continue_loading,
+        should_expand_initial_source, task_media_refresh_ids,
     };
     use crate::secure_store::SecureStore;
     use chrono::Utc;
@@ -1513,45 +1486,25 @@ mod tests {
     }
 
     #[test]
-    fn load_account_snapshot_migrates_legacy_cookie_and_persists_summary() {
+    fn load_account_snapshot_uses_saved_summary_without_secure_store_access() {
         let data_dir = temp_state_dir();
         std::fs::create_dir_all(&data_dir).expect("temp data dir should be created");
-        let legacy_cookie_path = data_dir.join("account.cookie");
-        std::fs::write(
-            &legacy_cookie_path,
-            "DedeUserID=42; SESSDATA=session; bili_jct=csrf\n",
-        )
-        .expect("legacy cookie should be written");
-        let secure_store = SecureStore::in_memory();
         let mut storage =
             TaskStorage::open(data_dir.join("tasks.sqlite")).expect("storage should open");
+        let expected = AccountSummary {
+            logged_in: true,
+            name: Some("BDL user".to_owned()),
+            avatar_url: None,
+            mid: Some("42".to_owned()),
+            vip_label: None,
+        };
+        storage
+            .save_account_summary(&expected)
+            .expect("summary should save");
 
-        let (account, cookie) =
-            load_account_snapshot(&mut storage, &secure_store, &data_dir).expect("load account");
+        let account = load_account_snapshot(&storage).expect("load account");
 
-        assert!(account.logged_in);
-        assert_eq!(account.mid.as_deref(), Some("42"));
-        assert_eq!(
-            cookie.as_deref(),
-            Some("DedeUserID=42; SESSDATA=session; bili_jct=csrf")
-        );
-        assert_eq!(
-            secure_store
-                .load_cookie()
-                .expect("cookie should load")
-                .as_deref(),
-            Some("DedeUserID=42; SESSDATA=session; bili_jct=csrf")
-        );
-        assert_eq!(
-            storage
-                .load_account_summary()
-                .expect("summary should load")
-                .as_ref()
-                .and_then(|summary| summary.mid.as_deref()),
-            Some("42")
-        );
-        assert!(!legacy_cookie_path.exists());
-
+        assert_eq!(account, expected);
         let _ = std::fs::remove_dir_all(data_dir);
     }
 
@@ -2295,7 +2248,7 @@ mod tests {
             settings_path: data_dir.join("settings.json"),
             data_dir: data_dir.to_path_buf(),
             account: Mutex::new(AccountSummary::default()),
-            account_cookie: Mutex::new(None),
+            account_cookie: Mutex::new(AccountCookieCache::Loaded(None)),
             account_session_revision: AtomicU64::new(0),
             queue_worker_active: AtomicBool::new(false),
             queue_changed: Notify::new(),

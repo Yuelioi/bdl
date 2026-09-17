@@ -180,7 +180,7 @@ watch(
         <UiEmptyState
           v-if="!account.profile.logged_in"
           title="登录后连接你的内容库"
-          description="账号凭据仍保存在系统安全存储中，内容库不会显示或导出 Cookie。"
+          description="账号凭据会加密持久化；macOS 使用本地加密凭据文件，内容库不会显示或导出 Cookie。"
           icon="i-tabler-lock"
         >
           <template #action><UiButton @click="ui.openLoginDialog()">登录账号</UiButton></template>

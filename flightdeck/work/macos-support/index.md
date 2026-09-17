@@ -10,15 +10,15 @@ Open
 
 ## Current
 
-The macOS implementation and no-fee distribution policy are complete and locally verified on macOS 15.5 Apple Silicon. Version `0.3.0` is tagged and publicly released with Apple Silicon and Intel DMGs, signed updater archives, Windows installers, and `latest.json`. Both macOS release jobs succeeded without Apple credentials, and the latest `main` CI passes its Windows and macOS jobs. The release identifies Mac packages as unnotarized and directs users to a safe per-app Gatekeeper exception flow.
+`main` is synchronized with `origin/main` at `2189ca6`, including the released v0.3.0 macOS implementation and its deliberate no-fee ad-hoc signing policy. The working tree removes macOS Keychain access entirely: macOS persists the account Cookie with ChaCha20-Poly1305 under the application-data directory, using a separate random key file and private filesystem permissions. Windows and Linux keep their existing OS credential backends. No pre-release credential format is migrated because the application has no deployed user base. Startup restores the non-secret account summary first and loads the persistent Cookie lazily when authenticated state is needed. Strict Clippy passes and the `bdl-tauri` test suite passes on Windows.
 
 ## Next
 
-On a separate clean Mac, confirm the documented Gatekeeper flow, a real Keychain-backed login, and an application update from an older installed version. No repository implementation remains for the selected release policy.
+Validate the encrypted macOS credential backend on a clean Mac: log in, restart BDL, confirm the account survives, log out and confirm the credential files are removed, and confirm normal use never triggers a Keychain password dialog.
 
 ## Execution
 
-Implementation, publication, and hosted CI are complete. Remaining execution is independent clean-Mac acceptance testing; Apple credentials are intentionally not required.
+The v0.3.0 release workflow is complete and still verifies `Signature=adhoc`. The encrypted macOS credential change is present only in the working tree and has not been committed or published. Other pre-existing local edits remain untouched.
 
 ## Progress
 
@@ -37,6 +37,9 @@ Implementation, publication, and hosted CI are complete. Remaining execution is 
 - Pushed `9e3189c` and annotated tag `v0.3.0`; both macOS Release matrix jobs, the Windows Release job, and all updater artifact uploads succeeded.
 - Fixed macOS CI for runners without ripgrep in `d7d4536`; the latest hosted Windows and macOS CI jobs pass.
 - Fixed draft publication lookup in `fc5beee`, recovered the already-staged release once, verified eleven public assets, and removed the one-time recovery workflow.
+- Synchronized the local `main` branch from `26866f9` to `2189ca6`, preserving and restoring the pre-existing working-tree edits around the upstream macOS changes.
+- Reworked startup account restoration locally so opening BDL does not read credential secrets immediately; Cookie access is deferred until authenticated state is actually needed.
+- Replaced the macOS `apple-native` Keychain backend with an application-owned ChaCha20-Poly1305 encrypted file backend. The random 32-byte key and encrypted Cookie are separate private files and logout removes both. Pre-release credential formats are intentionally unsupported. `cargo clippy -p bdl-tauri --all-targets -- -D warnings` and the `bdl-tauri` library tests pass on Windows.
 
 ## References
 
