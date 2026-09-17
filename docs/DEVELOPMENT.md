@@ -21,6 +21,10 @@ pnpm --dir apps/desktop install --frozen-lockfile
 pnpm --dir apps/desktop tauri dev
 ```
 
+如果设置了全局 `CARGO_TARGET_DIR`，本仓库的 PowerShell、Bash 和 Tauri 本地入口会把它当作 target 根目录，并自动追加仓库目录名；例如根目录为 `D:\coding\rust\target` 时，本项目实际使用 `D:\coding\rust\target\bdl`。没有设置时仍使用仓库内的 `target`。
+
+本地打包默认不生成 Tauri updater 签名产物，因此不需要 updater 私钥。只有需要生成更新包时才在 Windows 使用 `./scripts/package.ps1 -UpdaterArtifacts`，或在 macOS/Linux 使用 `./scripts/package.sh --updater-artifacts`。
+
 只运行前端：
 
 ```bash

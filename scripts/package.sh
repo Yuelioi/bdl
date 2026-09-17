@@ -5,6 +5,8 @@ set -euo pipefail
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "$script_dir/.." && pwd)"
 desktop_dir="$repo_root/apps/desktop"
+cargo_target_dir="$(node "$script_dir/cargo-target.mjs" "$repo_root")"
+export CARGO_TARGET_DIR="$cargo_target_dir"
 skip_check=false
 updater_artifacts=false
 tauri_args=()
@@ -31,6 +33,8 @@ run_step() {
 
 cd "$repo_root"
 
+printf 'Cargo target: %s\n' "$CARGO_TARGET_DIR"
+
 if [[ "$skip_check" == false ]]; then
   run_step "Workspace checks" "$script_dir/check.sh"
 fi
@@ -46,12 +50,12 @@ run_step "Tauri package" env CI=true pnpm --dir "$desktop_dir" tauri "${build_ar
 
 artifact_list="$(mktemp -t bdl-package-artifacts.XXXXXX)"
 trap 'rm -f "$artifact_list"' EXIT
-find "$repo_root/target" \
+find "$CARGO_TARGET_DIR" \
   \( -type d -name '*.app' -o -type f \( -name '*.dmg' -o -name '*.app.tar.gz' -o -name '*.sig' -o -name '*.exe' -o -name '*.msi' -o -name '*.msix' -o -name '*.zip' -o -name '*.deb' -o -name '*.rpm' -o -name '*.AppImage' \) \) \
   -print | sort -u > "$artifact_list"
 
 if [[ ! -s "$artifact_list" ]]; then
-  echo "Tauri build completed but no package artifacts were found under $repo_root/target." >&2
+  echo "Tauri build completed but no package artifacts were found under $CARGO_TARGET_DIR." >&2
   exit 1
 fi
 

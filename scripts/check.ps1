@@ -6,6 +6,11 @@ $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
 $RepoRoot = Split-Path -Parent $PSScriptRoot
+$CargoTargetDir = (& node (Join-Path $PSScriptRoot "cargo-target.mjs") $RepoRoot).Trim()
+if ($LASTEXITCODE -ne 0) {
+    throw "Failed to resolve Cargo target directory."
+}
+$env:CARGO_TARGET_DIR = $CargoTargetDir
 
 function Invoke-Step {
     param(
@@ -26,6 +31,8 @@ function Invoke-Step {
 
 Push-Location $RepoRoot
 try {
+    Write-Host "Cargo target: $CargoTargetDir"
+
     Invoke-Step "Rust format" {
         cargo fmt --all --check
     }

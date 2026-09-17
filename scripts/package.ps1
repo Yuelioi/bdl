@@ -1,5 +1,6 @@
 param(
-    [switch]$SkipCheck
+    [switch]$SkipCheck,
+    [switch]$UpdaterArtifacts
 )
 
 $ErrorActionPreference = "Stop"
@@ -7,7 +8,12 @@ Set-StrictMode -Version Latest
 
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 $DesktopDir = Join-Path $RepoRoot "apps/desktop"
-$TargetDir = Join-Path $RepoRoot "target/release"
+$CargoTargetDir = (& node (Join-Path $PSScriptRoot "cargo-target.mjs") $RepoRoot).Trim()
+if ($LASTEXITCODE -ne 0) {
+    throw "Failed to resolve Cargo target directory."
+}
+$env:CARGO_TARGET_DIR = $CargoTargetDir
+$TargetDir = Join-Path $CargoTargetDir "release"
 $BundleDir = Join-Path $TargetDir "bundle"
 
 function Invoke-Step {
@@ -46,14 +52,21 @@ function Get-PackageArtifacts {
 
 Push-Location $RepoRoot
 try {
+    Write-Host "Cargo target: $CargoTargetDir"
+
     if (-not $SkipCheck) {
         Invoke-Step "Workspace checks" {
             & (Join-Path $PSScriptRoot "check.ps1")
         }
     }
 
+    $buildArgs = @("build")
+    if (-not $UpdaterArtifacts) {
+        $buildArgs += @("--config", '{"bundle":{"createUpdaterArtifacts":false}}')
+    }
+
     Invoke-Step "Tauri package" {
-        pnpm --dir $DesktopDir tauri build
+        pnpm --dir $DesktopDir tauri @buildArgs
     }
 
     Invoke-Step "Windows GUI subsystem" {

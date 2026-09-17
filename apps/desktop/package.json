@@ -14,7 +14,7 @@
     "test": "vitest run",
     "test:visual": "playwright test",
     "test:visual:update": "playwright test --update-snapshots",
-    "tauri": "tauri"
+    "tauri": "node scripts/tauri.mjs"
   },
   "dependencies": {
     "@iconify-json/tabler": "^1.2.35",

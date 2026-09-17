@@ -4,6 +4,8 @@ set -euo pipefail
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "$script_dir/.." && pwd)"
+cargo_target_dir="$(node "$script_dir/cargo-target.mjs" "$repo_root")"
+export CARGO_TARGET_DIR="$cargo_target_dir"
 skip_clippy=false
 run_visual=false
 
@@ -59,6 +61,8 @@ run_rust_tests() {
 }
 
 cd "$repo_root"
+
+printf 'Cargo target: %s\n' "$CARGO_TARGET_DIR"
 
 run_step "Rust format" cargo fmt --all --check
 if [[ "$skip_clippy" == false ]]; then
