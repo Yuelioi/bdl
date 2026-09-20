@@ -11,6 +11,9 @@ importers:
       '@iconify-json/tabler':
         specifier: ^1.2.35
         version: 1.2.35
+      '@iconify/vue':
+        specifier: ^5.0.1
+        version: 5.0.1
       '@nuxt/ui':
         specifier: ^4.9.0
         version: 4.9.0(33aca8ad76f08ca22a4db96dae16f4f3)

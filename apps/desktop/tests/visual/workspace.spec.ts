@@ -332,6 +332,65 @@ const installTauriMock = async (
   );
 };
 
+test('renders navigation icon bodies before the first painted frame', async ({ page }) => {
+  await page.addInitScript(() => {
+    const samples: Array<{ navItems: number; icons: number }> = [];
+    Object.assign(window, { __BDL_ICON_SAMPLES__: samples });
+    const sample = () => {
+      const navItems = document.querySelectorAll('.nav-item').length;
+      if (navItems > 0) {
+        const icons = Array.from(document.querySelectorAll('.nav-item svg')).filter((svg) => svg.childElementCount > 0).length;
+        samples.push({ navItems, icons });
+      }
+      if (samples.length < 10) requestAnimationFrame(sample);
+    };
+    requestAnimationFrame(sample);
+  });
+  await installTauriMock(page, 'light');
+  await page.goto('/');
+
+  await expect(page.locator('.nav-item')).toHaveCount(5);
+  await expect(page.locator('.nav-item svg')).toHaveCount(5);
+  const samples = await page.evaluate(
+    () => (window as Window & { __BDL_ICON_SAMPLES__?: Array<{ navItems: number; icons: number }> }).__BDL_ICON_SAMPLES__ ?? [],
+  );
+  expect(samples.length).toBeGreaterThan(0);
+  expect(samples.some(({ navItems, icons }) => icons < navItems)).toBe(false);
+});
+
+test('renders dynamic icon buttons before paint without Iconify network access', async ({ page }) => {
+  await page.addInitScript(() => {
+    const samples: Array<{ buttons: number; icons: number }> = [];
+    Object.assign(window, { __BDL_ICON_BUTTON_SAMPLES__: samples });
+    const sample = () => {
+      const buttons = document.querySelectorAll('.ui-icon-button').length;
+      if (buttons > 0) {
+        const icons = Array.from(document.querySelectorAll('.ui-icon-button svg')).filter((svg) => svg.childElementCount > 0).length;
+        samples.push({ buttons, icons });
+      }
+      if (samples.length < 10) requestAnimationFrame(sample);
+    };
+    requestAnimationFrame(sample);
+  });
+  await page.route(/https:\/\/(?:api\.iconify\.design|api\.simplesvg\.com|api\.unisvg\.com)\/.*/, (route) =>
+    route.abort(),
+  );
+  await installTauriMock(page, 'light');
+  await page.goto('/');
+
+  const appearanceButton = page.getByRole('button', { name: /外观：/ });
+  await expect(appearanceButton).toBeVisible();
+  await expect(appearanceButton.locator('svg')).toHaveCount(1);
+  await expect(appearanceButton.locator('svg > *')).not.toHaveCount(0);
+  const samples = await page.evaluate(
+    () =>
+      (window as Window & { __BDL_ICON_BUTTON_SAMPLES__?: Array<{ buttons: number; icons: number }> })
+        .__BDL_ICON_BUTTON_SAMPLES__ ?? [],
+  );
+  expect(samples.length).toBeGreaterThan(0);
+  expect(samples.some(({ buttons, icons }) => icons < buttons)).toBe(false);
+});
+
 for (const theme of ['light', 'dark'] as const) {
   for (const viewport of [
     { name: 'standard', width: 1280, height: 800 },

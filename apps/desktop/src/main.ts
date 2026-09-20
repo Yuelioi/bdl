@@ -1,7 +1,9 @@
+import { addCollection } from '@iconify/vue'
 import { createPinia } from 'pinia'
 import ui from '@nuxt/ui/vue-plugin'
 import { createApp } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
+import localIcons from 'virtual:bdl-icon-bundle'
 
 import App from './App.vue'
 import { useThemeStore } from './stores/theme'
@@ -10,6 +12,8 @@ import './styles/tokens.css'
 import './styles/feedback.css'
 import './styles/forms.css'
 import './styles/base.css'
+
+addCollection(localIcons)
 
 const app = createApp(App)
 const pinia = createPinia()
