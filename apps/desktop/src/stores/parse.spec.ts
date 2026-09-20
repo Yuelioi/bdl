@@ -166,6 +166,7 @@ describe('parse store', () => {
     expect(api.parseCreateSource).toHaveBeenCalledWith({
       input: 'https://www.bilibili.com/video/av807178613/',
       fetch_streams: false,
+      expand_video_collection: true,
     })
   })
 
@@ -200,6 +201,16 @@ describe('parse store', () => {
     await parse.createSource('BV1\nBV2')
 
     expect(api.parseCreateSource).toHaveBeenCalledTimes(2)
+    expect(api.parseCreateSource).toHaveBeenNthCalledWith(1, {
+      input: 'BV1',
+      fetch_streams: false,
+      expand_video_collection: false,
+    })
+    expect(api.parseCreateSource).toHaveBeenNthCalledWith(2, {
+      input: 'BV2',
+      fetch_streams: false,
+      expand_video_collection: false,
+    })
     expect(parse.sourceOrder).toEqual(['source:BV1', 'source:BV2'])
     expect(parse.selectedSourceIds).toEqual(['source:BV1', 'source:BV2'])
     expect(parse.selectedBatchEntryIds).toHaveLength(2)

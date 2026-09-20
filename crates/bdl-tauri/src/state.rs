@@ -135,9 +135,34 @@ impl AppState {
         input: &str,
         fetch_streams: bool,
     ) -> BdlResult<NormalizedSourceTree> {
+        self.parse_source_with_options(input, fetch_streams, false)
+            .await
+    }
+
+    async fn parse_source_with_options(
+        &self,
+        input: &str,
+        fetch_streams: bool,
+        expand_video_collection: bool,
+    ) -> BdlResult<NormalizedSourceTree> {
         let classified = classify_input(input)?;
         let options = ResolveOptions { fetch_streams };
         let tree = match classified.source_kind() {
+            SourceKind::Video if expand_video_collection => {
+                let resolver = self.video_resolver()?;
+                if let Some(collection) = resolver.collection_hint(&classified).await? {
+                    let raw_url = format!(
+                        "https://space.bilibili.com/{}/lists/{}?type=season",
+                        collection.mid, collection.season_id
+                    );
+                    self.collection_resolver()?
+                        .resolve(ClassifiedInput::Collection { raw_url }, options)
+                        .await?
+                } else {
+                    resolver.resolve(classified, options).await?
+                }
+            }
+            SourceKind::Video => self.video_resolver()?.resolve(classified, options).await?,
             SourceKind::Favorite => {
                 self.favorite_resolver()?
                     .resolve(classified, options)
@@ -186,8 +211,11 @@ impl AppState {
         &self,
         input: &str,
         fetch_streams: bool,
+        expand_video_collection: bool,
     ) -> BdlResult<NormalizedSourceTree> {
-        let tree = self.parse_source(input, fetch_streams).await?;
+        let tree = self
+            .parse_source_with_options(input, fetch_streams, expand_video_collection)
+            .await?;
         if should_expand_initial_source(tree.source.kind, tree.source.has_more) {
             self.load_all(&tree.source.id, None).await
         } else {
@@ -217,7 +245,7 @@ impl AppState {
 
     pub async fn refresh_source(&self, source_id: &SourceId) -> BdlResult<NormalizedSourceTree> {
         let current = self.source_snapshot(source_id)?;
-        self.parse_source_for_workspace(&current.source.input, false)
+        self.parse_source_for_workspace(&current.source.input, false, false)
             .await
     }
 

@@ -148,17 +148,21 @@ export const useParseStore = defineStore('parse', {
         return false
       }
 
+      const batch = inputs.length > 1
       this.loadingBySource.__create__ = true
       try {
         const outcomes = await mapWithConcurrency(inputs, PARSE_CONCURRENCY, async (sourceInput) => {
           try {
-            const tree = await parseCreateSource({ input: sourceInput, fetch_streams: false })
+            const tree = await parseCreateSource({
+              input: sourceInput,
+              fetch_streams: false,
+              expand_video_collection: !batch,
+            })
             return { input: sourceInput, tree, error: null }
           } catch (error) {
             return { input: sourceInput, tree: null, error: errorMessage(error) }
           }
         })
-        const batch = inputs.length > 1
         const failures = outcomes.filter((outcome) => !outcome.tree)
         const validOutcomes: Array<(typeof outcomes)[number] & { tree: NormalizedSourceTree }> = []
         for (const outcome of outcomes) {

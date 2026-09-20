@@ -126,6 +126,8 @@ pub struct ParseCreateSourceRequest {
     pub input: String,
     #[serde(default)]
     pub fetch_streams: bool,
+    #[serde(default)]
+    pub expand_video_collection: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -365,7 +367,11 @@ pub async fn parse_create_source(
     request: ParseCreateSourceRequest,
 ) -> CommandResult<NormalizedSourceTree> {
     let tree = state
-        .parse_source_for_workspace(&request.input, request.fetch_streams)
+        .parse_source_for_workspace(
+            &request.input,
+            request.fetch_streams,
+            request.expand_video_collection,
+        )
         .await?;
     events::emit(&app, events::PARSE_SOURCE_UPDATED, &tree)?;
     Ok(tree)

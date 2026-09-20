@@ -42,6 +42,7 @@ export class BdlCommandError extends Error {
 export interface ParseCreateSourceRequest {
   input: string
   fetch_streams?: boolean
+  expand_video_collection?: boolean
 }
 
 export interface ParseCloseSourceResponse {
