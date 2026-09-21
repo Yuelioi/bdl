@@ -21,6 +21,7 @@ import type {
   DownloadMediaMode,
   SettingsSnapshot,
   SelectionCreateTasksResult,
+  SelectionSizeEstimate,
   StartupRecoverySnapshot,
   VideoCodecPreference,
 } from './dto'
@@ -83,6 +84,17 @@ export interface SelectionCreateTasksRequest {
   speed_limit_bytes_per_second?: number
 }
 
+export interface SelectionEstimateSizeRequest {
+  source_id: string
+  part_ids: string[]
+  missing_quality_policy?: SettingsSnapshot['missing_quality_policy']
+  media_mode?: DownloadMediaMode
+  quality?: string
+  audio_quality?: string
+  media_preferences?: SettingsSnapshot['media_preferences']
+  codec?: VideoCodecPreference
+}
+
 export interface AccountImportCookieRequest {
   cookie: string
 }
@@ -135,6 +147,9 @@ export const parseRefreshSource = (request: ParseSourcePageRequest) =>
 
 export const selectionCreateTasks = (request: SelectionCreateTasksRequest) =>
   invokeCommand<SelectionCreateTasksResult>('selection_create_tasks', { request })
+
+export const selectionEstimateSize = (request: SelectionEstimateSizeRequest) =>
+  invokeCommand<SelectionSizeEstimate>('selection_estimate_size', { request })
 
 export const mobilePickExportDirectory = () =>
   invokeCommand<DocumentTreeDirectory>('mobile_pick_export_directory')

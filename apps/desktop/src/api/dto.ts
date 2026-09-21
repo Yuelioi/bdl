@@ -154,6 +154,12 @@ export interface SelectionCreateTasksResult {
   requires_confirmation: boolean
 }
 
+export interface SelectionSizeEstimate {
+  estimated_bytes: number
+  estimated_parts: number
+  unknown_streams: number
+}
+
 export interface DownloadTaskRefreshIntent {
   input: DownloadTaskRefreshInput
   cid: number

@@ -13,7 +13,7 @@ use bdl_core::model::{
 use bdl_core::naming::DuplicateNamingStrategy;
 use bdl_core::planner::{
     ArchiveAssetSelection, ArchiveMode, DownloadMediaMode, DownloadOptions, MissingQualityPolicy,
-    StreamPreference, plan_selected_parts,
+    StreamPreference, estimate_selected_parts_download_size, plan_selected_parts,
 };
 use bdl_core::queue::DownloadTaskRefreshInput;
 use bdl_core::queue::{DownloadResourceIntent, DownloadResourceKind, ResourceStatus, TaskStatus};
@@ -41,6 +41,23 @@ fn plan_selected_parts_creates_one_task_for_one_selected_part() {
             bvid: "BV1xx411c7mD".to_owned(),
         }
     );
+}
+
+#[test]
+fn estimate_selected_parts_download_size_uses_selected_media_bandwidth_and_duration() {
+    let tree = fixture_tree(true);
+    let options = DownloadOptions::new(PathBuf::from("downloads"));
+
+    let estimate = estimate_selected_parts_download_size(
+        &tree,
+        &[PartId("part:BV1:100".to_owned())],
+        &options,
+    )
+    .expect("selected media should be estimable");
+
+    assert_eq!(estimate.estimated_bytes, 7_308_000);
+    assert_eq!(estimate.estimated_parts, 1);
+    assert_eq!(estimate.unknown_streams, 0);
 }
 
 #[test]

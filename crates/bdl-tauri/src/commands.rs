@@ -15,8 +15,9 @@ use bdl_core::muxer::{MediaMuxer, MediaMuxerConfig};
 use bdl_core::muxer::{MuxError, MuxRequest};
 use bdl_core::naming::DuplicateNamingStrategy;
 use bdl_core::planner::{
-    ArchiveMode, DownloadMediaMode, DownloadOptions, MissingQualityPolicy, StreamPreference,
-    parse_stream_codec, plan_selected_parts,
+    ArchiveMode, DownloadMediaMode, DownloadOptions, DownloadSizeEstimate, MissingQualityPolicy,
+    StreamPreference, estimate_selected_parts_download_size, parse_stream_codec,
+    plan_selected_parts,
 };
 use bdl_core::queue::{
     DownloadExportTarget, DownloadResource, DownloadResourceIntent, DownloadTask,
@@ -224,6 +225,18 @@ pub struct SelectionCreateTasksRequest {
     pub speed_limit_bytes_per_second: Option<u64>,
     #[serde(default)]
     pub duplicate_policy: DuplicateTaskPolicy,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SelectionEstimateSizeRequest {
+    pub source_id: String,
+    pub part_ids: Vec<String>,
+    pub missing_quality_policy: Option<String>,
+    pub media_mode: Option<String>,
+    pub quality: Option<String>,
+    pub audio_quality: Option<String>,
+    pub codec: Option<String>,
+    pub media_preferences: Option<bdl_core::media_preferences::MediaPreferences>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -557,6 +570,39 @@ pub async fn selection_create_tasks(
     })
 }
 
+#[tauri::command]
+pub async fn selection_estimate_size(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    request: SelectionEstimateSizeRequest,
+) -> CommandResult<DownloadSizeEstimate> {
+    let settings = state.settings()?;
+    let mut options = DownloadOptions::new(PathBuf::from("downloads"));
+    apply_media_options(
+        &mut options,
+        request.media_mode.as_deref(),
+        request.quality.as_deref(),
+        request.audio_quality.as_deref(),
+        request.codec.as_deref(),
+        request.missing_quality_policy.as_deref(),
+        request.media_preferences.as_ref(),
+        &settings,
+    )?;
+    let source_id = SourceId(request.source_id);
+    let selected_part_ids = request.part_ids.into_iter().map(PartId).collect::<Vec<_>>();
+    let prepared = state
+        .prepare_selection(&source_id, &selected_part_ids)
+        .await?;
+    if prepared.tree_updated {
+        events::emit(&app, events::PARSE_SOURCE_UPDATED, &prepared.tree)?;
+    }
+    Ok(estimate_selected_parts_download_size(
+        &prepared.tree,
+        &prepared.part_ids,
+        &options,
+    )?)
+}
+
 fn download_options_from_request(
     request: &SelectionCreateTasksRequest,
     settings: &SettingsSnapshot,
@@ -598,8 +644,6 @@ fn download_options_from_request(
         processing.embed_subtitles,
     )?;
     options.output_extension = output_extension;
-    options.media_mode =
-        DownloadMediaMode::parse(request.media_mode.as_deref().unwrap_or("audio_video"))?;
     options.naming_template = request
         .naming_template
         .clone()
@@ -607,31 +651,45 @@ fn download_options_from_request(
     options.duplicate_naming_strategy = request
         .duplicate_naming_strategy
         .unwrap_or(settings.duplicate_naming_strategy);
-    options.video_quality =
-        StreamPreference::parse_video(request.quality.as_deref().unwrap_or(&settings.quality))?;
-    options.audio_quality = StreamPreference::parse(
-        request
-            .audio_quality
-            .as_deref()
-            .unwrap_or(&settings.audio_quality),
-        "音频质量",
+    apply_media_options(
+        &mut options,
+        request.media_mode.as_deref(),
+        request.quality.as_deref(),
+        request.audio_quality.as_deref(),
+        request.codec.as_deref(),
+        request.missing_quality_policy.as_deref(),
+        request.media_preferences.as_ref(),
+        settings,
     )?;
-    options.video_codec = parse_stream_codec(request.codec.as_deref().unwrap_or(&settings.codec))?;
-    options.missing_quality_policy = MissingQualityPolicy::parse(
-        request
-            .missing_quality_policy
-            .as_deref()
-            .unwrap_or(&settings.missing_quality_policy),
-    )?;
-    options.media_preferences = request
-        .media_preferences
-        .clone()
-        .unwrap_or_else(|| settings.media_preferences.clone());
-    options.media_preferences.validate()?;
     options.archive_assets = request.archive_assets.unwrap_or(settings.archive_assets);
 
     bdl_core::naming::validate_template(&options.naming_template)?;
     Ok(options)
+}
+
+fn apply_media_options(
+    options: &mut DownloadOptions,
+    media_mode: Option<&str>,
+    quality: Option<&str>,
+    audio_quality: Option<&str>,
+    codec: Option<&str>,
+    missing_quality_policy: Option<&str>,
+    media_preferences: Option<&bdl_core::media_preferences::MediaPreferences>,
+    settings: &SettingsSnapshot,
+) -> CommandResult<()> {
+    options.media_mode = DownloadMediaMode::parse(media_mode.unwrap_or("audio_video"))?;
+    options.video_quality = StreamPreference::parse_video(quality.unwrap_or(&settings.quality))?;
+    options.audio_quality =
+        StreamPreference::parse(audio_quality.unwrap_or(&settings.audio_quality), "音频质量")?;
+    options.video_codec = parse_stream_codec(codec.unwrap_or(&settings.codec))?;
+    options.missing_quality_policy = MissingQualityPolicy::parse(
+        missing_quality_policy.unwrap_or(&settings.missing_quality_policy),
+    )?;
+    options.media_preferences = media_preferences
+        .cloned()
+        .unwrap_or_else(|| settings.media_preferences.clone());
+    options.media_preferences.validate()?;
+    Ok(())
 }
 
 #[tauri::command]

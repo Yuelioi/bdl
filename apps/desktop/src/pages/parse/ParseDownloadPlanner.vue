@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { open } from '@tauri-apps/plugin-dialog'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 import type { SettingsSnapshot, NamingPreset, DownloadMediaMode, DuplicateTaskMatch, DuplicateTaskPolicy, VideoCodecPreference, DocumentTreeDirectory } from '../../api/dto'
 import { mobilePickExportDirectory } from '../../api/tauri'
@@ -58,6 +58,9 @@ const archiveAssets = ref({ ...settings.saved.archive_assets })
 const namingError = computed(() => validateNamingTemplate(namingTemplate.value))
 const scheduleMin = ref('')
 const scheduleValidationNow = ref(Date.now())
+const sizeEstimate = ref<{ estimated_bytes: number; estimated_parts: number; unknown_streams: number } | null>(null)
+const sizeEstimateLoading = ref(false)
+let sizeEstimateRevision = 0
 
 const mediaModeOptions = [
   { label: '音视频', value: 'audio_video' },
@@ -85,6 +88,57 @@ const embeddingFormatError = computed(() =>
 )
 const duplicatePreview = computed(() => duplicateMatches.value.slice(0, 6))
 const duplicateRemaining = computed(() => Math.max(duplicateMatches.value.length - duplicatePreview.value.length, 0))
+const formatEstimatedBytes = (bytes: number) => {
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  let value = Math.max(0, bytes)
+  let unitIndex = 0
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024
+    unitIndex += 1
+  }
+  const digits = unitIndex === 0 || value >= 100 ? 0 : value >= 10 ? 1 : 2
+  return `${value.toFixed(digits)} ${units[unitIndex]}`
+}
+const sizeEstimateLabel = computed(() => {
+  if (sizeEstimateLoading.value && !sizeEstimate.value) return '正在估算下载大小…'
+  if (!sizeEstimate.value) return '预计大小暂不可用'
+  if (sizeEstimate.value.estimated_bytes === 0 && sizeEstimate.value.unknown_streams > 0) {
+    return '预计大小暂不可用'
+  }
+  const unknown = sizeEstimate.value.unknown_streams > 0 ? ' + 部分未知' : ''
+  return `预计下载 ${formatEstimatedBytes(sizeEstimate.value.estimated_bytes)}${unknown}`
+})
+const refreshSizeEstimate = async () => {
+  if (!downloadDialogOpen.value || selectedSourceIds.value.length === 0) return
+  const revision = ++sizeEstimateRevision
+  sizeEstimateLoading.value = true
+  try {
+    const estimate = await parse.estimateDownloadSizeForSources(selectedSourceIds.value, {
+      mediaMode: mediaMode.value,
+      quality: videoQuality.value,
+      audioQuality: audioQuality.value,
+      codec: videoCodec.value,
+      mediaPreferences: {
+        ...mediaPreferences.value,
+        video: mediaPreferences.value.video.map((rule) => ({ ...rule })),
+        audio: [...mediaPreferences.value.audio],
+      },
+      missingQualityPolicy: missingQualityPolicy.value,
+    })
+    if (revision === sizeEstimateRevision) sizeEstimate.value = estimate
+  } catch {
+    if (revision === sizeEstimateRevision) sizeEstimate.value = null
+  } finally {
+    if (revision === sizeEstimateRevision) sizeEstimateLoading.value = false
+  }
+}
+watch(
+  [downloadDialogOpen, mediaMode, videoQuality, audioQuality, videoCodec, mediaPreferences, missingQualityPolicy],
+  () => {
+    if (downloadDialogOpen.value) void refreshSizeEstimate()
+  },
+  { deep: true },
+)
 const restoreDefaults = () => {
   defaultsRevision.value += 1
   const defaults = settings.saved
@@ -125,6 +179,7 @@ const openDialog = async () => {
   duplicateMatches.value = []
   duplicatePendingSourceIds.value = []
   downloadNotice.value = null
+  sizeEstimate.value = null
   downloadDialogOpen.value = true
 }
 
@@ -315,6 +370,7 @@ const chooseDocumentTreeOutput = async () => {
     </div>
     <template #footer>
       <UiButton class="mr-auto" variant="ghost" :disabled="activeLoading" @click="restoreDefaults">恢复默认偏好</UiButton>
+      <span class="text-xs text-(--color-muted)" title="按所选媒体轨道的码率与时长估算，不含封面、字幕等附加文件。">{{ sizeEstimateLabel }}</span>
       <UiButton variant="secondary" :disabled="activeLoading" @click="downloadDialogOpen = false">取消</UiButton>
       <UiButton :disabled="activeLoading || selectedSourceIds.length === 0 || Boolean(namingError || scheduleError || taskSpeedLimitError || embeddingFormatError)" @click="createTasks()">开始下载</UiButton>
     </template>

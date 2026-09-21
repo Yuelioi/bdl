@@ -62,6 +62,7 @@ pub fn run() {
             bdl_tauri::commands::parse_close_source,
             bdl_tauri::commands::parse_refresh_source,
             bdl_tauri::commands::selection_create_tasks,
+            bdl_tauri::commands::selection_estimate_size,
             bdl_tauri::commands::mobile_pick_export_directory,
             bdl_tauri::commands::mobile_read_clipboard_text,
             bdl_tauri::commands::mobile_save_image_to_gallery,

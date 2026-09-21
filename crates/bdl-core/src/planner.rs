@@ -239,6 +239,68 @@ pub fn plan_selected_parts(
     Ok(tasks)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct DownloadSizeEstimate {
+    pub estimated_bytes: u64,
+    pub estimated_parts: usize,
+    pub unknown_streams: usize,
+}
+
+pub fn estimate_selected_parts_download_size(
+    tree: &NormalizedSourceTree,
+    selected_part_ids: &[PartId],
+    options: &DownloadOptions,
+) -> BdlResult<DownloadSizeEstimate> {
+    let mut estimated_bytes = 0_u128;
+    let mut unknown_streams = 0_usize;
+
+    for part_id in selected_part_ids {
+        let selected = find_part(tree, part_id).ok_or_else(|| BdlError::Planning {
+            message: format!(
+                "选中的分 P `{}` 未加载，请重新解析后再估算下载大小。",
+                part_id.0
+            ),
+        })?;
+        let duration = selected.part.duration_seconds;
+        if options.media_mode.includes_video() {
+            add_stream_size_estimate(
+                select_video_stream(selected.part, options)?,
+                duration,
+                &mut estimated_bytes,
+                &mut unknown_streams,
+            );
+        }
+        if options.media_mode.includes_audio() {
+            add_stream_size_estimate(
+                select_audio_stream(selected.part, options)?,
+                duration,
+                &mut estimated_bytes,
+                &mut unknown_streams,
+            );
+        }
+    }
+
+    Ok(DownloadSizeEstimate {
+        estimated_bytes: estimated_bytes.min(u128::from(u64::MAX)) as u64,
+        estimated_parts: selected_part_ids.len(),
+        unknown_streams,
+    })
+}
+
+fn add_stream_size_estimate(
+    stream: &MediaStream,
+    duration_seconds: Option<u64>,
+    estimated_bytes: &mut u128,
+    unknown_streams: &mut usize,
+) {
+    let (Some(bandwidth), Some(duration_seconds)) = (stream.bandwidth, duration_seconds) else {
+        *unknown_streams += 1;
+        return;
+    };
+    let bits = u128::from(bandwidth).saturating_mul(u128::from(duration_seconds));
+    *estimated_bytes = estimated_bytes.saturating_add(bits.div_ceil(8));
+}
+
 struct SelectedPart<'a> {
     item: &'a NormalizedItem,
     part: &'a NormalizedPart,

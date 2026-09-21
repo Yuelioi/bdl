@@ -13,6 +13,7 @@ const api = vi.hoisted(() => ({
   parseCancel: vi.fn(),
   parseRefreshSource: vi.fn(),
   selectionCreateTasks: vi.fn(),
+  selectionEstimateSize: vi.fn(),
 }))
 
 const sourceTree = (id: string, title: string): NormalizedSourceTree => ({
@@ -397,6 +398,41 @@ describe('parse store', () => {
         },
       }),
     )
+  })
+
+  it('uses the same explicit quality overrides when estimating download size', async () => {
+    const parse = useParseStore()
+    const settings = useSettingsStore()
+    settings.loaded = true
+    settings.saved.media_preferences.video = [{ quality: '80', codec: 'hevc' }]
+    settings.saved.media_preferences.audio = ['30280']
+    parse.upsertSource(sourceTree('source:size-estimate', '大小估算'))
+    api.selectionEstimateSize.mockResolvedValue({
+      estimated_bytes: 123_456_789,
+      estimated_parts: 1,
+      unknown_streams: 0,
+    })
+
+    const estimate = await parse.estimateDownloadSizeForSources(['source:size-estimate'], {
+      quality: '64',
+      codec: 'avc',
+      audioQuality: '30216',
+      mediaPreferences: settings.saved.media_preferences,
+    })
+
+    expect(api.selectionEstimateSize).toHaveBeenCalledWith(
+      expect.objectContaining({
+        quality: '64',
+        codec: 'avc',
+        audio_quality: '30216',
+        media_preferences: {
+          video: [],
+          audio: [],
+          fallback: settings.saved.media_preferences.fallback,
+        },
+      }),
+    )
+    expect(estimate.estimated_bytes).toBe(123_456_789)
   })
 
   it('reports existing final outputs skipped during task creation', async () => {

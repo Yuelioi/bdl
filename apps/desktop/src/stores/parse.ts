@@ -10,6 +10,7 @@ import type {
   NormalizedSourceTree,
   SettingsSnapshot,
   SelectionCreateTasksResult,
+  SelectionSizeEstimate,
 } from '../api/dto'
 import {
   parseCloseSource,
@@ -17,6 +18,7 @@ import {
   parseLoadMore,
   parseCancel,
   selectionCreateTasks,
+  selectionEstimateSize,
 } from '../api/tauri'
 import { useQueueStore } from './queue'
 import { useSettingsStore } from './settings'
@@ -544,6 +546,38 @@ export const useParseStore = defineStore('parse', {
       options: CreateTaskOptions = {},
     ): Promise<CreateTasksForSourcesResult | null> {
       return this.createTasksForSources([sourceId], options)
+    },
+    async estimateDownloadSizeForSources(
+      sourceIds: string[],
+      options: CreateTaskOptions = {},
+    ): Promise<SelectionSizeEstimate> {
+      const settings = useSettingsStore()
+      await settings.ensureLoaded()
+      const targets = uniquePartIds(sourceIds).filter(
+        (sourceId) => ((options.partIdsBySource?.[sourceId] ?? this.selectionBySource[sourceId])?.length ?? 0) > 0,
+      )
+      const mediaPreferences = mediaPreferencesForTaskRequest(options, settings.saved)
+      const aggregate: SelectionSizeEstimate = {
+        estimated_bytes: 0,
+        estimated_parts: 0,
+        unknown_streams: 0,
+      }
+      for (const sourceId of targets) {
+        const estimate = await selectionEstimateSize({
+          source_id: sourceId,
+          part_ids: options.partIdsBySource?.[sourceId] ?? this.selectionBySource[sourceId] ?? [],
+          missing_quality_policy: options.missingQualityPolicy ?? settings.saved.missing_quality_policy,
+          media_mode: options.mediaMode ?? 'audio_video',
+          quality: options.quality ?? settings.saved.quality,
+          audio_quality: options.audioQuality ?? settings.saved.audio_quality,
+          codec: options.codec ?? settings.saved.codec,
+          media_preferences: mediaPreferences,
+        })
+        aggregate.estimated_bytes += estimate.estimated_bytes
+        aggregate.estimated_parts += estimate.estimated_parts
+        aggregate.unknown_streams += estimate.unknown_streams
+      }
+      return aggregate
     },
     async createTasksForSources(
       sourceIds: string[],
