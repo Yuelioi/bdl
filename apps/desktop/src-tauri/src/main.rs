@@ -6,7 +6,13 @@ fn main() {
     tauri::Builder::default()
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
-            let download_dir = app.path().download_dir()?.join("BDL");
+            // Minimal Linux desktops may not configure XDG_DOWNLOAD_DIR.
+            // Resolve a default without creating it; the download owns creation.
+            let download_dir = app
+                .path()
+                .download_dir()
+                .or_else(|_| app.path().home_dir().map(|home| home.join("Downloads")))?
+                .join("BDL");
             app.manage(bdl_tauri::state::AppState::new(data_dir, download_dir)?);
             bdl_tauri::commands::start_account_startup_verification(app.handle());
             Ok(())

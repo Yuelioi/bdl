@@ -36,3 +36,13 @@
 - [ ] 原生窗口控制、拖动、缩放、全屏、打开成品和打开目录行为正确。
 - [ ] Release 正文明确标记 macOS 包为 ad-hoc 签名且未经 Apple 公证；README 安装指引仍与当前 macOS 界面一致。
 - [ ] GitHub Actions 已配置 `TAURI_SIGNING_PRIVATE_KEY`（以及密钥有密码时的 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`）用于应用更新包；当前流程不需要任何 `APPLE_*` Secret。
+
+## Linux distribution
+
+- [ ] Ubuntu 22.04 runner 构建 AppImage/deb 成功，产物检查通过；在 Ubuntu 22.04 和 24.04 的真实桌面安装运行。
+- [ ] 检查 Secret Service 登录保存、重启读取、注销清除以及服务不可用时的提示。
+- [ ] X11/Wayland 下验证窗口控制、目录对话框、中文字体、打开文件与目录。
+- [ ] 验证系统 FFmpeg 检测、MP4/MKV 合并、断点续传、暂停/停止及来源解析。
+- [ ] `latest.json` 对 AppImage/deb 提供匹配包类型的地址和签名；两类安装包分别验证从上一候选版更新，不能仅检查通用 `linux-x86_64` 键存在。
+- [ ] deb 安装会处理 FFmpeg/WebKitGTK/xdg-utils 依赖；AppImage 文档说明外部 FFmpeg、FUSE 和 Secret Service 要求。
+- [ ] Linux 首次发布版本说明与 README 统一更新，移除“0.3.2 不含 Linux”的预览阶段说明。

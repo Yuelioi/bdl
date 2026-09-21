@@ -31,6 +31,10 @@ jobs:
             platform: macos-latest
             target: x86_64-apple-darwin
             args: --target x86_64-apple-darwin
+          - name: Linux x64
+            platform: ubuntu-22.04
+            target: ""
+            args: --bundles appimage,deb
 
     runs-on: ${{ matrix.platform }}
     timeout-minutes: 60
@@ -67,6 +71,10 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm --dir apps/desktop install --frozen-lockfile
 
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: bash scripts/install-linux-deps.sh
+
       - name: Build and stage release
         uses: tauri-apps/tauri-action@v1
         env:
@@ -78,7 +86,8 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: BDL v__VERSION__
           releaseBody: |
-            下载适用于 Windows 或 macOS 的安装包。
+            下载适用于 Windows、macOS 或 Linux x86_64 的安装包。
+            Linux 首批提供 AppImage 与 deb，以 Ubuntu 22.04 为构建基线；安装与 FFmpeg 配置见 README。
             macOS 安装包使用 ad-hoc 签名，未经 Apple Developer ID 签名与公证；首次打开请按 README 指引操作。
             应用内更新包使用项目的 Tauri 签名验证完整性。
           releaseDraft: true
@@ -89,6 +98,10 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: ./scripts/verify-windows-gui.ps1 ./target/release/bdl-desktop.exe
+
+      - name: Verify Linux package contents
+        if: runner.os == 'Linux'
+        run: bash scripts/verify-linux-packages.sh ./target/release/bundle
 
       - name: Verify macOS ad-hoc signature
         if: runner.os == 'macOS'
@@ -124,6 +137,29 @@ jobs:
             const release = releases.find(({ tag_name }) => tag_name === tag);
             if (!release) {
               throw new Error(`Draft release for ${tag} was not found.`);
+            }
+            // Linux packages must never consume another installer's fallback URL.
+            const assets = await github.paginate(github.rest.repos.listReleaseAssets, {
+              ...context.repo, release_id: release.id, per_page: 100,
+            });
+            const manifestAsset = assets.find(({ name }) => name === 'latest.json');
+            if (!manifestAsset) throw new Error('Signed updater manifest is missing.');
+            const response = await github.rest.repos.getReleaseAsset({
+              ...context.repo, asset_id: manifestAsset.id,
+              headers: { accept: 'application/octet-stream' },
+            });
+            const manifest = JSON.parse(typeof response.data === 'string'
+              ? response.data : Buffer.from(response.data).toString('utf8'));
+            for (const [format, extension] of [['appimage', '.AppImage'], ['deb', '.deb']]) {
+              const target = `linux-x86_64-${format}`;
+              const entry = manifest.platforms?.[target];
+              if (!entry?.signature || !entry?.url) throw new Error(`Missing signed updater target ${target}`);
+              // tauri-action v1 uses the asset API URL; older manifests use browser_download_url.
+              const artifact = assets.find((asset) =>
+                asset.url === entry.url || asset.browser_download_url === entry.url);
+              if (!artifact?.name.endsWith(extension)) {
+                throw new Error(`Updater target ${target} does not point to its uploaded ${extension} package.`);
+              }
             }
             const published = await github.rest.repos.updateRelease({
               ...context.repo,

@@ -345,7 +345,15 @@ fn platform_executable_candidates(name: &str) -> Vec<PathBuf> {
     .collect()
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
+fn platform_executable_candidates(name: &str) -> Vec<PathBuf> {
+    ["/usr/local/bin", "/usr/bin", "/bin"]
+        .into_iter()
+        .map(|dir| Path::new(dir).join(name))
+        .collect()
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
 fn platform_executable_candidates(_name: &str) -> Vec<PathBuf> {
     Vec::new()
 }
@@ -362,6 +370,19 @@ fn stderr_summary(stderr: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_ffmpeg_fallbacks_cover_desktop_launcher_paths() {
+        assert_eq!(
+            super::platform_executable_candidates("ffmpeg"),
+            vec![
+                std::path::PathBuf::from("/usr/local/bin/ffmpeg"),
+                std::path::PathBuf::from("/usr/bin/ffmpeg"),
+                std::path::PathBuf::from("/bin/ffmpeg"),
+            ]
+        );
+    }
+
     #[test]
     fn media_preferences_mp4_allows_dolby_configuration_in_both_mux_paths() {
         use super::{MuxRequest, ffmpeg_args, os};

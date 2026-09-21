@@ -51,6 +51,8 @@
 | macOS 13+ Apple Silicon | 正式支持 | 文件名包含 `aarch64` 的 `.dmg`         |
 | macOS 13+ Intel         | 兼容支持 | 文件名包含 `x64` 或 `x86_64` 的 `.dmg` |
 
+Linux x86_64 首发支持正在开发，构建目标为 Ubuntu 22.04/24.04；CI 提供 AppImage 和 deb 预览产物，当前已发布的 0.3.2 不含 Linux 安装包。ARM64、RPM 和 Android 暂未纳入发布范围。
+
 BDL 依赖 FFmpeg 完成音视频合并。你可以在设置中直接指定 FFmpeg，也可以让应用发现系统 `PATH` 和 macOS 常见包管理器路径中的版本。
 
 ### Windows
@@ -105,6 +107,17 @@ brew install ffmpeg
 ```
 
 从 Finder 启动时，BDL 会额外检查 Apple Silicon Homebrew 的 `/opt/homebrew/bin/ffmpeg`、Intel Homebrew 的 `/usr/local/bin/ffmpeg` 和 MacPorts 的 `/opt/local/bin/ffmpeg`。如果使用自定义位置，可在“设置 → 编码与处理 → FFmpeg 路径”中直接选择可执行文件。
+
+### Linux（预览）
+
+从 Linux CI 的 `bdl-linux-x64` 构建产物下载预览包；正式发布前需完成 Linux 桌面验收。安装包以 Ubuntu 22.04 构建，以控制最低系统库要求。
+
+- **Ubuntu/Debian 系桌面：**在下载目录运行 `sudo apt install ./实际文件名.deb`，包管理器会安装 FFmpeg 和所需运行库。
+- **AppImage：**给文件增加执行权限后运行：`chmod +x 实际文件名.AppImage`，然后 `./实际文件名.AppImage`。AppImage 不内置 FFmpeg，请先安装系统 FFmpeg（Ubuntu 使用 `sudo apt install ffmpeg`），或在 BDL 设置中指定已有路径。
+
+登录状态使用桌面的 Secret Service 服务（如 GNOME Keyring）保存；服务未启动或未解锁时会提示错误，不会退回明文 Cookie 存储。最小化桌面、容器和 WSL 不一定预装或启动该服务。AppImage 若提示缺少 FUSE，可先使用 deb 包，或按发行版指引安装 FUSE 2 兼容库。
+
+首发验收包括 X11/Wayland 的窗口操作、目录选择、登录重启后保留、音视频合并、暂停恢复和更新。自动更新必须匹配已安装的包类型；deb 更新可能需要系统管理员授权。
 
 ## 使用方式
 

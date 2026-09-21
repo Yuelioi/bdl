@@ -10,7 +10,30 @@
 - FFmpeg
 - 对应平台的 [Tauri 2 prerequisites](https://v2.tauri.app/start/prerequisites/)
 
-BDL 的桌面开发与发布目标包括 Windows 和 macOS；具体范围见 [支持平台](SUPPORTED_PLATFORMS.md)。
+BDL 的桌面目标包括 Windows、macOS，以及正在接入的 Linux x86_64；具体范围见 [支持平台](SUPPORTED_PLATFORMS.md)。
+
+### Linux 构建环境
+
+正式 Linux 包在 Ubuntu 22.04 x86_64 上构建，避免无意提高 glibc 最低版本。Ubuntu/Debian 开发机安装 Linux 版 Rust、Node 和 pnpm 后，在仓库根目录运行：
+
+```bash
+bash scripts/install-linux-deps.sh
+pnpm --dir apps/desktop install --frozen-lockfile
+pnpm --dir apps/desktop tauri dev
+```
+
+不要共用 Windows 的 `node_modules`、Rust target 目录或 Windows 版 Node/pnpm。WSL 开发建议在 Linux 文件系统中建立独立工作副本，图形界面依赖 WSLg，凭据持久化仍需要已解锁的 Secret Service 桌面服务。
+
+未配置 XDG 下载目录时，默认路径回退为 `~/Downloads/BDL`；启动只计算路径，实际下载时才创建目录。已有的保存目录设置优先。
+
+Linux 平台配置 `tauri.linux.conf.json` 自动合并，默认生成 AppImage 和 deb。已有相关检查通过时，可只执行打包和产物检查：
+
+```bash
+bash scripts/package.sh --skip-check
+bash scripts/verify-linux-packages.sh ./target/release/bundle
+```
+
+自定义 `CARGO_TARGET_DIR` 时，验证命令应传入实际的 `release/bundle` 目录。Linux CI 编译原生后端、运行 FFmpeg/凭据边界测试并构建两个安装包；产物检查不替代实际桌面的登录、文件对话框和下载验收。
 
 ## 启动桌面应用
 

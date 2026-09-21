@@ -1,0 +1,15 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "targets": ["appimage", "deb"],
+    "category": "Utility",
+    "shortDescription": "Bilibili media downloader",
+    "linux": {
+      "deb": {
+        "depends": ["ffmpeg", "xdg-utils"],
+        "recommends": ["gnome-keyring"],
+        "section": "net"
+      }
+    }
+  }
+}

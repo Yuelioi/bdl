@@ -138,8 +138,12 @@ impl CredentialBackend for KeyringCredentialBackend {
 
 #[cfg(not(target_os = "macos"))]
 fn keyring_error(action: &str, error: keyring::Error) -> BdlError {
+    #[cfg(target_os = "linux")]
+    let hint = "。请确认桌面会话的 Secret Service 凭据服务（例如 GNOME Keyring）已启动且已解锁。";
+    #[cfg(not(target_os = "linux"))]
+    let hint = "";
     BdlError::Account {
-        message: format!("{action}失败：{error}"),
+        message: format!("{action}失败：{error}{hint}"),
     }
 }
 

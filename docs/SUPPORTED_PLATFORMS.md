@@ -1,6 +1,6 @@
 # Supported platforms
 
-BDL 当前以 Windows 11 和 macOS 13+ 作为主要桌面目标。Linux 接受兼容性修复，但在进入正式发布矩阵前不承诺安装包或完整回归覆盖。
+BDL 当前以 Windows 11 和 macOS 13+ 作为主要桌面目标。Linux x86_64 正在接入构建与发布矩阵，真实桌面验收完成前标为预览；不将配置了 CI 等同于验收通过。
 
 | 平台                    | 支持级别 | CI                     | 发布包     | 人工验证重点                                  |
 | ----------------------- | -------- | ---------------------- | ---------- | --------------------------------------------- |
@@ -8,7 +8,13 @@ BDL 当前以 Windows 11 和 macOS 13+ 作为主要桌面目标。Linux 接受�
 | Windows 10 x64          | 兼容支持 | 与 Windows 11 共用     | EXE/MSI    | WebView2、长路径、文件占用与权限              |
 | macOS 13+ Apple Silicon | 主要支持 | 完整非视觉检查与包构建 | ad-hoc DMG | 本地加密凭据、原生窗口、Homebrew FFmpeg、首次打开 |
 | macOS 13+ Intel         | 兼容支持 | 交叉架构发布构建       | ad-hoc DMG | Intel Homebrew、ad-hoc 签名与升级             |
-| Linux                   | 社区预览 | 暂无                   | 暂无       | Secret Service、WebKitGTK、发行版依赖         |
+| Ubuntu 22.04/24.04 x86_64 | 首发预览 | 22.04 CI 待首次运行；24.04 本地构建与局部检查通过 | AppImage/deb（已本地构建，未发布） | Secret Service、X11/Wayland、FFmpeg、更新 |
+| 其他 Linux / ARM64      | 尚未验证 | 暂无 | 暂无 | 按发行版、CPU 单独确认 |
+| Android                 | 后续计划 | 暂无 | 暂无 | 存储授权、后台下载、媒体合并、移动界面 |
+
+Android 本轮只维护[适配计划](ANDROID_PLAN.md)，不增加移动端实现；优先完成 Linux 验证。
+
+2026-09-21：WSL Ubuntu 24.04 x86_64 已完成原生 Release 构建、14 项 FFmpeg/凭据局部测试和两个安装包的结构检查。凭据测试使用测试后端，不代表真实 Secret Service 验收。该环境的构建产物仅用于本地测试，不能证明 Ubuntu 22.04 兼容性；签名更新和真实桌面操作尚未验收。
 
 ## Required checks
 

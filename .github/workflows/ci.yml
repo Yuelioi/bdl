@@ -10,6 +10,46 @@ permissions:
   contents: read
 
 jobs:
+  linux-check:
+    name: Linux x64 build and package checks
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.1.2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: apps/desktop/pnpm-lock.yaml
+      - uses: dtolnay/rust-toolchain@1.88
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: linux-x64
+      - name: Install Linux dependencies
+        run: bash scripts/install-linux-deps.sh
+      - name: Install frontend dependencies
+        run: pnpm --dir apps/desktop install --frozen-lockfile
+      - name: Check Linux-specific runtime boundaries
+        run: |
+          cargo test --locked -p bdl-core muxer::tests --lib
+          cargo test --locked -p bdl-core --test muxer
+          cargo test --locked -p bdl-tauri secure_store::tests --lib
+      - name: Build Linux packages without release signing keys
+        run: pnpm --dir apps/desktop tauri build --bundles appimage,deb --config '{"bundle":{"createUpdaterArtifacts":false}}'
+      - name: Verify Linux package contents
+        run: bash scripts/verify-linux-packages.sh ./target/release/bundle
+      - name: Upload Linux preview packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: bdl-linux-x64
+          path: |
+            target/release/bundle/appimage/*.AppImage
+            target/release/bundle/deb/*.deb
+          if-no-files-found: error
+
   check:
     name: Windows workspace checks
     runs-on: windows-latest
