@@ -5,9 +5,9 @@
 [![License](https://img.shields.io/github/license/Yuelioi/bdl)](LICENSE)
 [![Powered by bpi-rs](https://img.shields.io/badge/Powered%20by-bpi--rs-ff6699)](https://github.com/Yuelioi/bpi-rs)
 
-一个专注、可靠、本地优先的哔哩哔哩桌面下载工具。BDL 基于 [bpi-rs](https://github.com/Yuelioi/bpi-rs) 实现 Bilibili API 能力，并使用 Rust、Tauri 与 Vue 构建，把来源解析、批量选择、下载队列、失败恢复和媒体后处理整合在统一的工作区中。
+一个专注、可靠、本地优先的哔哩哔哩下载工具。BDL 基于 [bpi-rs](https://github.com/Yuelioi/bpi-rs) 实现 Bilibili API 能力，并使用 Rust、Tauri 与 Vue 构建，把来源解析、批量选择、下载队列、失败恢复和媒体后处理整合在统一的工作区中。
 
-> 当前版本：`0.4.0` · 支持 Windows 与 macOS · 项目处于早期开发阶段
+> 当前版本：`0.4.0` · Windows/macOS 正式支持 · Linux 预览 · Android ARM64 开发预览
 
 ![BDL 解析页面](preview/home.png)
 
@@ -45,13 +45,17 @@
 
 前往 [Releases](https://github.com/Yuelioi/bdl/releases/latest) 下载适合系统的安装包。
 
-| 系统                    | 支持范围 | 安装包                                 |
-| ----------------------- | -------- | -------------------------------------- |
-| Windows 10/11 x64       | 正式支持 | `.exe` / `.msi`                        |
-| macOS 13+ Apple Silicon | 正式支持 | 文件名包含 `aarch64` 的 `.dmg`         |
-| macOS 13+ Intel         | 兼容支持 | 文件名包含 `x64` 或 `x86_64` 的 `.dmg` |
+| 系统                    | 支持范围 | 安装包                                      |
+| ----------------------- | -------- | ------------------------------------------- |
+| Windows 10/11 x64       | 正式支持 | `.exe` / `.msi`                             |
+| macOS 13+ Apple Silicon | 正式支持 | 文件名包含 `aarch64` 的 `.dmg`              |
+| macOS 13+ Intel         | 兼容支持 | 文件名包含 `x64` 或 `x86_64` 的 `.dmg`      |
+| Linux x86_64            | 预览     | `.AppImage` / `.deb`                        |
+| Android 7.0+ ARM64      | 开发预览 | `.apk`（仅当 Release 页面提供正式签名资产） |
 
-Linux x86_64 首发支持正在开发，构建目标为 Ubuntu 22.04/24.04；CI 提供 AppImage 和 deb 预览产物，当前已发布的 0.3.2 不含 Linux 安装包。ARM64、RPM 和 Android 暂未纳入发布范围。
+Linux x86_64 以 Ubuntu 22.04 为发布构建基线，目前提供 AppImage 和 deb 预览包。Linux ARM64 与 RPM 暂未纳入发布范围。
+
+Android 从 `0.4.0` 开始进入开发预览，目前只构建 ARM64。Android 正式发布包必须使用项目固定 keystore 签名；如果某个 Release 页面没有 Android APK，说明该版本没有可公开分发的正式 Android 签名包。请勿把本地 debug keystore 签名的测试 APK 当作正式版本分发。
 
 BDL 依赖 FFmpeg 完成音视频合并。你可以在设置中直接指定 FFmpeg，也可以让应用发现系统 `PATH` 和 macOS 常见包管理器路径中的版本。
 
@@ -118,6 +122,16 @@ brew install ffmpeg
 登录状态使用桌面的 Secret Service 服务（如 GNOME Keyring）保存；服务未启动或未解锁时会提示错误，不会退回明文 Cookie 存储。最小化桌面、容器和 WSL 不一定预装或启动该服务。AppImage 若提示缺少 FUSE，可先使用 deb 包，或按发行版指引安装 FUSE 2 兼容库。
 
 首发验收包括 X11/Wayland 的窗口操作、目录选择、登录重启后保留、音视频合并、暂停恢复和更新。自动更新必须匹配已安装的包类型；deb 更新可能需要系统管理员授权。
+
+### Android（开发预览）
+
+当前 Android 版本面向 Android 7.0+ 的 ARM64 设备。如果 Release 页面提供 `BDL-v<版本>-android-arm64.apk`，下载后按系统提示允许当前文件管理器/浏览器安装未知来源应用，再安装 APK。
+
+- Android **已经内置 FFmpeg**，无需安装桌面版 FFmpeg，也无需配置 FFmpeg 路径。
+- 下载和媒体处理先在应用私有空间完成，再导出到你通过 Android 系统目录选择器授权的目录。
+- 设置中的 Android 导出目录使用系统 SAF 权限保存；首次选择后可设为默认导出目录。
+- Android 13+ 会在需要后台下载状态和计划任务提醒时请求通知权限。
+- 当前仍属于开发预览，Keystore、SAF 导出、内置 FFmpeg MP4/MKV 合并、前台服务和 WorkManager 等能力仍在继续做真实设备验收。
 
 ## 使用方式
 

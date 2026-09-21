@@ -86,9 +86,10 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: BDL v__VERSION__
           releaseBody: |
-            下载适用于 Windows、macOS 或 Linux x86_64 的安装包。
+            下载适用于 Windows、macOS 或 Linux x86_64 的桌面安装包；若本 Release 附带 Android ARM64 APK，则该 APK 为使用项目固定 keystore 签名的 Android 开发预览包。
             Linux 首批提供 AppImage 与 deb，以 Ubuntu 22.04 为构建基线；安装与 FFmpeg 配置见 README。
             macOS 安装包使用 ad-hoc 签名，未经 Apple Developer ID 签名与公证；首次打开请按 README 指引操作。
+            Android 已内置 FFmpeg，无需配置桌面 FFmpeg 路径；若本 Release 没有 Android APK，则表示该版本没有可公开分发的正式 Android 签名包。
             应用内更新包使用项目的 Tauri 签名验证完整性。
           releaseDraft: true
           prerelease: false
