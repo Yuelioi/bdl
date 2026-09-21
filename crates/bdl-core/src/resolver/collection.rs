@@ -8,6 +8,7 @@ use bpi_rs::video::{
     CollectionArchiveSort, VideoCollectionSeasonsArchivesParams,
     VideoCollectionSeriesArchivesParams, VideoCollectionSeriesInfoParams,
 };
+use std::sync::Arc;
 use url::Url;
 
 use super::paged::{PageRequest, PagedSourceKind, page_state};
@@ -109,7 +110,7 @@ impl CollectionResolver<BpiCollectionApi> {
             .map_err(|error| BdlError::Bpi(error.to_string()))
     }
 
-    pub fn from_bpi_client(client: BpiClient) -> Self {
+    pub fn from_bpi_client(client: impl Into<Arc<BpiClient>>) -> Self {
         Self::with_api(BpiCollectionApi::from_client(client))
     }
 }
@@ -127,7 +128,7 @@ impl SeriesResolver<BpiSeriesApi> {
             .map_err(|error| BdlError::Bpi(error.to_string()))
     }
 
-    pub fn from_bpi_client(client: BpiClient) -> Self {
+    pub fn from_bpi_client(client: impl Into<Arc<BpiClient>>) -> Self {
         Self::with_api(BpiSeriesApi::from_client(client))
     }
 }
@@ -224,11 +225,11 @@ where
 }
 
 pub struct BpiCollectionApi {
-    client: BpiClient,
+    client: Arc<BpiClient>,
 }
 
 pub struct BpiSeriesApi {
-    client: BpiClient,
+    client: Arc<BpiClient>,
 }
 
 impl BpiCollectionApi {
@@ -238,8 +239,10 @@ impl BpiCollectionApi {
             .map_err(|error| BdlError::Bpi(error.to_string()))
     }
 
-    pub fn from_client(client: BpiClient) -> Self {
-        Self { client }
+    pub fn from_client(client: impl Into<Arc<BpiClient>>) -> Self {
+        Self {
+            client: client.into(),
+        }
     }
 }
 
@@ -250,8 +253,10 @@ impl BpiSeriesApi {
             .map_err(|error| BdlError::Bpi(error.to_string()))
     }
 
-    pub fn from_client(client: BpiClient) -> Self {
-        Self { client }
+    pub fn from_client(client: impl Into<Arc<BpiClient>>) -> Self {
+        Self {
+            client: client.into(),
+        }
     }
 }
 

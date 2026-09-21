@@ -12,6 +12,7 @@ import { useUiStore, type AppTab } from './stores/ui'
 import { openExternalUrl } from './api/tauri'
 import { bilibiliUserUrl } from './utils/bilibiliLinks'
 import { isMacPlatform } from './utils/platform'
+import BackgroundParseStatus from './ui/BackgroundParseStatus.vue'
 import UiButton from './ui/Button.vue'
 import AppearanceMenu from './ui/AppearanceMenu.vue'
 import UiDialog from './ui/Dialog.vue'
@@ -179,10 +180,7 @@ const useSystemFfmpegFromEnvironment = async () => {
 }
 
 const initializeApp = async () => {
-  const environment = await settings.initializeEnvironment()
-  if (!environment?.ready) {
-    ui.openEnvironmentDialog()
-  }
+  await settings.initializeEnvironment()
 
   await updater.initialize()
   await account.startEventListeners()
@@ -372,6 +370,7 @@ watch(
       </aside>
 
       <section class="main-region" :data-page="ui.activeTab">
+        <BackgroundParseStatus />
         <Suspense>
           <Transition name="workspace" mode="out-in">
             <KeepAlive>
@@ -445,13 +444,12 @@ watch(
 
       <UiDialog v-model="environmentDialogOpen" title="下载环境未就绪">
         <p class="dialog-copy">
-          BDL 会在启动时检查一次保存目录和 FFmpeg。修复环境并重新检测后，解析与下载功能会立即恢复。
+          目录与 FFmpeg 状态供参考，不影响解析。开始下载时会自动创建缺失的目录，失败时会在任务中提示。
         </p>
         <UiEnvironmentHealthPanel
           :health="settings.environmentHealth"
           :checking="settings.environmentChecking"
           @check="settings.checkEnvironment"
-          @create-directory="settings.createDownloadDirectory"
           @choose-directory="chooseDownloadDirectoryFromEnvironment"
           @choose-ffmpeg="chooseFfmpegFromEnvironment"
           @use-system-ffmpeg="useSystemFfmpegFromEnvironment"

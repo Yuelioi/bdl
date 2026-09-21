@@ -14,6 +14,8 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             bdl_tauri::commands::parse_create_source,
             bdl_tauri::commands::parse_load_more,
+            bdl_tauri::commands::parse_cancel,
+            bdl_tauri::commands::parse_progress,
             bdl_tauri::commands::parse_load_all,
             bdl_tauri::commands::parse_close_source,
             bdl_tauri::commands::parse_refresh_source,

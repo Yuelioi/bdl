@@ -109,10 +109,18 @@ impl Default for ArchiveAssetSelection {
 pub enum StreamPreference {
     #[default]
     Best,
+    Sdr,
     Quality(u32),
 }
 
 impl StreamPreference {
+    pub fn parse_video(value: &str) -> BdlResult<Self> {
+        if value.trim().eq_ignore_ascii_case("sdr") {
+            return Ok(Self::Sdr);
+        }
+        Self::parse(value, "视频清晰度")
+    }
+
     pub fn parse(value: &str, field_name: &str) -> BdlResult<Self> {
         let trimmed = value.trim();
         if trimmed.eq_ignore_ascii_case("best") {
@@ -177,8 +185,10 @@ pub struct DownloadOptions {
     pub video_quality: StreamPreference,
     pub audio_quality: StreamPreference,
     pub video_codec: StreamCodec,
+    pub media_preferences: crate::media_preferences::MediaPreferences,
     pub missing_quality_policy: MissingQualityPolicy,
     pub archive_assets: ArchiveAssetSelection,
+    pub processing: Option<crate::queue::TaskProcessingOptions>,
 }
 
 impl DownloadOptions {
@@ -193,8 +203,10 @@ impl DownloadOptions {
             video_quality: StreamPreference::default(),
             audio_quality: StreamPreference::default(),
             video_codec: StreamCodec::Auto,
+            media_preferences: Default::default(),
             missing_quality_policy: MissingQualityPolicy::default(),
             archive_assets: ArchiveAssetSelection::all(),
+            processing: None,
         }
     }
 
@@ -323,6 +335,7 @@ fn plan_part(
         output_path,
         refresh_intent: media_refresh_intent(tree.source.kind, part, selected.part_index + 1),
         media_selection: DownloadTaskMediaSelection {
+            processing: options.processing,
             video_quality: video
                 .map(stream_quality_label)
                 .unwrap_or_else(|| "none".to_owned()),
@@ -341,7 +354,27 @@ fn select_video_stream<'a>(
     part: &'a NormalizedPart,
     options: &DownloadOptions,
 ) -> BdlResult<&'a MediaStream> {
-    let streams = streams_by_kind(part, MediaKind::Video);
+    let streams = streams_by_kind(part, MediaKind::Video)
+        .into_iter()
+        .filter(|stream| {
+            options.video_quality != StreamPreference::Sdr
+                || crate::media_preferences::is_sdr(stream.quality)
+        })
+        .collect::<Vec<_>>();
+    if !options.media_preferences.video.is_empty() {
+        options.media_preferences.validate()?;
+        for rule in &options.media_preferences.video {
+            if let Some(stream) = streams
+                .iter()
+                .copied()
+                .filter(|stream| rule.matches(stream))
+                .max_by_key(|stream| stream_selection_rank(stream))
+            {
+                return Ok(stream);
+            }
+        }
+        return preference_fallback(streams, options, "视频", &part.title);
+    }
     let codec_matches = if options.video_codec == StreamCodec::Auto {
         Vec::new()
     } else {
@@ -370,6 +403,26 @@ fn select_audio_stream<'a>(
     part: &'a NormalizedPart,
     options: &DownloadOptions,
 ) -> BdlResult<&'a MediaStream> {
+    if !options.media_preferences.audio.is_empty() {
+        options.media_preferences.validate()?;
+        let streams = streams_by_kind(part, MediaKind::Audio);
+        for quality in &options.media_preferences.audio {
+            if let Some(stream) = streams
+                .iter()
+                .copied()
+                .filter(|stream| {
+                    quality == "best"
+                        || quality
+                            .parse::<u32>()
+                            .is_ok_and(|quality| stream.quality == StreamQuality::Quality(quality))
+                })
+                .max_by_key(|stream| stream_selection_rank(stream))
+            {
+                return Ok(stream);
+            }
+        }
+        return preference_fallback(streams, options, "音频", &part.title);
+    }
     select_stream_by_quality(
         streams_by_kind(part, MediaKind::Audio),
         options.audio_quality,
@@ -386,6 +439,28 @@ fn streams_by_kind(part: &NormalizedPart, kind: MediaKind) -> Vec<&MediaStream> 
         .collect()
 }
 
+fn preference_fallback<'a>(
+    streams: Vec<&'a MediaStream>,
+    options: &DownloadOptions,
+    label: &str,
+    title: &str,
+) -> BdlResult<&'a MediaStream> {
+    if options.media_preferences.fallback == crate::media_preferences::PreferenceFallback::Best {
+        return select_stream_by_quality(
+            streams,
+            StreamPreference::Best,
+            MissingQualityPolicy::Lower,
+            label,
+            title,
+        );
+    }
+    Err(BdlError::Planning {
+        message: format!(
+            "`{title}` 没有符合{label}偏好的可用轨道，请调整偏好顺序或允许回退到最佳可用。"
+        ),
+    })
+}
+
 fn select_stream_by_quality<'a>(
     streams: Vec<&'a MediaStream>,
     preference: StreamPreference,
@@ -395,11 +470,24 @@ fn select_stream_by_quality<'a>(
 ) -> BdlResult<&'a MediaStream> {
     if streams.is_empty() {
         return Err(BdlError::Planning {
-            message: format!("`{part_title}` 缺少{stream_label}流，请重新解析后再试。"),
+            message: if preference == StreamPreference::Sdr {
+                format!("`{part_title}` 没有可用的 SDR 视频轨道，请选择其他画质后重试。")
+            } else {
+                format!("`{part_title}` 缺少{stream_label}流，请重新解析后再试。")
+            },
         });
     }
 
     match preference {
+        StreamPreference::Sdr => streams
+            .into_iter()
+            .filter(|stream| {
+                stream.kind == MediaKind::Video && crate::media_preferences::is_sdr(stream.quality)
+            })
+            .max_by_key(|stream| stream_selection_rank(stream))
+            .ok_or_else(|| BdlError::Planning {
+                message: format!("`{part_title}` 没有可用的 SDR 视频轨道，请选择其他画质后重试。"),
+            }),
         StreamPreference::Best => streams
             .into_iter()
             .max_by_key(|stream| stream_selection_rank(stream))
@@ -432,7 +520,10 @@ fn select_target_quality<'a>(
         let lower_or_equal = streams
             .iter()
             .copied()
-            .filter(|stream| stream_quality_rank(stream.quality) <= target)
+            .filter(|stream| {
+                media_quality_rank(stream.kind, stream.quality)
+                    <= media_quality_rank(stream.kind, StreamQuality::Quality(target))
+            })
             .max_by_key(|stream| stream_selection_rank(stream));
 
         return lower_or_equal
@@ -749,9 +840,27 @@ fn resource_suffix(intent: DownloadResourceIntent) -> &'static str {
 
 fn stream_selection_rank(stream: &MediaStream) -> (u32, u64) {
     (
-        stream_quality_rank(stream.quality),
+        media_quality_rank(stream.kind, stream.quality),
         stream.bandwidth.unwrap_or_default(),
     )
+}
+
+fn media_quality_rank(kind: MediaKind, quality: StreamQuality) -> u32 {
+    if kind == MediaKind::Audio {
+        // Platform IDs are identifiers, not fidelity scores. Explicit audio rules can
+        // override this default preference for lossless, Dolby, then ordinary AAC.
+        return match quality {
+            StreamQuality::Best => u32::MAX,
+            StreamQuality::Quality(30251) => 6,
+            StreamQuality::Quality(30250) => 5,
+            StreamQuality::Quality(30255) => 4,
+            StreamQuality::Quality(30280) => 3,
+            StreamQuality::Quality(30232) => 2,
+            StreamQuality::Quality(30216) => 1,
+            StreamQuality::Quality(_) => 0,
+        };
+    }
+    stream_quality_rank(quality)
 }
 
 fn stream_quality_rank(quality: StreamQuality) -> u32 {

@@ -10,8 +10,6 @@ const { health, checking = false } = defineProps<{
 
 const emit = defineEmits<{
   check: [];
-  createDirectory: [];
-  chooseDirectory: [];
   chooseFfmpeg: [];
   useSystemFfmpeg: [];
 }>();
@@ -25,30 +23,17 @@ const emit = defineEmits<{
     <header class="flex min-w-0 items-center justify-between gap-3">
       <div class="flex min-w-0 items-center gap-2">
         <strong class="text-[13px] text-(--color-text)">运行环境</strong>
-        <span class="text-[11px] text-(--color-muted)">保存目录与 FFmpeg</span>
+        <span class="text-[11px] text-(--color-muted)">FFmpeg</span>
       </div>
       <div class="flex shrink-0 items-center gap-2">
-        <UiStatusBadge :status="health?.ready ? 'done' : 'warning'">
-          {{ checking ? '检查中' : health?.ready ? '就绪' : '需要处理' }}
+        <UiStatusBadge :status="health?.ffmpeg.status === 'ready' ? 'done' : 'warning'">
+          {{ checking ? '检查中' : health?.ffmpeg.status === 'ready' ? '就绪' : '需要处理' }}
         </UiStatusBadge>
         <UiButton size="compact" variant="ghost" :disabled="checking" @click="emit('check')">重新检查</UiButton>
       </div>
     </header>
 
-    <div v-if="health" class="grid grid-cols-2 gap-2 max-[620px]:grid-cols-1">
-      <div class="flex min-w-0 items-center gap-2 rounded-md bg-(--color-surface) p-2">
-        <UIcon name="i-tabler-folder-check" class="size-4 shrink-0 text-(--color-accent-strong)" aria-hidden="true" />
-        <span class="grid min-w-0 flex-1 gap-px">
-          <strong class="text-xs text-(--color-text)">保存目录</strong>
-          <small class="truncate text-[11px] text-(--color-muted)" :title="health.download_directory.path">{{
-            health.download_directory.path
-          }}</small>
-        </span>
-        <UiStatusBadge :status="health.download_directory.status === 'ready' ? 'done' : 'warning'">
-          {{ health.download_directory.status === 'ready' ? '可写' : '异常' }}
-        </UiStatusBadge>
-      </div>
-
+    <div v-if="health" class="grid gap-2">
       <div class="flex min-w-0 items-center gap-2 rounded-md bg-(--color-surface) p-2">
         <UIcon name="i-tabler-terminal-2" class="size-4 shrink-0 text-(--color-accent-strong)" aria-hidden="true" />
         <span class="grid min-w-0 flex-1 gap-px">
@@ -63,25 +48,8 @@ const emit = defineEmits<{
       </div>
     </div>
 
-    <div v-if="health && !health.ready" class="flex flex-wrap items-center gap-2 border-t border-(--color-border) pt-2">
+    <div v-if="health && health.ffmpeg.status !== 'ready'" class="flex flex-wrap items-center gap-2 border-t border-(--color-border) pt-2">
       <UiButton
-        v-if="health.download_directory.status === 'missing'"
-        size="compact"
-        variant="secondary"
-        @click="emit('createDirectory')"
-      >
-        创建保存目录
-      </UiButton>
-      <UiButton
-        v-if="health.download_directory.status !== 'ready'"
-        size="compact"
-        variant="ghost"
-        @click="emit('chooseDirectory')"
-      >
-        更换目录
-      </UiButton>
-      <UiButton
-        v-if="health.ffmpeg.status !== 'ready'"
         size="compact"
         variant="secondary"
         @click="emit('chooseFfmpeg')"
@@ -89,7 +57,7 @@ const emit = defineEmits<{
         选择 FFmpeg
       </UiButton>
       <UiButton
-        v-if="health.ffmpeg.status !== 'ready' && health.ffmpeg.source === 'configured'"
+        v-if="health.ffmpeg.source === 'configured'"
         size="compact"
         variant="ghost"
         @click="emit('useSystemFfmpeg')"

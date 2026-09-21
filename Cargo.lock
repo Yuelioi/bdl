@@ -326,6 +326,7 @@ name = "bdl-tauri"
 version = "0.3.2"
 dependencies = [
  "bdl-core",
+ "bpi-rs",
  "chrono",
  "futures",
  "keyring",

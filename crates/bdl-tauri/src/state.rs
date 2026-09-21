@@ -1,8 +1,8 @@
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::PathBuf;
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 
 use bdl_core::account::{
     AccountLibraryFolderKind, AccountLibraryPage, AccountSummary, ImportedCookie,
@@ -50,6 +50,9 @@ use crate::queue_coordinator::{
 use crate::secure_store::SecureStore;
 
 pub struct AppState {
+    parse_pacer: crate::parse_pacing::ParsePacer,
+    parse_control: crate::parse_control::ParseControl,
+    resolver_client: Mutex<Option<(u64, Arc<bpi_rs::BpiClient>)>>,
     parse_sources: Mutex<HashMap<SourceId, NormalizedSourceTree>>,
     queue: Mutex<Vec<DownloadTask>>,
     storage: Mutex<TaskStorage>,
@@ -113,6 +116,9 @@ impl AppState {
         let secure_store = SecureStore::new(&data_dir);
 
         Ok(Self {
+            parse_pacer: Default::default(),
+            parse_control: Default::default(),
+            resolver_client: Default::default(),
             parse_sources: Mutex::new(HashMap::new()),
             queue: Mutex::new(queue),
             storage: Mutex::new(storage),
@@ -147,46 +153,77 @@ impl AppState {
     ) -> BdlResult<NormalizedSourceTree> {
         let classified = classify_input(input)?;
         let options = ResolveOptions { fetch_streams };
-        let tree = match classified.source_kind() {
-            SourceKind::Video if expand_video_collection => {
-                let resolver = self.video_resolver()?;
-                if let Some(collection) = resolver.collection_hint(&classified).await? {
-                    let raw_url = format!(
-                        "https://space.bilibili.com/{}/lists/{}?type=season",
-                        collection.mid, collection.season_id
-                    );
-                    self.collection_resolver()?
-                        .resolve(ClassifiedInput::Collection { raw_url }, options)
-                        .await?
-                } else {
-                    resolver.resolve(classified, options).await?
-                }
-            }
-            SourceKind::Video => self.video_resolver()?.resolve(classified, options).await?,
-            SourceKind::Favorite => {
-                self.favorite_resolver()?
-                    .resolve(classified, options)
-                    .await?
-            }
-            SourceKind::Uploader => {
-                self.uploader_resolver()?
-                    .resolve(classified, options)
-                    .await?
-            }
-            SourceKind::Collection => {
-                self.collection_resolver()?
-                    .resolve(classified, options)
-                    .await?
-            }
-            SourceKind::Series => self.series_resolver()?.resolve(classified, options).await?,
-            SourceKind::Bangumi => {
-                self.bangumi_resolver()?
-                    .resolve(classified, options)
-                    .await?
-            }
-            SourceKind::Cheese => self.cheese_resolver()?.resolve(classified, options).await?,
-            _ => self.video_resolver()?.resolve(classified, options).await?,
-        };
+        let tree = self
+            .parse_pacer
+            .run_retry(
+                self.settings()?.parse_rules,
+                || {
+                    let classified = classified.clone();
+                    async move {
+                        let tree = match classified.source_kind() {
+                            SourceKind::Video if expand_video_collection => {
+                                let resolver = self.video_resolver()?;
+                                if let Some(collection) =
+                                    resolver.collection_hint(&classified).await?
+                                {
+                                    let raw_url = format!(
+                                        "https://space.bilibili.com/{}/lists/{}?type=season",
+                                        collection.mid, collection.season_id
+                                    );
+                                    self.collection_resolver()?
+                                        .resolve(ClassifiedInput::Collection { raw_url }, options)
+                                        .await?
+                                } else {
+                                    resolver.resolve(classified, options).await?
+                                }
+                            }
+                            SourceKind::Video => {
+                                self.video_resolver()?.resolve(classified, options).await?
+                            }
+                            SourceKind::Favorite => {
+                                self.favorite_resolver()?
+                                    .resolve(classified, options)
+                                    .await?
+                            }
+                            SourceKind::Uploader => {
+                                self.uploader_resolver()?
+                                    .resolve(classified, options)
+                                    .await?
+                            }
+                            SourceKind::Collection => {
+                                self.collection_resolver()?
+                                    .resolve(classified, options)
+                                    .await?
+                            }
+                            SourceKind::Series => {
+                                self.series_resolver()?.resolve(classified, options).await?
+                            }
+                            SourceKind::Bangumi => {
+                                self.bangumi_resolver()?
+                                    .resolve(classified, options)
+                                    .await?
+                            }
+                            SourceKind::Cheese => {
+                                self.cheese_resolver()?.resolve(classified, options).await?
+                            }
+                            _ => self.video_resolver()?.resolve(classified, options).await?,
+                        };
+                        Ok(tree)
+                    }
+                },
+                |tree| {
+                    usize::from(matches!(
+                        tree.source.kind,
+                        SourceKind::Favorite
+                            | SourceKind::Uploader
+                            | SourceKind::Collection
+                            | SourceKind::Series
+                            | SourceKind::Cheese
+                    ))
+                },
+                |_| {},
+            )
+            .await?;
         self.parse_sources
             .lock()
             .map_err(|_| state_poisoned("parse_sources"))?
@@ -224,6 +261,7 @@ impl AppState {
     }
 
     pub fn close_source(&self, source_id: &SourceId) -> BdlResult<bool> {
+        self.cancel_parse(&source_id.0);
         Ok(self
             .parse_sources
             .lock()
@@ -266,6 +304,7 @@ impl AppState {
         while should_continue_loading(tree.source.has_more, tree.source.loaded_count, limit) {
             let loaded_before = tree.source.loaded_count;
             self.append_next_page(&mut tree).await?;
+            self.store_source_tree(&tree)?;
             if tree.source.loaded_count == loaded_before {
                 break;
             }
@@ -293,10 +332,21 @@ impl AppState {
         }
 
         let mut part_ids = selected_part_ids;
+        let operation = self.parse_control.begin(&source_id.0);
 
         for request in requests {
-            let hydrated = self
-                .resolve_media_input_with_streams(request.input.clone(), request.target_cid)
+            let hydrated = operation
+                .run(self.parse_pacer.run_retry(
+                    self.settings()?.parse_rules,
+                    || {
+                        self.resolve_media_input_with_streams_unpaced(
+                            request.input.clone(),
+                            request.target_cid,
+                        )
+                    },
+                    |_| 0,
+                    |phase| operation.phase(phase),
+                ))
                 .await?;
             let hydrated_part_ids = hydrate_placeholder_part(
                 &mut tree,
@@ -305,6 +355,7 @@ impl AppState {
                 hydrated,
             )?;
             remap_selected_part_ids(&mut part_ids, &request.part_id, &hydrated_part_ids);
+            self.store_source_tree(&tree)?;
         }
 
         self.parse_sources
@@ -900,6 +951,26 @@ impl AppState {
     }
 
     async fn append_next_page(&self, tree: &mut NormalizedSourceTree) -> BdlResult<()> {
+        let operation = self.parse_control.begin(&tree.source.id.0);
+        let next = operation
+            .run(self.parse_pacer.run_retry(
+                self.settings()?.parse_rules,
+                || {
+                    let mut next = tree.clone();
+                    async move {
+                        self.append_next_page_unpaced(&mut next).await?;
+                        Ok(next)
+                    }
+                },
+                |_| 1,
+                |phase| operation.phase(phase),
+            ))
+            .await?;
+        *tree = next;
+        Ok(())
+    }
+
+    async fn append_next_page_unpaced(&self, tree: &mut NormalizedSourceTree) -> BdlResult<()> {
         match tree.source.kind {
             SourceKind::Favorite => {
                 let media_id = favorite_media_id(tree)?;
@@ -951,6 +1022,21 @@ impl AppState {
         input: ClassifiedInput,
         target_cid: Option<u64>,
     ) -> BdlResult<NormalizedSourceTree> {
+        self.parse_pacer
+            .run_retry(
+                self.settings()?.parse_rules,
+                || self.resolve_media_input_with_streams_unpaced(input.clone(), target_cid),
+                |_| 0,
+                |_| {},
+            )
+            .await
+    }
+
+    async fn resolve_media_input_with_streams_unpaced(
+        &self,
+        input: ClassifiedInput,
+        target_cid: Option<u64>,
+    ) -> BdlResult<NormalizedSourceTree> {
         let options = ResolveOptions {
             fetch_streams: true,
         };
@@ -972,53 +1058,79 @@ impl AppState {
         }
     }
 
-    fn video_resolver(&self) -> BdlResult<VideoResolver> {
-        match self.account_cookie()? {
-            Some(cookie) => VideoResolver::from_cookie(&cookie),
-            None => VideoResolver::new(),
+    pub fn cancel_parse(&self, source_id: &str) {
+        self.parse_control.cancel(source_id);
+    }
+
+    pub fn parse_progress(&self, source_id: &str) -> crate::parse_control::ParseProgress {
+        self.parse_control.progress(source_id)
+    }
+
+    fn shared_resolver_client(&self) -> BdlResult<Arc<bpi_rs::BpiClient>> {
+        let revision = self.account_session_revision.load(Ordering::SeqCst);
+        let mut cached = self
+            .resolver_client
+            .lock()
+            .map_err(|_| state_poisoned("resolver_client"))?;
+        if let Some((_, client)) = cached
+            .as_ref()
+            .filter(|(cached_revision, _)| *cached_revision == revision)
+        {
+            return Ok(client.clone());
         }
+        let mut builder = bpi_rs::BpiClient::builder().timeout(std::time::Duration::from_secs(20));
+        if let Some(cookie) = self.account_cookie()? {
+            builder = builder.cookie(cookie);
+        }
+        let client = Arc::new(
+            builder
+                .build()
+                .map_err(|error| BdlError::Bpi(error.to_string()))?,
+        );
+        *cached = Some((revision, client.clone()));
+        Ok(client)
+    }
+
+    fn video_resolver(&self) -> BdlResult<VideoResolver> {
+        Ok(VideoResolver::from_bpi_client(
+            self.shared_resolver_client()?,
+        ))
     }
 
     fn uploader_resolver(&self) -> BdlResult<UploaderResolver> {
-        match self.account_cookie()? {
-            Some(cookie) => UploaderResolver::from_cookie(&cookie),
-            None => UploaderResolver::new(),
-        }
+        Ok(UploaderResolver::from_bpi_client(
+            self.shared_resolver_client()?,
+        ))
     }
 
     fn favorite_resolver(&self) -> BdlResult<FavoriteResolver> {
-        match self.account_cookie()? {
-            Some(cookie) => FavoriteResolver::from_cookie(&cookie),
-            None => FavoriteResolver::new(),
-        }
+        Ok(FavoriteResolver::from_bpi_client(
+            self.shared_resolver_client()?,
+        ))
     }
 
     fn collection_resolver(&self) -> BdlResult<CollectionResolver> {
-        match self.account_cookie()? {
-            Some(cookie) => CollectionResolver::from_cookie(&cookie),
-            None => CollectionResolver::new(),
-        }
+        Ok(CollectionResolver::from_bpi_client(
+            self.shared_resolver_client()?,
+        ))
     }
 
     fn series_resolver(&self) -> BdlResult<SeriesResolver> {
-        match self.account_cookie()? {
-            Some(cookie) => SeriesResolver::from_cookie(&cookie),
-            None => SeriesResolver::new(),
-        }
+        Ok(SeriesResolver::from_bpi_client(
+            self.shared_resolver_client()?,
+        ))
     }
 
     fn bangumi_resolver(&self) -> BdlResult<BangumiResolver> {
-        match self.account_cookie()? {
-            Some(cookie) => BangumiResolver::from_cookie(&cookie),
-            None => BangumiResolver::new(),
-        }
+        Ok(BangumiResolver::from_bpi_client(
+            self.shared_resolver_client()?,
+        ))
     }
 
     fn cheese_resolver(&self) -> BdlResult<CheeseResolver> {
-        match self.account_cookie()? {
-            Some(cookie) => CheeseResolver::from_cookie(&cookie),
-            None => CheeseResolver::new(),
-        }
+        Ok(CheeseResolver::from_bpi_client(
+            self.shared_resolver_client()?,
+        ))
     }
 
     fn account_cookie(&self) -> BdlResult<Option<String>> {
@@ -1533,6 +1645,22 @@ mod tests {
         let account = load_account_snapshot(&storage).expect("load account");
 
         assert_eq!(account, expected);
+        let _ = std::fs::remove_dir_all(data_dir);
+    }
+
+    #[test]
+    fn parse_client_reuses_session_and_invalidates_after_account_change() {
+        let data_dir = temp_state_dir();
+        let state = test_state_with_tasks(&data_dir, Vec::new());
+        let first = state.shared_resolver_client().unwrap();
+        let second = state.shared_resolver_client().unwrap();
+        assert!(std::sync::Arc::ptr_eq(&first, &second));
+        state
+            .account_session_revision
+            .fetch_add(1, Ordering::SeqCst);
+        let changed = state.shared_resolver_client().unwrap();
+        assert!(!std::sync::Arc::ptr_eq(&first, &changed));
+        drop(state);
         let _ = std::fs::remove_dir_all(data_dir);
     }
 
@@ -2269,6 +2397,9 @@ mod tests {
             .expect("tasks should persist before state is created");
 
         AppState {
+            parse_pacer: Default::default(),
+            parse_control: Default::default(),
+            resolver_client: Default::default(),
             parse_sources: Mutex::new(HashMap::new()),
             queue: Mutex::new(tasks),
             storage: Mutex::new(storage),

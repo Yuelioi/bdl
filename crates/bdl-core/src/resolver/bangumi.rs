@@ -6,6 +6,7 @@ use bpi_rs::models::{DashTrack, Fnval, VideoQuality};
 use bpi_rs::video::VideoPlayerInfoParams;
 use bpi_rs::{BpiClient, BpiError};
 use chrono::{DateTime, Utc};
+use std::sync::Arc;
 use url::Url;
 
 use super::{ResolveOptions, Resolver};
@@ -99,7 +100,7 @@ impl BangumiResolver<BpiBangumiApi> {
             .map_err(|error| BdlError::Bpi(error.to_string()))
     }
 
-    pub fn from_bpi_client(client: BpiClient) -> Self {
+    pub fn from_bpi_client(client: impl Into<Arc<BpiClient>>) -> Self {
         Self::with_api(BpiBangumiApi::from_client(client))
     }
 }
@@ -205,7 +206,7 @@ where
 }
 
 pub struct BpiBangumiApi {
-    client: BpiClient,
+    client: Arc<BpiClient>,
 }
 
 impl BpiBangumiApi {
@@ -215,8 +216,10 @@ impl BpiBangumiApi {
             .map_err(|error| BdlError::Bpi(error.to_string()))
     }
 
-    pub fn from_client(client: BpiClient) -> Self {
-        Self { client }
+    pub fn from_client(client: impl Into<Arc<BpiClient>>) -> Self {
+        Self {
+            client: client.into(),
+        }
     }
 }
 
@@ -375,6 +378,8 @@ impl ResolvedBangumiPlayUrl {
             audio: dash
                 .audio
                 .into_iter()
+                .chain(dash.dolby.into_iter().flat_map(|dolby| dolby.audio))
+                .chain(dash.flac.map(|flac| flac.audio))
                 .map(ResolvedBangumiDashStream::from)
                 .collect(),
             subtitles,
@@ -582,7 +587,12 @@ fn stream_codec(codecs: &str) -> StreamCodec {
         StreamCodec::Auto
     } else if lower.contains("av01") || lower.contains("av1") {
         StreamCodec::Av1
-    } else if lower.contains("hev") || lower.contains("hvc") || lower.contains("h265") {
+    } else if lower.contains("hev")
+        || lower.contains("hvc")
+        || lower.contains("h265")
+        || lower.starts_with("dvhe")
+        || lower.starts_with("dvh1")
+    {
         StreamCodec::Hevc
     } else if lower.contains("avc") || lower.contains("h264") {
         StreamCodec::Avc

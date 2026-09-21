@@ -1,9 +1,76 @@
-use bdl_core::naming::{DEFAULT_NAMING_TEMPLATE, DuplicateNamingStrategy};
+use bdl_core::naming::DuplicateNamingStrategy;
 use bdl_core::planner::ArchiveAssetSelection;
 use bdl_core::settings::AppSettings;
 
 #[test]
-fn settings_normalization_replaces_legacy_duplicate_title_template() {
+fn settings_missing_fields_recursively_use_current_defaults() {
+    fn check(defaults: &serde_json::Value, path: &mut Vec<String>, object: &serde_json::Value) {
+        for (key, value) in object.as_object().unwrap() {
+            path.push(key.clone());
+            let mut partial = defaults.clone();
+            let mut parent = &mut partial;
+            for segment in &path[..path.len() - 1] {
+                parent = parent.get_mut(segment).unwrap();
+            }
+            parent.as_object_mut().unwrap().remove(key);
+            let restored: AppSettings = serde_json::from_value(partial).unwrap();
+            assert_eq!(
+                serde_json::to_value(restored.normalized()).unwrap(),
+                *defaults,
+                "missing {}",
+                path.join(".")
+            );
+            if value.is_object() {
+                check(defaults, path, value);
+            }
+            path.pop();
+        }
+    }
+    let defaults = serde_json::to_value(AppSettings::default()).unwrap();
+    check(&defaults, &mut Vec::new(), &defaults);
+}
+
+#[test]
+fn settings_partial_config_preserves_choices_through_save_and_reload() {
+    let saved = serde_json::json!({
+        "download_dir": "D:/Videos",
+        "naming_template": "{title}.{ext}",
+        "quality": "80", "codec": "hevc", "audio_quality": "30280",
+        "retry_count": 0, "segment_count": 1,
+        "auto_refresh_expired_urls": false,
+        "global_speed_limit_bytes_per_second": null,
+        "archive_assets": { "cover": false },
+        "parse_rules": { "interval_seconds": 2 },
+        "media_preferences": { "video": [], "fallback": "error" },
+        "future_unknown_option": true
+    });
+    let settings: AppSettings = serde_json::from_value(saved.clone()).unwrap();
+    let settings = settings.normalized();
+    settings.validate().unwrap();
+    let complete = serde_json::to_value(&settings).unwrap();
+    for (key, value) in saved.as_object().unwrap() {
+        if key == "future_unknown_option" {
+            continue;
+        }
+        if let Some(fields) = value.as_object() {
+            for (field, value) in fields {
+                assert_eq!(&complete[key][field], value);
+            }
+        } else {
+            assert_eq!(&complete[key], value);
+        }
+    }
+    assert!(settings.archive_assets.subtitles);
+    assert_eq!(
+        settings.parse_rules.rest_seconds,
+        AppSettings::default().parse_rules.rest_seconds
+    );
+    let reloaded: AppSettings = serde_json::from_value(complete).unwrap();
+    assert_eq!(reloaded.normalized(), settings);
+}
+
+#[test]
+fn settings_normalization_preserves_existing_valid_title_template() {
     let settings = AppSettings {
         naming_template: "{title}/{title} - P{part_index} - {part_title}.{ext}".to_owned(),
         ..AppSettings::default()
@@ -11,7 +78,7 @@ fn settings_normalization_replaces_legacy_duplicate_title_template() {
 
     assert_eq!(
         settings.normalized().naming_template,
-        DEFAULT_NAMING_TEMPLATE
+        "{title}/{title} - P{part_index} - {part_title}.{ext}"
     );
 }
 
@@ -65,14 +132,14 @@ fn settings_deserialize_old_config_defaults_duplicate_naming_strategy() {
 }
 
 #[test]
-fn settings_normalization_migrates_legacy_single_segment_default_once() {
+fn settings_normalization_preserves_explicit_single_segment_without_version() {
     let legacy: AppSettings =
         serde_json::from_str(r#"{"segment_count":1,"naming_template":"{title}.{ext}"}"#)
             .expect("legacy settings should deserialize");
     let migrated = legacy.normalized();
 
     assert_eq!(migrated.settings_schema_version, 1);
-    assert_eq!(migrated.segment_count, 4);
+    assert_eq!(migrated.segment_count, 1);
 
     let explicit_single_segment = AppSettings {
         segment_count: 1,

@@ -625,3 +625,173 @@ fn unique_temp_dir() -> PathBuf {
 
     std::env::temp_dir().join(format!("bdl-planner-{nanos}"))
 }
+
+#[test]
+fn media_preferences_select_first_complete_combination_and_preserve_refresh_track() {
+    use bdl_core::media_preferences::VideoPreference;
+    let mut tree = fixture_tree(true);
+    let part = fixture_part_mut(&mut tree);
+    for (quality, codec) in [
+        (125, StreamCodec::Hevc),
+        (120, StreamCodec::Av1),
+        (127, StreamCodec::Avc),
+    ] {
+        part.streams.push(media_stream(
+            MediaKind::Video,
+            StreamQuality::Quality(quality),
+            codec,
+            &format!("https://example.invalid/{quality}.m4s"),
+        ));
+    }
+    let mut options = DownloadOptions::new(PathBuf::from("downloads"));
+    // Legacy codec preference must not discard the HDR candidate before rule matching.
+    options.video_codec = StreamCodec::Avc;
+    options.media_preferences.video = vec![
+        VideoPreference {
+            quality: "125".into(),
+            codec: "av1".into(),
+        },
+        VideoPreference {
+            quality: "125".into(),
+            codec: "hevc".into(),
+        },
+        VideoPreference {
+            quality: "120".into(),
+            codec: "av1".into(),
+        },
+    ];
+    let tasks = plan_selected_parts(&tree, &[PartId("part:BV1:100".into())], &options).unwrap();
+    assert_eq!(tasks[0].media_selection.video_quality, "125");
+    assert_eq!(tasks[0].media_selection.video_codec, "hevc");
+    assert_eq!(
+        resource_by_intent(&tasks[0], DownloadResourceIntent::Video).current_urls[0],
+        "https://example.invalid/125.m4s"
+    );
+    options.media_preferences.video.swap(1, 2);
+    let tasks = plan_selected_parts(&tree, &[PartId("part:BV1:100".into())], &options).unwrap();
+    assert_eq!(tasks[0].media_selection.video_quality, "120");
+}
+
+#[test]
+fn media_preferences_sdr_excludes_hdr_and_dolby_and_audio_order_is_independent() {
+    use bdl_core::media_preferences::VideoPreference;
+    let mut tree = fixture_tree(true);
+    let part = fixture_part_mut(&mut tree);
+    for quality in [125, 126] {
+        part.streams.push(media_stream(
+            MediaKind::Video,
+            StreamQuality::Quality(quality),
+            StreamCodec::Hevc,
+            "https://example.invalid/hdr.m4s",
+        ));
+    }
+    part.streams.push(media_stream(
+        MediaKind::Audio,
+        StreamQuality::Quality(30251),
+        StreamCodec::Unknown,
+        "https://example.invalid/flac.m4s",
+    ));
+    let mut options = DownloadOptions::new(PathBuf::from("downloads"));
+    options.media_preferences.video = vec![VideoPreference {
+        quality: "sdr".into(),
+        codec: "auto".into(),
+    }];
+    options.media_preferences.audio = vec!["30250".into(), "30251".into(), "30280".into()];
+    let tasks = plan_selected_parts(&tree, &[PartId("part:BV1:100".into())], &options).unwrap();
+    assert!(!["125", "126"].contains(&tasks[0].media_selection.video_quality.as_str()));
+    assert_eq!(tasks[0].media_selection.audio_quality, "30251");
+}
+
+#[test]
+fn media_preferences_no_match_requires_explicit_fallback() {
+    use bdl_core::media_preferences::{PreferenceFallback, VideoPreference};
+    let tree = fixture_tree(true);
+    let mut options = DownloadOptions::new(PathBuf::from("downloads"));
+    options.media_preferences.video = vec![VideoPreference {
+        quality: "125".into(),
+        codec: "hevc".into(),
+    }];
+    let selected = [PartId("part:BV1:100".into())];
+    options.media_preferences.fallback = PreferenceFallback::Error;
+    assert!(
+        plan_selected_parts(&tree, &selected, &options)
+            .unwrap_err()
+            .to_string()
+            .contains("视频偏好")
+    );
+    options.media_preferences.fallback = PreferenceFallback::Best;
+    assert!(plan_selected_parts(&tree, &selected, &options).is_ok());
+    options.media_mode = DownloadMediaMode::AudioOnly;
+    options.media_preferences.fallback = PreferenceFallback::Error;
+    assert!(plan_selected_parts(&tree, &selected, &options).is_ok());
+}
+
+#[test]
+fn media_preferences_audio_best_and_lower_use_semantic_quality_order() {
+    let mut tree = fixture_tree(true);
+    let part = fixture_part_mut(&mut tree);
+    part.streams
+        .retain(|stream| stream.kind == MediaKind::Video);
+    for quality in [30251, 30250, 30232] {
+        part.streams.push(media_stream(
+            MediaKind::Audio,
+            StreamQuality::Quality(quality),
+            StreamCodec::Unknown,
+            "https://example.invalid/audio.m4s",
+        ));
+    }
+    let selected = [PartId("part:BV1:100".into())];
+    let mut options = DownloadOptions::new(PathBuf::from("downloads"));
+    let tasks = plan_selected_parts(&tree, &selected, &options).unwrap();
+    assert_eq!(tasks[0].media_selection.audio_quality, "30251");
+    options.audio_quality = StreamPreference::Quality(30280);
+    let tasks = plan_selected_parts(&tree, &selected, &options).unwrap();
+    assert_eq!(tasks[0].media_selection.audio_quality, "30232");
+}
+
+#[test]
+fn sdr_setting_is_accepted_without_allowing_sdr_as_audio_quality() {
+    let mut settings = bdl_core::settings::AppSettings {
+        quality: "sdr".into(),
+        ..Default::default()
+    };
+    settings.validate().expect("SDR should be a video choice");
+    settings.audio_quality = "sdr".into();
+    assert!(settings.validate().is_err());
+}
+
+#[test]
+fn sdr_selection_filters_dynamic_range_before_codec_and_never_falls_back_to_hdr() {
+    let mut tree = fixture_tree(true);
+    let part = fixture_part_mut(&mut tree);
+    part.streams
+        .retain(|stream| stream.kind == MediaKind::Audio);
+    for (quality, codec) in [
+        (125, StreamCodec::Hevc),
+        (126, StreamCodec::Hevc),
+        (120, StreamCodec::Avc),
+    ] {
+        part.streams.push(media_stream(
+            MediaKind::Video,
+            StreamQuality::Quality(quality),
+            codec,
+            &format!("https://example.invalid/{quality}.m4s"),
+        ));
+    }
+    let selected = [PartId("part:BV1:100".into())];
+    let mut options = DownloadOptions::new(PathBuf::from("downloads"));
+    options.video_quality = StreamPreference::parse_video("sdr").unwrap();
+    options.video_codec = StreamCodec::Hevc;
+    let tasks = plan_selected_parts(&tree, &selected, &options).unwrap();
+    assert_eq!(tasks[0].media_selection.video_quality, "120");
+    assert_eq!(tasks[0].media_selection.video_codec, "avc");
+    fixture_part_mut(&mut tree)
+        .streams
+        .retain(|stream| stream.quality != StreamQuality::Quality(120));
+    assert!(
+        plan_selected_parts(&tree, &selected, &options)
+            .unwrap_err()
+            .to_string()
+            .contains("SDR")
+    );
+}

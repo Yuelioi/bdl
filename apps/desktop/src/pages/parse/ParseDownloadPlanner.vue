@@ -2,12 +2,16 @@
 import { open } from '@tauri-apps/plugin-dialog'
 import { computed, ref } from 'vue'
 
-import type { DownloadMediaMode, DuplicateTaskMatch, DuplicateTaskPolicy, VideoCodecPreference } from '../../api/dto'
+import type { SettingsSnapshot, NamingPreset, DownloadMediaMode, DuplicateTaskMatch, DuplicateTaskPolicy, VideoCodecPreference } from '../../api/dto'
 import { useParseStore } from '../../stores/parse'
-import { useSettingsStore } from '../../stores/settings'
-import { useUiStore } from '../../stores/ui'
+import { validateNamingTemplate, cloneMediaPreferences, useSettingsStore } from '../../stores/settings'
 import type { InlineNotice } from '../../stores/feedback'
 import { statusBadge, statusLabel } from '../../stores/transferView'
+import { archiveModeOptions, duplicateNamingOptions, missingQualityOptions, videoQualityOptions, audioQualityOptions, codecOptions } from '../settings/settingsCatalog'
+import NamingTemplatePicker from '../../ui/NamingTemplatePicker.vue'
+import MediaPreferenceEditor from '../settings/MediaPreferenceEditor.vue'
+import UiTabs from '../../ui/Tabs.vue'
+import UiCheckbox from '../../ui/Checkbox.vue'
 import UiButton from '../../ui/Button.vue'
 import UiDialog from '../../ui/Dialog.vue'
 import UiDisclosure from '../../ui/Disclosure.vue'
@@ -16,11 +20,10 @@ import UiSelect from '../../ui/Select.vue'
 import UiStatusBadge from '../../ui/StatusBadge.vue'
 import UiTextField from '../../ui/TextField.vue'
 import { scheduledLocalError, toDateTimeLocalValue, toScheduledIso } from '../../utils/schedule'
-import { formatSpeedLimit, speedLimitMibError, toBytesPerSecond } from '../../utils/speedLimit'
+import { speedLimitMibError, toBytesPerSecond } from '../../utils/speedLimit'
 
 const parse = useParseStore()
 const settings = useSettingsStore()
-const ui = useUiStore()
 const downloadDialogOpen = ref(false)
 const duplicateDialogOpen = ref(false)
 const duplicateMatches = ref<DuplicateTaskMatch[]>([])
@@ -31,11 +34,23 @@ const archiveMode = ref<'fast' | 'complete_archive' | 'custom'>('fast')
 const outputExtension = ref<'mp4' | 'mkv'>('mp4')
 const mediaMode = ref<DownloadMediaMode>('audio_video')
 const videoQuality = ref('best')
+const mediaPreferences = ref(cloneMediaPreferences())
 const audioQuality = ref('best')
 const videoCodec = ref<VideoCodecPreference>('auto')
 const scheduledLocal = ref('')
 const taskSpeedLimitMib = ref('')
-const saveLayout = ref<'title_folder' | 'download_root'>('title_folder')
+const activeTab = ref('general')
+const defaultsRevision = ref(0)
+const tabs = [{ label: '常规', value: 'general' }, { label: '画质与音频', value: 'media' }, { label: '附加内容', value: 'assets' }, { label: '调度', value: 'schedule' }]
+const namingTemplate = ref('')
+const namingPresets = ref<NamingPreset[]>([])
+const duplicateNamingStrategy = ref<SettingsSnapshot['duplicate_naming_strategy']>('skip_existing')
+const missingQualityPolicy = ref<SettingsSnapshot['missing_quality_policy']>('lower')
+const retainRawStreams = ref(false)
+const embedCover = ref(false)
+const embedSubtitles = ref(false)
+const archiveAssets = ref({ ...settings.saved.archive_assets })
+const namingError = computed(() => validateNamingTemplate(namingTemplate.value))
 const scheduleMin = ref('')
 const scheduleValidationNow = ref(Date.now())
 
@@ -44,33 +59,7 @@ const mediaModeOptions = [
   { label: '仅视频', value: 'video_only' },
   { label: '仅音频', value: 'audio_only' },
 ]
-const videoQualityOptions = [
-  { label: '最佳可用', value: 'best' }, { label: '8K / 127', value: '127' },
-  { label: '4K / 120', value: '120' }, { label: '1080P60 / 116', value: '116' },
-  { label: '1080P+ / 112', value: '112' }, { label: '1080P / 80', value: '80' },
-  { label: '720P / 64', value: '64' }, { label: '480P / 32', value: '32' },
-  { label: '360P / 16', value: '16' },
-]
-const audioQualityOptions = [
-  { label: '最佳可用', value: 'best' }, { label: '高音质 / 30280', value: '30280' },
-  { label: '中音质 / 30232', value: '30232' }, { label: '低音质 / 30216', value: '30216' },
-]
-const codecOptions = [
-  { label: '自动', value: 'auto' }, { label: 'AVC / H.264', value: 'avc' },
-  { label: 'HEVC / H.265', value: 'hevc' }, { label: 'AV1', value: 'av1' },
-]
 const outputExtensionOptions = [{ label: 'MP4', value: 'mp4' }, { label: 'MKV', value: 'mkv' }]
-const archiveModeOptions = [
-  { label: '仅下载最终媒体', value: 'fast' },
-  { label: '下载全部附加内容', value: 'complete_archive' },
-  { label: '使用设置中的附加内容', value: 'custom' },
-]
-const saveLayoutOptions = [
-  { label: '按标题建立子文件夹', value: 'title_folder' },
-  { label: '直接保存到下载目录', value: 'download_root' },
-]
-const directDownloadNamingTemplate = '{title} - P{part_index} - {part_title}.{ext}'
-
 const activeSource = computed(() => parse.activeSource)
 const selectedSourceIds = computed(() => parse.isBatch
   ? parse.selectedSourceIds
@@ -84,30 +73,36 @@ const includesAudio = computed(() => mediaMode.value !== 'video_only')
 const scheduleError = computed(() => scheduledLocalError(scheduledLocal.value, scheduleValidationNow.value))
 const taskSpeedLimitError = computed(() => speedLimitMibError(taskSpeedLimitMib.value))
 const embeddingFormatError = computed(() =>
-  outputExtension.value !== 'mkv' && (settings.draft.embed_cover || settings.draft.embed_subtitles)
-    ? '嵌入封面和字幕仅支持 MKV，请改用 MKV 或在设置中关闭嵌入。'
+  outputExtension.value !== 'mkv' && (embedCover.value || embedSubtitles.value)
+    ? '嵌入封面和字幕仅支持 MKV，请改用 MKV 或关闭本次嵌入。'
     : null,
 )
 const duplicatePreview = computed(() => duplicateMatches.value.slice(0, 6))
 const duplicateRemaining = computed(() => Math.max(duplicateMatches.value.length - duplicatePreview.value.length, 0))
-const downloadAdvancedSummary = computed(() => {
-  const codec = includesVideo.value ? optionLabel(codecOptions, videoCodec.value) : '无视频编码'
-  return `${outputExtension.value.toUpperCase()} · ${codec} · ${optionLabel(saveLayoutOptions, saveLayout.value)} · ${optionLabel(archiveModeOptions, archiveMode.value)}`
-})
-const downloadSettingsSummary = computed(() => {
-  const content = optionLabel(mediaModeOptions, mediaMode.value)
-  const video = includesVideo.value ? optionLabel(videoQualityOptions, videoQuality.value) : '不下载视频'
-  const audio = includesAudio.value ? optionLabel(audioQualityOptions, audioQuality.value) : '不下载音频'
-  const schedule = scheduledLocal.value ? `定时 ${new Date(scheduledLocal.value).toLocaleString('zh-CN')}` : '立即开始'
-  const taskLimit = toBytesPerSecond(taskSpeedLimitMib.value)
-  return `${content} · ${video} · ${audio} · ${schedule} · ${taskLimit ? formatSpeedLimit(taskLimit) : '不限速'}`
-})
+const restoreDefaults = () => {
+  defaultsRevision.value += 1
+  const defaults = settings.saved
+  downloadDir.value = defaults.download_dir ?? ''
+  archiveMode.value = defaults.archive_mode
+  outputExtension.value = defaults.output_extension
+  mediaMode.value = 'audio_video'
+  mediaPreferences.value = cloneMediaPreferences(defaults.media_preferences)
+  videoQuality.value = mediaPreferences.value.video.length ? 'best' : defaults.quality
+  audioQuality.value = mediaPreferences.value.audio.length ? 'best' : defaults.audio_quality
+  videoCodec.value = mediaPreferences.value.video.length ? 'auto' : defaults.codec
+  namingTemplate.value = defaults.naming_template
+  namingPresets.value = defaults.naming_presets.map((preset) => ({ ...preset }))
+  duplicateNamingStrategy.value = defaults.duplicate_naming_strategy
+  missingQualityPolicy.value = defaults.missing_quality_policy
+  archiveAssets.value = { ...defaults.archive_assets }
+  retainRawStreams.value = defaults.retain_raw_streams
+  embedCover.value = defaults.embed_cover
+  embedSubtitles.value = defaults.embed_subtitles
+  scheduledLocal.value = ''
+  taskSpeedLimitMib.value = ''
+}
 
 const openDialog = async () => {
-  if (!settings.environmentReady) {
-    ui.openEnvironmentDialog()
-    return
-  }
 
   if (selectedSourceIds.value.length === 0 || selectedCount.value === 0) {
     parse.setNotice('请选择要下载的内容', 'warning')
@@ -115,17 +110,8 @@ const openDialog = async () => {
   }
 
   await settings.ensureLoaded()
-  const defaults = settings.changed ? settings.draft : settings.saved
-  downloadDir.value = defaults.download_dir ?? ''
-  archiveMode.value = defaults.archive_mode
-  outputExtension.value = defaults.output_extension
-  mediaMode.value = 'audio_video'
-  videoQuality.value = defaults.quality
-  audioQuality.value = defaults.audio_quality
-  videoCodec.value = defaults.codec
-  saveLayout.value = 'title_folder'
-  scheduledLocal.value = ''
-  taskSpeedLimitMib.value = ''
+  restoreDefaults()
+  activeTab.value = 'general'
   scheduleValidationNow.value = Date.now()
   scheduleMin.value = toDateTimeLocalValue(new Date(scheduleValidationNow.value + 60_000))
   duplicateMatches.value = []
@@ -145,26 +131,33 @@ const createTasks = async (duplicatePolicy: DuplicateTaskPolicy = 'ask') => {
   const sourceIds = duplicatePolicy === 'ask' ? selectedSourceIds.value : duplicatePendingSourceIds.value
   if (sourceIds.length === 0) return
   scheduleValidationNow.value = Date.now()
-  if (scheduleError.value || taskSpeedLimitError.value || embeddingFormatError.value) {
+  if (namingError.value || scheduleError.value || taskSpeedLimitError.value || embeddingFormatError.value) {
     downloadNotice.value = {
-      message: scheduleError.value ?? taskSpeedLimitError.value ?? embeddingFormatError.value ?? '请检查下载设置',
+      message: namingError.value ?? scheduleError.value ?? taskSpeedLimitError.value ?? embeddingFormatError.value ?? '请检查下载设置',
       tone: 'warning',
     }
     return
   }
-  if (!settings.environmentReady) {
-    ui.openEnvironmentDialog()
-    return
-  }
   const result = await parse.createTasksForSources(sourceIds, {
-    downloadDir: downloadDir.value,
+    downloadDir: downloadDir.value.trim() || 'downloads',
     archiveMode: archiveMode.value,
     outputExtension: outputExtension.value,
-    namingTemplate: saveLayout.value === 'download_root' ? directDownloadNamingTemplate : undefined,
+    namingTemplate: namingTemplate.value,
+    duplicateNamingStrategy: duplicateNamingStrategy.value,
+    archiveAssets: { ...archiveAssets.value },
+    retainRawStreams: retainRawStreams.value,
+    embedCover: embedCover.value,
+    embedSubtitles: embedSubtitles.value,
+    missingQualityPolicy: missingQualityPolicy.value,
     mediaMode: mediaMode.value,
     quality: videoQuality.value,
     audioQuality: audioQuality.value,
     codec: videoCodec.value,
+    mediaPreferences: {
+      ...mediaPreferences.value,
+      video: videoQuality.value === 'best' && videoCodec.value === 'auto' ? mediaPreferences.value.video : [],
+      audio: audioQuality.value === 'best' ? mediaPreferences.value.audio : [],
+    },
     duplicatePolicy,
     scheduledAt: scheduledLocal.value ? toScheduledIso(scheduledLocal.value) : undefined,
     speedLimitBytesPerSecond: toBytesPerSecond(taskSpeedLimitMib.value),
@@ -213,70 +206,62 @@ const chooseDownloadDir = async () => {
   }
 }
 
-function optionLabel(options: Array<{ label: string; value: string }>, value: string): string {
-  return options.find((option) => option.value === value)?.label ?? value
-}
 </script>
 
 <template>
-  <UiDialog v-model="downloadDialogOpen" title="下载设置">
-    <section class="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-3 rounded-lg border border-(--color-border) bg-(--color-accent-soft) p-3">
-      <strong class="text-3xl leading-none text-(--color-accent-strong)">{{ selectedCount }}</strong>
-      <div class="grid min-w-0 gap-1">
-        <span class="text-xs font-bold text-(--color-muted)">{{ selectionUnit }}将加入传输</span>
-        <p class="m-0 truncate text-[13px] font-bold text-(--color-text)">{{ selectionTitle }}</p>
-      </div>
-    </section>
-
-    <UiInlineNotice v-if="downloadNotice" :tone="downloadNotice.tone">
-      {{ downloadNotice.message }}
-    </UiInlineNotice>
-
-    <div class="grid gap-3">
-      <div class="directory-row">
-        <UiTextField :model-value="downloadDir" label="保存目录" placeholder="留空时使用 downloads" @update:model-value="updateDownloadDir" />
-        <UiButton variant="secondary" :disabled="activeLoading" @click="chooseDownloadDir">选择</UiButton>
-      </div>
-      <UiSelect v-model="saveLayout" label="文件保存结构" :options="saveLayoutOptions" />
-
-      <section class="grid gap-2">
-        <h3 class="m-0 text-[13px] font-extrabold text-(--color-text)">下载内容</h3>
-        <div class="grid grid-cols-2 gap-3 max-[840px]:grid-cols-1">
-          <UiSelect v-model="mediaMode" label="下载内容" :options="mediaModeOptions" />
-          <UiSelect v-if="includesVideo" v-model="videoQuality" label="视频清晰度" :options="videoQualityOptions" />
-          <UiSelect v-if="includesAudio" v-model="audioQuality" label="音频质量" :options="audioQualityOptions" />
+  <UiDialog v-model="downloadDialogOpen" title="下载设置" :description="`${selectionTitle} · ${selectedCount} ${selectionUnit}`" fixed-height>
+    <UiTabs v-model="activeTab" :tabs="tabs" />
+    <div :key="activeTab" class="download-options-scroll">
+      <UiInlineNotice v-if="downloadNotice" :tone="downloadNotice.tone">{{ downloadNotice.message }}</UiInlineNotice>
+      <div class="grid content-start gap-4">
+        <div v-show="activeTab === 'general'" class="grid gap-4">
+          <div class="directory-row">
+            <UiTextField :model-value="downloadDir" label="保存目录" placeholder="留空时使用 downloads" @update:model-value="updateDownloadDir" />
+            <UiButton variant="secondary" :disabled="activeLoading" @click="chooseDownloadDir">选择</UiButton>
+          </div>
+          <div class="grid grid-cols-2 gap-3 max-[600px]:grid-cols-1">
+            <UiSelect v-model="mediaMode" label="下载内容" :options="mediaModeOptions" />
+            <UiSelect v-model="outputExtension" label="封装格式" :options="outputExtensionOptions" />
+          </div>
+          <NamingTemplatePicker :key="defaultsRevision" v-model="namingTemplate" :presets="namingPresets" :extension="outputExtension" />
+          <UiSelect v-model="duplicateNamingStrategy" label="重名处理" :options="duplicateNamingOptions" helper="目标文件已存在时使用此策略；传输记录中的重复任务会另外提示。" />
         </div>
-      </section>
-
-      <section class="grid gap-2">
-        <h3 class="m-0 text-[13px] font-extrabold text-(--color-text)">开始方式</h3>
-        <div class="grid grid-cols-2 gap-3 max-[840px]:grid-cols-1">
+        <div v-show="activeTab === 'media'" class="grid gap-4">
+          <div class="grid grid-cols-2 gap-3 max-[600px]:grid-cols-1">
+            <UiSelect v-if="includesVideo" v-model="videoQuality" label="视频清晰度" :options="videoQualityOptions" :helper="mediaPreferences.video.length && videoQuality === 'best' && videoCodec === 'auto' ? '按本次优先顺序选择' : undefined" />
+            <UiSelect v-if="includesAudio" v-model="audioQuality" label="音频质量" :options="audioQualityOptions" />
+            <UiSelect v-if="includesVideo" v-model="videoCodec" label="视频编码偏好" :options="codecOptions" />
+            <UiSelect v-model="missingQualityPolicy" label="指定质量不可用时" :options="missingQualityOptions" />
+          </div>
+          <UiDisclosure title="本次优先顺序" description="最优画质 + 自动编码时使用视频排序；最佳可用音频时使用音频排序。" variant="panel">
+            <MediaPreferenceEditor v-model="mediaPreferences" />
+          </UiDisclosure>
+        </div>
+        <div v-show="activeTab === 'assets'" class="grid gap-4">
+          <UiSelect v-model="archiveMode" label="下载范围" :options="archiveModeOptions" />
+          <div v-if="archiveMode === 'custom'" class="grid grid-cols-2 gap-3">
+            <UiCheckbox v-model="archiveAssets.cover" label="保存封面" />
+            <UiCheckbox v-model="archiveAssets.subtitles" label="保存字幕" />
+            <UiCheckbox v-model="archiveAssets.danmaku" label="保存弹幕" />
+            <UiCheckbox v-model="archiveAssets.nfo" label="生成 NFO" />
+          </div>
+          <UiCheckbox v-model="retainRawStreams" label="保留原始视频/音频轨道" />
+          <div class="grid grid-cols-2 gap-3">
+            <UiCheckbox v-model="embedCover" label="嵌入封面（仅 MKV）" />
+            <UiCheckbox v-model="embedSubtitles" label="嵌入字幕（仅 MKV）" />
+          </div>
+        </div>
+        <div v-show="activeTab === 'schedule'" class="grid grid-cols-2 gap-3 max-[600px]:grid-cols-1">
           <UiTextField v-model="scheduledLocal" type="datetime-local" label="开始时间（可选）" :min="scheduleMin" :error="scheduleError" helper="留空时立即加入下载队列" />
           <UiTextField v-model="taskSpeedLimitMib" label="单任务限速（MiB/s）" placeholder="留空时不单独限速" :error="taskSpeedLimitError ?? undefined" helper="留空时仅受全局限速影响" />
         </div>
-      </section>
-
-      <UiDisclosure title="更多选项" :description="downloadAdvancedSummary" variant="panel">
-        <div class="grid grid-cols-2 gap-3 max-[840px]:grid-cols-1">
-          <UiSelect v-if="includesVideo" v-model="videoCodec" label="视频编码偏好" :options="codecOptions" />
-          <UiSelect v-model="outputExtension" label="封装格式" :options="outputExtensionOptions" />
-          <UiSelect v-model="archiveMode" label="附加内容" :options="archiveModeOptions" />
-        </div>
-      </UiDisclosure>
-
-      <UiInlineNotice v-if="embeddingFormatError" tone="danger">{{ embeddingFormatError }}</UiInlineNotice>
-
-      <p class="m-0 wrap-anywhere rounded-md border border-(--color-border) bg-(--color-panel) px-3 py-2 text-xs leading-5 text-(--color-muted)">
-        {{ downloadSettingsSummary }}
-      </p>
+      </div>
+      <UiInlineNotice v-if="embeddingFormatError || namingError || scheduleError || taskSpeedLimitError" tone="danger">{{ embeddingFormatError ?? namingError ?? scheduleError ?? taskSpeedLimitError }}</UiInlineNotice>
     </div>
-
     <template #footer>
+      <UiButton class="mr-auto" variant="ghost" :disabled="activeLoading" @click="restoreDefaults">恢复默认偏好</UiButton>
       <UiButton variant="secondary" :disabled="activeLoading" @click="downloadDialogOpen = false">取消</UiButton>
-      <UiButton
-        :disabled="selectedSourceIds.length === 0 || Boolean(scheduleError) || Boolean(taskSpeedLimitError) || Boolean(embeddingFormatError) || !settings.environmentReady"
-        @click="createTasks()"
-      >加入传输</UiButton>
+      <UiButton :disabled="activeLoading || selectedSourceIds.length === 0 || Boolean(namingError || scheduleError || taskSpeedLimitError || embeddingFormatError)" @click="createTasks()">加入传输</UiButton>
     </template>
   </UiDialog>
 
@@ -304,3 +289,34 @@ function optionLabel(options: Array<{ label: string; value: string }>, value: st
     </template>
   </UiDialog>
 </template>
+
+
+<style scoped>
+.download-options-scroll {
+  min-height: 0;
+  flex: 1 1 0%;
+  display: grid;
+  align-content: start;
+  gap: var(--space-16);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklab, var(--color-muted) 35%, transparent) transparent;
+}
+
+.download-options-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.download-options-scroll::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--color-muted) 35%, transparent);
+  background-clip: padding-box;
+}
+
+.download-options-scroll::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(in oklab, var(--color-muted) 60%, transparent);
+}
+</style>

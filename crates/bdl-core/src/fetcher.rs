@@ -929,8 +929,16 @@ fn validate_get_status(status: StatusCode, resume_from: u64) -> BdlResult<()> {
 }
 
 async fn ensure_parent_dir(path: &Path) -> BdlResult<()> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).await?;
+    if let Some(parent) = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        fs::create_dir_all(parent).await.map_err(|error| {
+            fetch_error(format!(
+                "无法创建下载目录 `{}`：{error}。请检查路径和写入权限，或更换保存目录后重试。",
+                parent.display()
+            ))
+        })?;
     }
     Ok(())
 }
@@ -945,5 +953,40 @@ async fn remove_if_exists(path: &Path) -> BdlResult<()> {
 fn fetch_error(message: impl Into<String>) -> BdlError {
     BdlError::Fetch {
         message: message.into(),
+    }
+}
+
+#[cfg(test)]
+mod directory_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn download_directory_is_created_when_fetching_needs_it() {
+        let root = std::env::temp_dir().join(format!("bdl-dir-{}", uuid::Uuid::new_v4()));
+        let target = root.join("new/nested/video.m4s");
+        assert!(!root.exists());
+        ensure_parent_dir(&target).await.unwrap();
+        assert!(target.parent().unwrap().is_dir());
+        fs::remove_dir_all(&root).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn download_directory_creation_failure_names_path_and_recovery() {
+        let root = std::env::temp_dir().join(format!("bdl-dir-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&root).await.unwrap();
+        let blocker = root.join("file-instead-of-directory");
+        fs::write(&blocker, b"preserve").await.unwrap();
+        let error = ensure_parent_dir(&blocker.join("video.m4s"))
+            .await
+            .unwrap_err()
+            .to_string();
+        assert_eq!(fs::read(&blocker).await.unwrap(), b"preserve");
+        fs::remove_dir_all(&root).await.unwrap();
+        assert!(error.contains("无法创建下载目录"), "{error}");
+        assert!(
+            error.contains(&blocker.to_string_lossy().to_string()),
+            "{error}"
+        );
+        assert!(error.contains("更换保存目录"), "{error}");
     }
 }

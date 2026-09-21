@@ -357,6 +357,11 @@ fn sample_task() -> DownloadTask {
             page_number: Some(2),
         }),
         media_selection: DownloadTaskMediaSelection {
+            processing: Some(bdl_core::queue::TaskProcessingOptions {
+                retain_raw_streams: true,
+                embed_cover: true,
+                embed_subtitles: false,
+            }),
             video_quality: "80".to_owned(),
             audio_quality: "30280".to_owned(),
             video_codec: "avc".to_owned(),

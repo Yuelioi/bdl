@@ -222,8 +222,9 @@ const installTauriMock = async (
                 ],
               };
             }
-            if (command === 'parse_load_all' && args?.request?.source_id === 'favorite:fixture') {
-              pagedFixtureLoaded = Math.min(args.request.limit ?? 401, 401);
+            if (command === 'parse_load_more' && args?.request?.source_id === 'favorite:fixture') {
+              await new Promise((resolve) => setTimeout(resolve, 100));
+              pagedFixtureLoaded = Math.min(pagedFixtureLoaded + 20, 401);
               const hasMore = pagedFixtureLoaded < 401;
               return {
                 source: {
@@ -490,16 +491,16 @@ test('the QR placeholder starts a session without a duplicate footer action', as
   await expect(dialog.getByRole('button', { name: '刷新二维码' })).toBeVisible();
 });
 
-test('startup checks the environment once and blocks parsing when FFmpeg is missing', async ({ page }) => {
+test('startup environment warnings do not block parsing', async ({ page }) => {
   await installTauriMock(page, 'light', false);
   await page.goto('/');
 
   const dialog = page.getByRole('dialog', { name: '下载环境未就绪' });
-  await expect(dialog).toBeVisible();
-  await dialog.getByRole('button', { name: '稍后处理' }).click();
-
-  await expect(page.getByRole('button', { name: '开始解析' })).toBeDisabled();
-  await expect(page.getByText('下载环境未就绪，修复保存目录或 FFmpeg 后才能解析。')).toBeVisible();
+  await expect(dialog).not.toBeVisible();
+  await expect(page.getByRole('button', { name: '开始解析' })).toBeEnabled();
+  await page.getByLabel('链接或 BV / AV').fill('BV1xx411c7mD');
+  await page.getByRole('button', { name: '开始解析' }).click();
+  await expect(page.getByRole('row', { name: /测试视频/ })).toBeVisible();
 
   const environmentChecks = await page.evaluate(
     () =>
@@ -650,43 +651,60 @@ test('parse result uses a back action that clears the workspace and removes adva
   await expect(page.getByText('测试视频', { exact: true })).toHaveCount(0);
 });
 
-test('parse all waits between batches and can be stopped from the bottom action bar', async ({ page }) => {
+test('parse cooldown shows remaining seconds and stops immediately', async ({ page }, testInfo) => {
   await installTauriMock(page, 'light');
   await page.goto('/');
-  await page.getByLabel('Bilibili 链接或 BV / AV').fill('favorite:fixture');
+  await page.getByLabel('链接或 BV / AV').fill('favorite:fixture');
   await page.getByRole('button', { name: '开始解析' }).click();
-
+  await page.evaluate(() => {
+    const runtime = (window as unknown as { __TAURI_INTERNALS__: { invoke: (command: string, args?: unknown) => Promise<unknown> } }).__TAURI_INTERNALS__;
+    const invoke = runtime.invoke;
+    let cancel: (() => void) | undefined;
+    runtime.invoke = async (command, args) => {
+      if (command === 'parse_load_more') return new Promise((_resolve, reject) => { cancel = () => reject(new Error('解析已停止')); });
+      if (command === 'parse_progress') return { active: true, waiting_seconds: 3, queued: false };
+      if (command === 'parse_cancel') { cancel?.(); return; }
+      return invoke(command, args);
+    };
+  });
   const toolbar = page.locator('.source-function-toolbar');
-  await expect(toolbar.getByRole('button', { name: '解析', exact: true })).toBeVisible();
-  await toolbar.getByRole('button', { name: '更多解析方式' }).click();
-  await page.getByRole('menuitem', { name: '解析全部' }).click();
-  await expect(toolbar.getByText('等待 3 秒后继续…')).toBeVisible();
-  await toolbar.getByRole('button', { name: '停止解析' }).click();
-  await expect(toolbar.getByRole('button', { name: '解析', exact: true })).toBeVisible();
-
-  const loadAllCalls = await page.evaluate(
-    () =>
-      ((window as unknown as { __BDL_TEST_INVOKES__: string[] }).__BDL_TEST_INVOKES__ ?? []).filter(
-        (command) => command === 'parse_load_all',
-      ).length,
-  );
-  expect(loadAllCalls).toBe(1);
+  await toolbar.getByRole('button', { name: '解析', exact: true }).click();
+  await expect(toolbar).toContainText('休息 3 秒后继续');
+  await page.screenshot({ path: testInfo.outputPath('parse-cooldown.png') });
+  await toolbar.getByRole('button', { name: '停止解析', exact: true }).click();
+  await expect(toolbar.getByRole('button', { name: '解析', exact: true })).toBeVisible({ timeout: 1000 });
+  await expect(toolbar).toContainText('9 / 401');
+  await expect(page.getByText('解析已停止', { exact: true })).toHaveCount(0);
 });
 
-test('parse and download loads every remaining batch before opening download settings', async ({ page }) => {
+test('parse all can stop at a page boundary', async ({ page }) => {
   await installTauriMock(page, 'light');
   await page.goto('/');
-  await page.getByLabel('Bilibili 链接或 BV / AV').fill('favorite:fixture');
+  await page.getByLabel('链接或 BV / AV').fill('favorite:fixture');
   await page.getByRole('button', { name: '开始解析' }).click();
-
   const toolbar = page.locator('.source-function-toolbar');
+  await expect(toolbar.getByRole('combobox', { name: '每批解析数量' })).toContainText('每批 50');
   await toolbar.getByRole('button', { name: '更多解析方式' }).click();
-  await page.getByRole('menuitem', { name: '解析后下载' }).click();
+  await page.getByRole('menuitem', { name: '解析全部', exact: true }).click();
+  await toolbar.getByRole('button', { name: '停止解析', exact: true }).click();
+  await expect(toolbar.getByRole('button', { name: '解析', exact: true })).toBeVisible();
+});
 
-  const dialog = page.getByRole('dialog', { name: '下载设置' });
-  await expect(dialog).toBeVisible({ timeout: 6_000 });
-  await expect(dialog.getByText('个分集将加入传输')).toBeVisible();
-  await expect(dialog.getByText('9', { exact: true })).toBeVisible();
+test('background parsing downloads progressively and remains visible on another page', async ({ page }, testInfo) => {
+  await installTauriMock(page, 'light');
+  await page.goto('/');
+  await page.getByLabel('链接或 BV / AV').fill('favorite:fixture');
+  await page.getByRole('button', { name: '开始解析' }).click();
+  await page.getByRole('button', { name: '更多解析方式' }).click();
+  await page.getByRole('menuitem', { name: '后台解析全部并下载' }).click();
+  await page.getByRole('button', { name: '设置 偏好与维护' }).click();
+  const status = page.getByRole('region', { name: '后台解析下载' });
+  await expect(status).toBeVisible();
+  await expect(status).toContainText('后台解析下载已完成', { timeout: 15000 });
+  await expect(page.getByRole('dialog', { name: '下载设置' })).not.toBeVisible();
+  const commands = await page.evaluate(() => (window as unknown as { __BDL_TEST_INVOKES__: string[] }).__BDL_TEST_INVOKES__);
+  expect(commands.indexOf('selection_create_tasks')).toBeLessThan(commands.indexOf('parse_load_more'));
+  await page.screenshot({ path: testInfo.outputPath('background-download.png') });
 });
 
 test('batch result selection controls use the shared bottom action bar', async ({ page }) => {
@@ -905,4 +923,245 @@ test('library video cards use checkbox selection and keep the bottom action bar 
     ];
   });
   expect(Math.max(...verticalCenters) - Math.min(...verticalCenters)).toBeLessThanOrEqual(1);
+});
+
+
+test('media preferences reorder combinations while download keeps optimal quality', async ({ page }, testInfo) => {
+  await installTauriMock(page, 'light');
+  await page.addInitScript(() => {
+    const target = window as unknown as { __TAURI_INTERNALS__: { invoke: (command: string, args?: Record<string, unknown>) => Promise<unknown> }; __BDL_MEDIA_REQUEST__?: unknown };
+    const invoke = target.__TAURI_INTERNALS__.invoke;
+    target.__TAURI_INTERNALS__.invoke = async (command, args) => {
+      if (command === 'settings_update') return args?.settings;
+      if (command === 'selection_create_tasks') target.__BDL_MEDIA_REQUEST__ = args?.request;
+      return invoke(command, args);
+    };
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: '设置 偏好与维护' }).click();
+  await page.getByRole('button', { name: /媒体 清晰度/ }).click();
+  await page.getByRole('button', { name: '添加画质' }).click();
+  await page.getByRole('combobox', { name: '第 1 优先画质', exact: true }).click();
+  await page.getByRole('option', { name: 'HDR / 125', exact: true }).click();
+  await page.getByRole('combobox', { name: '第 1 优先编码', exact: true }).click();
+  await page.getByRole('option', { name: 'HEVC / H.265', exact: true }).click();
+  await page.getByRole('button', { name: '添加画质' }).click();
+  await page.getByRole('combobox', { name: '第 2 优先画质', exact: true }).click();
+  await page.getByRole('option', { name: '任意 SDR', exact: true }).click();
+  await page.getByRole('button', { name: '上移第 2 条视频偏好', exact: true }).click();
+  await expect(page.getByRole('combobox', { name: '第 1 优先画质', exact: true })).toContainText('任意 SDR');
+  await page.getByRole('button', { name: '下移第 1 条视频偏好', exact: true }).click();
+  await page.getByRole('button', { name: '添加音质' }).click();
+  await page.getByRole('combobox', { name: '第 1 优先音质', exact: true }).click();
+  await page.getByRole('option', { name: 'Hi-Res 无损 / 30251', exact: true }).click();
+  await page.getByRole('button', { name: '保存', exact: true }).click();
+  await expect(page.getByRole('button', { name: '保存', exact: true })).toBeDisabled();
+  await page.screenshot({ path: testInfo.outputPath('media-preferences-light.png') });
+  await page.setViewportSize({ width: 800, height: 900 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath('media-preferences-narrow.png') });
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.getByRole('button', { name: '解析 添加与选择' }).click();
+  await page.getByLabel('链接或 BV / AV').fill('BV1xx411c7mD');
+  await page.getByRole('button', { name: '开始解析' }).click();
+  await page.getByRole('row', { name: /测试视频/ }).click();
+  await page.getByRole('button', { name: '下载所选 (1)' }).click();
+  const dialog = page.getByRole('dialog', { name: '下载设置' });
+  await dialog.getByRole('tab', { name: '画质与音频' }).click();
+  await expect(dialog.getByRole('combobox', { name: /视频清晰度/ })).toContainText('最优画质');
+  await expect(dialog.getByText('按本次优先顺序选择')).toBeVisible();
+  await dialog.getByRole('button', { name: '加入传输' }).click();
+  const request = await page.evaluate(() => (window as unknown as { __BDL_MEDIA_REQUEST__: { media_preferences: unknown } }).__BDL_MEDIA_REQUEST__);
+  expect(request.media_preferences).toEqual({ video: [{ quality: '125', codec: 'hevc' }, { quality: 'sdr', codec: 'auto' }], audio: ['30251'], fallback: 'best' });
+});
+
+
+test('missing directory allows parsing and explicit SDR task creation', async ({ page }) => {
+  await installTauriMock(page, 'light');
+  await page.addInitScript(() => {
+    const target = window as unknown as { __TAURI_INTERNALS__: { invoke: (command: string, args?: Record<string, unknown>) => Promise<unknown> }; __BDL_SDR_REQUEST__?: unknown };
+    const invoke = target.__TAURI_INTERNALS__.invoke;
+    target.__TAURI_INTERNALS__.invoke = async (command, args) => {
+      const result = await invoke(command, args);
+      if (command === 'environment_health') {
+        return { ...(result as object), ready: false, download_directory: { status: 'missing', path: 'C:\\Downloads\\new-folder', message: '开始下载时自动创建' } };
+      }
+      if (command === 'settings_get') {
+        return { ...(result as object), media_preferences: { video: [{ quality: '125', codec: 'hevc' }], audio: ['30280'], fallback: 'best' } };
+      }
+      if (command === 'selection_create_tasks') target.__BDL_SDR_REQUEST__ = args?.request;
+      return result;
+    };
+  });
+  await page.goto('/');
+  await page.getByLabel('链接或 BV / AV').fill('BV1xx411c7mD');
+  await page.getByRole('button', { name: '开始解析' }).click();
+  await page.getByRole('row', { name: /测试视频/ }).click();
+  await page.getByRole('button', { name: '下载所选 (1)' }).click();
+  const dialog = page.getByRole('dialog', { name: '下载设置' });
+  await dialog.getByRole('tab', { name: '画质与音频' }).click();
+  await dialog.getByRole('combobox', { name: /视频清晰度/ }).click();
+  await page.getByRole('option', { name: 'SDR / 普通动态范围', exact: true }).click();
+  await dialog.getByRole('button', { name: '加入传输' }).click();
+  const result = await page.evaluate(() => {
+    const target = window as unknown as { __BDL_SDR_REQUEST__: { quality: string; media_preferences: { video: unknown[]; audio: string[] } }; __BDL_TEST_INVOKES__: string[] };
+    return { request: target.__BDL_SDR_REQUEST__, creates: target.__BDL_TEST_INVOKES__.filter((name) => name === 'environment_create_download_directory').length };
+  });
+  expect(result.request.quality).toBe('sdr');
+  expect(result.request.media_preferences.video).toEqual([]);
+  expect(result.request.media_preferences.audio).toEqual(['30280']);
+  expect(result.creates).toBe(0);
+});
+
+
+test('download tabs use saved presets and keep overrides local', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1100, height: 900 });
+  await installTauriMock(page, 'light');
+  await page.addInitScript(() => {
+    const target = window as unknown as { __TAURI_INTERNALS__: { invoke: (command: string, args?: Record<string, unknown>) => Promise<unknown> }; __BDL_PRESET_REQUEST__?: unknown };
+    const invoke = target.__TAURI_INTERNALS__.invoke;
+    target.__TAURI_INTERNALS__.invoke = async (command, args) => {
+      const result = await invoke(command, args);
+      if (command === 'settings_get') return { ...(result as object), naming_template: '{title}/{part_title}.{ext}', naming_presets: [{ id: 'favorites', name: '我的收藏', template: '{title}.{ext}' }] };
+      if (command === 'selection_create_tasks') target.__BDL_PRESET_REQUEST__ = args?.request;
+      return result;
+    };
+  });
+  await page.goto('/');
+  await page.getByLabel('链接或 BV / AV').fill('BV1xx411c7mD');
+  await page.getByRole('button', { name: '开始解析' }).click();
+  await page.getByRole('row', { name: /测试视频/ }).click();
+  await page.getByRole('button', { name: '下载所选 (1)' }).click();
+  const dialog = page.getByRole('dialog', { name: '下载设置' });
+  await expect(dialog.getByRole('tab', { name: '常规', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await dialog.getByRole('combobox', { name: '命名预设', exact: true }).click();
+  await page.getByRole('option', { name: '我的收藏', exact: true }).click();
+  await dialog.getByRole('combobox', { name: /重名处理/ }).click();
+  await page.getByRole('option', { name: '扩展文件名', exact: true }).click();
+  await dialog.getByRole('button', { name: '取消', exact: true }).click();
+  await page.getByRole('button', { name: '下载所选 (1)' }).click();
+  await expect(dialog.getByRole('combobox', { name: /重名处理/ })).toContainText('已有文件则跳过');
+  await expect(dialog.getByRole('textbox', { name: '命名模板', exact: true })).toHaveValue('{title}/{part_title}.{ext}');
+  await dialog.getByRole('combobox', { name: '命名预设', exact: true }).click();
+  await page.getByRole('option', { name: '我的收藏', exact: true }).click();
+  await dialog.getByRole('combobox', { name: /重名处理/ }).click();
+  await page.getByRole('option', { name: '扩展文件名', exact: true }).click();
+  await expect(dialog.getByRole('combobox', { name: '命名预设', exact: true })).toContainText('我的收藏');
+  await expect(page.getByRole('listbox')).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath('download-general.png') });
+  const generalBounds = await dialog.boundingBox();
+  await dialog.getByRole('tab', { name: '画质与音频' }).click();
+  await expect.poll(async () => (await dialog.boundingBox())?.height).toBe(generalBounds?.height);
+  await expect.poll(async () => (await dialog.boundingBox())?.y).toBe(generalBounds?.y);
+  await page.screenshot({ path: testInfo.outputPath('download-media.png') });
+  await page.setViewportSize({ width: 900, height: 600 });
+  await dialog.getByRole('tab', { name: '常规', exact: true }).click();
+  const scrollArea = dialog.locator('.download-options-scroll');
+  await expect.poll(() => scrollArea.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);
+  await scrollArea.evaluate((element) => { element.scrollTop = element.scrollHeight; });
+  await expect.poll(() => scrollArea.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+  await expect(dialog.getByRole('button', { name: '恢复默认偏好' })).toBeInViewport();
+  await expect(dialog.getByRole('tab', { name: '常规', exact: true })).toBeInViewport();
+  await page.screenshot({ path: testInfo.outputPath('download-scroll.png') });
+  await dialog.getByRole('button', { name: '加入传输' }).click();
+  const result = await page.evaluate(() => {
+    const target = window as unknown as { __BDL_PRESET_REQUEST__: { naming_template: string; duplicate_naming_strategy: string }; __BDL_TEST_INVOKES__: string[] };
+    return { request: target.__BDL_PRESET_REQUEST__, saves: target.__BDL_TEST_INVOKES__.filter((name) => name === 'settings_update').length };
+  });
+  expect(result.request.naming_template).toBe('{title}.{ext}');
+  expect(result.request.duplicate_naming_strategy).toBe('append_suffix');
+  expect(result.saves).toBe(0);
+});
+
+
+test('saved naming presets are reusable while unsaved defaults stay in settings', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1100, height: 900 });
+  await installTauriMock(page, 'light');
+  await page.addInitScript(() => {
+    const target = window as unknown as { __TAURI_INTERNALS__: { invoke: (command: string, args?: Record<string, unknown>) => Promise<unknown> } };
+    const invoke = target.__TAURI_INTERNALS__.invoke;
+    target.__TAURI_INTERNALS__.invoke = async (command, args) => command === 'settings_update' ? args?.settings : invoke(command, args);
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: '设置 偏好与维护' }).click();
+  await page.getByRole('button', { name: /文件命名/ }).click();
+  await page.getByRole('textbox', { name: '命名模板', exact: true }).fill('{owner_name}/{title}.{ext}');
+  await page.getByRole('textbox', { name: '预设名称', exact: true }).fill('按 UP 收藏');
+  await page.getByRole('button', { name: '保存为预设', exact: true }).click();
+  await page.getByRole('button', { name: '保存', exact: true }).click();
+  await expect(page.getByRole('button', { name: '保存', exact: true })).toBeDisabled();
+  await page.screenshot({ path: testInfo.outputPath('naming-presets-settings.png') });
+  await page.getByRole('textbox', { name: '命名模板', exact: true }).fill('{bvid}.{ext}');
+  await page.getByRole('button', { name: '解析 添加与选择' }).click();
+  await page.getByLabel('链接或 BV / AV').fill('BV1xx411c7mD');
+  await page.getByRole('button', { name: '开始解析' }).click();
+  await page.getByRole('row', { name: /测试视频/ }).click();
+  await page.getByRole('button', { name: '下载所选 (1)' }).click();
+  const dialog = page.getByRole('dialog', { name: '下载设置' });
+  await expect(dialog.getByRole('combobox', { name: '命名预设', exact: true })).toContainText('按 UP 收藏');
+  await expect(dialog.getByText('文件名预览：')).toContainText('示例UP/示例视频.mp4');
+});
+
+
+test('download archive settings inherit defaults and override processing per task', async ({ page }, testInfo) => {
+  await installTauriMock(page, 'light');
+  await page.addInitScript(() => {
+    const target = window as unknown as { __TAURI_INTERNALS__: { invoke: (command: string, args?: Record<string, unknown>) => Promise<unknown> }; __BDL_ARCHIVE_REQUEST__?: unknown };
+    const invoke = target.__TAURI_INTERNALS__.invoke;
+    target.__TAURI_INTERNALS__.invoke = async (command, args) => {
+      const result = await invoke(command, args);
+      if (command === 'settings_get') return { ...(result as object), output_extension: 'mkv', archive_mode: 'custom', retain_raw_streams: true, embed_cover: true, embed_subtitles: true };
+      if (command === 'selection_create_tasks') target.__BDL_ARCHIVE_REQUEST__ = args?.request;
+      return result;
+    };
+  });
+  await page.goto('/');
+  await page.getByLabel('链接或 BV / AV').fill('BV1xx411c7mD');
+  await page.getByRole('button', { name: '开始解析' }).click();
+  await page.getByRole('row', { name: /测试视频/ }).click();
+  await page.getByRole('button', { name: '下载所选 (1)' }).click();
+  const dialog = page.getByRole('dialog', { name: '下载设置' });
+  await dialog.getByRole('tab', { name: '附加内容', exact: true }).click();
+  for (const label of ['保留原始视频/音频轨道', '嵌入封面（仅 MKV）', '嵌入字幕（仅 MKV）']) {
+    await expect(dialog.getByRole('checkbox', { name: label, exact: true })).toBeChecked();
+    await dialog.getByRole('checkbox', { name: label, exact: true }).uncheck();
+  }
+  await page.screenshot({ path: testInfo.outputPath('download-archive.png') });
+  await dialog.getByRole('button', { name: '加入传输' }).click();
+  const result = await page.evaluate(() => {
+    const target = window as unknown as { __BDL_ARCHIVE_REQUEST__: Record<string, unknown>; __BDL_TEST_INVOKES__: string[] };
+    return { request: target.__BDL_ARCHIVE_REQUEST__, saves: target.__BDL_TEST_INVOKES__.filter((name) => name === 'settings_update').length };
+  });
+  expect(result.request).toMatchObject({ retain_raw_streams: false, embed_cover: false, embed_subtitles: false, archive_mode: 'custom', output_extension: 'mkv' });
+  expect(result.saves).toBe(0);
+});
+
+
+test('pagination presets save rules and allow custom cooldown', async ({ page }, testInfo) => {
+  await installTauriMock(page, 'light');
+  await page.addInitScript(() => {
+    const target = window as unknown as { __TAURI_INTERNALS__: { invoke: (command: string, args?: Record<string, unknown>) => Promise<unknown> }; __RULES__?: unknown };
+    const invoke = target.__TAURI_INTERNALS__.invoke;
+    target.__TAURI_INTERNALS__.invoke = async (command, args) => {
+      if (command === 'settings_update') { target.__RULES__ = (args?.settings as { parse_rules: unknown }).parse_rules; return args?.settings; }
+      return invoke(command, args);
+    };
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: '设置 偏好与维护' }).click();
+  await expect(page.getByRole('combobox', { name: '解析预设', exact: true })).toContainText('标准');
+  await expect(page.getByText('解析约 200 条，额外等待约 5 秒，不含网络耗时。')).toBeVisible();
+  await page.getByRole('button', { name: '为什么解析需要等待' }).hover();
+  await expect(page.locator('[data-slot="text"]').filter({ hasText: 'B站可能限制连续请求' })).toBeVisible();
+  await page.getByRole('heading', { name: '解析节奏' }).hover();
+  await page.getByRole('combobox', { name: '解析预设', exact: true }).click();
+  await page.getByRole('option', { name: '快速', exact: true }).click();
+  await expect(page.getByRole('combobox', { name: '每批解析', exact: true })).toContainText('100 条');
+  await page.getByRole('combobox', { name: '每100条休息', exact: true }).click();
+  await page.getByRole('option', { name: '10 秒', exact: true }).click();
+  await expect(page.getByRole('combobox', { name: '解析预设', exact: true })).toContainText('自定义');
+  await page.getByRole('button', { name: '保存', exact: true }).click();
+  await expect(page.getByRole('button', { name: '保存', exact: true })).toBeDisabled();
+  expect(await page.evaluate(() => (window as unknown as { __RULES__: unknown }).__RULES__)).toEqual({ pages_per_round: 5, interval_seconds: 1, rest_seconds: 10 });
+  await page.screenshot({ path: testInfo.outputPath('pagination-presets.png') });
 });

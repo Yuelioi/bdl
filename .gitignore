@@ -54,3 +54,9 @@ apps/**/src-tauri/downloads/
 /output/
 /logs/
 .bdl-run
+
+# Local promo/video production workspace
+/promo/
+
+# Local work notes and handoffs
+/flightdeck/

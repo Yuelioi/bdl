@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { DownloadDirectoryHealth, EnvironmentHealthSnapshot } from '../api/dto'
 import { environmentCreateDownloadDirectory, environmentHealth, settingsGet } from '../api/tauri'
-import { embeddingContainerError, useSettingsStore } from './settings'
+import { cloneMediaPreferences, embeddingContainerError, useSettingsStore } from './settings'
 
 vi.mock('../api/tauri', () => ({
   diagnosticsExport: vi.fn(),
@@ -132,6 +132,39 @@ describe('settings media compatibility', () => {
 })
 
 describe('settings defaults', () => {
+  it('fills every missing field, including nested objects, using the current defaults', () => {
+    setActivePinia(createPinia())
+    const store = useSettingsStore()
+    const defaults = JSON.parse(JSON.stringify(store.saved))
+    const check = (object: Record<string, unknown>, path: string[] = []) => {
+      for (const [key, value] of Object.entries(object)) {
+        const partial = JSON.parse(JSON.stringify(defaults))
+        const parent = path.reduce((node, segment) => node[segment], partial)
+        delete parent[key]
+        store.apply(partial)
+        expect(store.saved, `missing ${[...path, key].join('.')}`).toEqual(defaults)
+        if (value && typeof value === 'object' && !Array.isArray(value)) check(value as Record<string, unknown>, [...path, key])
+      }
+    }
+    check(defaults)
+  })
+
+  it('keeps explicit choices when loading a partial configuration without a version', () => {
+    setActivePinia(createPinia())
+    const store = useSettingsStore()
+    const partial = {
+      naming_template: '{title}/{title} - P{part_index} - {part_title}.{ext}',
+      quality: '80', codec: 'hevc', segment_count: 1, retry_count: 0,
+      auto_refresh_expired_urls: false, archive_assets: { cover: false },
+      parse_rules: { interval_seconds: 2 }, media_preferences: { video: [], fallback: 'error' },
+    }
+    store.apply(partial as unknown as Parameters<typeof store.apply>[0])
+    expect(store.saved).toMatchObject(partial)
+    expect(store.saved.parse_rules.rest_seconds).toBe(3)
+    expect(store.saved.archive_assets.subtitles).toBe(true)
+    expect(store.saved.media_preferences.audio).toEqual([])
+  })
+
   it('defaults name collisions to skipping an existing final output', () => {
     setActivePinia(createPinia())
     const store = useSettingsStore()
@@ -151,4 +184,65 @@ describe('settings defaults', () => {
     expect(store.draft.concurrent_tasks).toBe(1)
     expect(store.saved.concurrent_tasks).toBe(5)
   })
+})
+
+
+describe('media preferences settings', () => {
+  beforeEach(() => setActivePinia(createPinia()))
+
+  it('preserves HDR quality and independently clones ordered preferences', () => {
+    const store = useSettingsStore()
+    store.setVideoQuality('sdr')
+    expect(store.draft.quality).toBe('sdr')
+    store.setVideoQuality('125')
+    expect(store.draft.quality).toBe('125')
+    store.setVideoQuality('126')
+    expect(store.draft.quality).toBe('126')
+    const preferences = { video: [{ quality: '125', codec: 'hevc' as const }], audio: ['30251', '30280'], fallback: 'error' as const }
+    store.apply({ ...store.saved, media_preferences: preferences })
+    store.draft.media_preferences.video[0]!.quality = '126'
+    store.draft.media_preferences.audio.reverse()
+    expect(store.saved.media_preferences).toEqual(preferences)
+    expect(store.changed).toBe(true)
+  })
+
+  it('loads settings written before preferences were introduced', () => {
+    const store = useSettingsStore()
+    const oldSettings = JSON.parse(JSON.stringify(store.saved))
+    delete oldSettings.media_preferences
+    store.apply(oldSettings)
+    expect(store.draft.media_preferences).toEqual({ video: [], audio: [], fallback: 'best' })
+  })
+})
+
+
+describe('naming presets', () => {
+  beforeEach(() => setActivePinia(createPinia()))
+
+  it('keeps personal presets in the draft until saved and updates by name', () => {
+    const store = useSettingsStore()
+    store.draft.naming_template = '{title}.{ext}'
+    expect(store.saveNamingPreset('收藏')).toBe(true)
+    const id = store.draft.naming_presets[0].id
+    expect(store.saved.naming_presets).toEqual([])
+    store.draft.naming_template = '{title}/{part_title}.{ext}'
+    store.saveNamingPreset('收藏')
+    expect(store.draft.naming_presets).toEqual([{ id, name: '收藏', template: '{title}/{part_title}.{ext}' }])
+    store.apply(store.draft)
+    store.draft.naming_presets[0].name = '修改'
+    expect(store.saved.naming_presets[0].name).toBe('收藏')
+    store.resetDraft()
+    expect(store.draft.naming_presets[0].name).toBe('收藏')
+    store.removeNamingPreset(id)
+    expect(store.saved.naming_presets).toHaveLength(1)
+  })
+})
+
+
+it('expands legacy unrestricted video rules into the default concrete quality order', () => {
+  const legacy = { video: [{ quality: 'best', codec: 'hevc' as const }], audio: [], fallback: 'best' as const }
+  const preferences = cloneMediaPreferences(legacy)
+  expect(preferences.video.map((rule) => rule.quality)).toEqual(['127', '126', '125', '120', '116', '112', '80', '74', '64', '32', '16'])
+  expect(preferences.video.every((rule) => rule.codec === 'hevc')).toBe(true)
+  expect(legacy.video[0].quality).toBe('best')
 })

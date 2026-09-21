@@ -42,20 +42,20 @@ describe('EnvironmentHealthPanel', () => {
     expect(wrapper.get('[role="status"]').attributes('aria-live')).toBe('polite')
   })
 
-  it('offers repairs for the reported directory and configured FFmpeg', async () => {
+  it('leaves missing directories for download time and offers FFmpeg repairs', async () => {
     const wrapper = mount(EnvironmentHealthPanel, {
       props: { health: unhealthyEnvironment },
       global,
     })
     const buttons = wrapper.findAll('button')
 
-    await buttons.find((button) => button.text() === '创建目录')?.trigger('click')
+    expect(wrapper.text()).toContain('下载时创建')
+    expect(buttons.some((button) => button.text() === '创建目录')).toBe(false)
     await buttons.find((button) => button.text() === '重新选择')?.trigger('click')
     await buttons.find((button) => button.text() === '选择 FFmpeg')?.trigger('click')
     await buttons.find((button) => button.text() === '使用系统版本')?.trigger('click')
 
     expect(wrapper.emitted()).toMatchObject({
-      createDirectory: [[]],
       chooseDirectory: [[]],
       chooseFfmpeg: [[]],
       useSystemFfmpeg: [[]],

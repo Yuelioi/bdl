@@ -8,6 +8,7 @@ authors.workspace = true
 
 [dependencies]
 bdl-core = { path = "../bdl-core" }
+bpi-rs.workspace = true
 chrono.workspace = true
 futures.workspace = true
 ring = "0.17"
@@ -25,3 +26,6 @@ keyring = { version = "3.6.3", default-features = false, features = ["windows-na
 
 [target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
 keyring = { version = "3.6.3", default-features = false, features = ["linux-native-sync-persistent", "crypto-rust"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }

@@ -31,18 +31,25 @@ export const retryCountOptions = options([
   { label: '5', value: '5' },
 ]);
 export const videoQualityOptions = options([
-  { label: '最佳可用', value: 'best' },
+  { label: '最优画质', value: 'best' },
+  { label: 'SDR / 普通动态范围', value: 'sdr' },
   { label: '8K / 127', value: '127' },
+  { label: '杜比视界 / 126', value: '126' },
+  { label: 'HDR / 125', value: '125' },
   { label: '4K / 120', value: '120' },
   { label: '1080P60 / 116', value: '116' },
   { label: '1080P+ / 112', value: '112' },
   { label: '1080P / 80', value: '80' },
+  { label: '720P60 / 74', value: '74' },
   { label: '720P / 64', value: '64' },
   { label: '480P / 32', value: '32' },
   { label: '360P / 16', value: '16' },
 ]);
 export const audioQualityOptions = options([
   { label: '最佳可用', value: 'best' },
+  { label: 'Hi-Res 无损 / 30251', value: '30251' },
+  { label: '杜比全景声 / 30250', value: '30250' },
+  { label: 'Dolby Audio / 30255', value: '30255' },
   { label: '高音质 / 30280', value: '30280' },
   { label: '中音质 / 30232', value: '30232' },
   { label: '低音质 / 30216', value: '30216' },

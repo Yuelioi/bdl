@@ -3,6 +3,7 @@ use bpi_rs::BpiClient;
 use bpi_rs::fav::FavListDetailParams;
 use bpi_rs::fav::list::FavListMedia;
 use bpi_rs::ids::MediaId;
+use std::sync::Arc;
 use url::Url;
 
 use super::paged::{PageRequest, PagedSourceKind};
@@ -66,7 +67,7 @@ impl FavoriteResolver<BpiFavoriteApi> {
             .map_err(|error| BdlError::Bpi(error.to_string()))
     }
 
-    pub fn from_bpi_client(client: BpiClient) -> Self {
+    pub fn from_bpi_client(client: impl Into<Arc<BpiClient>>) -> Self {
         Self::with_api(BpiFavoriteApi::from_client(client))
     }
 }
@@ -116,7 +117,7 @@ where
 }
 
 pub struct BpiFavoriteApi {
-    client: BpiClient,
+    client: Arc<BpiClient>,
 }
 
 impl BpiFavoriteApi {
@@ -126,8 +127,10 @@ impl BpiFavoriteApi {
             .map_err(|error| BdlError::Bpi(error.to_string()))
     }
 
-    pub fn from_client(client: BpiClient) -> Self {
-        Self { client }
+    pub fn from_client(client: impl Into<Arc<BpiClient>>) -> Self {
+        Self {
+            client: client.into(),
+        }
     }
 }
 

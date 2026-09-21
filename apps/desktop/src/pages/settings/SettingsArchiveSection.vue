@@ -17,7 +17,6 @@ const {
   settingsEmbedCover,
   settingsEmbedSubtitles,
   settingsEmbeddingFormatError,
-  settingsArchiveDescription,
 } = form;
 </script>
 
@@ -52,6 +51,5 @@ const {
     <UiInlineNotice v-if="settingsEmbeddingFormatError" tone="danger">{{
       settingsEmbeddingFormatError
     }}</UiInlineNotice>
-    <p class="settings-note">{{ settingsArchiveDescription }}</p>
   </section>
 </template>

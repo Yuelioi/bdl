@@ -4,20 +4,22 @@ import { computed } from 'vue'
 import UiButton from '../../ui/Button.vue'
 import UiIconButton from '../../ui/IconButton.vue'
 import ParseBatchSizeSelect from './ParseBatchSizeSelect.vue'
+import ParseActivityStatus from '../../ui/ParseActivityStatus.vue'
 
-const batchSize = defineModel<string>('batchSize', { default: '200' })
+const batchSize = defineModel<string>('batchSize', { default: '50' })
 const {
   hasMore,
   loading = false,
   parsingAll = false,
-  waiting = false,
   stopping = false,
+  sourceId,
 } = defineProps<{
   hasMore: boolean
   loading?: boolean
   parsingAll?: boolean
   waiting?: boolean
   stopping?: boolean
+  sourceId?: string
 }>()
 const emit = defineEmits<{ parseBatch: []; parseAll: []; parseAndDownload: []; stop: [] }>()
 const parseMenuItems = computed(() => [
@@ -27,7 +29,7 @@ const parseMenuItems = computed(() => [
     onSelect: () => emit('parseAll'),
   },
   {
-    label: '解析后下载',
+    label: '后台解析全部并下载',
     icon: 'i-tabler-download',
     onSelect: () => emit('parseAndDownload'),
   },
@@ -36,9 +38,10 @@ const parseMenuItems = computed(() => [
 
 <template>
   <div class="source-parse-controls">
-    <template v-if="parsingAll">
+    <template v-if="parsingAll || loading">
       <span class="paced-parse-status" role="status">
-        {{ stopping ? '正在停止…' : waiting ? '等待 3 秒后继续…' : '正在解析当前批…' }}
+        <ParseActivityStatus v-if="sourceId" :source-id="sourceId" :stopping="stopping" />
+        <span v-else>{{ stopping ? '正在停止…' : '正在解析…' }}</span>
       </span>
       <UiButton size="compact" variant="secondary" :disabled="stopping" @click="emit('stop')">
         {{ stopping ? '正在停止' : '停止解析' }}

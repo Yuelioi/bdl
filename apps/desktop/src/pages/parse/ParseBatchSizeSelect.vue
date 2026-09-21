@@ -1,11 +1,12 @@
 <script setup lang="ts">
-const model = defineModel<string>({ default: '200' })
+const model = defineModel<string>({ default: '50' })
 const { disabled = false } = defineProps<{ disabled?: boolean }>()
 
 const options = [
+  { label: '每批 50', value: '50' },
+  { label: '每批 100', value: '100' },
   { label: '每批 200', value: '200' },
-  { label: '每批 500', value: '500' },
-  { label: '每批 1000', value: '1000' },
+
 ]
 </script>
 

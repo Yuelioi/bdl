@@ -198,10 +198,17 @@ pub struct SelectionCreateTasksRequest {
     pub archive_mode: Option<String>,
     pub output_extension: Option<String>,
     pub naming_template: Option<String>,
+    pub duplicate_naming_strategy: Option<bdl_core::naming::DuplicateNamingStrategy>,
+    pub archive_assets: Option<bdl_core::planner::ArchiveAssetSelection>,
+    pub retain_raw_streams: Option<bool>,
+    pub embed_cover: Option<bool>,
+    pub embed_subtitles: Option<bool>,
+    pub missing_quality_policy: Option<String>,
     pub media_mode: Option<String>,
     pub quality: Option<String>,
     pub audio_quality: Option<String>,
     pub codec: Option<String>,
+    pub media_preferences: Option<bdl_core::media_preferences::MediaPreferences>,
     pub scheduled_at: Option<String>,
     pub speed_limit_bytes_per_second: Option<u64>,
     #[serde(default)]
@@ -336,6 +343,20 @@ impl From<&SettingsSnapshot> for DownloadRuntimeOptions {
     }
 }
 
+impl DownloadRuntimeOptions {
+    fn with_processing(
+        mut self,
+        processing: Option<bdl_core::queue::TaskProcessingOptions>,
+    ) -> Self {
+        if let Some(processing) = processing {
+            self.retain_raw_streams = processing.retain_raw_streams;
+            self.embed_cover = processing.embed_cover;
+            self.embed_subtitles = processing.embed_subtitles;
+        }
+        self
+    }
+}
+
 pub(crate) struct QueueTaskLaunchContext {
     pub(crate) settings: SettingsSnapshot,
     pub(crate) fetch_config: FetchConfig,
@@ -375,6 +396,19 @@ pub async fn parse_create_source(
         .await?;
     events::emit(&app, events::PARSE_SOURCE_UPDATED, &tree)?;
     Ok(tree)
+}
+
+#[tauri::command]
+pub fn parse_cancel(state: State<'_, AppState>, source_id: String) {
+    state.cancel_parse(&source_id);
+}
+
+#[tauri::command]
+pub fn parse_progress(
+    state: State<'_, AppState>,
+    source_id: String,
+) -> crate::parse_control::ParseProgress {
+    state.parse_progress(&source_id)
 }
 
 #[tauri::command]
@@ -427,58 +461,14 @@ pub async fn selection_create_tasks(
     state: State<'_, AppState>,
     request: SelectionCreateTasksRequest,
 ) -> CommandResult<SelectionCreateTasksResult> {
+    let settings = state.settings()?;
+    let options = download_options_from_request(&request, &settings)?;
     let source_id = SourceId(request.source_id);
     let duplicate_policy = request.duplicate_policy;
     let scheduled_at = parse_future_schedule(request.scheduled_at.as_deref(), Utc::now())?;
     let speed_limit_bytes_per_second =
         parse_speed_limit(request.speed_limit_bytes_per_second, "单任务下载限速")?;
-    let settings = state.settings()?;
     let selected_part_ids = request.part_ids.into_iter().map(PartId).collect::<Vec<_>>();
-
-    let output_dir = request
-        .output_dir
-        .as_deref()
-        .or(settings.download_dir.as_deref())
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("downloads"));
-
-    let archive_mode = parse_archive_mode(
-        request
-            .archive_mode
-            .as_deref()
-            .unwrap_or(&settings.archive_mode),
-    )?;
-
-    let mut options = DownloadOptions::new(output_dir).with_archive_mode(archive_mode);
-    let output_extension = request
-        .output_extension
-        .as_deref()
-        .map(ToOwned::to_owned)
-        .unwrap_or_else(|| settings.output_extension.clone());
-    validate_embedding_container(
-        &output_extension,
-        settings.embed_cover,
-        settings.embed_subtitles,
-    )?;
-    options.output_extension = output_extension;
-    options.media_mode =
-        DownloadMediaMode::parse(request.media_mode.as_deref().unwrap_or("audio_video"))?;
-    options.naming_template = request.naming_template.unwrap_or(settings.naming_template);
-    options.duplicate_naming_strategy = settings.duplicate_naming_strategy;
-    options.video_quality = StreamPreference::parse(
-        request.quality.as_deref().unwrap_or(&settings.quality),
-        "视频清晰度",
-    )?;
-    options.audio_quality = StreamPreference::parse(
-        request
-            .audio_quality
-            .as_deref()
-            .unwrap_or(&settings.audio_quality),
-        "音频质量",
-    )?;
-    options.video_codec = parse_stream_codec(request.codec.as_deref().unwrap_or(&settings.codec))?;
-    options.missing_quality_policy = MissingQualityPolicy::parse(&settings.missing_quality_policy)?;
-    options.archive_assets = settings.archive_assets;
 
     let prepared = state
         .prepare_selection(&source_id, &selected_part_ids)
@@ -520,6 +510,80 @@ pub async fn selection_create_tasks(
         skipped_existing,
         requires_confirmation: outcome.requires_confirmation,
     })
+}
+
+fn download_options_from_request(
+    request: &SelectionCreateTasksRequest,
+    settings: &SettingsSnapshot,
+) -> CommandResult<DownloadOptions> {
+    let output_dir = request
+        .output_dir
+        .as_deref()
+        .or(settings.download_dir.as_deref())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("downloads"));
+
+    let archive_mode = parse_archive_mode(
+        request
+            .archive_mode
+            .as_deref()
+            .unwrap_or(&settings.archive_mode),
+    )?;
+
+    let mut options = DownloadOptions::new(output_dir).with_archive_mode(archive_mode);
+    let output_extension = request
+        .output_extension
+        .as_deref()
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| settings.output_extension.clone());
+    let processing = bdl_core::queue::TaskProcessingOptions {
+        retain_raw_streams: request
+            .retain_raw_streams
+            .unwrap_or(settings.retain_raw_streams),
+        embed_cover: request.embed_cover.unwrap_or(settings.embed_cover),
+        embed_subtitles: request.embed_subtitles.unwrap_or(settings.embed_subtitles),
+    };
+    options.processing = Some(processing);
+    validate_embedding_container(
+        &output_extension,
+        processing.embed_cover,
+        processing.embed_subtitles,
+    )?;
+    options.output_extension = output_extension;
+    options.media_mode =
+        DownloadMediaMode::parse(request.media_mode.as_deref().unwrap_or("audio_video"))?;
+    options.naming_template = request
+        .naming_template
+        .clone()
+        .unwrap_or_else(|| settings.naming_template.clone());
+    options.duplicate_naming_strategy = request
+        .duplicate_naming_strategy
+        .unwrap_or(settings.duplicate_naming_strategy);
+    options.video_quality =
+        StreamPreference::parse_video(request.quality.as_deref().unwrap_or(&settings.quality))?;
+    options.audio_quality = StreamPreference::parse(
+        request
+            .audio_quality
+            .as_deref()
+            .unwrap_or(&settings.audio_quality),
+        "音频质量",
+    )?;
+    options.video_codec = parse_stream_codec(request.codec.as_deref().unwrap_or(&settings.codec))?;
+    options.missing_quality_policy = MissingQualityPolicy::parse(
+        request
+            .missing_quality_policy
+            .as_deref()
+            .unwrap_or(&settings.missing_quality_policy),
+    )?;
+    options.media_preferences = request
+        .media_preferences
+        .clone()
+        .unwrap_or_else(|| settings.media_preferences.clone());
+    options.media_preferences.validate()?;
+    options.archive_assets = request.archive_assets.unwrap_or(settings.archive_assets);
+
+    bdl_core::naming::validate_template(&options.naming_template)?;
+    Ok(options)
 }
 
 #[tauri::command]
@@ -939,8 +1003,10 @@ pub async fn environment_health(
     let download_path = resolve_download_directory(request.download_dir.as_deref())?;
     let download_directory = check_download_directory(download_path).await;
     let ffmpeg = check_ffmpeg(request.ffmpeg_path.as_deref()).await;
-    let ready = download_directory.status == DownloadDirectoryStatus::Ready
-        && ffmpeg.status == FfmpegStatus::Ready;
+    let ready = matches!(
+        download_directory.status,
+        DownloadDirectoryStatus::Ready | DownloadDirectoryStatus::Missing
+    ) && ffmpeg.status == FfmpegStatus::Ready;
 
     Ok(EnvironmentHealthSnapshot {
         ready,
@@ -1221,7 +1287,7 @@ async fn check_download_directory(path: PathBuf) -> DownloadDirectoryHealth {
             return DownloadDirectoryHealth {
                 status: DownloadDirectoryStatus::Missing,
                 path: display_path,
-                message: "保存目录尚未创建。".to_owned(),
+                message: "开始下载时将自动创建保存目录。".to_owned(),
             };
         }
         Err(error) => {
@@ -1374,6 +1440,11 @@ async fn run_download_task_inner(
     runtime_options: DownloadRuntimeOptions,
     cancel_token: FetchCancelToken,
 ) -> CommandResult<()> {
+    let runtime_options = runtime_options.with_processing(task.media_selection.processing);
+    let muxer = MediaMuxer::new(MediaMuxerConfig {
+        ffmpeg_path: runtime_options.ffmpeg_path.clone(),
+    })
+    .map_err(BdlError::from)?;
     for resource in task
         .resources
         .iter()
@@ -1488,10 +1559,6 @@ async fn run_download_task_inner(
         .map(|resource| resource.target_path.clone());
     let audio_path = completed_resource_by_intent(&latest, DownloadResourceIntent::Audio)
         .map(|resource| resource.target_path.clone());
-    let muxer = MediaMuxer::new(MediaMuxerConfig {
-        ffmpeg_path: runtime_options.ffmpeg_path.clone(),
-    })
-    .map_err(BdlError::from)?;
     muxer
         .mux(&MuxRequest {
             video_path,
@@ -1884,6 +1951,68 @@ mod tests {
         DownloadTaskMediaSelection, QueueLogEntry, QueueLogLevel, ResourceStatus, TaskStatus,
     };
     use chrono::{TimeZone, Utc};
+
+    #[test]
+    fn task_processing_overrides_runtime_defaults_and_survives_serialization() {
+        let settings = super::SettingsSnapshot {
+            retain_raw_streams: true,
+            embed_cover: true,
+            embed_subtitles: true,
+            ..Default::default()
+        };
+        let request: super::SelectionCreateTasksRequest = serde_json::from_value(serde_json::json!({
+            "source_id": "test", "part_ids": [], "retain_raw_streams": false, "embed_cover": false, "embed_subtitles": false
+        })).unwrap();
+        let options = super::download_options_from_request(&request, &settings).unwrap();
+        let selection = bdl_core::queue::DownloadTaskMediaSelection {
+            processing: options.processing,
+            ..Default::default()
+        };
+        let restored: bdl_core::queue::DownloadTaskMediaSelection =
+            serde_json::from_str(&serde_json::to_string(&selection).unwrap()).unwrap();
+        let runtime =
+            super::DownloadRuntimeOptions::from(&settings).with_processing(restored.processing);
+        assert!(!runtime.retain_raw_streams && !runtime.embed_cover && !runtime.embed_subtitles);
+        let legacy: bdl_core::queue::DownloadTaskMediaSelection = serde_json::from_value(serde_json::json!({ "video_quality": "80", "audio_quality": "30280", "video_codec": "avc", "container": "mkv" })).unwrap();
+        let legacy_runtime =
+            super::DownloadRuntimeOptions::from(&settings).with_processing(legacy.processing);
+        assert!(
+            legacy_runtime.retain_raw_streams
+                && legacy_runtime.embed_cover
+                && legacy_runtime.embed_subtitles
+        );
+        assert!(settings.embed_cover);
+    }
+
+    #[test]
+    fn download_options_keep_one_time_overrides_separate() {
+        let settings = super::SettingsSnapshot::default();
+        let request: super::SelectionCreateTasksRequest = serde_json::from_value(serde_json::json!({
+            "source_id": "test", "part_ids": [],
+            "naming_template": "{title}.{ext}",
+            "duplicate_naming_strategy": "append_suffix",
+            "missing_quality_policy": "skip",
+            "archive_assets": { "cover": true, "subtitles": false, "danmaku": false, "nfo": false }
+        })).unwrap();
+        let options = super::download_options_from_request(&request, &settings).unwrap();
+        assert_eq!(options.naming_template, "{title}.{ext}");
+        assert_eq!(
+            options.duplicate_naming_strategy,
+            bdl_core::naming::DuplicateNamingStrategy::AppendSuffix
+        );
+        assert!(options.archive_assets.cover);
+        assert!(!options.archive_assets.subtitles);
+        assert_ne!(options.naming_template, settings.naming_template);
+        let defaults: super::SelectionCreateTasksRequest =
+            serde_json::from_value(serde_json::json!({"source_id": "test", "part_ids": []}))
+                .unwrap();
+        let inherited = super::download_options_from_request(&defaults, &settings).unwrap();
+        assert_eq!(inherited.naming_template, settings.naming_template);
+        assert_eq!(
+            inherited.duplicate_naming_strategy,
+            settings.duplicate_naming_strategy
+        );
+    }
 
     #[test]
     fn external_links_allow_only_trusted_https_hosts() {

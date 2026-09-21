@@ -13,8 +13,8 @@ import type {
 import {
   parseCloseSource,
   parseCreateSource,
-  parseLoadAll,
   parseLoadMore,
+  parseCancel,
   selectionCreateTasks,
 } from '../api/tauri'
 import { useQueueStore } from './queue'
@@ -24,10 +24,11 @@ import { NOTICE_CLEAR_DELAY } from './feedback'
 import { buildBatchSelectionBySource, selectedBatchSourceIds, toggleBatchEntrySelection } from './parseBatch'
 
 const MAX_BATCH_SOURCES = 20
-const PARSE_CONCURRENCY = 4
+const PARSE_CONCURRENCY = 1
 const PACED_PARSE_POLL_INTERVAL_MS = 100
 
 interface ParseState {
+  backgroundJob: { sourceId: string; title: string; status: 'running' | 'stopped' | 'completed' | 'failed'; processed: number; created: number; error: string | null } | null
   input: string
   sources: Record<string, NormalizedSourceTree>
   sourceOrder: string[]
@@ -54,14 +55,23 @@ export interface ParseBatchEntry {
 }
 
 export interface CreateTaskOptions {
+  partIdsBySource?: Record<string, string[]>
+  silent?: boolean
   downloadDir?: string | null
   archiveMode?: SettingsSnapshot['archive_mode']
   outputExtension?: SettingsSnapshot['output_extension']
   namingTemplate?: string
+  duplicateNamingStrategy?: SettingsSnapshot['duplicate_naming_strategy']
+  archiveAssets?: SettingsSnapshot['archive_assets']
+  retainRawStreams?: boolean
+  embedCover?: boolean
+  embedSubtitles?: boolean
+  missingQualityPolicy?: SettingsSnapshot['missing_quality_policy']
   mediaMode?: DownloadMediaMode
   quality?: string
   audioQuality?: string
   codec?: SettingsSnapshot['codec']
+  mediaPreferences?: SettingsSnapshot['media_preferences']
   duplicatePolicy?: DuplicateTaskPolicy
   scheduledAt?: string
   speedLimitBytesPerSecond?: number
@@ -77,6 +87,7 @@ export type PacedParsingResult = 'completed' | 'stopped' | 'failed'
 
 export const useParseStore = defineStore('parse', {
   state: (): ParseState => ({
+    backgroundJob: null,
     input: '',
     sources: {},
     sourceOrder: [],
@@ -234,35 +245,109 @@ export const useParseStore = defineStore('parse', {
       }
     },
     async loadMore(sourceId: string) {
+      this.pacedParsingStopRequestedBySource[sourceId] = false
       this.loadingBySource[sourceId] = true
       try {
         const tree = await parseLoadMore({ source_id: sourceId })
         this.upsertSource(tree)
       } catch (error) {
-        this.errorsBySource[sourceId] = errorMessage(error)
+        if (!this.pacedParsingStopRequestedBySource[sourceId]) this.errorsBySource[sourceId] = errorMessage(error)
       } finally {
         this.loadingBySource[sourceId] = false
       }
     },
     async loadChunk(sourceId: string, chunkSize: number): Promise<boolean> {
       const current = this.sources[sourceId]
-      if (!current?.source.has_more) return false
-
+      if (!current?.source.has_more || this.loadingBySource[sourceId]) return false
       const loadedBefore = current.source.loaded_count
-      const limit = current.source.loaded_count + Math.max(1, Math.floor(chunkSize))
+      const limit = loadedBefore + Math.max(1, Math.floor(chunkSize))
+      if (!this.pacedParsingBySource[sourceId]) this.pacedParsingStopRequestedBySource[sourceId] = false
       this.loadingBySource[sourceId] = true
+      this.errorsBySource[sourceId] = null
       try {
-        const tree = await parseLoadAll({ source_id: sourceId, limit })
-        this.upsertSource(tree)
-        return tree.source.loaded_count > loadedBefore
+        while (this.sources[sourceId]?.source.has_more && this.sources[sourceId].source.loaded_count < limit) {
+          if (this.pacedParsingStopRequestedBySource[sourceId]) break
+          const before = this.sources[sourceId].source.loaded_count
+          const tree = await parseLoadMore({ source_id: sourceId })
+          if (!this.sources[sourceId]) break
+          this.upsertSource(tree)
+          if (tree.source.loaded_count <= before) break
+        }
+        return (this.sources[sourceId]?.source.loaded_count ?? 0) > loadedBefore
       } catch (error) {
-        this.errorsBySource[sourceId] = errorMessage(error)
+        if (!this.pacedParsingStopRequestedBySource[sourceId]) this.errorsBySource[sourceId] = errorMessage(error)
         return false
       } finally {
         this.loadingBySource[sourceId] = false
       }
     },
-    async parseAllPaced(sourceId: string, chunkSize = 200, delayMs = 3_000): Promise<PacedParsingResult> {
+    async startBackgroundDownload(sourceId: string): Promise<void> {
+      if (this.backgroundJob?.status === 'running' || this.pacedParsingBySource[sourceId] || this.loadingBySource[sourceId]) return
+      const source = this.sources[sourceId]
+      if (!source) return
+      const job = { sourceId, title: source.source.title, status: 'running' as 'running' | 'stopped' | 'completed' | 'failed', processed: 0, created: 0, error: null as string | null }
+      this.backgroundJob = job
+      this.pacedParsingBySource[sourceId] = true
+      this.pacedParsingStopRequestedBySource[sourceId] = false
+      this.errorsBySource[sourceId] = null
+      const done = new Set<string>()
+      const finishedItems = new Set<string>()
+      const stopped = () => Boolean(this.pacedParsingStopRequestedBySource[sourceId]) || !this.sources[sourceId]
+      try {
+        const settings = useSettingsStore()
+        await settings.ensureLoaded()
+        const defaults: SettingsSnapshot = JSON.parse(JSON.stringify(settings.saved))
+        const options: CreateTaskOptions = {
+          downloadDir: defaults.download_dir ?? 'downloads', archiveMode: defaults.archive_mode,
+          outputExtension: defaults.output_extension, namingTemplate: defaults.naming_template,
+          duplicateNamingStrategy: defaults.duplicate_naming_strategy, archiveAssets: defaults.archive_assets,
+          retainRawStreams: defaults.retain_raw_streams, embedCover: defaults.embed_cover,
+          embedSubtitles: defaults.embed_subtitles, missingQualityPolicy: defaults.missing_quality_policy,
+          quality: defaults.media_preferences.video.length ? 'best' : defaults.quality,
+          codec: defaults.media_preferences.video.length ? 'auto' : defaults.codec,
+          audioQuality: defaults.media_preferences.audio.length ? 'best' : defaults.audio_quality,
+          mediaPreferences: defaults.media_preferences, duplicatePolicy: 'skip', silent: true,
+        }
+        while (!stopped()) {
+          const pending = this.sources[sourceId].groups.flatMap((group) => group.items).filter((item) => !finishedItems.has(item.id)).flatMap((item) => item.parts.map((part) => part.id)).filter((id) => !done.has(id))
+          // Enqueue each resolved selection immediately so downloading starts early.
+          for (let index = 0; index < pending.length && !stopped(); index += 1) {
+            const ids = pending.slice(index, index + 1)
+            const beforeIds = new Set(collectPartIds(this.sources[sourceId]))
+            const result = await this.createTasksForSources([sourceId], { ...options, partIdsBySource: { [sourceId]: ids } })
+            if (stopped() && (!result || result.failures.length)) break
+            if (!result || result.failures.length || result.requires_confirmation) throw new Error(result?.failures[0]?.message ?? '后台创建下载任务失败')
+            ids.forEach((id) => done.add(id))
+            // Hydration can replace placeholder IDs with real part IDs.
+            collectPartIds(this.sources[sourceId]).filter((id) => !beforeIds.has(id)).forEach((id) => done.add(id))
+            if (this.backgroundJob) {
+              this.backgroundJob.processed += ids.length
+              this.backgroundJob.created += result.created.length
+            }
+          }
+          if (this.sources[sourceId]) {
+            for (const item of this.sources[sourceId].groups.flatMap((group) => group.items)) {
+              if (item.parts.every((part) => done.has(part.id))) finishedItems.add(item.id)
+            }
+          }
+          if (stopped() || !this.sources[sourceId]?.source.has_more) break
+          const progressed = await this.loadChunk(sourceId, 1)
+          if (!progressed && !stopped()) throw new Error(this.errorsBySource[sourceId] ?? '分页没有返回新内容，已停止后台解析')
+        }
+        if (this.backgroundJob) this.backgroundJob.status = stopped() ? 'stopped' : 'completed'
+      } catch (error) {
+        if (this.backgroundJob) {
+          this.backgroundJob.status = stopped() ? 'stopped' : 'failed'
+          this.backgroundJob.error = stopped() ? null : errorMessage(error)
+        }
+        if (!stopped()) this.errorsBySource[sourceId] = errorMessage(error)
+      } finally {
+        this.pacedParsingBySource[sourceId] = false
+        this.pacedParsingStopRequestedBySource[sourceId] = false
+        this.loadingBySource[sourceId] = false
+      }
+    },
+    async parseAllPaced(sourceId: string, chunkSize = 50, delayMs = 0): Promise<PacedParsingResult> {
       const source = this.sources[sourceId]
       if (!source?.source.has_more) return 'completed'
       if (this.pacedParsingBySource[sourceId]) return 'stopped'
@@ -278,7 +363,7 @@ export const useParseStore = defineStore('parse', {
 
           const progressed = await this.loadChunk(sourceId, chunkSize)
           if (!progressed) {
-            return this.sources[sourceId]?.source.has_more ? 'failed' : 'completed'
+            return this.pacedParsingStopRequestedBySource[sourceId] ? 'stopped' : this.sources[sourceId]?.source.has_more ? 'failed' : 'completed'
           }
           if (!this.sources[sourceId]?.source.has_more) break
 
@@ -300,11 +385,18 @@ export const useParseStore = defineStore('parse', {
       }
     },
     stopPacedParsing(sourceId: string) {
-      if (this.pacedParsingBySource[sourceId]) {
+      if (this.pacedParsingBySource[sourceId] || this.loadingBySource[sourceId]) {
         this.pacedParsingStopRequestedBySource[sourceId] = true
+        void parseCancel(sourceId).catch((error) => {
+          this.setNotice(`停止请求未送达：${errorMessage(error)}`, 'warning')
+        })
       }
     },
     async clearWorkspace() {
+      if (this.backgroundJob?.status === 'running') {
+        this.setNotice('请先停止后台解析下载', 'warning')
+        return
+      }
       const sourceIds = [...this.sourceOrder]
       sourceIds.forEach((sourceId) => this.stopPacedParsing(sourceId))
 
@@ -326,6 +418,7 @@ export const useParseStore = defineStore('parse', {
       await Promise.allSettled(sourceIds.map((sourceId) => parseCloseSource(sourceId)))
     },
     async removeSource(sourceId: string) {
+      if (this.backgroundJob?.status === 'running' && this.backgroundJob.sourceId === sourceId) return
       try {
         await parseCloseSource(sourceId)
       } finally {
@@ -434,7 +527,7 @@ export const useParseStore = defineStore('parse', {
     ): Promise<CreateTasksForSourcesResult | null> {
       const settings = useSettingsStore()
       const queue = useQueueStore()
-      const targets = uniquePartIds(sourceIds).filter((sourceId) => (this.selectionBySource[sourceId]?.length ?? 0) > 0)
+      const targets = uniquePartIds(sourceIds).filter((sourceId) => ((options.partIdsBySource?.[sourceId] ?? this.selectionBySource[sourceId])?.length ?? 0) > 0)
 
       if (targets.length === 0) {
         this.setNotice('请选择要下载的内容', 'warning')
@@ -459,18 +552,26 @@ export const useParseStore = defineStore('parse', {
         }
 
         for (const sourceId of targets) {
+          if (this.pacedParsingBySource[sourceId] && this.pacedParsingStopRequestedBySource[sourceId]) break
           try {
             const result = await selectionCreateTasks({
               source_id: sourceId,
-              part_ids: this.selectionBySource[sourceId] ?? [],
+              part_ids: options.partIdsBySource?.[sourceId] ?? this.selectionBySource[sourceId] ?? [],
               output_dir: downloadDir || undefined,
               archive_mode: options.archiveMode ?? settings.saved.archive_mode,
               output_extension: options.outputExtension ?? settings.saved.output_extension,
-              naming_template: options.namingTemplate,
+              naming_template: options.namingTemplate ?? settings.saved.naming_template,
+              duplicate_naming_strategy: options.duplicateNamingStrategy ?? settings.saved.duplicate_naming_strategy,
+              archive_assets: options.archiveAssets ?? settings.saved.archive_assets,
+              retain_raw_streams: options.retainRawStreams ?? settings.saved.retain_raw_streams,
+              embed_cover: options.embedCover ?? settings.saved.embed_cover,
+              embed_subtitles: options.embedSubtitles ?? settings.saved.embed_subtitles,
+              missing_quality_policy: options.missingQualityPolicy ?? settings.saved.missing_quality_policy,
               media_mode: options.mediaMode ?? 'audio_video',
               quality: options.quality ?? settings.saved.quality,
               audio_quality: options.audioQuality ?? settings.saved.audio_quality,
               codec: options.codec ?? settings.saved.codec,
+              media_preferences: options.mediaPreferences ?? settings.saved.media_preferences,
               duplicate_policy: options.duplicatePolicy ?? 'ask',
               scheduled_at: options.scheduledAt,
               speed_limit_bytes_per_second: options.speedLimitBytesPerSecond,
@@ -493,6 +594,7 @@ export const useParseStore = defineStore('parse', {
         if (aggregate.requires_confirmation) {
           return aggregate
         }
+        if (options.silent) return aggregate
         const duplicateSuffix = aggregate.duplicates.length > 0 ? `，处理 ${aggregate.duplicates.length} 个重复项` : ''
         const skippedSuffix = aggregate.skipped_existing > 0 ? `，跳过 ${aggregate.skipped_existing} 个已有文件` : ''
         if (aggregate.created.length > 0) {
@@ -519,7 +621,7 @@ export const useParseStore = defineStore('parse', {
       if (!this.sourceOrder.includes(sourceId)) {
         this.sourceOrder.unshift(sourceId)
       }
-      this.activeSourceId = sourceId
+      if (!this.activeSourceId) this.activeSourceId = sourceId
       this.errorsBySource[sourceId] = null
       this.selectionBySource[sourceId] = this.selectionBySource[sourceId] ?? defaultSelection(tree)
     },

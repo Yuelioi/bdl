@@ -121,39 +121,6 @@ export function useSettingsForm() {
     get: () => settings.draft.data_dir ?? '',
     set: (value: string) => settings.setDataDir(value),
   });
-  const selectedArchiveAssetLabels = computed(() => {
-    const labels: string[] = [];
-    if (settings.draft.archive_assets.cover) labels.push('封面');
-    if (settings.draft.archive_assets.subtitles) labels.push('字幕');
-    if (settings.draft.archive_assets.danmaku) labels.push('弹幕');
-    if (settings.draft.archive_assets.nfo) labels.push('NFO');
-    return labels;
-  });
-  const rawStreamCopy = computed(() => (settings.draft.retain_raw_streams ? '；保留原始视频/音频轨道' : ''));
-  const embeddingCopy = computed(() => {
-    const items: string[] = [];
-    const canUseArchiveAssets =
-      settings.draft.archive_mode === 'complete_archive' || settings.draft.archive_mode === 'custom';
-    const coverSelected = settings.draft.archive_mode === 'complete_archive' || settings.draft.archive_assets.cover;
-    const subtitlesSelected =
-      settings.draft.archive_mode === 'complete_archive' || settings.draft.archive_assets.subtitles;
-    if (canUseArchiveAssets && coverSelected && settings.draft.embed_cover) items.push('封面');
-    if (canUseArchiveAssets && subtitlesSelected && settings.draft.embed_subtitles) items.push('字幕');
-    return items.length > 0 ? `；嵌入${items.join('和')}` : '';
-  });
-  const settingsArchiveDescription = computed(() => {
-    if (settings.draft.archive_mode === 'complete_archive') {
-      return `下载最终视频，并额外下载可用的封面、字幕、弹幕和 NFO${rawStreamCopy.value}${embeddingCopy.value}。不可用的附加内容会记录在任务详情中。`;
-    }
-
-    if (settings.draft.archive_mode === 'custom') {
-      const selected =
-        selectedArchiveAssetLabels.value.length > 0 ? selectedArchiveAssetLabels.value.join('、') : '不下载附加内容';
-      return `下载最终视频，并按设置下载：${selected}${rawStreamCopy.value}${embeddingCopy.value}。`;
-    }
-
-    return `仅下载最终视频${rawStreamCopy.value}${embeddingCopy.value}；不下载封面、字幕、弹幕或 NFO。`;
-  });
   const settingsDuplicateDescription = computed(() => {
     if (settings.draft.duplicate_naming_strategy === 'skip_existing') {
       return '最终文件已存在时跳过整个任务；未完成的分段缓存仍会继续恢复。';
@@ -223,7 +190,6 @@ export function useSettingsForm() {
     settingsProxyUrl,
     settingsLogLevel,
     settingsDataDir,
-    settingsArchiveDescription,
     settingsDuplicateDescription,
     resetNamingTemplate,
     resetSettingsDraft,

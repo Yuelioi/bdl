@@ -4,6 +4,7 @@ pub mod error;
 pub mod fetcher;
 pub mod ids;
 pub mod input;
+pub mod media_preferences;
 pub mod model;
 pub mod muxer;
 pub mod naming;

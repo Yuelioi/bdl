@@ -19,7 +19,7 @@ import {
 const emit = defineEmits<{ download: [] }>()
 const { embedded = false } = defineProps<{ embedded?: boolean }>()
 const parse = useParseStore()
-const loadBatchSize = ref('200')
+const loadBatchSize = ref('50')
 const activeSource = computed(() => parse.activeSource)
 const selectedIds = computed(() => parse.activeSelection)
 const selectedCount = computed(() => selectedIds.value.length)
@@ -86,13 +86,8 @@ const downloadAllLoaded = () => {
   emit('download')
 }
 
-const parseAndDownload = async () => {
-  if (!activeSource.value) return
-  const sourceId = activeSource.value.source.id
-  const result = await parse.parseAllPaced(sourceId, Number(loadBatchSize.value))
-  if (result !== 'completed') return
-  parse.selectAllLoaded(sourceId)
-  emit('download')
+const parseAndDownload = () => {
+  if (activeSource.value) void parse.startBackgroundDownload(activeSource.value.source.id)
 }
 
 const returnToSource = () => {
@@ -137,6 +132,7 @@ const toggleNode = (nodeId: string) => {
       <div class="source-function-toolbar flex flex-wrap items-center justify-end gap-2 max-[840px]:justify-start">
         <SourceLoadStatus :loaded="activeSource.source.loaded_count" :total="activeSource.source.total_count" />
         <SourceParseControls
+          :source-id="activeSource.source.id"
           v-if="hasMore || pacedParsing"
           v-model:batch-size="loadBatchSize"
           :has-more="hasMore"

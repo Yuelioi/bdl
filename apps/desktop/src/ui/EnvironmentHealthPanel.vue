@@ -13,7 +13,6 @@ const { health, checking = false, compact = false } = defineProps<{
 
 const emit = defineEmits<{
   check: []
-  createDirectory: []
   chooseDirectory: []
   chooseFfmpeg: []
   useSystemFfmpeg: []
@@ -30,6 +29,7 @@ const overallBadge = computed(() => {
   return health.ready ? 'done' : 'warning'
 })
 const directoryReady = computed(() => health?.download_directory.status === 'ready')
+const directoryPending = computed(() => health?.download_directory.status === 'missing')
 const ffmpegReady = computed(() => health?.ffmpeg.status === 'ready')
 </script>
 
@@ -56,22 +56,14 @@ const ffmpegReady = computed(() => health?.ffmpeg.status === 'ready')
         <div class="component-copy">
           <div>
             <strong>保存目录</strong>
-            <UiStatusBadge :status="directoryReady ? 'done' : 'warning'">
-              {{ directoryReady ? '可写' : '异常' }}
+            <UiStatusBadge :status="directoryReady ? 'done' : directoryPending ? 'queued' : 'warning'">
+              {{ directoryReady ? '可写' : directoryPending ? '下载时创建' : '异常' }}
             </UiStatusBadge>
           </div>
-          <p>{{ health.download_directory.message }}</p>
+          <p>{{ directoryPending ? '开始下载时自动创建，无需手动操作。' : health.download_directory.message }}</p>
           <code :title="health.download_directory.path">{{ health.download_directory.path }}</code>
         </div>
         <div v-if="!directoryReady" class="component-actions">
-          <UiButton
-            v-if="health.download_directory.status === 'missing'"
-            variant="secondary"
-            :disabled="checking"
-            @click="emit('createDirectory')"
-          >
-            创建目录
-          </UiButton>
           <UiButton variant="ghost" :disabled="checking" @click="emit('chooseDirectory')">重新选择</UiButton>
         </div>
       </article>

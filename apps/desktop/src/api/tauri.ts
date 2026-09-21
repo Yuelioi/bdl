@@ -65,9 +65,16 @@ export interface SelectionCreateTasksRequest {
   archive_mode?: ArchiveMode
   output_extension?: string
   naming_template?: string
+  duplicate_naming_strategy?: SettingsSnapshot['duplicate_naming_strategy']
+  archive_assets?: SettingsSnapshot['archive_assets']
+  retain_raw_streams?: boolean
+  embed_cover?: boolean
+  embed_subtitles?: boolean
+  missing_quality_policy?: SettingsSnapshot['missing_quality_policy']
   media_mode?: DownloadMediaMode
   quality?: string
   audio_quality?: string
+  media_preferences?: SettingsSnapshot['media_preferences']
   codec?: VideoCodecPreference
   duplicate_policy?: DuplicateTaskPolicy
   scheduled_at?: string
@@ -102,6 +109,11 @@ export const parseCreateSource = (request: ParseCreateSourceRequest) =>
 
 export const parseLoadMore = (request: ParseSourcePageRequest) =>
   invokeCommand<NormalizedSourceTree>('parse_load_more', { request })
+
+export const parseCancel = (sourceId: string) => invokeCommand<void>('parse_cancel', { sourceId })
+
+export const parseProgress = (sourceId: string) =>
+  invokeCommand<{ active: boolean; waiting_seconds: number; queued: boolean }>('parse_progress', { sourceId })
 
 export const parseLoadAll = (request: ParseLoadAllRequest) =>
   invokeCommand<NormalizedSourceTree>('parse_load_all', { request })

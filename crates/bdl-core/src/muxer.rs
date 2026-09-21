@@ -199,7 +199,7 @@ fn ffmpeg_args(request: &MuxRequest) -> Result<Vec<OsString>, MuxError> {
         ]);
     }
 
-    args.push(request.output_path.clone().into_os_string());
+    push_output(&mut args, &request.output_path);
     Ok(args)
 }
 
@@ -216,12 +216,18 @@ fn basic_mux_args(request: &MuxRequest) -> Result<Vec<OsString>, MuxError> {
         request.audio_path.as_ref(),
         &mut next_input_index,
     );
-    args.extend([
-        os("-c"),
-        os("copy"),
-        request.output_path.clone().into_os_string(),
-    ]);
+    args.extend([os("-c"), os("copy")]);
+    push_output(&mut args, &request.output_path);
     Ok(args)
+}
+
+fn push_output(args: &mut Vec<OsString>, output_path: &Path) {
+    if is_mp4_like(output_path) {
+        // FFmpeg's MOV/MP4 writer requires unofficial compliance to preserve
+        // AV_PKT_DATA_DOVI_CONF. Stream copy alone does not write this record.
+        args.extend([os("-strict"), os("unofficial")]);
+    }
+    args.push(output_path.as_os_str().to_owned());
 }
 
 pub fn supports_cover_embedding(output_path: &Path, cover_path: &Path) -> bool {
@@ -356,6 +362,33 @@ fn stderr_summary(stderr: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn media_preferences_mp4_allows_dolby_configuration_in_both_mux_paths() {
+        use super::{MuxRequest, ffmpeg_args, os};
+        for with_subtitles in [false, true] {
+            for extension in ["mp4", "mkv"] {
+                let request = MuxRequest {
+                    video_path: Some("video.m4s".into()),
+                    audio_path: Some("audio.m4s".into()),
+                    output_path: format!("output.{extension}").into(),
+                    cover_path: None,
+                    subtitle_paths: if with_subtitles {
+                        vec!["subtitle.srt".into()]
+                    } else {
+                        vec![]
+                    },
+                };
+                let args = ffmpeg_args(&request).unwrap();
+                let has_dolby_compliance = args
+                    .windows(2)
+                    .any(|pair| pair == [os("-strict"), os("unofficial")]);
+                assert_eq!(has_dolby_compliance, extension == "mp4");
+                assert_eq!(args.last().unwrap(), request.output_path.as_os_str());
+                assert!(args.contains(&os("copy")));
+            }
+        }
+    }
+
     #[cfg(target_os = "macos")]
     #[test]
     fn macos_ffmpeg_fallbacks_cover_common_package_managers() {

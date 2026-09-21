@@ -24,7 +24,7 @@ const parse = useParseStore()
 const pageSize = 20
 const currentPage = ref(1)
 const failedCoverIds = ref<string[]>([])
-const loadBatchSize = ref('200')
+const loadBatchSize = ref('50')
 
 const source = computed(() => {
   const activeSource = parse.activeSource
@@ -168,6 +168,7 @@ const formatDuration = (seconds: number | null): string => {
       <div v-if="!loadingInitial" class="source-function-toolbar">
         <SourceLoadStatus :loaded="source?.source.loaded_count ?? items.length" :total="totalCount" />
         <SourceParseControls
+          :source-id="sourceId ?? undefined"
           v-if="hasMore || pacedParsing"
           v-model:batch-size="loadBatchSize"
           :has-more="hasMore"
@@ -177,7 +178,7 @@ const formatDuration = (seconds: number | null): string => {
           :stopping="pacedStopping"
           @parse-batch="parseMore"
           @parse-all="parseAll"
-          @parse-and-download="downloadAll"
+          @parse-and-download="sourceId && parse.startBackgroundDownload(sourceId)"
           @stop="stopParsing"
         />
         <UiButton

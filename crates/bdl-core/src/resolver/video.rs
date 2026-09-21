@@ -2,10 +2,12 @@ use async_trait::async_trait;
 use bpi_rs::BpiClient;
 use bpi_rs::danmaku::DanmakuXmlListParams;
 use bpi_rs::ids::{Aid, Bvid, Cid};
+use bpi_rs::models::{Fnval, VideoQuality};
 use bpi_rs::video::videostream_url::DashStream;
 use bpi_rs::video::{VideoPlayUrlParams, VideoPlayerInfoParams, VideoViewParams};
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
+use std::sync::Arc;
 
 use super::{ResolveOptions, Resolver};
 use crate::error::{BdlError, BdlResult};
@@ -133,7 +135,7 @@ impl VideoResolver<BpiVideoApi> {
             .map_err(|error| BdlError::Bpi(error.to_string()))
     }
 
-    pub fn from_bpi_client(client: BpiClient) -> Self {
+    pub fn from_bpi_client(client: impl Into<Arc<BpiClient>>) -> Self {
         Self::with_api(BpiVideoApi::from_client(client))
     }
 }
@@ -249,7 +251,7 @@ where
 }
 
 pub struct BpiVideoApi {
-    client: BpiClient,
+    client: Arc<BpiClient>,
 }
 
 impl BpiVideoApi {
@@ -259,8 +261,10 @@ impl BpiVideoApi {
             .map_err(|error| BdlError::Bpi(error.to_string()))
     }
 
-    pub fn from_client(client: BpiClient) -> Self {
-        Self { client }
+    pub fn from_client(client: impl Into<Arc<BpiClient>>) -> Self {
+        Self {
+            client: client.into(),
+        }
     }
 }
 
@@ -303,22 +307,10 @@ impl VideoApi for BpiVideoApi {
             .await
             .map_err(|error| BdlError::Bpi(error.to_string()))?;
 
-        let Some(dash) = data.dash else {
-            return Ok(ResolvedPlayUrl::default());
-        };
-
-        Ok(ResolvedPlayUrl {
-            video: dash
-                .video
-                .into_iter()
-                .map(ResolvedDashStream::from)
-                .collect(),
-            audio: dash
-                .audio
-                .into_iter()
-                .map(ResolvedDashStream::from)
-                .collect(),
-        })
+        Ok(data
+            .dash
+            .map(ResolvedPlayUrl::from_dash)
+            .unwrap_or_default())
     }
 
     async fn collection_hint(&self, id: &VideoInputId) -> BdlResult<Option<VideoCollectionRef>> {
@@ -411,6 +403,30 @@ struct VideoCollectionHintSeason {
     mid: u64,
 }
 
+impl ResolvedPlayUrl {
+    fn from_dash(dash: bpi_rs::video::videostream_url::DashInfo) -> Self {
+        Self {
+            video: dash
+                .video
+                .into_iter()
+                .map(ResolvedDashStream::from)
+                .collect(),
+            audio: dash
+                .audio
+                .into_iter()
+                .chain(
+                    dash.dolby
+                        .and_then(|dolby| dolby.audio)
+                        .into_iter()
+                        .flatten(),
+                )
+                .chain(dash.flac.and_then(|flac| flac.audio))
+                .map(ResolvedDashStream::from)
+                .collect(),
+        }
+    }
+}
+
 impl From<DashStream> for ResolvedDashStream {
     fn from(stream: DashStream) -> Self {
         Self {
@@ -448,7 +464,17 @@ fn play_url_params(id: &VideoInputId, cid: u64) -> BdlResult<VideoPlayUrlParams>
     };
 
     Ok(params
-        .format_flags(16)
+        .quality(u64::from(VideoQuality::P8K.as_u32()))
+        .format_flags(u64::from(
+            (Fnval::DASH
+                | Fnval::FOURK
+                | Fnval::EIGHTK
+                | Fnval::HDR
+                | Fnval::DOLBY_AUDIO
+                | Fnval::DOLBY_VISION
+                | Fnval::AV1)
+                .bits(),
+        ))
         .format_version(0)
         .fourk(true)
         .high_quality(true))
@@ -638,7 +664,12 @@ fn stream_codec(codecs: &str) -> StreamCodec {
         StreamCodec::Auto
     } else if lower.contains("av01") || lower.contains("av1") {
         StreamCodec::Av1
-    } else if lower.contains("hev") || lower.contains("hvc") || lower.contains("h265") {
+    } else if lower.contains("hev")
+        || lower.contains("hvc")
+        || lower.contains("h265")
+        || lower.starts_with("dvhe")
+        || lower.starts_with("dvh1")
+    {
         StreamCodec::Hevc
     } else if lower.contains("avc") || lower.contains("h264") {
         StreamCodec::Avc
@@ -674,6 +705,46 @@ fn non_empty(value: String) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::{VideoCollectionHintResponse, VideoCollectionRef};
+
+    #[test]
+    fn media_preferences_request_all_supported_video_formats() {
+        use bpi_rs::ids::{Aid, Cid};
+        use bpi_rs::video::VideoPlayUrlParams;
+        let expected = VideoPlayUrlParams::from_aid(Aid::new(1).unwrap(), Cid::new(2).unwrap())
+            .quality(127)
+            .format_flags(4048)
+            .format_version(0)
+            .fourk(true)
+            .high_quality(true);
+        assert_eq!(
+            super::play_url_params(&super::VideoInputId::Aid(1), 2).unwrap(),
+            expected
+        );
+    }
+
+    #[test]
+    fn media_preferences_collects_dolby_and_flac_tracks() {
+        let track = |id| serde_json::json!({"id": id, "baseUrl": "https://example.invalid/track", "backupUrl": [], "bandwidth": 1000, "mimeType": "audio/mp4", "codecs": "mp4a"});
+        let dash = serde_json::from_value(serde_json::json!({
+            "video": [], "audio": [track(30280)], "duration": 1,
+            "dolby": {"type": 1, "audio": [track(30250)]},
+            "flac": {"audio": track(30251)}
+        }))
+        .unwrap();
+        let resolved = super::ResolvedPlayUrl::from_dash(dash);
+        assert_eq!(
+            resolved
+                .audio
+                .iter()
+                .map(|stream| stream.id)
+                .collect::<Vec<_>>(),
+            vec![30280, 30250, 30251]
+        );
+        assert_eq!(
+            super::stream_codec("dvhe.05.06"),
+            crate::model::StreamCodec::Hevc
+        );
+    }
 
     #[test]
     fn video_view_collection_hint_reads_ugc_season_identity() {

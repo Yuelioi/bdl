@@ -2,6 +2,8 @@ pub mod commands;
 mod diagnostic_export;
 pub mod events;
 mod media_finalize;
+mod parse_control;
+mod parse_pacing;
 mod parse_session;
 mod queue_coordinator;
 mod queue_worker;

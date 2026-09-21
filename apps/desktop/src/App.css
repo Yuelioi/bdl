@@ -341,6 +341,10 @@
   overflow: hidden;
 }
 
+.main-region:has(> [aria-label="后台解析下载"]) {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
 .workspace-loading {
   display: grid;
   place-content: center;

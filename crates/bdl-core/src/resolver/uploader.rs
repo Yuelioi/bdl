@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use bpi_rs::BpiClient;
 use bpi_rs::ids::Mid;
 use bpi_rs::user::{UserUploadedVideo, UserUploadedVideosParams};
+use std::sync::Arc;
 
 use super::paged::{PageRequest, PagedSourceKind, page_state};
 use super::{ResolveOptions, Resolver};
@@ -62,7 +63,7 @@ impl UploaderResolver<BpiUploaderApi> {
             .map_err(|error| BdlError::Bpi(error.to_string()))
     }
 
-    pub fn from_bpi_client(client: BpiClient) -> Self {
+    pub fn from_bpi_client(client: impl Into<Arc<BpiClient>>) -> Self {
         Self::with_api(BpiUploaderApi::from_client(client))
     }
 }
@@ -112,7 +113,7 @@ where
 }
 
 pub struct BpiUploaderApi {
-    client: BpiClient,
+    client: Arc<BpiClient>,
 }
 
 impl BpiUploaderApi {
@@ -122,8 +123,10 @@ impl BpiUploaderApi {
             .map_err(|error| BdlError::Bpi(error.to_string()))
     }
 
-    pub fn from_client(client: BpiClient) -> Self {
-        Self { client }
+    pub fn from_client(client: impl Into<Arc<BpiClient>>) -> Self {
+        Self {
+            client: client.into(),
+        }
     }
 }
 

@@ -1,7 +1,7 @@
 import { open } from '@tauri-apps/plugin-dialog'
 import { defineStore } from 'pinia'
 
-import type { EnvironmentHealthSnapshot, SettingsSnapshot } from '../api/dto'
+import type { EnvironmentHealthSnapshot, SettingsSnapshot, MediaPreferences, NamingPreset } from '../api/dto'
 import {
   diagnosticsExport,
   environmentCreateDownloadDirectory,
@@ -11,9 +11,11 @@ import {
   settingsGet,
   settingsUpdate,
 } from '../api/tauri'
+import { audioQualityOptions, videoQualityOptions } from '../pages/settings/settingsCatalog'
 import { useUiStore } from './ui'
 import type { InlineNotice, NoticeTone } from './feedback'
 import { NOTICE_CLEAR_DELAY } from './feedback'
+import { fillMissingDefaults } from '../utils/settingsDefaults'
 
 export const defaultNamingTemplate = '{title}/P{part_index} - {part_title}.{ext}'
 export const embeddingContainerError = (
@@ -22,7 +24,6 @@ export const embeddingContainerError = (
   settings.output_extension !== 'mkv' && (settings.embed_cover || settings.embed_subtitles)
     ? '嵌入封面和字幕仅支持 MKV 封装，请改用 MKV 或关闭嵌入选项。'
     : null
-const legacyNamingTemplate = '{title}/{title} - P{part_index} - {part_title}.{ext}'
 
 export const namingTemplatePresets = [
   { label: '分P视频', value: defaultNamingTemplate },
@@ -54,8 +55,10 @@ export const namingVariables = [
 
 const defaultSettings = (): SettingsSnapshot => ({
   settings_schema_version: 1,
+  parse_rules: { pages_per_round: 3, interval_seconds: 1, rest_seconds: 3 },
   download_dir: null,
   naming_template: defaultNamingTemplate,
+  naming_presets: [],
   quality: 'best',
   archive_mode: 'fast',
   archive_assets: {
@@ -68,6 +71,7 @@ const defaultSettings = (): SettingsSnapshot => ({
   duplicate_naming_strategy: 'skip_existing',
   audio_quality: 'best',
   codec: 'auto',
+  media_preferences: { video: [], audio: [], fallback: 'best' },
   missing_quality_policy: 'lower',
   ffmpeg_path: null,
   retain_raw_streams: false,
@@ -84,8 +88,8 @@ const defaultSettings = (): SettingsSnapshot => ({
   auto_refresh_expired_urls: true,
 })
 
-const videoQualities = new Set(['best', '127', '120', '116', '112', '80', '64', '32', '16'])
-const audioQualities = new Set(['best', '30280', '30232', '30216'])
+const videoQualities = new Set(videoQualityOptions.map((option) => option.value))
+const audioQualities = new Set(audioQualityOptions.map((option) => option.value))
 const archiveModes = new Set<SettingsSnapshot['archive_mode']>(['fast', 'complete_archive', 'custom'])
 const outputExtensions = new Set<SettingsSnapshot['output_extension']>(['mp4', 'mkv'])
 const duplicateNamingStrategies = new Set<SettingsSnapshot['duplicate_naming_strategy']>([
@@ -385,8 +389,32 @@ export const useSettingsStore = defineStore('settings', {
       const trimmed = value.trim()
       this.draft.download_dir = trimmed ? trimmed : null
     },
+    saveNamingPreset(name: string): boolean {
+      const trimmed = name.trim()
+      const error = validateNamingTemplate(this.draft.naming_template)
+      if (!trimmed || [...trimmed].length > 40 || error) {
+        this.setNotice(error ?? '请输入 1–40 个字符的预设名称。', 'warning')
+        return false
+      }
+      const existing = this.draft.naming_presets.find((preset) => preset.name === trimmed)
+      if (!existing && this.draft.naming_presets.length >= 32) {
+        this.setNotice('命名预设最多保存 32 个。', 'warning')
+        return false
+      }
+      const preset: NamingPreset = { id: existing?.id ?? crypto.randomUUID(), name: trimmed, template: this.draft.naming_template }
+      this.draft.naming_presets = existing
+        ? this.draft.naming_presets.map((item) => item.id === existing.id ? preset : item)
+        : [...this.draft.naming_presets, preset]
+      return true
+    },
+    removeNamingPreset(id: string) {
+      this.draft.naming_presets = this.draft.naming_presets.filter((preset) => preset.id !== id)
+    },
     setNamingTemplate(value: string) {
       this.draft.naming_template = value
+    },
+    setMediaPreferences(value: MediaPreferences) {
+      this.draft.media_preferences = cloneMediaPreferences(value)
     },
     setVideoQuality(value: string) {
       this.draft.quality = videoQualities.has(value) ? value : 'best'
@@ -491,43 +519,52 @@ export const useSettingsStore = defineStore('settings', {
   },
 })
 
-const normalizeSettings = (settings: SettingsSnapshot): SettingsSnapshot => ({
-  settings_schema_version: settings.settings_schema_version || 1,
-  download_dir: settings.download_dir?.trim() || null,
-  naming_template: normalizeNamingTemplate(settings.naming_template),
-  quality: videoQualities.has(settings.quality) ? settings.quality : 'best',
-  archive_mode: archiveModes.has(settings.archive_mode) ? settings.archive_mode : 'fast',
-  archive_assets: normalizeArchiveAssets(settings.archive_assets),
-  output_extension: outputExtensions.has(settings.output_extension) ? settings.output_extension : 'mp4',
-  duplicate_naming_strategy: duplicateNamingStrategies.has(settings.duplicate_naming_strategy)
-    ? settings.duplicate_naming_strategy
-    : 'skip_existing',
-  audio_quality: audioQualities.has(settings.audio_quality) ? settings.audio_quality : 'best',
-  codec: codecPreferences.has(settings.codec) ? settings.codec : 'auto',
-  missing_quality_policy: missingQualityPolicies.has(settings.missing_quality_policy)
-    ? settings.missing_quality_policy
-    : 'lower',
-  ffmpeg_path: settings.ffmpeg_path?.trim() || null,
-  retain_raw_streams: settings.retain_raw_streams === true,
-  embed_cover: settings.embed_cover === true,
-  embed_subtitles: settings.embed_subtitles === true,
-  proxy_url: settings.proxy_url?.trim() || null,
-  log_level: logLevels.has(settings.log_level) ? settings.log_level : 'info',
-  data_dir: settings.data_dir?.trim() || null,
-  concurrent_tasks: concurrentTaskCounts.has(settings.concurrent_tasks) ? settings.concurrent_tasks : 1,
-  retry_count: retryCounts.has(settings.retry_count) ? settings.retry_count : 3,
-  segment_count: segmentCounts.has(settings.segment_count) ? settings.segment_count : 4,
-  global_speed_limit_bytes_per_second:
-    settings.global_speed_limit_bytes_per_second && settings.global_speed_limit_bytes_per_second > 0
-      ? settings.global_speed_limit_bytes_per_second
-      : null,
-  startup_auto_recovery: settings.startup_auto_recovery === true,
-  auto_refresh_expired_urls: settings.auto_refresh_expired_urls !== false,
-})
+const normalizeSettings = (saved: SettingsSnapshot): SettingsSnapshot => {
+  const settings = fillMissingDefaults(defaultSettings(), saved)
+  return {
+    ...settings,
+    parse_rules: { pages_per_round: settings.parse_rules?.pages_per_round ?? 3, interval_seconds: settings.parse_rules?.interval_seconds ?? 1, rest_seconds: settings.parse_rules?.rest_seconds ?? 3 },
+    download_dir: settings.download_dir?.trim() || null,
+    naming_template: normalizeNamingTemplate(settings.naming_template),
+    naming_presets: (settings.naming_presets ?? []).map((preset) => ({ ...preset })),
+    quality: videoQualities.has(settings.quality) ? settings.quality : 'best',
+    archive_mode: archiveModes.has(settings.archive_mode) ? settings.archive_mode : 'fast',
+    archive_assets: normalizeArchiveAssets(settings.archive_assets),
+    output_extension: outputExtensions.has(settings.output_extension) ? settings.output_extension : 'mp4',
+    duplicate_naming_strategy: duplicateNamingStrategies.has(settings.duplicate_naming_strategy)
+      ? settings.duplicate_naming_strategy
+      : 'skip_existing',
+    audio_quality: audioQualities.has(settings.audio_quality) ? settings.audio_quality : 'best',
+    codec: codecPreferences.has(settings.codec) ? settings.codec : 'auto',
+    media_preferences: cloneMediaPreferences(settings.media_preferences),
+    missing_quality_policy: missingQualityPolicies.has(settings.missing_quality_policy)
+      ? settings.missing_quality_policy
+      : 'lower',
+    ffmpeg_path: settings.ffmpeg_path?.trim() || null,
+    retain_raw_streams: settings.retain_raw_streams === true,
+    embed_cover: settings.embed_cover === true,
+    embed_subtitles: settings.embed_subtitles === true,
+    proxy_url: settings.proxy_url?.trim() || null,
+    log_level: logLevels.has(settings.log_level) ? settings.log_level : 'info',
+    data_dir: settings.data_dir?.trim() || null,
+    concurrent_tasks: concurrentTaskCounts.has(settings.concurrent_tasks) ? settings.concurrent_tasks : 1,
+    retry_count: retryCounts.has(settings.retry_count) ? settings.retry_count : 3,
+    segment_count: segmentCounts.has(settings.segment_count) ? settings.segment_count : 4,
+    global_speed_limit_bytes_per_second:
+      settings.global_speed_limit_bytes_per_second && settings.global_speed_limit_bytes_per_second > 0
+        ? settings.global_speed_limit_bytes_per_second
+        : null,
+    startup_auto_recovery: settings.startup_auto_recovery === true,
+    auto_refresh_expired_urls: settings.auto_refresh_expired_urls !== false,
+  }
+}
 
 const cloneSettings = (settings: SettingsSnapshot): SettingsSnapshot => ({
   ...settings,
+  parse_rules: { ...settings.parse_rules },
   archive_assets: { ...settings.archive_assets },
+  naming_presets: (settings.naming_presets ?? []).map((preset) => ({ ...preset })),
+  media_preferences: cloneMediaPreferences(settings.media_preferences),
 })
 
 const normalizeArchiveAssets = (
@@ -541,14 +578,14 @@ const normalizeArchiveAssets = (
 
 const normalizeNamingTemplate = (template: string | null | undefined): string => {
   const trimmed = template?.trim()
-  if (!trimmed || trimmed === legacyNamingTemplate) {
+  if (!trimmed) {
     return defaultNamingTemplate
   }
 
   return trimmed
 }
 
-const validateNamingTemplate = (template: string): string | null => {
+export const validateNamingTemplate = (template: string): string | null => {
   const value = template.trim()
   if (!value) {
     return '命名模板不能为空。'
@@ -582,7 +619,7 @@ const validateNamingTemplate = (template: string): string | null => {
   return null
 }
 
-const previewTemplate = (template: string, ext: string): string => {
+export const previewTemplate = (template: string, ext: string): string => {
   const values: Record<string, string> = {
     title: '示例视频',
     part_title: '开场',
@@ -617,3 +654,11 @@ const errorMessage = (error: unknown): string => {
 
   return String(error)
 }
+
+export const cloneMediaPreferences = (value?: MediaPreferences): MediaPreferences => ({
+  video: (value?.video ?? []).flatMap((rule) => rule.quality === 'best'
+    ? videoQualityOptions.filter((option) => /^\d+$/.test(option.value)).map((option) => ({ quality: option.value, codec: rule.codec }))
+    : [{ ...rule }]),
+  audio: [...(value?.audio ?? [])],
+  fallback: value?.fallback === 'error' ? 'error' : 'best',
+})

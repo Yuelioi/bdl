@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ParseRulesEditor from './ParseRulesEditor.vue';
 import UiButton from '../../ui/Button.vue';
 import UiCheckbox from '../../ui/Checkbox.vue';
 import UiSelect from '../../ui/Select.vue';
@@ -38,7 +39,6 @@ const {
       label="全局下载限速（MiB/s）"
       placeholder="留空时不限速"
       :error="settingsGlobalSpeedLimitError ?? undefined"
-      helper="所有并发任务共享此带宽额度"
       @update:model-value="updateGlobalSpeedLimit"
     />
     <div class="settings-toggle-list">
@@ -53,12 +53,11 @@ const {
         :disabled="settings.loading || settings.saving"
       />
     </div>
+    <ParseRulesEditor v-model="settings.draft.parse_rules" />
     <SettingsEnvironmentSummary
       :health="settings.environmentHealth"
       :checking="settings.environmentChecking"
       @check="settings.checkEnvironment"
-      @create-directory="settings.createDownloadDirectory"
-      @choose-directory="settings.chooseDownloadDir"
       @choose-ffmpeg="settings.chooseFfmpegPath"
       @use-system-ffmpeg="settings.clearFfmpegPath"
     />

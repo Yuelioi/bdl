@@ -156,6 +156,11 @@ export interface DownloadTaskMediaSelection {
   audio_quality: string
   video_codec: string
   container: string
+  processing?: {
+    retain_raw_streams: boolean
+    embed_cover: boolean
+    embed_subtitles: boolean
+  } | null
 }
 
 export interface DownloadResource {
@@ -218,10 +223,23 @@ export interface ArchiveAssetSelection {
   nfo: boolean
 }
 
+export interface VideoPreference {
+  quality: string
+  codec: VideoCodecPreference
+}
+
+export interface MediaPreferences {
+  video: VideoPreference[]
+  audio: string[]
+  fallback: 'error' | 'best'
+}
+
 export interface SettingsSnapshot {
   settings_schema_version: number
+  parse_rules: ParseRules
   download_dir: string | null
   naming_template: string
+  naming_presets: NamingPreset[]
   quality: string
   archive_mode: ArchiveMode
   archive_assets: ArchiveAssetSelection
@@ -229,6 +247,7 @@ export interface SettingsSnapshot {
   duplicate_naming_strategy: DuplicateNamingStrategy
   audio_quality: string
   codec: VideoCodecPreference
+  media_preferences: MediaPreferences
   missing_quality_policy: MissingQualityPolicy
   ffmpeg_path: string | null
   retain_raw_streams: boolean
@@ -243,6 +262,12 @@ export interface SettingsSnapshot {
   global_speed_limit_bytes_per_second: number | null
   startup_auto_recovery: boolean
   auto_refresh_expired_urls: boolean
+}
+
+export interface NamingPreset {
+  id: string
+  name: string
+  template: string
 }
 
 export interface MaintenanceResult {
@@ -321,4 +346,11 @@ export interface QrLoginPollResponse {
   status: QrLoginStatus
   message: string
   account: AccountSummary | null
+}
+
+
+export interface ParseRules {
+  interval_seconds: number
+  rest_seconds: number
+  pages_per_round: number
 }

@@ -12,7 +12,7 @@ const { settings, settingsCodec, settingsMissingQualityPolicy, settingsSegmentCo
 <template>
   <section class="settings-block">
     <div class="settings-inline-grid">
-      <UiSelect v-model="settingsCodec" label="视频编码偏好" :options="codecOptions" />
+      <UiSelect v-model="settingsCodec" label="视频编码偏好" :options="codecOptions" :disabled="settings.draft.media_preferences.video.length > 0" :helper="settings.draft.media_preferences.video.length ? '已使用媒体设置中的组合编码' : undefined" />
       <UiSelect v-model="settingsMissingQualityPolicy" label="目标质量不可用" :options="missingQualityOptions" />
     </div>
     <UiSelect v-model="settingsSegmentCount" label="单任务分段数" :options="segmentCountOptions" />
@@ -31,8 +31,6 @@ const { settings, settingsCodec, settingsMissingQualityPolicy, settingsSegmentCo
         >使用系统 FFmpeg</UiButton
       >
     </div>
-    <p class="settings-note">
-      编码是偏好而非硬性过滤；目标清晰度不存在时，默认会选择最接近的可用轨道。选择“提示后再处理”时，当前版本会阻止创建任务并显示原因。
-    </p>
+
   </section>
 </template>

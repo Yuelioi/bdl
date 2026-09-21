@@ -10,6 +10,7 @@ const api = vi.hoisted(() => ({
   parseCreateSource: vi.fn(),
   parseLoadAll: vi.fn(),
   parseLoadMore: vi.fn(),
+  parseCancel: vi.fn(),
   parseRefreshSource: vi.fn(),
   selectionCreateTasks: vi.fn(),
 }))
@@ -61,6 +62,7 @@ describe('parse store', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     Object.values(api).forEach((mock) => mock.mockReset())
+    api.parseCancel.mockResolvedValue(undefined)
   })
 
   afterEach(() => {
@@ -79,7 +81,7 @@ describe('parse store', () => {
     const finalPage = structuredClone(firstPage)
     finalPage.source.loaded_count = 440
     finalPage.source.has_more = false
-    api.parseLoadAll.mockResolvedValueOnce(secondPage).mockResolvedValueOnce(finalPage)
+    api.parseLoadMore.mockResolvedValueOnce(secondPage).mockResolvedValueOnce(finalPage)
     const parse = useParseStore()
     parse.upsertSource(firstPage)
 
@@ -87,9 +89,9 @@ describe('parse store', () => {
     await vi.advanceTimersByTimeAsync(3_000)
 
     await expect(parsing).resolves.toBe('completed')
-    expect(api.parseLoadAll.mock.calls).toEqual([
-      [{ source_id: 'favorite:42', limit: 240 }],
-      [{ source_id: 'favorite:42', limit: 440 }],
+    expect(api.parseLoadMore.mock.calls).toEqual([
+      [{ source_id: 'favorite:42' }],
+      [{ source_id: 'favorite:42' }],
     ])
     expect(parse.pacedParsingBySource['favorite:42']).toBe(false)
     vi.useRealTimers()
@@ -104,7 +106,7 @@ describe('parse store', () => {
     firstPage.source.has_more = true
     const secondPage = structuredClone(firstPage)
     secondPage.source.loaded_count = 240
-    api.parseLoadAll.mockResolvedValueOnce(secondPage)
+    api.parseLoadMore.mockResolvedValueOnce(secondPage)
     const parse = useParseStore()
     parse.upsertSource(firstPage)
 
@@ -114,9 +116,27 @@ describe('parse store', () => {
     await vi.advanceTimersByTimeAsync(100)
 
     await expect(parsing).resolves.toBe('stopped')
-    expect(api.parseLoadAll).toHaveBeenCalledOnce()
+    expect(api.parseLoadMore).toHaveBeenCalledOnce()
     expect(parse.sources['favorite:42']?.source.loaded_count).toBe(240)
     vi.useRealTimers()
+  })
+
+  it('cancels an in-flight backend wait without losing loaded results or showing failure', async () => {
+    const tree = sourceTree('favorite:wait', '等待中的收藏夹')
+    tree.source.loaded_count = 100
+    tree.source.total_count = 200
+    tree.source.has_more = true
+    let rejectWait!: (error: Error) => void
+    api.parseLoadMore.mockImplementation(() => new Promise((_resolve, reject) => { rejectWait = reject }))
+    api.parseCancel.mockImplementation(async () => { rejectWait(new Error('解析已停止')) })
+    const parse = useParseStore()
+    parse.upsertSource(tree)
+    const parsing = parse.parseAllPaced(tree.source.id)
+    parse.stopPacedParsing(tree.source.id)
+    expect(api.parseCancel).toHaveBeenCalledWith(tree.source.id)
+    await expect(parsing).resolves.toBe('stopped')
+    expect(parse.sources[tree.source.id]?.source.loaded_count).toBe(100)
+    expect(parse.errorsBySource[tree.source.id]).toBeNull()
   })
 
   it('loads only the next page when parsing more from a large source', async () => {
@@ -147,13 +167,13 @@ describe('parse store', () => {
     firstPage.source.has_more = true
     const chunk = structuredClone(firstPage)
     chunk.source.loaded_count = 240
-    api.parseLoadAll.mockResolvedValue(chunk)
+    api.parseLoadMore.mockResolvedValue(chunk)
     const parse = useParseStore()
     parse.upsertSource(firstPage)
 
     await parse.loadChunk('uploader:42', 200)
 
-    expect(api.parseLoadAll).toHaveBeenCalledWith({ source_id: 'uploader:42', limit: 230 })
+    expect(api.parseLoadMore).toHaveBeenCalledWith({ source_id: 'uploader:42' })
     expect(parse.notice).toBeNull()
   })
 
@@ -360,5 +380,72 @@ describe('parse store', () => {
     ])
     expect(parse.notice).toBeNull()
     expect(parse.errorsBySource['source:failed-download']).toBeNull()
+  })
+})
+
+
+describe('background parse and download', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    Object.values(api).forEach((mock) => mock.mockReset())
+    useSettingsStore().loaded = true
+    api.selectionCreateTasks.mockResolvedValue({ created: [], duplicates: [], skipped_existing: 1, requires_confirmation: false })
+  })
+
+  it('downloads loaded content before paging, snapshots defaults, and leaves selection intact', async () => {
+    const parse = useParseStore()
+    const settings = useSettingsStore()
+    const first = sourceTree('source:background', '后台来源')
+    first.source.loaded_count = 1
+    first.source.has_more = true
+    const next = structuredClone(first)
+    next.source.loaded_count = 2
+    next.source.has_more = false
+    next.groups[0].items.push({ ...next.groups[0].items[0], id: 'item:second', parts: [{ ...next.groups[0].items[0].parts[0], id: 'part:second' }] })
+    parse.upsertSource(first)
+    parse.selectionBySource[first.source.id] = []
+    settings.saved.naming_template = '{title}.{ext}'
+    const order: string[] = []
+    api.selectionCreateTasks.mockImplementation(async () => {
+      order.push('download')
+      settings.saved.naming_template = '{bvid}.{ext}'
+      return { created: [], duplicates: [], skipped_existing: 1, requires_confirmation: false }
+    })
+    api.parseLoadMore.mockImplementation(async () => { order.push('page'); return next })
+    await parse.startBackgroundDownload(first.source.id)
+    expect(order).toEqual(['download', 'page', 'download'])
+    expect(api.selectionCreateTasks.mock.calls.map(([request]) => request.part_ids)).toEqual([['part:source:background'], ['part:second']])
+    expect(api.selectionCreateTasks.mock.calls.every(([request]) => request.naming_template === '{title}.{ext}' && request.duplicate_policy === 'skip')).toBe(true)
+    expect(parse.selectionBySource[first.source.id]).toEqual([])
+    expect(parse.backgroundJob).toMatchObject({ status: 'completed', processed: 2 })
+  })
+
+  it('stops after an in-flight task group without paging or cancelling downloads', async () => {
+    const parse = useParseStore()
+    const first = sourceTree('source:stop', '停止')
+    first.source.has_more = true
+    parse.upsertSource(first)
+    api.selectionCreateTasks.mockImplementation(async () => {
+      parse.stopPacedParsing(first.source.id)
+      return { created: [], duplicates: [], skipped_existing: 0, requires_confirmation: false }
+    })
+    await parse.startBackgroundDownload(first.source.id)
+    expect(parse.backgroundJob?.status).toBe('stopped')
+    expect(api.parseLoadMore).not.toHaveBeenCalled()
+  })
+
+  it('retains completed pages and stops on a pagination error', async () => {
+    const parse = useParseStore()
+    const first = sourceTree('source:failure', '失败')
+    first.source.loaded_count = 20
+    first.source.has_more = true
+    const next = structuredClone(first)
+    next.source.loaded_count = 40
+    parse.upsertSource(first)
+    api.parseLoadMore.mockResolvedValueOnce(next).mockRejectedValueOnce(new Error('HTTP 412'))
+    expect(await parse.loadChunk(first.source.id, 100)).toBe(false)
+    expect(parse.sources[first.source.id].source.loaded_count).toBe(40)
+    expect(parse.errorsBySource[first.source.id]).toContain('412')
+    expect(api.parseLoadMore).toHaveBeenCalledTimes(2)
   })
 })

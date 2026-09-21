@@ -206,17 +206,28 @@ pub enum DownloadTaskRefreshInput {
     CheeseEpisode { ep_id: u64 },
 }
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TaskProcessingOptions {
+    pub retain_raw_streams: bool,
+    pub embed_cover: bool,
+    pub embed_subtitles: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DownloadTaskMediaSelection {
     pub video_quality: String,
     pub audio_quality: String,
     pub video_codec: String,
     pub container: String,
+    #[serde(default)]
+    pub processing: Option<TaskProcessingOptions>,
 }
 
 impl Default for DownloadTaskMediaSelection {
     fn default() -> Self {
         Self {
+            processing: None,
             video_quality: "unknown".to_owned(),
             audio_quality: "unknown".to_owned(),
             video_codec: "unknown".to_owned(),
