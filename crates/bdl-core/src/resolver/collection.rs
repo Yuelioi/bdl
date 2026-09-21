@@ -12,7 +12,7 @@ use std::sync::Arc;
 use url::Url;
 
 use super::paged::{PageRequest, PagedSourceKind, page_state};
-use super::{ResolveOptions, Resolver};
+use super::{ResolveOptions, Resolver, bilibili_publish_date};
 use crate::error::{BdlError, BdlResult};
 use crate::ids::{GroupId, ItemId, PartId, SourceId};
 use crate::input::ClassifiedInput;
@@ -43,6 +43,7 @@ pub struct ResolvedArchiveVideo {
     pub title: String,
     pub owner_mid: u64,
     pub owner_name: Option<String>,
+    pub publish_date: Option<String>,
     pub cover_url: Option<String>,
     pub duration_seconds: Option<u64>,
 }
@@ -394,6 +395,7 @@ impl ResolvedArchiveVideo {
             title: archive.title,
             owner_mid,
             owner_name,
+            publish_date: bilibili_publish_date(archive.pubdate),
             cover_url: non_empty(archive.pic),
             duration_seconds: Some(archive.duration),
         })
@@ -519,6 +521,7 @@ fn map_archive_item(source_key: &str, video: ResolvedArchiveVideo) -> Normalized
         title: video.title.clone(),
         owner_name: video.owner_name.clone(),
         owner_mid: Some(video.owner_mid),
+        publish_date: video.publish_date,
         cover_url: video.cover_url.clone(),
         duration_seconds: video.duration_seconds,
         parts: vec![NormalizedPart {

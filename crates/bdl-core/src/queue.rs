@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{BdlError, BdlResult};
 use crate::model::HeaderPair;
+use crate::naming::DuplicateNamingStrategy;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -91,6 +92,18 @@ pub enum DownloadResourceIntent {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum DownloadExportTarget {
+    DocumentTree {
+        tree_uri: String,
+        relative_path: String,
+        duplicate_naming_strategy: DuplicateNamingStrategy,
+        #[serde(default)]
+        document_uri: Option<String>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DownloadTask {
     pub id: String,
     pub title: String,
@@ -98,6 +111,8 @@ pub struct DownloadTask {
     pub status: TaskStatus,
     pub resources: Vec<DownloadResource>,
     pub output_path: PathBuf,
+    #[serde(default)]
+    pub export_target: Option<DownloadExportTarget>,
     #[serde(default)]
     pub refresh_intent: Option<DownloadTaskRefreshIntent>,
     #[serde(default)]
@@ -149,6 +164,15 @@ impl DownloadTask {
 
     /// Retarget a not-yet-enqueued task without changing its logical identity.
     pub fn with_output_path(mut self, output_path: PathBuf) -> BdlResult<Self> {
+        if let Some(DownloadExportTarget::DocumentTree { relative_path, .. }) =
+            &mut self.export_target
+        {
+            let file_name = output_path.file_name().ok_or_else(|| BdlError::Planning {
+                message: format!("输出路径 {} 没有有效文件名。", output_path.display()),
+            })?;
+            let retargeted = Path::new(relative_path).with_file_name(file_name);
+            *relative_path = portable_relative_path(&retargeted)?;
+        }
         for resource in &mut self.resources {
             resource.target_path =
                 retarget_task_path(&resource.target_path, &self.output_path, &output_path)?;
@@ -158,6 +182,29 @@ impl DownloadTask {
         self.output_path = output_path;
         Ok(self)
     }
+}
+
+pub fn portable_relative_path(path: &Path) -> BdlResult<String> {
+    use std::path::Component;
+
+    let mut parts = Vec::new();
+    for component in path.components() {
+        match component {
+            Component::Normal(value) => parts.push(value.to_string_lossy().into_owned()),
+            Component::CurDir => {}
+            Component::ParentDir | Component::RootDir | Component::Prefix(_) => {
+                return Err(BdlError::Planning {
+                    message: format!("导出相对路径 {} 无效。", path.display()),
+                });
+            }
+        }
+    }
+    if parts.is_empty() {
+        return Err(BdlError::Planning {
+            message: "导出相对路径不能为空。".to_owned(),
+        });
+    }
+    Ok(parts.join("/"))
 }
 
 pub fn logical_task_id(task_id: &str) -> &str {
@@ -171,7 +218,7 @@ pub fn logical_task_id(task_id: &str) -> &str {
     }
 }
 
-fn retarget_task_path(path: &Path, old_output: &Path, new_output: &Path) -> BdlResult<PathBuf> {
+pub fn retarget_task_path(path: &Path, old_output: &Path, new_output: &Path) -> BdlResult<PathBuf> {
     let old_stem = old_output
         .file_stem()
         .and_then(|value| value.to_str())

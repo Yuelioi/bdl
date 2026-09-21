@@ -7,6 +7,10 @@ const requested = process.argv[2]
 const manifestPaths = [
   'crates/bdl-core/Cargo.toml',
   'crates/bdl-tauri/Cargo.toml',
+  'crates/bdl-mobile-credentials/Cargo.toml',
+  'crates/bdl-mobile-execution/Cargo.toml',
+  'crates/bdl-mobile-media/Cargo.toml',
+  'crates/bdl-mobile-storage/Cargo.toml',
   'crates/bdl-cli/Cargo.toml',
   'apps/desktop/src-tauri/Cargo.toml',
 ]
@@ -67,7 +71,16 @@ for (const path of [packagePath, tauriConfigPath]) {
 write('README.md', read('README.md').replace(/当前版本：`\d+\.\d+\.\d+`/, `当前版本：\`${next}\``))
 
 let lock = read('Cargo.lock')
-for (const packageName of ['bdl-core', 'bdl-tauri', 'bdl-cli', 'bdl-desktop']) {
+for (const packageName of [
+  'bdl-core',
+  'bdl-tauri',
+  'bdl-mobile-credentials',
+  'bdl-mobile-execution',
+  'bdl-mobile-media',
+  'bdl-mobile-storage',
+  'bdl-cli',
+  'bdl-desktop',
+]) {
   const packagePattern = new RegExp(
     `(\\[\\[package\\]\\]\\r?\\nname = "${packageName}"\\r?\\nversion = ")\\d+\\.\\d+\\.\\d+(")`,
   )

@@ -1,0 +1,15 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "desktop",
+  "description": "Desktop-only window, process and updater permissions for BDL.",
+  "windows": ["main"],
+  "platforms": ["macOS", "windows", "linux"],
+  "permissions": [
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-start-dragging",
+    "core:window:allow-close",
+    "process:allow-restart",
+    "updater:default"
+  ]
+}

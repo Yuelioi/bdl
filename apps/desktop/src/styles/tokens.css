@@ -8,6 +8,7 @@
   --color-surface: oklch(0.995 0.002 260);
   --color-surface-raised: oklch(0.999 0.001 260);
   --color-inset: oklch(0.985 0.003 260);
+  --color-control: oklch(0.96 0.004 260);
   --color-panel: oklch(0.955 0.004 260);
   --color-panel-strong: oklch(0.925 0.005 260);
   --color-border: oklch(0.86 0.006 260);
@@ -89,6 +90,7 @@
   --color-panel: oklch(0.17 0.005 260);
   --color-surface: oklch(0.205 0.006 260);
   --color-inset: oklch(0.155 0.004 260);
+  --color-control: oklch(0.18 0.005 260);
   --color-surface-raised: oklch(0.245 0.007 260);
   --color-panel-strong: oklch(0.265 0.008 260);
   --color-border: oklch(0.31 0.008 260);
@@ -121,4 +123,82 @@
 
   --shadow-panel: 0 1px 2px oklch(0.04 0.004 260 / 28%), inset 0 1px oklch(1 0 0 / 3%);
   --shadow-overlay: 0 22px 60px oklch(0.04 0.004 260 / 56%), inset 0 1px oklch(1 0 0 / 5%);
+}
+
+/* MuMu and older Android System WebView releases can parse custom properties but not
+   OKLCH values. Override the palette with sRGB equivalents only on those engines. */
+@supports not (color: oklch(0.5 0.1 0)) {
+  :root {
+    --color-background: #f4f5f7;
+    --color-surface: #fdfdff;
+    --color-surface-raised: #feffff;
+    --color-inset: #f9fafc;
+    --color-control: #f0f2f5;
+    --color-panel: #eef0f3;
+    --color-panel-strong: #e4e6ea;
+    --color-border: #cfd1d5;
+    --color-border-strong: #a2a5aa;
+    --color-text: #1f2226;
+    --color-text-strong: #0d1013;
+    --color-muted: #616368;
+    --color-dimmed: #87898d;
+    --color-accent: #ec6484;
+    --color-accent-strong: #c22859;
+    --color-accent-soft: #ffd6dd;
+    --color-accent-faint: #ffeef0;
+    --color-focus-outline: #e15a7b;
+    --color-on-accent: #fef8f9;
+    --color-danger: #c52c2a;
+    --color-danger-soft: #ffeae8;
+    --color-warning: #bc6e00;
+    --color-warning-soft: #fff0d8;
+    --color-success: #407142;
+    --color-success-soft: #eaf6ea;
+    --color-selected-surface: #fff0f3;
+    --color-hover-surface: #f7f8fa;
+    --color-progress-track: #e0e1e4;
+    --color-nav: #fdfdff;
+    --color-nav-raised: #eef0f3;
+    --color-nav-text: #1f2226;
+    --color-nav-muted: #67696d;
+    --shadow-panel: 0 1px 2px rgba(13, 16, 19, 0.05);
+    --shadow-overlay: 0 18px 50px rgba(13, 16, 19, 0.18);
+  }
+
+  :root[data-theme='dark'] {
+    --color-background: #08090b;
+    --color-panel: #0e0f12;
+    --color-surface: #16171a;
+    --color-inset: #0b0c0e;
+    --color-control: #121316;
+    --color-surface-raised: #1e2124;
+    --color-panel-strong: #232529;
+    --color-border: #2e3034;
+    --color-border-strong: #4d5055;
+    --color-text: #d5d8db;
+    --color-text-strong: #f0f2f4;
+    --color-muted: #95989d;
+    --color-dimmed: #6f7276;
+    --color-accent: #ed7c94;
+    --color-accent-strong: #ff9caf;
+    --color-accent-soft: #441d26;
+    --color-accent-faint: #261719;
+    --color-focus-outline: #f996a9;
+    --color-on-accent: #0b0d11;
+    --color-danger: #f27166;
+    --color-danger-soft: #371916;
+    --color-warning: #e2a34f;
+    --color-warning-soft: #34230b;
+    --color-success: #77a774;
+    --color-success-soft: #1a2719;
+    --color-selected-surface: #32191e;
+    --color-hover-surface: #1c1e22;
+    --color-progress-track: #292b2f;
+    --color-nav: #08090b;
+    --color-nav-raised: #101214;
+    --color-nav-text: #dcdee2;
+    --color-nav-muted: #898c91;
+    --shadow-panel: 0 1px 2px rgba(0, 0, 0, 0.28), inset 0 1px rgba(255, 255, 255, 0.03);
+    --shadow-overlay: 0 22px 60px rgba(0, 0, 0, 0.56), inset 0 1px rgba(255, 255, 255, 0.05);
+  }
 }

@@ -4,8 +4,10 @@ import UiInlineNotice from '../../ui/InlineNotice.vue';
 import UiSelect from '../../ui/Select.vue';
 import { archiveModeOptions } from './settingsCatalog';
 import type { SettingsForm } from './useSettingsForm';
+import { isAndroidPlatform } from '../../utils/platform';
 
 const { form } = defineProps<{ form: SettingsForm }>();
+const androidPlatform = isAndroidPlatform();
 const {
   settings,
   settingsArchiveMode,
@@ -40,14 +42,17 @@ const {
       <UiCheckbox
         v-model="settingsEmbedCover"
         label="嵌入封面（仅 MKV）"
-        :disabled="settings.loading || settings.saving"
+        :disabled="androidPlatform || settings.loading || settings.saving"
       />
       <UiCheckbox
         v-model="settingsEmbedSubtitles"
         label="嵌入字幕（仅 MKV）"
-        :disabled="settings.loading || settings.saving"
+        :disabled="androidPlatform || settings.loading || settings.saving"
       />
     </div>
+    <UiInlineNotice v-if="androidPlatform" tone="info">
+      Android 内置 FFmpeg 已支持 MP4 与 MKV；嵌入封面和嵌入字幕暂未开放，仍可作为独立归档文件保存。
+    </UiInlineNotice>
     <UiInlineNotice v-if="settingsEmbeddingFormatError" tone="danger">{{
       settingsEmbeddingFormatError
     }}</UiInlineNotice>

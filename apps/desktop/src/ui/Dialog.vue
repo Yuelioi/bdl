@@ -2,11 +2,13 @@
 import { computed } from 'vue'
 
 const model = defineModel<boolean>({ default: false })
-const { title, description, fixedHeight = false, size = 'default' } = defineProps<{
+const { title, description, fixedHeight = false, size = 'default', dismissible = true, showClose = true } = defineProps<{
   title: string
   description?: string
   fixedHeight?: boolean
   size?: 'default' | 'wide'
+  dismissible?: boolean
+  showClose?: boolean
 }>()
 
 const modalUi = computed(() => ({
@@ -15,7 +17,7 @@ const modalUi = computed(() => ({
   title: 'min-w-0 truncate',
   description: 'truncate',
   body: fixedHeight ? 'min-h-0 flex-1 overflow-hidden pt-0 sm:pt-0' : 'min-h-0',
-  footer: 'justify-end',
+  footer: 'justify-end flex-wrap sm:flex-nowrap',
 }))
 </script>
 
@@ -24,9 +26,10 @@ const modalUi = computed(() => ({
     v-model:open="model"
     :title
     :description
+    :dismissible
     :ui="modalUi"
     close-icon="i-tabler-x"
-    :close="{ color: 'neutral', variant: 'ghost', size: 'sm' }"
+    :close="showClose ? { color: 'neutral', variant: 'ghost', size: 'sm' } : false"
   >
     <template #body>
       <div class="dialog-body" :class="{ 'dialog-body-fixed': fixedHeight }">

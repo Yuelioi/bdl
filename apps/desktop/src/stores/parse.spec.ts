@@ -342,6 +342,63 @@ describe('parse store', () => {
     )
   })
 
+  it('uses the saved publish-date naming template when creating tasks', async () => {
+    const parse = useParseStore()
+    const settings = useSettingsStore()
+    settings.loaded = true
+    settings.saved.naming_template = '{publish_date} - {date} - {title}.{ext}'
+    parse.upsertSource(sourceTree('source:saved-naming', '保存后的命名'))
+    api.selectionCreateTasks.mockResolvedValue({
+      created: [],
+      duplicates: [],
+      skipped_existing: 0,
+      requires_confirmation: false,
+    })
+
+    await parse.createTasksForSelection('source:saved-naming')
+
+    expect(api.selectionCreateTasks).toHaveBeenCalledWith(
+      expect.objectContaining({
+        naming_template: '{publish_date} - {date} - {title}.{ext}',
+      }),
+    )
+  })
+
+  it('lets an explicit per-download quality override saved preference ordering', async () => {
+    const parse = useParseStore()
+    const settings = useSettingsStore()
+    settings.loaded = true
+    settings.saved.media_preferences.video = [{ quality: '80', codec: 'hevc' }]
+    settings.saved.media_preferences.audio = ['30280']
+    parse.upsertSource(sourceTree('source:quality-override', '单次画质覆盖'))
+    api.selectionCreateTasks.mockResolvedValue({
+      created: [],
+      duplicates: [],
+      skipped_existing: 0,
+      requires_confirmation: false,
+    })
+
+    await parse.createTasksForSelection('source:quality-override', {
+      quality: '64',
+      codec: 'avc',
+      audioQuality: '30216',
+      mediaPreferences: settings.saved.media_preferences,
+    })
+
+    expect(api.selectionCreateTasks).toHaveBeenCalledWith(
+      expect.objectContaining({
+        quality: '64',
+        codec: 'avc',
+        audio_quality: '30216',
+        media_preferences: {
+          video: [],
+          audio: [],
+          fallback: settings.saved.media_preferences.fallback,
+        },
+      }),
+    )
+  })
+
   it('reports existing final outputs skipped during task creation', async () => {
     const parse = useParseStore()
     const settings = useSettingsStore()

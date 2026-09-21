@@ -1,17 +1,11 @@
 {
-  "$schema": "../gen/schemas/desktop-schema.json",
+  "$schema": "../gen/schemas/capabilities.json",
   "identifier": "default",
-  "description": "Default permissions for BDL desktop.",
+  "description": "Cross-platform permissions for BDL.",
   "windows": ["main"],
   "permissions": [
     "core:default",
-    "core:window:allow-minimize",
-    "core:window:allow-toggle-maximize",
-    "core:window:allow-start-dragging",
-    "core:window:allow-close",
     "dialog:default",
-    "opener:default",
-    "process:allow-restart",
-    "updater:default"
+    "opener:default"
   ]
 }

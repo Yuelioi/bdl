@@ -10,16 +10,22 @@ use bdl_core::fetcher::{
 };
 use bdl_core::ids::{PartId, SourceId};
 use bdl_core::model::NormalizedSourceTree;
-use bdl_core::muxer::{MediaMuxer, MediaMuxerConfig, MuxError, MuxRequest};
+#[cfg(not(target_os = "android"))]
+use bdl_core::muxer::{MediaMuxer, MediaMuxerConfig};
+use bdl_core::muxer::{MuxError, MuxRequest};
+use bdl_core::naming::DuplicateNamingStrategy;
 use bdl_core::planner::{
     ArchiveMode, DownloadMediaMode, DownloadOptions, MissingQualityPolicy, StreamPreference,
     parse_stream_codec, plan_selected_parts,
 };
 use bdl_core::queue::{
-    DownloadResource, DownloadResourceIntent, DownloadTask, DuplicateTaskPolicy, QueueLogEntry,
-    QueueLogLevel, ResourceStatus, TaskStatus,
+    DownloadExportTarget, DownloadResource, DownloadResourceIntent, DownloadTask,
+    DuplicateTaskPolicy, QueueLogEntry, QueueLogLevel, ResourceStatus, TaskStatus,
+    portable_relative_path, retarget_task_path,
 };
-use bdl_core::settings::{validate_embedding_container, validate_speed_limit};
+use bdl_core::settings::{
+    DocumentTreeDirectory, validate_embedding_container, validate_speed_limit,
+};
 use bdl_core::{BdlError, BdlResult};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -38,8 +44,10 @@ use crate::events;
 use crate::media_finalize::{
     completed_resource_by_intent, select_mux_attachments, task_has_resource_intent, write_nfo,
 };
+use crate::mobile_storage::{ExportOutcome, ExportResult, MobileStorage};
 use crate::queue_worker::start as start_queue_worker;
 use crate::state::{AccountSnapshot, AppState, SettingsSnapshot, StartupRecoverySnapshot};
+use crate::task_execution::NotificationPermissionState;
 use crate::task_failure::{is_login_expired_error, is_private_resource_error};
 
 pub type CommandResult<T> = Result<T, CommandError>;
@@ -63,6 +71,7 @@ fn command_error_code(error: &BdlError) -> &'static str {
     match error {
         BdlError::InvalidInput { .. } => "parse_unrecognized",
         BdlError::UnsupportedSource { .. } => "unsupported_source",
+        BdlError::Platform { .. } => "platform_error",
         BdlError::Mux(MuxError::FfmpegNotFound { .. }) => "missing_ffmpeg",
         BdlError::Io(error) if error.kind() == ErrorKind::PermissionDenied => {
             "unwritable_save_directory"
@@ -88,6 +97,7 @@ fn command_error_message(error: &BdlError) -> Option<String> {
     match error {
         BdlError::InvalidInput { message } => Some(message.clone()),
         BdlError::UnsupportedSource { kind } => Some(format!("暂不支持 `{kind}` 类型的来源。")),
+        BdlError::Platform { message } => Some(message.clone()),
         BdlError::Mux(MuxError::FfmpegNotFound { .. }) => {
             Some("未找到 FFmpeg，请在设置中配置 FFmpeg 路径。".to_owned())
         }
@@ -195,6 +205,7 @@ pub struct SelectionCreateTasksRequest {
     pub source_id: String,
     pub part_ids: Vec<String>,
     pub output_dir: Option<String>,
+    pub document_tree_output: Option<DocumentTreeDirectory>,
     pub archive_mode: Option<String>,
     pub output_extension: Option<String>,
     pub naming_template: Option<String>,
@@ -301,6 +312,7 @@ pub enum FfmpegStatus {
 pub enum FfmpegSource {
     Configured,
     System,
+    Native,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -462,7 +474,19 @@ pub async fn selection_create_tasks(
     request: SelectionCreateTasksRequest,
 ) -> CommandResult<SelectionCreateTasksResult> {
     let settings = state.settings()?;
-    let options = download_options_from_request(&request, &settings)?;
+    let document_tree_output = request
+        .document_tree_output
+        .clone()
+        .or_else(|| settings.document_tree_output.clone());
+    let mobile_work_dir = document_tree_output.as_ref().map(|_| {
+        state
+            .data_dir()
+            .join("downloads")
+            .join("work")
+            .join(uuid::Uuid::new_v4().to_string())
+    });
+    let options = download_options_from_request(&request, &settings, mobile_work_dir.clone())?;
+    let export_duplicate_strategy = options.duplicate_naming_strategy;
     let source_id = SourceId(request.source_id);
     let duplicate_policy = request.duplicate_policy;
     let scheduled_at = parse_future_schedule(request.scheduled_at.as_deref(), Utc::now())?;
@@ -478,6 +502,22 @@ pub async fn selection_create_tasks(
     for task in &mut planned_tasks {
         task.scheduled_at = scheduled_at;
         task.speed_limit_bytes_per_second = speed_limit_bytes_per_second;
+        if let (Some(directory), Some(work_dir)) =
+            (document_tree_output.as_ref(), mobile_work_dir.as_ref())
+        {
+            let relative_path =
+                task.output_path
+                    .strip_prefix(work_dir)
+                    .map_err(|_| BdlError::Planning {
+                        message: "Android 工作文件路径不在应用私有目录内。".to_owned(),
+                    })?;
+            task.export_target = Some(DownloadExportTarget::DocumentTree {
+                tree_uri: directory.tree_uri.clone(),
+                relative_path: portable_relative_path(relative_path)?,
+                duplicate_naming_strategy: export_duplicate_strategy,
+                document_uri: None,
+            });
+        }
     }
 
     if prepared.tree_updated {
@@ -520,13 +560,16 @@ pub async fn selection_create_tasks(
 fn download_options_from_request(
     request: &SelectionCreateTasksRequest,
     settings: &SettingsSnapshot,
+    output_dir_override: Option<PathBuf>,
 ) -> CommandResult<DownloadOptions> {
-    let output_dir = request
-        .output_dir
-        .as_deref()
-        .or(settings.download_dir.as_deref())
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("downloads"));
+    let output_dir = output_dir_override.unwrap_or_else(|| {
+        request
+            .output_dir
+            .as_deref()
+            .or(settings.download_dir.as_deref())
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("downloads"))
+    });
 
     let archive_mode = parse_archive_mode(
         request
@@ -596,6 +639,60 @@ pub fn queue_list(app: AppHandle, state: State<'_, AppState>) -> CommandResult<V
     let tasks = state.queue_snapshot()?;
     start_queue_worker(&app);
     Ok(tasks)
+}
+
+#[tauri::command]
+pub fn mobile_pick_export_directory(
+    state: State<'_, AppState>,
+) -> CommandResult<DocumentTreeDirectory> {
+    Ok(state.mobile_storage().pick_document_tree()?)
+}
+
+#[tauri::command]
+pub fn mobile_read_clipboard_text(state: State<'_, AppState>) -> CommandResult<String> {
+    Ok(state.mobile_storage().read_clipboard_text()?)
+}
+
+#[tauri::command]
+pub fn mobile_save_image_to_gallery(
+    state: State<'_, AppState>,
+    file_name: String,
+    image_base64: String,
+) -> CommandResult<String> {
+    Ok(state
+        .mobile_storage()
+        .save_image_to_gallery(&file_name, "image/png", &image_base64)?)
+}
+
+#[tauri::command]
+pub async fn mobile_prepare_notifications(
+    state: State<'_, AppState>,
+) -> CommandResult<NotificationPermissionState> {
+    let backend = state.task_execution();
+    drop(state);
+
+    let checker = backend.clone();
+    let current =
+        tauri::async_runtime::spawn_blocking(move || checker.notification_permission_state())
+            .await
+            .map_err(|error| {
+                CommandError::from(BdlError::Platform {
+                    message: format!("通知权限检查任务失败：{error}"),
+                })
+            })??;
+
+    if current != NotificationPermissionState::Prompt {
+        return Ok(current);
+    }
+
+    tauri::async_runtime::spawn_blocking(move || backend.request_notification_permission())
+        .await
+        .map_err(|error| {
+            CommandError::from(BdlError::Platform {
+                message: format!("通知权限请求任务失败：{error}"),
+            })
+        })?
+        .map_err(CommandError::from)
 }
 
 #[tauri::command]
@@ -931,6 +1028,10 @@ pub fn queue_open_file(
     task_id: String,
 ) -> CommandResult<()> {
     let task = state.task_snapshot(&task_id)?;
+    if let Some(target) = task.export_target.as_ref() {
+        state.mobile_storage().open_exported_file(target)?;
+        return Ok(());
+    }
     if task.output_path.exists() {
         open_path(&app, &task.output_path)
     } else {
@@ -945,6 +1046,10 @@ pub fn queue_open_dir(
     task_id: String,
 ) -> CommandResult<()> {
     let task = state.task_snapshot(&task_id)?;
+    if let Some(target) = task.export_target.as_ref() {
+        state.mobile_storage().open_export_directory(target)?;
+        return Ok(());
+    }
     open_task_output_dir(&app, &task)
 }
 
@@ -1228,6 +1333,10 @@ pub fn start_account_startup_verification(app: &AppHandle) {
     });
 }
 
+pub fn start_queue_processing(app: &AppHandle) {
+    start_queue_worker(app);
+}
+
 fn update_task_status(
     app: AppHandle,
     state: State<'_, AppState>,
@@ -1347,6 +1456,18 @@ async fn check_download_directory(path: PathBuf) -> DownloadDirectoryHealth {
     }
 }
 
+#[cfg(target_os = "android")]
+async fn check_ffmpeg(_configured: Option<&str>) -> FfmpegHealth {
+    FfmpegHealth {
+        status: FfmpegStatus::Ready,
+        source: FfmpegSource::Native,
+        path: None,
+        version: Some("FFmpeg 8.1.2 (Android ARM64 bundled)".to_owned()),
+        message: "Android 内置 FFmpeg 媒体合并可用。".to_owned(),
+    }
+}
+
+#[cfg(not(target_os = "android"))]
 async fn check_ffmpeg(configured: Option<&str>) -> FfmpegHealth {
     let configured_path = configured
         .map(str::trim)
@@ -1415,6 +1536,8 @@ pub(crate) async fn run_download_task(
     cancel_token: FetchCancelToken,
 ) -> CommandResult<()> {
     if has_recoverable_completed_output(&task).await? {
+        finalize_archive_assets(app, state, &task).await?;
+        export_task_files(app, state, &task.id).await?;
         let completed = state.update_task_status(&task.id, TaskStatus::Completed)?;
         events::emit(app, events::QUEUE_TASK_UPDATED, &completed)?;
         emit_queue_log(
@@ -1442,10 +1565,7 @@ async fn run_download_task_inner(
     cancel_token: FetchCancelToken,
 ) -> CommandResult<()> {
     let runtime_options = runtime_options.with_processing(task.media_selection.processing);
-    let muxer = MediaMuxer::new(MediaMuxerConfig {
-        ffmpeg_path: runtime_options.ffmpeg_path.clone(),
-    })
-    .map_err(BdlError::from)?;
+    let media_mux = state.media_mux();
     for resource in task
         .resources
         .iter()
@@ -1560,26 +1680,29 @@ async fn run_download_task_inner(
         .map(|resource| resource.target_path.clone());
     let audio_path = completed_resource_by_intent(&latest, DownloadResourceIntent::Audio)
         .map(|resource| resource.target_path.clone());
-    muxer
-        .mux(&MuxRequest {
-            video_path,
-            audio_path,
-            output_path: latest.output_path.clone(),
-            cover_path: attachments.cover_path,
-            subtitle_paths: attachments.subtitle_paths,
-        })
-        .await
-        .map_err(BdlError::from)?;
-
-    let completed = state.update_task_status(&task.id, TaskStatus::Completed)?;
-    events::emit(app, events::QUEUE_TASK_UPDATED, &completed)?;
-    emit_queue_log(app, state, &task.id, QueueLogLevel::Info, "下载完成")?;
+    media_mux
+        .mux(
+            &MuxRequest {
+                video_path,
+                audio_path,
+                output_path: latest.output_path.clone(),
+                cover_path: attachments.cover_path,
+                subtitle_paths: attachments.subtitle_paths,
+            },
+            runtime_options.ffmpeg_path.clone(),
+        )
+        .await?;
 
     if !runtime_options.retain_raw_streams {
         cleanup_raw_streams(app, state, &task).await?;
     }
 
     finalize_archive_assets(app, state, &task).await?;
+    export_task_files(app, state, &task.id).await?;
+
+    let completed = state.update_task_status(&task.id, TaskStatus::Completed)?;
+    events::emit(app, events::QUEUE_TASK_UPDATED, &completed)?;
+    emit_queue_log(app, state, &task.id, QueueLogLevel::Info, "下载完成")?;
 
     if let Err(error) = state.record_completed_task(&completed) {
         tracing::warn!("failed to save completed task record: {error}");
@@ -1621,6 +1744,98 @@ async fn has_recoverable_completed_output(task: &DownloadTask) -> CommandResult<
     Ok(media_resources
         .iter()
         .all(|resource| !resource.target_path.is_file()))
+}
+
+async fn export_task_files(
+    app: &AppHandle,
+    state: &AppState,
+    task_id: &str,
+) -> CommandResult<DownloadTask> {
+    let task = state.task_snapshot(task_id)?;
+    let Some(target) = task.export_target.clone() else {
+        return Ok(task);
+    };
+    let DownloadExportTarget::DocumentTree {
+        tree_uri,
+        duplicate_naming_strategy,
+        ..
+    } = target.clone();
+
+    emit_queue_log(
+        app,
+        state,
+        task_id,
+        QueueLogLevel::Info,
+        "导出到 Android 保存目录",
+    )?;
+    let result =
+        export_file_with_storage(state.mobile_storage(), task.output_path.clone(), target).await?;
+
+    let updated_target = DownloadExportTarget::DocumentTree {
+        tree_uri: tree_uri.clone(),
+        relative_path: result.relative_path.clone(),
+        duplicate_naming_strategy,
+        document_uri: Some(result.document_uri.clone()),
+    };
+    let updated = state.update_task_export_target(task_id, Some(updated_target))?;
+    events::emit(app, events::QUEUE_TASK_UPDATED, &updated)?;
+
+    if result.outcome == ExportOutcome::SkippedExisting {
+        emit_queue_log(
+            app,
+            state,
+            task_id,
+            QueueLogLevel::Info,
+            "目标文件已存在，按设置跳过导出",
+        )?;
+        return Ok(updated);
+    }
+
+    let exported_output = PathBuf::from(&result.relative_path);
+    for resource in &updated.resources {
+        if resource.status != ResourceStatus::Completed || !resource.target_path.is_file() {
+            continue;
+        }
+        let resource_relative = retarget_task_path(
+            &resource.target_path,
+            &updated.output_path,
+            &exported_output,
+        )?;
+        let resource_target = DownloadExportTarget::DocumentTree {
+            tree_uri: tree_uri.clone(),
+            relative_path: portable_relative_path(&resource_relative)?,
+            duplicate_naming_strategy: DuplicateNamingStrategy::OverwriteExisting,
+            document_uri: None,
+        };
+        export_file_with_storage(
+            state.mobile_storage(),
+            resource.target_path.clone(),
+            resource_target,
+        )
+        .await?;
+    }
+
+    emit_queue_log(
+        app,
+        state,
+        task_id,
+        QueueLogLevel::Info,
+        "Android 文件导出完成",
+    )?;
+    state.task_snapshot(task_id).map_err(Into::into)
+}
+
+async fn export_file_with_storage(
+    storage: MobileStorage,
+    source_path: PathBuf,
+    target: DownloadExportTarget,
+) -> CommandResult<ExportResult> {
+    tokio::task::spawn_blocking(move || storage.export_file(&source_path, &target))
+        .await
+        .map_err(|error| BdlError::Platform {
+            message: format!("Android 导出任务异常结束：{error}"),
+        })?
+        .map_err(Into::into)
 }
 
 fn should_fetch(resource: &DownloadResource) -> bool {
@@ -1964,7 +2179,7 @@ mod tests {
         let request: super::SelectionCreateTasksRequest = serde_json::from_value(serde_json::json!({
             "source_id": "test", "part_ids": [], "retain_raw_streams": false, "embed_cover": false, "embed_subtitles": false
         })).unwrap();
-        let options = super::download_options_from_request(&request, &settings).unwrap();
+        let options = super::download_options_from_request(&request, &settings, None).unwrap();
         let selection = bdl_core::queue::DownloadTaskMediaSelection {
             processing: options.processing,
             ..Default::default()
@@ -1995,7 +2210,7 @@ mod tests {
             "missing_quality_policy": "skip",
             "archive_assets": { "cover": true, "subtitles": false, "danmaku": false, "nfo": false }
         })).unwrap();
-        let options = super::download_options_from_request(&request, &settings).unwrap();
+        let options = super::download_options_from_request(&request, &settings, None).unwrap();
         assert_eq!(options.naming_template, "{title}.{ext}");
         assert_eq!(
             options.duplicate_naming_strategy,
@@ -2007,7 +2222,7 @@ mod tests {
         let defaults: super::SelectionCreateTasksRequest =
             serde_json::from_value(serde_json::json!({"source_id": "test", "part_ids": []}))
                 .unwrap();
-        let inherited = super::download_options_from_request(&defaults, &settings).unwrap();
+        let inherited = super::download_options_from_request(&defaults, &settings, None).unwrap();
         assert_eq!(inherited.naming_template, settings.naming_template);
         assert_eq!(
             inherited.duplicate_naming_strategy,
@@ -2170,6 +2385,7 @@ mod tests {
             status: TaskStatus::Paused,
             resources: vec![video],
             output_path,
+            export_target: None,
             refresh_intent: None,
             media_selection: DownloadTaskMediaSelection::default(),
             scheduled_at: None,
@@ -2259,6 +2475,7 @@ mod tests {
                 status: ResourceStatus::Failed,
             }],
             output_path: PathBuf::from("downloads/fixture.mp4"),
+            export_target: None,
             refresh_intent: None,
             media_selection: DownloadTaskMediaSelection::default(),
             scheduled_at: None,

@@ -20,6 +20,7 @@ import UiStatusBadge from './StatusBadge.vue'
 import UiTabs from './Tabs.vue'
 import ExternalLinkButton from './ExternalLinkButton.vue'
 import { bilibiliTaskUrl } from '../utils/bilibiliLinks'
+import { isMobilePlatform } from '../utils/platform'
 
 const { task, progress, logs, logsLoading = false } = defineProps<{
   task: DownloadTask | null
@@ -38,6 +39,7 @@ const tabTouched = ref(false)
 const copied = ref(false)
 const exportingDiagnostics = ref(false)
 const exportNotice = ref('')
+const transferCapabilities = { canOpenOutput: !isMobilePlatform() }
 
 const tabs = computed(() => [
   { label: '诊断', value: 'diagnosis' },
@@ -46,7 +48,7 @@ const tabs = computed(() => [
   { label: '事件', value: 'events', count: timeline.value.length },
   { label: '原始日志', value: 'raw_logs', count: logs.length },
 ])
-const diagnostic = computed(() => (task ? createTaskDiagnosticView(task, logs) : null))
+const diagnostic = computed(() => (task ? createTaskDiagnosticView(task, logs, transferCapabilities) : null))
 const timeline = computed(() => (task ? createTaskTimeline(task, logs) : []))
 const failedTrackCount = computed(
   () => task?.resources.filter((resource) => resource.status === 'failed' || resource.status === 'cancelled').length ?? 0,

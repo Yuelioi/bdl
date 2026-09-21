@@ -1,7 +1,9 @@
 use std::path::PathBuf;
 
+use bdl_core::naming::DuplicateNamingStrategy;
 use bdl_core::queue::{
-    DownloadResourceIntent, DownloadTask, DownloadTaskMediaSelection, ResourceStatus, TaskStatus,
+    DownloadExportTarget, DownloadResourceIntent, DownloadTask, DownloadTaskMediaSelection,
+    ResourceStatus, TaskStatus,
 };
 use chrono::{Duration, TimeZone, Utc};
 
@@ -77,6 +79,28 @@ fn resource_intents_serialize_as_stable_strings() {
     );
 }
 
+#[test]
+fn retargeting_private_output_keeps_document_tree_target_relative() {
+    let mut task = waiting_task();
+    task.output_path = PathBuf::from("work/Series/Example.mp4");
+    task.export_target = Some(DownloadExportTarget::DocumentTree {
+        tree_uri: "content://documents/tree/downloads".to_owned(),
+        relative_path: "Series/Example.mp4".to_owned(),
+        duplicate_naming_strategy: DuplicateNamingStrategy::AppendSuffix,
+        document_uri: None,
+    });
+
+    let retargeted = task
+        .with_output_path(PathBuf::from("work/Series/Example (1).mp4"))
+        .unwrap();
+
+    let Some(DownloadExportTarget::DocumentTree { relative_path, .. }) = retargeted.export_target
+    else {
+        panic!("document tree export target should remain attached");
+    };
+    assert_eq!(relative_path, "Series/Example (1).mp4");
+}
+
 fn waiting_task() -> DownloadTask {
     DownloadTask {
         id: "task:scheduled".to_owned(),
@@ -85,6 +109,7 @@ fn waiting_task() -> DownloadTask {
         status: TaskStatus::Waiting,
         resources: Vec::new(),
         output_path: PathBuf::from("scheduled.mp4"),
+        export_target: None,
         refresh_intent: None,
         media_selection: DownloadTaskMediaSelection::default(),
         scheduled_at: None,

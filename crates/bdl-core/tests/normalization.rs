@@ -28,6 +28,7 @@ fn normalized_source_tree_serializes_stable_shape() {
                 title: "Example".into(),
                 owner_name: Some("owner".into()),
                 owner_mid: Some(42),
+                publish_date: Some("2026-07-08".into()),
                 cover_url: None,
                 duration_seconds: None,
                 parts: vec![NormalizedPart {
@@ -105,6 +106,7 @@ fn normalized_source_tree_serializes_stable_shape() {
                             "title": "Example",
                             "owner_name": "owner",
                             "owner_mid": 42,
+                            "publish_date": "2026-07-08",
                             "cover_url": null,
                             "duration_seconds": null,
                             "parts": [

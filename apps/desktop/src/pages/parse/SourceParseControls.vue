@@ -106,4 +106,12 @@ const parseMenuItems = computed(() => [
   border-start-start-radius: 0;
   border-end-start-radius: 0;
 }
+
+@media (width <= 700px) {
+  .source-parse-controls {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    gap: var(--space-6);
+  }
+}
 </style>

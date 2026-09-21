@@ -181,7 +181,15 @@ const toggleNode = (nodeId: string) => {
     <SelectionActionBar :selected-count="selectedCount" :total-count="totalPartCount">
       <template #selection>
         <UiButton
-          v-if="selectedCount > 0"
+          size="compact"
+          variant="secondary"
+          :disabled="activeLoading || tableRows.length === 0"
+          @click="toggleAllResults"
+        >
+          {{ allRowsSelected ? '取消全选' : '全选已加载' }}
+        </UiButton>
+        <UiButton
+          v-if="selectedCount > 0 && !allRowsSelected"
           size="compact"
           variant="ghost"
           :disabled="activeLoading"
@@ -203,3 +211,18 @@ const toggleNode = (nodeId: string) => {
     <template #detail>解析结果只保留在当前会话；确认选择后才会创建下载任务。</template>
   </UiEmptyState>
 </template>
+
+<style scoped>
+@media (width <= 700px) {
+  .source-result-header {
+    gap: var(--space-8);
+    padding-bottom: var(--space-10);
+  }
+
+  .source-function-toolbar {
+    width: 100%;
+    justify-content: flex-start;
+    gap: var(--space-6);
+  }
+}
+</style>

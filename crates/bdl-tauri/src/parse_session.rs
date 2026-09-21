@@ -450,6 +450,9 @@ fn merge_missing_item_metadata(target: &mut NormalizedItem, fallback: &Normalize
     if target.owner_name.is_none() {
         target.owner_name.clone_from(&fallback.owner_name);
     }
+    if target.publish_date.is_none() {
+        target.publish_date.clone_from(&fallback.publish_date);
+    }
     if target.cover_url.is_none() {
         target.cover_url.clone_from(&fallback.cover_url);
     }
@@ -473,7 +476,10 @@ fn source_kind_name(kind: SourceKind) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_two_part_source_id, should_continue_loading};
+    use bdl_core::ids::ItemId;
+    use bdl_core::model::NormalizedItem;
+
+    use super::{merge_missing_item_metadata, parse_two_part_source_id, should_continue_loading};
 
     #[test]
     fn load_limit_is_clamped_to_one() {
@@ -486,5 +492,33 @@ mod tests {
             .expect_err("a mismatched source kind must be rejected");
 
         assert!(error.to_string().contains("collection mid"));
+    }
+
+    #[test]
+    fn hydration_keeps_list_publish_date_when_video_detail_lacks_it() {
+        let mut target = NormalizedItem {
+            id: ItemId("item:target".to_owned()),
+            title: "target".to_owned(),
+            owner_name: None,
+            owner_mid: None,
+            publish_date: None,
+            cover_url: None,
+            duration_seconds: None,
+            parts: Vec::new(),
+        };
+        let fallback = NormalizedItem {
+            id: ItemId("item:fallback".to_owned()),
+            title: "fallback".to_owned(),
+            owner_name: None,
+            owner_mid: None,
+            publish_date: Some("2025-12-31".to_owned()),
+            cover_url: None,
+            duration_seconds: None,
+            parts: Vec::new(),
+        };
+
+        merge_missing_item_metadata(&mut target, &fallback);
+
+        assert_eq!(target.publish_date.as_deref(), Some("2025-12-31"));
     }
 }

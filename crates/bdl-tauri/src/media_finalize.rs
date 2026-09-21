@@ -152,6 +152,7 @@ mod tests {
             status: TaskStatus::Completed,
             resources,
             output_path: PathBuf::from("downloads/A&B <C>.mp4"),
+            export_target: None,
             refresh_intent: None,
             media_selection: DownloadTaskMediaSelection::default(),
             scheduled_at: None,

@@ -27,3 +27,21 @@
   --feedback-background: var(--color-danger-soft);
   --feedback-accent: var(--color-danger);
 }
+
+@supports not (color: color-mix(in srgb, #000, #fff)) {
+  .feedback-tone {
+    --feedback-border: var(--color-accent-soft);
+  }
+
+  .feedback-tone.tone-success {
+    --feedback-border: var(--color-success);
+  }
+
+  .feedback-tone.tone-warning {
+    --feedback-border: var(--color-warning);
+  }
+
+  .feedback-tone.tone-danger {
+    --feedback-border: var(--color-danger);
+  }
+}

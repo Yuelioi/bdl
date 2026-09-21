@@ -7,7 +7,7 @@ use std::sync::Arc;
 use url::Url;
 
 use super::paged::{PageRequest, PagedSourceKind};
-use super::{ResolveOptions, Resolver};
+use super::{ResolveOptions, Resolver, bilibili_publish_date};
 use crate::error::{BdlError, BdlResult};
 use crate::ids::{GroupId, ItemId, PartId, SourceId};
 use crate::input::ClassifiedInput;
@@ -25,6 +25,7 @@ pub struct ResolvedFavoriteVideo {
     pub title: String,
     pub owner_mid: u64,
     pub owner_name: Option<String>,
+    pub publish_date: Option<String>,
     pub cover_url: Option<String>,
     pub duration_seconds: Option<u64>,
 }
@@ -182,6 +183,7 @@ impl ResolvedFavoriteVideo {
             title: media.title,
             owner_mid: media.upper.mid,
             owner_name: non_empty(media.upper.name),
+            publish_date: bilibili_publish_date(media.pubtime),
             cover_url: non_empty(media.cover),
             duration_seconds: Some(media.duration as u64),
         })
@@ -254,6 +256,7 @@ fn map_video_item(media_id: u64, video: ResolvedFavoriteVideo) -> NormalizedItem
         title: video.title.clone(),
         owner_name: video.owner_name.clone(),
         owner_mid: Some(video.owner_mid),
+        publish_date: video.publish_date,
         cover_url: video.cover_url.clone(),
         duration_seconds: video.duration_seconds,
         parts: vec![NormalizedPart {

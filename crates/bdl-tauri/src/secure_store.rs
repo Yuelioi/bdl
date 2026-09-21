@@ -12,9 +12,9 @@ use ring::rand::{SecureRandom, SystemRandom};
 #[cfg(any(target_os = "macos", test))]
 use std::path::PathBuf;
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(any(target_os = "windows", target_os = "linux"))]
 const SERVICE_NAME: &str = "bdl-downloader";
-#[cfg(not(target_os = "macos"))]
+#[cfg(any(target_os = "windows", target_os = "linux"))]
 const ACCOUNT_COOKIE_USER: &str = "bilibili-account-cookie";
 
 #[cfg(target_os = "macos")]
@@ -50,7 +50,7 @@ impl SecureStore {
             data_dir.as_ref().join(CREDENTIAL_DIR_NAME),
         ));
 
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(any(target_os = "windows", target_os = "linux"))]
         let backend: Arc<dyn CredentialBackend> = {
             let _ = data_dir;
             Arc::new(KeyringCredentialBackend {
@@ -59,7 +59,22 @@ impl SecureStore {
             })
         };
 
+        #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+        let backend: Arc<dyn CredentialBackend> = {
+            let _ = data_dir;
+            Arc::new(UnsupportedCredentialBackend)
+        };
+
         Self { backend }
+    }
+
+    pub fn from_backend<B>(backend: B) -> Self
+    where
+        B: CredentialBackend + 'static,
+    {
+        Self {
+            backend: Arc::new(backend),
+        }
     }
 
     pub fn load_cookie(&self) -> BdlResult<Option<String>> {
@@ -82,27 +97,27 @@ impl SecureStore {
     }
 }
 
-trait CredentialBackend: Send + Sync {
+pub trait CredentialBackend: Send + Sync {
     fn load_cookie(&self) -> BdlResult<Option<String>>;
     fn save_cookie(&self, cookie: &str) -> BdlResult<()>;
     fn clear_cookie(&self) -> BdlResult<()>;
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(any(target_os = "windows", target_os = "linux"))]
 #[derive(Debug)]
 struct KeyringCredentialBackend {
     service: &'static str,
     user: &'static str,
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(any(target_os = "windows", target_os = "linux"))]
 impl KeyringCredentialBackend {
     fn entry(&self) -> Result<keyring::Entry, keyring::Error> {
         keyring::Entry::new(self.service, self.user)
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(any(target_os = "windows", target_os = "linux"))]
 impl CredentialBackend for KeyringCredentialBackend {
     fn load_cookie(&self) -> BdlResult<Option<String>> {
         let entry = self
@@ -136,7 +151,7 @@ impl CredentialBackend for KeyringCredentialBackend {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(any(target_os = "windows", target_os = "linux"))]
 fn keyring_error(action: &str, error: keyring::Error) -> BdlError {
     #[cfg(target_os = "linux")]
     let hint = "。请确认桌面会话的 Secret Service 凭据服务（例如 GNOME Keyring）已启动且已解锁。";
@@ -144,6 +159,32 @@ fn keyring_error(action: &str, error: keyring::Error) -> BdlError {
     let hint = "";
     BdlError::Account {
         message: format!("{action}失败：{error}{hint}"),
+    }
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+#[derive(Debug)]
+struct UnsupportedCredentialBackend;
+
+#[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+impl CredentialBackend for UnsupportedCredentialBackend {
+    fn load_cookie(&self) -> BdlResult<Option<String>> {
+        Ok(None)
+    }
+
+    fn save_cookie(&self, _cookie: &str) -> BdlResult<()> {
+        Err(mobile_credential_error())
+    }
+
+    fn clear_cookie(&self) -> BdlResult<()> {
+        Ok(())
+    }
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+fn mobile_credential_error() -> BdlError {
+    BdlError::Account {
+        message: "当前移动端安全凭据存储尚未接入，暂不支持保存登录状态。".to_owned(),
     }
 }
 

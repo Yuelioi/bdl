@@ -44,6 +44,22 @@ fn plan_selected_parts_creates_one_task_for_one_selected_part() {
 }
 
 #[test]
+fn plan_selected_parts_renders_source_publish_date_in_filename() {
+    let tree = fixture_tree(true);
+    let mut options = DownloadOptions::new(PathBuf::from("downloads"));
+    options.naming_template = "{publish_date} - {title}.{ext}".to_owned();
+
+    let tasks = plan_selected_parts(&tree, &[PartId("part:BV1:100".to_owned())], &options)
+        .expect("publish date should render into output path");
+
+    assert!(
+        tasks[0]
+            .output_path
+            .ends_with("2025-12-31 - Fixture Video.mp4")
+    );
+}
+
+#[test]
 fn plan_selected_parts_preserves_multi_part_page_number() {
     let mut tree = fixture_tree(true);
     let mut second = tree.groups[0].items[0].parts[0].clone();
@@ -540,6 +556,7 @@ fn fixture_tree(include_audio: bool) -> NormalizedSourceTree {
                 title: "Fixture Video".to_owned(),
                 owner_name: Some("owner".to_owned()),
                 owner_mid: Some(42),
+                publish_date: Some("2025-12-31".to_owned()),
                 cover_url: Some("https://example.invalid/cover.jpg?token=fixture".to_owned()),
                 duration_seconds: Some(42),
                 parts: vec![NormalizedPart {

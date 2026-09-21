@@ -290,6 +290,7 @@ const formatDuration = (seconds: number | null): string => {
     <SelectionActionBar v-if="!loadingInitial" :selected-count="selectedCount" :total-count="totalCount">
       <template #leading>
         <div class="library-pagination-status">
+          <span class="library-selection-count">已选 {{ selectedCount }} / {{ totalCount }}</span>
           <UiPagination
             :page="currentPage"
             :total="totalCount"
@@ -370,6 +371,12 @@ const formatDuration = (seconds: number | null): string => {
   white-space: nowrap;
 }
 
+.library-selection-count {
+  color: var(--color-text);
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
 .source-function-toolbar {
   min-width: 0;
   display: flex;
@@ -441,6 +448,28 @@ const formatDuration = (seconds: number | null): string => {
   .library-detail-skeleton-cover,
   .library-detail-skeleton-line {
     animation: none;
+  }
+}
+
+@media (width <= 700px) {
+  .library-folder-header {
+    align-items: stretch;
+    flex-direction: column;
+    gap: var(--space-8);
+    padding-bottom: var(--space-10);
+  }
+
+  .source-function-toolbar {
+    width: 100%;
+    justify-content: flex-start;
+    gap: var(--space-6);
+  }
+
+  .library-pagination-status {
+    width: 100%;
+    height: auto;
+    flex-wrap: wrap;
+    row-gap: var(--space-6);
   }
 }
 </style>

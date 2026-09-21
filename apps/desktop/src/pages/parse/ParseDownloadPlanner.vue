@@ -2,7 +2,8 @@
 import { open } from '@tauri-apps/plugin-dialog'
 import { computed, ref } from 'vue'
 
-import type { SettingsSnapshot, NamingPreset, DownloadMediaMode, DuplicateTaskMatch, DuplicateTaskPolicy, VideoCodecPreference } from '../../api/dto'
+import type { SettingsSnapshot, NamingPreset, DownloadMediaMode, DuplicateTaskMatch, DuplicateTaskPolicy, VideoCodecPreference, DocumentTreeDirectory } from '../../api/dto'
+import { mobilePickExportDirectory } from '../../api/tauri'
 import { useParseStore } from '../../stores/parse'
 import { validateNamingTemplate, cloneMediaPreferences, useSettingsStore } from '../../stores/settings'
 import type { InlineNotice } from '../../stores/feedback'
@@ -11,10 +12,12 @@ import { archiveModeOptions, duplicateNamingOptions, missingQualityOptions, vide
 import NamingTemplatePicker from '../../ui/NamingTemplatePicker.vue'
 import MediaPreferenceEditor from '../settings/MediaPreferenceEditor.vue'
 import UiTabs from '../../ui/Tabs.vue'
+import { isAndroidPlatform, isMobilePlatform } from '../../utils/platform'
 import UiCheckbox from '../../ui/Checkbox.vue'
 import UiButton from '../../ui/Button.vue'
 import UiDialog from '../../ui/Dialog.vue'
 import UiDisclosure from '../../ui/Disclosure.vue'
+import UiIconButton from '../../ui/IconButton.vue'
 import UiInlineNotice from '../../ui/InlineNotice.vue'
 import UiSelect from '../../ui/Select.vue'
 import UiStatusBadge from '../../ui/StatusBadge.vue'
@@ -30,6 +33,8 @@ const duplicateMatches = ref<DuplicateTaskMatch[]>([])
 const duplicatePendingSourceIds = ref<string[]>([])
 const downloadNotice = ref<InlineNotice | null>(null)
 const downloadDir = ref('')
+const documentTreeOutput = ref<DocumentTreeDirectory | null>(null)
+const rememberDocumentTreeOutput = ref(false)
 const archiveMode = ref<'fast' | 'complete_archive' | 'custom'>('fast')
 const outputExtension = ref<'mp4' | 'mkv'>('mp4')
 const mediaMode = ref<DownloadMediaMode>('audio_video')
@@ -59,6 +64,7 @@ const mediaModeOptions = [
   { label: '仅视频', value: 'video_only' },
   { label: '仅音频', value: 'audio_only' },
 ]
+const androidPlatform = isAndroidPlatform()
 const outputExtensionOptions = [{ label: 'MP4', value: 'mp4' }, { label: 'MKV', value: 'mkv' }]
 const activeSource = computed(() => parse.activeSource)
 const selectedSourceIds = computed(() => parse.isBatch
@@ -83,6 +89,8 @@ const restoreDefaults = () => {
   defaultsRevision.value += 1
   const defaults = settings.saved
   downloadDir.value = defaults.download_dir ?? ''
+  documentTreeOutput.value = defaults.document_tree_output ? { ...defaults.document_tree_output } : null
+  rememberDocumentTreeOutput.value = false
   archiveMode.value = defaults.archive_mode
   outputExtension.value = defaults.output_extension
   mediaMode.value = 'audio_video'
@@ -96,8 +104,8 @@ const restoreDefaults = () => {
   missingQualityPolicy.value = defaults.missing_quality_policy
   archiveAssets.value = { ...defaults.archive_assets }
   retainRawStreams.value = defaults.retain_raw_streams
-  embedCover.value = defaults.embed_cover
-  embedSubtitles.value = defaults.embed_subtitles
+  embedCover.value = androidPlatform ? false : defaults.embed_cover
+  embedSubtitles.value = androidPlatform ? false : defaults.embed_subtitles
   scheduledLocal.value = ''
   taskSpeedLimitMib.value = ''
 }
@@ -138,8 +146,21 @@ const createTasks = async (duplicatePolicy: DuplicateTaskPolicy = 'ask') => {
     }
     return
   }
+  if (isMobilePlatform() && !documentTreeOutput.value) {
+    downloadNotice.value = {
+      message: '请选择 Android 导出目录。',
+      tone: 'warning',
+    }
+    return
+  }
+  downloadDialogOpen.value = false
+  parse.setNotice('正在加入传输队列…', 'info')
+  if (isMobilePlatform() && rememberDocumentTreeOutput.value && documentTreeOutput.value) {
+    void settings.saveDefaultDocumentTreeOutput({ ...documentTreeOutput.value })
+  }
   const result = await parse.createTasksForSources(sourceIds, {
-    downloadDir: downloadDir.value.trim() || 'downloads',
+    downloadDir: isMobilePlatform() ? null : downloadDir.value.trim() || 'downloads',
+    documentTreeOutput: isMobilePlatform() ? documentTreeOutput.value : null,
     archiveMode: archiveMode.value,
     outputExtension: outputExtension.value,
     namingTemplate: namingTemplate.value,
@@ -171,6 +192,7 @@ const createTasks = async (duplicatePolicy: DuplicateTaskPolicy = 'ask') => {
           : `${result.failures.length} 个来源创建任务失败：${firstFailure.message}`,
       tone: result.created.length > 0 ? 'warning' : 'danger',
     }
+    downloadDialogOpen.value = true
     return
   }
   if (result?.requires_confirmation) {
@@ -180,14 +202,17 @@ const createTasks = async (duplicatePolicy: DuplicateTaskPolicy = 'ask') => {
     duplicateDialogOpen.value = true
     return
   }
-  if (!result) return
-  downloadDialogOpen.value = false
+  if (!result) {
+    downloadDialogOpen.value = true
+    return
+  }
   duplicateDialogOpen.value = false
   duplicateMatches.value = []
   duplicatePendingSourceIds.value = []
 }
 
 const chooseDownloadDir = async () => {
+  if (isMobilePlatform()) return
   try {
     const selected = await open({
       directory: true,
@@ -206,6 +231,18 @@ const chooseDownloadDir = async () => {
   }
 }
 
+const chooseDocumentTreeOutput = async () => {
+  try {
+    documentTreeOutput.value = await mobilePickExportDirectory()
+    if (!settings.saved.document_tree_output) rememberDocumentTreeOutput.value = true
+  } catch (error) {
+    downloadNotice.value = {
+      message: error instanceof Error ? error.message : String(error),
+      tone: 'warning',
+    }
+  }
+}
+
 </script>
 
 <template>
@@ -215,7 +252,22 @@ const chooseDownloadDir = async () => {
       <UiInlineNotice v-if="downloadNotice" :tone="downloadNotice.tone">{{ downloadNotice.message }}</UiInlineNotice>
       <div class="grid content-start gap-4">
         <div v-show="activeTab === 'general'" class="grid gap-4">
-          <div class="directory-row">
+          <div v-if="isMobilePlatform()" class="directory-row">
+            <UiTextField :model-value="documentTreeOutput?.display_name ?? ''" label="导出目录" placeholder="请选择目录" disabled />
+            <UiIconButton
+              icon="folder-open"
+              :label="documentTreeOutput ? '更换导出目录' : '选择导出目录'"
+              :disabled="activeLoading"
+              @click="chooseDocumentTreeOutput"
+            />
+          </div>
+          <div v-if="isMobilePlatform() && documentTreeOutput" class="grid gap-1">
+            <UiCheckbox v-model="rememberDocumentTreeOutput" label="设为默认导出目录" />
+            <p v-if="settings.saved.document_tree_output && !rememberDocumentTreeOutput" class="m-0 text-xs text-(--color-muted)">
+              已使用设置中的默认目录，本次无需再次选择；更换目录后可勾选保存为新的默认目录。
+            </p>
+          </div>
+          <div v-if="!isMobilePlatform()" class="directory-row">
             <UiTextField :model-value="downloadDir" label="保存目录" placeholder="留空时使用 downloads" @update:model-value="updateDownloadDir" />
             <UiButton variant="secondary" :disabled="activeLoading" @click="chooseDownloadDir">选择</UiButton>
           </div>
@@ -239,17 +291,20 @@ const chooseDownloadDir = async () => {
         </div>
         <div v-show="activeTab === 'assets'" class="grid gap-4">
           <UiSelect v-model="archiveMode" label="下载范围" :options="archiveModeOptions" />
-          <div v-if="archiveMode === 'custom'" class="grid grid-cols-2 gap-3">
+          <div v-if="archiveMode === 'custom'" class="grid grid-cols-2 gap-3 max-[600px]:grid-cols-1">
             <UiCheckbox v-model="archiveAssets.cover" label="保存封面" />
             <UiCheckbox v-model="archiveAssets.subtitles" label="保存字幕" />
             <UiCheckbox v-model="archiveAssets.danmaku" label="保存弹幕" />
             <UiCheckbox v-model="archiveAssets.nfo" label="生成 NFO" />
           </div>
           <UiCheckbox v-model="retainRawStreams" label="保留原始视频/音频轨道" />
-          <div class="grid grid-cols-2 gap-3">
-            <UiCheckbox v-model="embedCover" label="嵌入封面（仅 MKV）" />
-            <UiCheckbox v-model="embedSubtitles" label="嵌入字幕（仅 MKV）" />
+          <div class="grid grid-cols-2 gap-3 max-[600px]:grid-cols-1">
+            <UiCheckbox v-model="embedCover" label="嵌入封面（仅 MKV）" :disabled="androidPlatform" />
+            <UiCheckbox v-model="embedSubtitles" label="嵌入字幕（仅 MKV）" :disabled="androidPlatform" />
           </div>
+          <UiInlineNotice v-if="androidPlatform" tone="info">
+            Android 内置 FFmpeg 支持 MP4 与 MKV；封面和字幕可保存为独立文件，暂不嵌入成品。
+          </UiInlineNotice>
         </div>
         <div v-show="activeTab === 'schedule'" class="grid grid-cols-2 gap-3 max-[600px]:grid-cols-1">
           <UiTextField v-model="scheduledLocal" type="datetime-local" label="开始时间（可选）" :min="scheduleMin" :error="scheduleError" helper="留空时立即加入下载队列" />
@@ -261,7 +316,7 @@ const chooseDownloadDir = async () => {
     <template #footer>
       <UiButton class="mr-auto" variant="ghost" :disabled="activeLoading" @click="restoreDefaults">恢复默认偏好</UiButton>
       <UiButton variant="secondary" :disabled="activeLoading" @click="downloadDialogOpen = false">取消</UiButton>
-      <UiButton :disabled="activeLoading || selectedSourceIds.length === 0 || Boolean(namingError || scheduleError || taskSpeedLimitError || embeddingFormatError)" @click="createTasks()">加入传输</UiButton>
+      <UiButton :disabled="activeLoading || selectedSourceIds.length === 0 || Boolean(namingError || scheduleError || taskSpeedLimitError || embeddingFormatError)" @click="createTasks()">开始下载</UiButton>
     </template>
   </UiDialog>
 
@@ -318,5 +373,13 @@ const chooseDownloadDir = async () => {
 
 .download-options-scroll::-webkit-scrollbar-thumb:hover {
   background-color: color-mix(in oklab, var(--color-muted) 60%, transparent);
+}
+
+.directory-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: var(--space-8);
 }
 </style>

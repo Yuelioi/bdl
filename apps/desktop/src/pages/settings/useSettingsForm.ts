@@ -1,6 +1,7 @@
 import { computed, onMounted, ref } from 'vue';
 
 import { defaultNamingTemplate, embeddingContainerError, useSettingsStore } from '../../stores/settings';
+import { isAndroidPlatform } from '../../utils/platform';
 import { speedLimitMibError, toBytesPerSecond, toMibPerSecondInput } from '../../utils/speedLimit';
 
 export function useSettingsForm() {
@@ -131,17 +132,32 @@ export function useSettingsForm() {
     return '保留已有文件，并生成“文件名 (1)”这类新路径。';
   });
 
+  const applyPlatformSettingsConstraints = () => {
+    if (!isAndroidPlatform()) return;
+    if (settings.draft.output_extension !== 'mp4') {
+      settings.setOutputExtension('mp4');
+    }
+    if (settings.draft.embed_cover) {
+      settings.setEmbedCover(false);
+    }
+    if (settings.draft.embed_subtitles) {
+      settings.setEmbedSubtitles(false);
+    }
+  };
+
   const resetNamingTemplate = () => {
     settings.setNamingTemplate(defaultNamingTemplate);
   };
 
   const resetSettingsDraft = () => {
     settings.resetDraft();
+    applyPlatformSettingsConstraints();
     settingsGlobalSpeedLimitMib.value = toMibPerSecondInput(settings.draft.global_speed_limit_bytes_per_second);
   };
 
   const restoreDefaultSettings = () => {
     settings.restoreDefaults();
+    applyPlatformSettingsConstraints();
     settingsGlobalSpeedLimitMib.value = toMibPerSecondInput(settings.draft.global_speed_limit_bytes_per_second);
   };
 
@@ -155,6 +171,7 @@ export function useSettingsForm() {
 
   onMounted(async () => {
     await settings.ensureLoaded();
+    applyPlatformSettingsConstraints();
     settingsGlobalSpeedLimitMib.value = toMibPerSecondInput(settings.draft.global_speed_limit_bytes_per_second);
   });
 

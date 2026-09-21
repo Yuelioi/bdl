@@ -49,45 +49,66 @@ const addAudio = () => {
 
 <template>
   <div class="preference-editor">
-    <div class="preference-heading">
-      <div>
-        <h4>画质优先顺序</h4>
-      </div>
-      <UiButton variant="secondary" size="compact" :disabled="model.video.length >= 32" @click="addVideo">添加画质</UiButton>
-    </div>
-    <p v-if="!model.video.length" class="preference-empty">尚未自定义，使用上方的视频清晰度和编码设置。</p>
-    <ol v-else class="preference-list" aria-label="画质优先顺序">
-      <li v-for="(rule, index) in model.video" :key="index" class="preference-row">
-        <span class="preference-position" aria-hidden="true">{{ index + 1 }}</span>
-        <UiSelect :model-value="rule.quality" :label="`第 ${index + 1} 优先画质`" :options="qualityOptions" @update:model-value="updateVideo(index, 'quality', $event)" />
-        <UiSelect :model-value="rule.codec" :label="`第 ${index + 1} 优先编码`" :options="encodingOptions" @update:model-value="updateVideo(index, 'codec', $event)" />
-        <div class="preference-actions">
-          <UiButton variant="ghost" size="compact" :disabled="index === 0" :aria-label="`上移第 ${index + 1} 条视频偏好`" @click="move('video', index, -1)"><UIcon name="i-tabler-arrow-up" /></UiButton>
-          <UiButton variant="ghost" size="compact" :disabled="index === model.video.length - 1" :aria-label="`下移第 ${index + 1} 条视频偏好`" @click="move('video', index, 1)"><UIcon name="i-tabler-arrow-down" /></UiButton>
-          <UiButton variant="ghost" size="compact" :aria-label="`删除第 ${index + 1} 条视频偏好`" @click="remove('video', index)"><UIcon name="i-tabler-x" /></UiButton>
+    <section class="preference-group">
+      <div class="preference-heading">
+        <div class="preference-heading-copy">
+          <span class="preference-heading-icon" aria-hidden="true">
+            <UIcon name="i-tabler-video" />
+          </span>
+          <div>
+            <h4>画质优先顺序</h4>
+            <p>从上到下匹配画质与编码。</p>
+          </div>
         </div>
-      </li>
-    </ol>
+        <UiButton variant="secondary" size="compact" :disabled="model.video.length >= 32" @click="addVideo">
+          <UIcon name="i-tabler-plus" aria-hidden="true" />
+          添加画质
+        </UiButton>
+      </div>
+      <p v-if="!model.video.length" class="preference-empty">尚未自定义，使用上方的视频清晰度和编码设置。</p>
+      <ol v-else class="preference-list" aria-label="画质优先顺序">
+        <li v-for="(rule, index) in model.video" :key="index" class="preference-row">
+          <span class="preference-position" aria-hidden="true">{{ index + 1 }}</span>
+          <UiSelect :model-value="rule.quality" :label="`第 ${index + 1} 优先画质`" :options="qualityOptions" @update:model-value="updateVideo(index, 'quality', $event)" />
+          <UiSelect :model-value="rule.codec" :label="`第 ${index + 1} 优先编码`" :options="encodingOptions" @update:model-value="updateVideo(index, 'codec', $event)" />
+          <div class="preference-actions">
+            <UiButton variant="ghost" size="compact" :disabled="index === 0" :aria-label="`上移第 ${index + 1} 条视频偏好`" @click="move('video', index, -1)"><UIcon name="i-tabler-arrow-up" /></UiButton>
+            <UiButton variant="ghost" size="compact" :disabled="index === model.video.length - 1" :aria-label="`下移第 ${index + 1} 条视频偏好`" @click="move('video', index, 1)"><UIcon name="i-tabler-arrow-down" /></UiButton>
+            <UiButton variant="ghost" size="compact" :aria-label="`删除第 ${index + 1} 条视频偏好`" @click="remove('video', index)"><UIcon name="i-tabler-x" /></UiButton>
+          </div>
+        </li>
+      </ol>
+    </section>
 
-    <div class="preference-heading">
-      <div>
-        <h4>音频优先顺序</h4>
-        <p>独立选择音轨，再与选中的视频合并。</p>
-      </div>
-      <UiButton variant="secondary" size="compact" :disabled="model.audio.length >= 32" @click="addAudio">添加音质</UiButton>
-    </div>
-    <p v-if="!model.audio.length" class="preference-empty">尚未自定义，使用上方的音频质量设置。</p>
-    <ol v-else class="preference-list" aria-label="音频优先顺序">
-      <li v-for="(quality, index) in model.audio" :key="index" class="preference-row preference-audio-row">
-        <span class="preference-position" aria-hidden="true">{{ index + 1 }}</span>
-        <UiSelect :model-value="quality" :label="`第 ${index + 1} 优先音质`" :options="audioQualityOptions" @update:model-value="updateAudio(index, $event)" />
-        <div class="preference-actions">
-          <UiButton variant="ghost" size="compact" :disabled="index === 0" :aria-label="`上移第 ${index + 1} 条音频偏好`" @click="move('audio', index, -1)"><UIcon name="i-tabler-arrow-up" /></UiButton>
-          <UiButton variant="ghost" size="compact" :disabled="index === model.audio.length - 1" :aria-label="`下移第 ${index + 1} 条音频偏好`" @click="move('audio', index, 1)"><UIcon name="i-tabler-arrow-down" /></UiButton>
-          <UiButton variant="ghost" size="compact" :aria-label="`删除第 ${index + 1} 条音频偏好`" @click="remove('audio', index)"><UIcon name="i-tabler-x" /></UiButton>
+    <section class="preference-group">
+      <div class="preference-heading">
+        <div class="preference-heading-copy">
+          <span class="preference-heading-icon" aria-hidden="true">
+            <UIcon name="i-tabler-volume" />
+          </span>
+          <div>
+            <h4>音频优先顺序</h4>
+            <p>独立选择音轨，再与选中的视频合并。</p>
+          </div>
         </div>
-      </li>
-    </ol>
+        <UiButton variant="secondary" size="compact" :disabled="model.audio.length >= 32" @click="addAudio">
+          <UIcon name="i-tabler-plus" aria-hidden="true" />
+          添加音质
+        </UiButton>
+      </div>
+      <p v-if="!model.audio.length" class="preference-empty">尚未自定义，使用上方的音频质量设置。</p>
+      <ol v-else class="preference-list" aria-label="音频优先顺序">
+        <li v-for="(quality, index) in model.audio" :key="index" class="preference-row preference-audio-row">
+          <span class="preference-position" aria-hidden="true">{{ index + 1 }}</span>
+          <UiSelect :model-value="quality" :label="`第 ${index + 1} 优先音质`" :options="audioQualityOptions" @update:model-value="updateAudio(index, $event)" />
+          <div class="preference-actions">
+            <UiButton variant="ghost" size="compact" :disabled="index === 0" :aria-label="`上移第 ${index + 1} 条音频偏好`" @click="move('audio', index, -1)"><UIcon name="i-tabler-arrow-up" /></UiButton>
+            <UiButton variant="ghost" size="compact" :disabled="index === model.audio.length - 1" :aria-label="`下移第 ${index + 1} 条音频偏好`" @click="move('audio', index, 1)"><UIcon name="i-tabler-arrow-down" /></UiButton>
+            <UiButton variant="ghost" size="compact" :aria-label="`删除第 ${index + 1} 条音频偏好`" @click="remove('audio', index)"><UIcon name="i-tabler-x" /></UiButton>
+          </div>
+        </li>
+      </ol>
+    </section>
     <UiSelect v-if="model.video.length || model.audio.length" :model-value="model.fallback" label="所有偏好都不可用时" :options="fallbackOptions" @update:model-value="model = { ...model, fallback: $event as MediaPreferences['fallback'] }" />
   </div>
 </template>
@@ -99,12 +120,44 @@ const addAudio = () => {
   gap: var(--space-12);
 }
 
+.preference-group {
+  min-width: 0;
+  display: grid;
+  gap: var(--space-12);
+  padding: var(--space-12);
+  border-radius: var(--radius-8);
+  background: var(--color-panel);
+}
+
 .preference-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-12);
-  margin-top: var(--space-16);
+}
+
+.preference-heading-copy {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-10);
+}
+
+.preference-heading-icon {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-6);
+  background: var(--color-surface);
+  color: var(--color-muted);
+}
+
+.preference-heading-icon svg {
+  width: 17px;
+  height: 17px;
 }
 
 .preference-heading h4 {
@@ -120,6 +173,17 @@ const addAudio = () => {
   line-height: 1.6;
 }
 
+.preference-heading-copy > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.preference-empty {
+  padding-top: var(--space-10);
+  border-top: 1px solid var(--color-border);
+}
+
 .preference-list {
   margin: 0;
   padding: 0;
@@ -131,6 +195,9 @@ const addAudio = () => {
   grid-template-columns: 20px minmax(0, 1fr) minmax(0, 1fr) auto;
   align-items: end;
   gap: var(--space-8);
+  padding: var(--space-10);
+  border-radius: var(--radius-6);
+  background: var(--color-surface);
 }
 
 .preference-audio-row {
@@ -156,6 +223,10 @@ const addAudio = () => {
 }
 
 @media (width <= 840px) {
+  .preference-heading {
+    align-items: flex-start;
+  }
+
   .preference-row {
     grid-template-columns: 20px minmax(0, 1fr);
   }

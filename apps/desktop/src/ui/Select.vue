@@ -43,8 +43,8 @@ const {
       :ui="{
         base: 'h-9 min-h-9 py-0',
         trailingIcon: 'size-4',
-        content: 'z-50 !max-h-44 shadow-md',
-        item: 'font-medium',
+        content: 'bdl-select-content z-50 !max-h-44',
+        item: 'bdl-select-item font-medium',
       }"
       class="ui-select"
     />
@@ -57,6 +57,6 @@ const {
   height: var(--height-input);
   min-height: var(--height-input);
   font-weight: 650;
-  background: var(--color-inset);
+  background: var(--color-control);
 }
 </style>

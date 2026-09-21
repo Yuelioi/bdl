@@ -9,9 +9,9 @@ import { useSettingsStore } from './stores/settings'
 import { useThemeStore } from './stores/theme'
 import { useUpdateStore } from './stores/update'
 import { useUiStore, type AppTab } from './stores/ui'
-import { openExternalUrl } from './api/tauri'
+import { mobilePrepareNotifications, mobileSaveImageToGallery, openExternalUrl } from './api/tauri'
 import { bilibiliUserUrl } from './utils/bilibiliLinks'
-import { isMacPlatform } from './utils/platform'
+import { isAndroidPlatform, isMacPlatform, isMobilePlatform } from './utils/platform'
 import BackgroundParseStatus from './ui/BackgroundParseStatus.vue'
 import UiButton from './ui/Button.vue'
 import AppearanceMenu from './ui/AppearanceMenu.vue'
@@ -20,6 +20,7 @@ import UiEnvironmentHealthPanel from './ui/EnvironmentHealthPanel.vue'
 import UiTabs from './ui/Tabs.vue'
 import UiTextarea from './ui/Textarea.vue'
 import UiToastHost from './ui/ToastHost.vue'
+import UsageNotice from './ui/UsageNotice.vue'
 
 const ParsePage = defineAsyncComponent(() => import('./pages/ParsePage.vue'))
 const LibraryPage = defineAsyncComponent(() => import('./pages/LibraryPage.vue'))
@@ -47,10 +48,16 @@ const environmentDialogOpen = computed({
   },
 })
 const startupRecoveryDialogOpen = ref(false)
+const usageNoticeStorageKey = 'bdl.usage-notice.v1'
+const usageNoticeOpen = ref(window.localStorage.getItem(usageNoticeStorageKey) !== 'acknowledged')
+const startupRecoveryPending = ref(false)
 const loginMode = ref<'qr' | 'cookie'>('qr')
 const cookieText = ref('')
+const qrImageSaving = ref(false)
 const avatarLoadFailed = ref(false)
 const isMacOs = isMacPlatform()
+const isMobile = isMobilePlatform()
+const isAndroid = isAndroidPlatform()
 
 const navItems: Array<{ value: AppTab; label: string; description: string; icon: string; shortcut: string }> = [
   { value: 'parse', label: '解析', description: '添加与选择', icon: 'i-tabler-link', shortcut: '1' },
@@ -135,13 +142,34 @@ const openLoginDialog = () => {
   ui.openLoginDialog()
 }
 
+const openUsageNoticeLink = async (url: string) => {
+  try {
+    await openExternalUrl(url)
+  } catch (error) {
+    ui.pushToast(error instanceof Error ? error.message : String(error), 'danger')
+  }
+}
+
+const acknowledgeUsageNotice = () => {
+  window.localStorage.setItem(usageNoticeStorageKey, 'acknowledged')
+  usageNoticeOpen.value = false
+  void prepareMobileNotifications()
+  if (startupRecoveryPending.value) {
+    startupRecoveryPending.value = false
+    startupRecoveryDialogOpen.value = true
+  }
+}
+
 const minimizeWindow = () => {
+  if (isMobile) return
   void appWindow.minimize()
 }
 const toggleMaximizeWindow = () => {
+  if (isMobile) return
   void appWindow.toggleMaximize()
 }
 const closeWindow = () => {
+  if (isMobile) return
   void appWindow.close()
 }
 
@@ -155,6 +183,43 @@ const saveCookieLogin = async () => {
 
 const startQrLogin = () => {
   void account.startQrLogin()
+}
+
+const qrSvgToPngBase64 = async (svg: string): Promise<string> => {
+  const image = new Image()
+  const source = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
+  await new Promise<void>((resolve, reject) => {
+    image.onload = () => resolve()
+    image.onerror = () => reject(new Error('二维码图片转换失败'))
+    image.src = source
+  })
+  const canvas = document.createElement('canvas')
+  canvas.width = 1024
+  canvas.height = 1024
+  const context = canvas.getContext('2d')
+  if (!context) throw new Error('当前设备无法生成二维码图片')
+  context.fillStyle = '#ffffff'
+  context.fillRect(0, 0, canvas.width, canvas.height)
+  context.imageSmoothingEnabled = false
+  context.drawImage(image, 0, 0, canvas.width, canvas.height)
+  const dataUrl = canvas.toDataURL('image/png')
+  const separator = dataUrl.indexOf(',')
+  if (separator < 0) throw new Error('二维码图片编码失败')
+  return dataUrl.slice(separator + 1)
+}
+
+const saveQrImageToGallery = async () => {
+  if (!isAndroid || !account.qrSession || qrImageSaving.value) return
+  qrImageSaving.value = true
+  try {
+    const imageBase64 = await qrSvgToPngBase64(account.qrSession.qr_image_svg)
+    await mobileSaveImageToGallery(`BDL-Bilibili-login-${Date.now()}.png`, imageBase64)
+    ui.pushToast('二维码已保存到相册', 'success')
+  } catch (error) {
+    ui.pushToast(error instanceof Error ? error.message : String(error), 'danger')
+  } finally {
+    qrImageSaving.value = false
+  }
 }
 
 const signOut = async () => {
@@ -179,10 +244,26 @@ const useSystemFfmpegFromEnvironment = async () => {
   await settings.save()
 }
 
+const prepareMobileNotifications = async () => {
+  if (!isAndroid) return
+
+  try {
+    const permission = await mobilePrepareNotifications()
+    if (permission === 'denied' || permission === 'prompt-with-rationale') {
+      ui.pushToast(
+        '未开启通知权限，后台下载状态和定时任务提醒可能不会显示。可在系统设置中开启 BDL 通知。',
+        'warning',
+      )
+    }
+  } catch (error) {
+    ui.pushToast(error instanceof Error ? error.message : String(error), 'warning')
+  }
+}
+
 const initializeApp = async () => {
   await settings.initializeEnvironment()
 
-  await updater.initialize()
+  await updater.initialize(!isMobile)
   await account.startEventListeners()
   void account.load()
   await queue.startEventListeners()
@@ -198,7 +279,11 @@ const initializeApp = async () => {
     return
   }
 
-  startupRecoveryDialogOpen.value = true
+  if (usageNoticeOpen.value) {
+    startupRecoveryPending.value = true
+  } else {
+    startupRecoveryDialogOpen.value = true
+  }
 }
 
 const resumeStartupRecovery = async () => {
@@ -232,6 +317,7 @@ const preventNativeContextMenu = (event: MouseEvent) => {
 
 onMounted(() => {
   void initializeApp()
+  if (!usageNoticeOpen.value) void prepareMobileNotifications()
   window.addEventListener('keydown', handleAppShortcut)
   document.addEventListener('contextmenu', preventNativeContextMenu)
 })
@@ -289,7 +375,7 @@ watch(
 
 <template>
   <UApp>
-    <main class="app-shell" :class="{ 'platform-macos': isMacOs }">
+    <main class="app-shell" :class="{ 'platform-macos': isMacOs, 'platform-mobile': isMobile }">
       <header class="app-titlebar" data-tauri-drag-region @dblclick="toggleMaximizeWindow">
         <div class="titlebar-brand" data-tauri-drag-region>
           <span class="titlebar-mark" aria-hidden="true"><i></i><i></i></span>
@@ -298,12 +384,28 @@ watch(
           <span class="titlebar-version tabular-nums" data-tauri-drag-region>v{{ updater.currentVersion }}</span>
         </div>
         <div class="titlebar-actions">
-          <button v-if="updater.hasUpdate" class="titlebar-update" type="button" @click="ui.setTab('settings')">
+          <button
+            v-if="!isMobile && updater.hasUpdate"
+            class="titlebar-update"
+            type="button"
+            @click="ui.setTab('settings')"
+          >
             <UIcon name="i-tabler-arrow-up-circle" aria-hidden="true" />
             可更新至 v{{ updater.availableVersion }}
           </button>
           <AppearanceMenu />
+          <button
+            v-if="isMobile && !account.profile.logged_in"
+            class="account-button account-button-login"
+            type="button"
+            aria-label="登录 Bilibili 账号"
+            @click="openLoginDialog"
+          >
+            <UIcon name="i-tabler-user" aria-hidden="true" />
+            <span class="account-name">登录</span>
+          </button>
           <UDropdownMenu
+            v-else
             :items="accountMenuItems"
             :content="{ align: 'end', sideOffset: 6, collisionPadding: 12 }"
             :ui="{ content: 'min-w-36' }"
@@ -323,7 +425,7 @@ watch(
               <UIcon name="i-tabler-chevron-down" class="account-chevron" aria-hidden="true" />
             </button>
           </UDropdownMenu>
-          <div v-if="!isMacOs" class="window-controls" aria-label="窗口控制">
+          <div v-if="!isMacOs && !isMobile" class="window-controls" aria-label="窗口控制">
             <button type="button" aria-label="最小化" @click.stop="minimizeWindow">
               <UIcon name="i-tabler-minus" aria-hidden="true" />
             </button>
@@ -386,7 +488,7 @@ watch(
         </Suspense>
       </section>
 
-      <UiDialog v-model="loginDialogOpen" title="登录">
+      <UiDialog v-model="loginDialogOpen" title="登录" :dismissible="false">
         <UiTabs
           v-model="loginMode"
           :tabs="[
@@ -409,6 +511,16 @@ watch(
               <UIcon name="i-tabler-refresh" class="qr-refresh-icon" aria-hidden="true" />
             </button>
           </div>
+          <UiButton
+            v-if="isAndroid && account.qrImageSrc"
+            variant="secondary"
+            size="compact"
+            :disabled="qrImageSaving"
+            @click="saveQrImageToGallery"
+          >
+            <UIcon :name="qrImageSaving ? 'i-tabler-loader-2' : 'i-tabler-photo-down'" :class="['size-4', { 'qr-spinner': qrImageSaving }]" aria-hidden="true" />
+            {{ qrImageSaving ? '保存中' : '保存到相册' }}
+          </UiButton>
           <button
             v-else
             class="qr-box qr-box-action"
@@ -439,6 +551,19 @@ watch(
         <template #footer>
           <UiButton variant="secondary" @click="loginDialogOpen = false">取消</UiButton>
           <UiButton v-if="loginMode === 'cookie'" :disabled="cookieSaveDisabled" @click="saveCookieLogin">保存</UiButton>
+        </template>
+      </UiDialog>
+
+      <UiDialog
+        v-model="usageNoticeOpen"
+        title="使用前请阅读"
+        description="免费软件 · 合法使用 · 禁止滥用"
+        :dismissible="false"
+        :show-close="false"
+      >
+        <UsageNotice @open-link="openUsageNoticeLink" />
+        <template #footer>
+          <UiButton @click="acknowledgeUsageNotice">我已阅读并了解，继续使用</UiButton>
         </template>
       </UiDialog>
 

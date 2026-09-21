@@ -17,7 +17,7 @@ const emit = defineEmits<{ 'update:page': [page: number] }>()
 </script>
 
 <template>
-  <nav :aria-label="label">
+  <nav class="ui-pagination" :aria-label="label">
     <UPagination
       :page
       :total
@@ -34,3 +34,11 @@ const emit = defineEmits<{ 'update:page': [page: number] }>()
     />
   </nav>
 </template>
+
+<style scoped>
+.ui-pagination :deep([aria-current='page']) {
+  color: #fff;
+  background: #ef5b7d;
+  background: var(--color-accent);
+}
+</style>

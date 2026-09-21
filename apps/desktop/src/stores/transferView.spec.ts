@@ -173,4 +173,18 @@ describe('completed transfer task warnings', () => {
     expect(view.etaLabel).toBe('--')
     expect(view.sizeLabel).toBe('128 MB / 128 MB')
   })
+
+  it('hides desktop output actions when the platform cannot open local output paths', () => {
+    const task = scheduledTask()
+    task.status = 'completed'
+    task.scheduled_at = null
+
+    const capabilities = { canOpenOutput: false }
+    const view = createTransferTaskView(task, 100, [], null, capabilities)
+    const diagnostic = createTaskDiagnosticView(task, [], capabilities)
+
+    expect(view.primaryAction).toBe('none')
+    expect(view.secondaryActions.map((action) => action.kind)).not.toContain('open_dir')
+    expect(diagnostic.recommendedAction).toBeNull()
+  })
 })

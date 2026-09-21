@@ -75,6 +75,7 @@ async fn cheese_resolver_maps_first_page_without_streams() -> Result<(), BdlErro
     assert_eq!(item.id.0, "item:cheese:123:455");
     assert_eq!(item.title, "P1 - intro");
     assert_eq!(item.owner_name.as_deref(), Some("fixture teacher"));
+    assert_eq!(item.publish_date.as_deref(), Some("2025-12-31"));
 
     let part = item.parts.first().expect("part should exist");
     assert_eq!(part.id.0, "part:cheese:123:455:9001");
@@ -227,6 +228,7 @@ fn episode(index: u32, ep_id: u64, cid: u64, title: &str) -> ResolvedCheeseEpiso
         ep_id,
         index,
         title: format!("P{index} - {title}"),
+        publish_date: Some("2025-12-31".to_owned()),
         duration_seconds: Some(600 + u64::from(index)),
     }
 }

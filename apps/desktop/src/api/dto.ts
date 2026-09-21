@@ -44,6 +44,7 @@ export interface NormalizedItem {
   title: string
   owner_name: string | null
   owner_mid?: number | null
+  publish_date?: string | null
   cover_url: string | null
   duration_seconds: number | null
   parts: NormalizedPart[]
@@ -110,6 +111,19 @@ export type DownloadResourceKind = 'video' | 'audio' | 'asset'
 
 export type DownloadResourceIntent = 'video' | 'audio' | 'cover' | 'subtitle' | 'danmaku' | 'nfo'
 
+export interface DocumentTreeDirectory {
+  tree_uri: string
+  display_name: string
+}
+
+export type DownloadExportTarget = {
+  kind: 'document_tree'
+  tree_uri: string
+  relative_path: string
+  duplicate_naming_strategy: DuplicateNamingStrategy
+  document_uri: string | null
+}
+
 export interface DownloadTask {
   id: string
   title: string
@@ -117,6 +131,7 @@ export interface DownloadTask {
   status: TaskStatus
   resources: DownloadResource[]
   output_path: string
+  export_target?: DownloadExportTarget | null
   refresh_intent: DownloadTaskRefreshIntent | null
   media_selection: DownloadTaskMediaSelection
   scheduled_at: string | null
@@ -238,6 +253,7 @@ export interface SettingsSnapshot {
   settings_schema_version: number
   parse_rules: ParseRules
   download_dir: string | null
+  document_tree_output: DocumentTreeDirectory | null
   naming_template: string
   naming_presets: NamingPreset[]
   quality: string
@@ -277,7 +293,7 @@ export interface MaintenanceResult {
 
 export type DownloadDirectoryStatus = 'ready' | 'missing' | 'not_directory' | 'unwritable'
 export type FfmpegStatus = 'ready' | 'missing' | 'invalid'
-export type FfmpegSource = 'configured' | 'system'
+export type FfmpegSource = 'configured' | 'system' | 'native'
 
 export interface DownloadDirectoryHealth {
   status: DownloadDirectoryStatus

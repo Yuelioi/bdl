@@ -20,6 +20,9 @@ pub enum BdlError {
     #[error("account error: {message}")]
     Account { message: String },
 
+    #[error("platform error: {message}")]
+    Platform { message: String },
+
     #[error("storage error: {0}")]
     Storage(#[from] rusqlite::Error),
 

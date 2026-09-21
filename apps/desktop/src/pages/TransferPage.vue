@@ -21,9 +21,11 @@ import { contextIcon, useTransferContextMenu } from './transfer/useTransferConte
 import { useTransferPageLifecycle } from './transfer/useTransferPageLifecycle';
 import { useTransferTaskDetail } from './transfer/useTransferTaskDetail';
 import { useTransferTaskActions } from './transfer/useTransferTaskActions';
+import { isAndroidPlatform, isMobilePlatform } from '../utils/platform';
 
 const queue = useQueueStore();
 const ui = useUiStore();
+const transferCapabilities = { canOpenOutput: !isMobilePlatform() || isAndroidPlatform() };
 const completedSearch = ref('');
 const transferSort = ref<TransferSortMode>('queue');
 const {
@@ -91,6 +93,7 @@ const taskViews = computed(() =>
       queue.taskProgress(task),
       queue.logsByTask[task.id] ?? [],
       queue.taskTransferProgress(task.id),
+      transferCapabilities,
     ),
   ),
 );

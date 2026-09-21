@@ -75,8 +75,10 @@
   align-items: flex-end;
   justify-content: center;
   gap: 3px;
+  border: 1px solid var(--color-accent);
   border: 1px solid color-mix(in oklab, var(--color-accent) 62%, var(--color-nav));
   border-radius: var(--radius-4);
+  background: var(--color-accent-faint);
   background: color-mix(in oklab, var(--color-accent) 17%, var(--color-nav));
   padding: 4px 5px;
 }
@@ -256,6 +258,7 @@
 }
 
 .nav-item.active {
+  border-color: var(--color-accent-soft);
   border-color: color-mix(in oklab, var(--color-accent) 28%, var(--color-border));
   background: var(--color-accent-faint);
   color: var(--color-nav-text);
@@ -296,6 +299,7 @@
   display: grid;
   place-items: center;
   border-radius: 50%;
+  background: var(--color-success-soft);
   background: color-mix(in oklab, var(--color-success) 16%, transparent);
 }
 
@@ -308,6 +312,7 @@
 }
 
 .status-beacon.attention {
+  background: var(--color-warning-soft);
   background: color-mix(in oklab, var(--color-warning) 16%, transparent);
 }
 
@@ -578,4 +583,132 @@
   .platform-macos .titlebar-name {
     display: none;
   }
+}
+
+.app-shell.platform-mobile {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows:
+    calc(48px + var(--bdl-safe-area-top, env(safe-area-inset-top, 0px)))
+    minmax(0, 1fr)
+    calc(62px + var(--bdl-safe-area-bottom, env(safe-area-inset-bottom, 0px)));
+}
+
+.platform-mobile .app-titlebar {
+  grid-column: 1;
+  grid-row: 1;
+  padding-top: var(--bdl-safe-area-top, env(safe-area-inset-top, 0px));
+}
+
+.platform-mobile .titlebar-brand {
+  padding-left: var(--space-sm);
+}
+
+.platform-mobile .titlebar-name,
+.platform-mobile .titlebar-version,
+.platform-mobile .account-name {
+  display: none;
+}
+
+.platform-mobile .titlebar-actions {
+  height: auto;
+  padding-right: var(--space-xs);
+}
+
+.platform-mobile .account-button {
+  width: 34px;
+  min-height: 44px;
+  padding: 0;
+  justify-content: center;
+}
+
+.platform-mobile .account-button-login {
+  width: auto;
+  min-width: 62px;
+  min-height: 36px;
+  height: 36px;
+  border-color: transparent;
+  background: var(--color-accent-soft);
+  color: var(--color-accent-strong);
+  padding: 0 var(--space-10);
+}
+
+.platform-mobile .account-button-login .account-name {
+  display: inline;
+}
+
+.platform-mobile .account-chevron {
+  display: none;
+}
+
+.platform-mobile .side-nav {
+  grid-column: 1;
+  grid-row: 3;
+  min-width: 0;
+  flex-direction: row;
+  gap: 0;
+  padding:
+    5px
+    calc(var(--space-xs) + var(--bdl-safe-area-right, 0px))
+    calc(5px + var(--bdl-safe-area-bottom, env(safe-area-inset-bottom, 0px)))
+    calc(var(--space-xs) + var(--bdl-safe-area-left, 0px));
+  border-top: 1px solid var(--color-border);
+  border-right: 0;
+  overflow: visible;
+}
+
+.platform-mobile .nav-list {
+  width: 100%;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 2px;
+}
+
+.platform-mobile .nav-item {
+  min-width: 0;
+  min-height: 50px;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: 20px auto;
+  justify-items: center;
+  gap: 2px;
+  padding: 4px 2px 3px;
+  text-align: center;
+}
+
+.platform-mobile .nav-copy {
+  width: 100%;
+  display: block;
+}
+
+.platform-mobile .nav-copy strong {
+  display: block;
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+.platform-mobile .nav-copy small {
+  display: none;
+}
+
+.platform-mobile .nav-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.platform-mobile .nav-badge {
+  position: absolute;
+  top: 1px;
+  left: calc(50% + 7px);
+  right: auto;
+  min-width: 16px;
+  height: 16px;
+  padding-inline: 4px;
+  font-size: 9px;
+}
+
+.platform-mobile .nav-status {
+  display: none;
+}
+
+.platform-mobile .main-region {
+  grid-column: 1;
+  grid-row: 2;
 }

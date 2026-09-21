@@ -2,13 +2,14 @@
 import ParseRulesEditor from './ParseRulesEditor.vue';
 import UiButton from '../../ui/Button.vue';
 import UiCheckbox from '../../ui/Checkbox.vue';
+import UiIconButton from '../../ui/IconButton.vue';
 import UiSelect from '../../ui/Select.vue';
 import UiTextField from '../../ui/TextField.vue';
 import SettingsEnvironmentSummary from './SettingsEnvironmentSummary.vue';
 import { concurrentTaskOptions, retryCountOptions } from './settingsCatalog';
 import type { SettingsForm } from './useSettingsForm';
 
-const { form } = defineProps<{ form: SettingsForm }>();
+const { form, desktopPaths = true } = defineProps<{ form: SettingsForm; desktopPaths?: boolean }>();
 const {
   settings,
   settingsDownloadDir,
@@ -24,7 +25,16 @@ const {
 
 <template>
   <section class="settings-block">
-    <div class="directory-row">
+    <div v-if="!desktopPaths" class="directory-row">
+      <UiTextField :model-value="settings.draft.document_tree_output?.display_name ?? ''" label="Android 导出目录" placeholder="尚未选择" disabled />
+      <UiIconButton
+        icon="folder-open"
+        :label="settings.draft.document_tree_output ? '更换导出目录' : '选择导出目录'"
+        :disabled="settings.loading || settings.saving"
+        @click="settings.chooseDocumentTreeOutput"
+      />
+    </div>
+    <div v-if="desktopPaths" class="directory-row">
       <UiTextField v-model="settingsDownloadDir" label="保存目录" placeholder="未设置时使用 downloads" />
       <UiButton variant="secondary" :disabled="settings.loading || settings.saving" @click="settings.chooseDownloadDir">
         选择
@@ -55,6 +65,7 @@ const {
     </div>
     <ParseRulesEditor v-model="settings.draft.parse_rules" />
     <SettingsEnvironmentSummary
+      v-if="desktopPaths"
       :health="settings.environmentHealth"
       :checking="settings.environmentChecking"
       @check="settings.checkEnvironment"
@@ -63,3 +74,13 @@ const {
     />
   </section>
 </template>
+
+<style scoped>
+.directory-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: var(--space-8);
+}
+</style>

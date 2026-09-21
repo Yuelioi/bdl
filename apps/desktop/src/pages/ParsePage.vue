@@ -11,6 +11,7 @@ import UiWorkflowSteps, { type WorkflowStep } from '../ui/WorkflowSteps.vue'
 import ParseDownloadPlanner from './parse/ParseDownloadPlanner.vue'
 import ParseBatchWorkspace from './parse/ParseBatchWorkspace.vue'
 import ParseResultWorkspace from './parse/ParseResultWorkspace.vue'
+import { readClipboardText } from '../utils/clipboard'
 
 const parse = useParseStore()
 const ui = useUiStore()
@@ -34,8 +35,23 @@ const submitInput = async () => {
   const parsed = await parse.createSource()
   if (parsed) activeStage.value = 'content'
 }
-const openDownloadSettings = () => {
 
+const pasteInput = async () => {
+  try {
+    const text = (await readClipboardText()).trim()
+    if (!text) {
+      parse.setNotice('剪贴板里没有可粘贴的链接', 'warning')
+      return
+    }
+
+    parse.input = text
+    parse.clearNotice()
+  } catch (error) {
+    parse.setNotice(`读取剪贴板失败：${error instanceof Error ? error.message : String(error)}`, 'danger')
+  }
+}
+
+const openDownloadSettings = () => {
   void downloadPlanner.value?.openDialog()
 }
 
@@ -88,6 +104,10 @@ const runNoticeAction = () => {
             />
 
             <div class="parse-entry-actions">
+              <UiButton type="button" variant="secondary" :disabled="createLoading" @click="pasteInput">
+                <UIcon name="i-tabler-clipboard" aria-hidden="true" />
+                粘贴链接
+              </UiButton>
               <div class="parse-entry-submit">
                 <span class="parse-entry-shortcut" aria-hidden="true">Ctrl + Enter</span>
                 <UiButton class="min-w-28" type="submit" :disabled="createLoading">
@@ -254,8 +274,16 @@ const runNoticeAction = () => {
     flex-direction: column;
   }
 
+  .parse-entry-actions > :deep(button) {
+    min-height: 44px;
+  }
+
   .parse-entry-submit {
-    justify-content: flex-end;
+    width: 100%;
+  }
+
+  .parse-entry-submit :deep(button) {
+    width: 100%;
   }
 
   .parse-entry-shortcut {

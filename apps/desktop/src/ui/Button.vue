@@ -31,6 +31,7 @@ const sizeClass = computed(() => `size-${size}`)
   min-width: 76px;
   min-height: var(--height-button);
   justify-content: center;
+  gap: var(--space-6);
   font-size: var(--font-13);
   font-weight: 650;
   white-space: nowrap;
@@ -46,8 +47,9 @@ const sizeClass = computed(() => `size-${size}`)
 }
 
 .ui-button.variant-secondary {
+  border: 1px solid var(--color-border);
   color: var(--color-text);
-  background: var(--color-surface);
+  background: var(--color-panel);
 }
 
 .ui-button.variant-ghost {
@@ -56,7 +58,11 @@ const sizeClass = computed(() => `size-${size}`)
 
 .ui-button.variant-secondary:hover:not(:disabled),
 .ui-button.variant-ghost:hover:not(:disabled) {
-  background: var(--color-panel);
+  background: var(--color-panel-strong);
+}
+
+.ui-button.variant-secondary:hover:not(:disabled) {
+  border-color: var(--color-border-strong);
 }
 
 .ui-button.variant-danger {

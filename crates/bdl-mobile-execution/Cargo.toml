@@ -1,0 +1,19 @@
+[package]
+name = "bdl-mobile-execution"
+version = "0.4.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+build = "build.rs"
+links = "bdl-mobile-execution"
+
+[dependencies]
+bdl-core = { path = "../bdl-core" }
+bdl-tauri = { path = "../bdl-tauri" }
+serde.workspace = true
+serde_json.workspace = true
+tauri = { version = "2", default-features = false }
+
+[build-dependencies]
+tauri-plugin = { version = "2", features = ["build"] }

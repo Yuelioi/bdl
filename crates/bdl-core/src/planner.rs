@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
-use chrono::Utc;
+use chrono::Local;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
@@ -333,6 +333,7 @@ fn plan_part(
         status: TaskStatus::Waiting,
         resources,
         output_path,
+        export_target: None,
         refresh_intent: media_refresh_intent(tree.source.kind, part, selected.part_index + 1),
         media_selection: DownloadTaskMediaSelection {
             processing: options.processing,
@@ -733,7 +734,7 @@ fn output_path_for(
 ) -> BdlResult<Option<PathBuf>> {
     let item = selected.item;
     let part = selected.part;
-    let today = Utc::now().date_naive().to_string();
+    let today = Local::now().date_naive().to_string();
     let representative_stream = video.or(audio).ok_or_else(|| BdlError::Planning {
         message: format!("`{}` 没有可下载的媒体流。", part.title),
     })?;
@@ -756,6 +757,7 @@ fn output_path_for(
         quality: Some(&quality_label),
         codec: Some(codec_label),
         date: Some(&today),
+        publish_date: item.publish_date.as_deref(),
         ext: &options.output_extension,
     };
     let relative_path = render_output_path(&options.naming_template, &context)?;

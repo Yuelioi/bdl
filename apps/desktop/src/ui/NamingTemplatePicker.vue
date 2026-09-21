@@ -2,8 +2,8 @@
 import { computed, ref } from 'vue'
 import type { NamingPreset } from '../api/dto'
 import { namingTemplatePresets, previewTemplate, validateNamingTemplate } from '../stores/settings'
+import NamingTemplateField from './NamingTemplateField.vue'
 import UiSelect from './Select.vue'
-import UiTextField from './TextField.vue'
 
 const model = defineModel<string>({ required: true })
 const props = withDefaults(defineProps<{ presets: NamingPreset[]; extension?: string; editable?: boolean }>(), { extension: 'mp4', editable: false })
@@ -29,7 +29,11 @@ const options = computed(() => [...choices.value, { label: '自定义模板', va
 <template>
   <div class="grid min-w-0 gap-3">
     <UiSelect v-model="selected" label="命名预设" :options="options" />
-    <UiTextField v-if="editable || selected === 'custom'" v-model="model" label="命名模板" :error="validateNamingTemplate(model) ?? undefined" />
+    <NamingTemplateField
+      v-if="editable || selected === 'custom'"
+      v-model="model"
+      :error="validateNamingTemplate(model) ?? undefined"
+    />
     <p class="m-0 text-xs leading-5 wrap-anywhere text-(--color-muted)">文件名预览：<code>{{ previewTemplate(model, extension) }}</code></p>
   </div>
 </template>

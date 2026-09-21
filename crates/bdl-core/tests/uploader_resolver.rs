@@ -64,6 +64,7 @@ async fn uploader_resolver_maps_first_uploaded_video_page() -> Result<(), BdlErr
     assert_eq!(item.id.0, "item:uploader:1001:BV1xx411c7mD");
     assert_eq!(item.title, "fixture upload");
     assert_eq!(item.owner_name.as_deref(), Some("fixture owner"));
+    assert_eq!(item.publish_date.as_deref(), Some("2025-12-31"));
     assert_eq!(
         item.cover_url.as_deref(),
         Some("https://example.invalid/cover.jpg")
@@ -97,6 +98,7 @@ async fn uploader_resolver_resolves_requested_uploaded_video_page() -> Result<()
                 title: "fixture upload page 2".to_owned(),
                 owner_mid: 1001,
                 owner_name: Some("fixture owner".to_owned()),
+                publish_date: Some("2026-01-01".to_owned()),
                 cover_url: None,
                 duration_seconds: None,
             }],
@@ -173,6 +175,7 @@ fn fake_page() -> ResolvedUploaderPage {
             title: "fixture upload".to_owned(),
             owner_mid: 1001,
             owner_name: Some("fixture owner".to_owned()),
+            publish_date: Some("2025-12-31".to_owned()),
             cover_url: Some("https://example.invalid/cover.jpg".to_owned()),
             duration_seconds: Some(62),
         }],

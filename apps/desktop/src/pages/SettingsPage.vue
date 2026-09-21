@@ -15,9 +15,11 @@ import { settingsSections } from './settings/settingsCatalog';
 import type { SettingsSectionId } from './settings/settingsSections';
 import { useSettingsForm } from './settings/useSettingsForm';
 import { useUpdateStore } from '../stores/update';
+import { isMobilePlatform } from '../utils/platform';
 
 const settingsForm = useSettingsForm();
 const updater = useUpdateStore();
+const supportsDesktopPaths = !isMobilePlatform();
 const {
   settings,
   settingsGlobalSpeedLimitError,
@@ -34,8 +36,13 @@ const restoreAllDefaults = () => {
 };
 
 const activeSettingsSection = ref<SettingsSectionId>('settings-download');
+const availableSettingsSections = computed(() =>
+  updater.supported ? settingsSections : settingsSections.filter((section) => section.id !== 'settings-update'),
+);
 const currentSettingsSection = computed(
-  () => settingsSections.find((section) => section.id === activeSettingsSection.value) ?? settingsSections[0],
+  () =>
+    availableSettingsSections.value.find((section) => section.id === activeSettingsSection.value) ??
+    availableSettingsSections.value[0],
 );
 </script>
 
@@ -49,6 +56,7 @@ const currentSettingsSection = computed(
         <div class="settings-actions">
           <span v-if="settingsFormChanged" class="dirty-indicator">未保存</span>
           <UiButton variant="ghost" :disabled="settings.loading || settings.saving" @click="restoreAllDefaults">
+            <UIcon name="i-tabler-refresh" class="size-4" aria-hidden="true" />
             恢复默认
           </UiButton>
           <UiButton
@@ -56,6 +64,7 @@ const currentSettingsSection = computed(
             :disabled="settings.loading || settings.saving || !settingsFormChanged"
             @click="resetSettingsDraft"
           >
+            <UIcon name="i-tabler-arrow-back-up" class="size-4" aria-hidden="true" />
             撤销
           </UiButton>
           <UiButton
@@ -69,6 +78,12 @@ const currentSettingsSection = computed(
             "
             @click="saveSettings"
           >
+            <UIcon
+              :name="settings.saving ? 'i-tabler-loader-2' : 'i-tabler-device-floppy'"
+              class="size-4"
+              :class="{ 'animate-spin': settings.saving }"
+              aria-hidden="true"
+            />
             {{ settings.saving ? '保存中' : '保存' }}
           </UiButton>
         </div>
@@ -79,7 +94,7 @@ const currentSettingsSection = computed(
       </UiInlineNotice>
 
       <div class="settings-workspace">
-        <SettingsSectionNav v-model="activeSettingsSection" :sections="settingsSections" />
+        <SettingsSectionNav v-model="activeSettingsSection" :sections="availableSettingsSections" />
 
         <div class="settings-content">
           <header class="settings-section-heading">
@@ -92,7 +107,11 @@ const currentSettingsSection = computed(
             </div>
           </header>
 
-          <SettingsDownloadSection v-if="activeSettingsSection === 'settings-download'" :form="settingsForm" />
+          <SettingsDownloadSection
+            v-if="activeSettingsSection === 'settings-download'"
+            :form="settingsForm"
+            :desktop-paths="supportsDesktopPaths"
+          />
 
           <SettingsMediaSection v-else-if="activeSettingsSection === 'settings-media'" :form="settingsForm" />
 
@@ -101,13 +120,14 @@ const currentSettingsSection = computed(
           <SettingsProcessingSection
             v-else-if="activeSettingsSection === 'settings-media-advanced'"
             :form="settingsForm"
+            :desktop-paths="supportsDesktopPaths"
           />
 
           <SettingsArchiveSection v-else-if="activeSettingsSection === 'settings-archive'" :form="settingsForm" />
 
           <SettingsUpdateSection v-else-if="activeSettingsSection === 'settings-update'" />
 
-          <SettingsMaintenanceSection v-else :form="settingsForm" />
+          <SettingsMaintenanceSection v-else :form="settingsForm" :desktop-paths="supportsDesktopPaths" />
 
           <p v-if="settings.error" class="settings-error">{{ settings.error }}</p>
         </div>

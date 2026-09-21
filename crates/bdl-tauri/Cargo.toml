@@ -1,12 +1,13 @@
 [package]
 name = "bdl-tauri"
-version = "0.3.2"
+version = "0.4.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 
 [dependencies]
+async-trait.workspace = true
 bdl-core = { path = "../bdl-core" }
 bpi-rs.workspace = true
 chrono.workspace = true
@@ -20,11 +21,12 @@ thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 url.workspace = true
+uuid.workspace = true
 
 [target.'cfg(target_os = "windows")'.dependencies]
 keyring = { version = "3.6.3", default-features = false, features = ["windows-native"] }
 
-[target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
+[target.'cfg(target_os = "linux")'.dependencies]
 keyring = { version = "3.6.3", default-features = false, features = ["linux-native-sync-persistent", "crypto-rust"] }
 
 [dev-dependencies]

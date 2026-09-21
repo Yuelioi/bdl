@@ -59,6 +59,7 @@ async fn favorite_resolver_maps_first_page() -> Result<(), BdlError> {
     assert_eq!(item.id.0, "item:favorite:1052622027:BV1xx411c7mD");
     assert_eq!(item.title, "favorite video");
     assert_eq!(item.owner_name.as_deref(), Some("fixture owner"));
+    assert_eq!(item.publish_date.as_deref(), Some("2025-12-31"));
     assert_eq!(item.duration_seconds, Some(62));
 
     let part = item.parts.first().expect("part should exist");
@@ -148,6 +149,7 @@ fn fake_page() -> ResolvedFavoritePage {
             title: "favorite video".to_owned(),
             owner_mid: 1001,
             owner_name: Some("fixture owner".to_owned()),
+            publish_date: Some("2025-12-31".to_owned()),
             cover_url: Some("https://example.invalid/media-cover.jpg".to_owned()),
             duration_seconds: Some(62),
         }],

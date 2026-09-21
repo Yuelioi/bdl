@@ -3,10 +3,11 @@ use std::path::PathBuf;
 use bdl_core::BdlResult;
 use bdl_core::account::AccountSummary;
 use bdl_core::model::HeaderPair;
+use bdl_core::naming::DuplicateNamingStrategy;
 use bdl_core::queue::{
-    DownloadResource, DownloadResourceIntent, DownloadResourceKind, DownloadTask,
-    DownloadTaskMediaSelection, DownloadTaskRefreshInput, DownloadTaskRefreshIntent, QueueLogEntry,
-    QueueLogLevel, ResourceStatus, TaskStatus,
+    DownloadExportTarget, DownloadResource, DownloadResourceIntent, DownloadResourceKind,
+    DownloadTask, DownloadTaskMediaSelection, DownloadTaskRefreshInput, DownloadTaskRefreshIntent,
+    QueueLogEntry, QueueLogLevel, ResourceStatus, TaskStatus,
 };
 use bdl_core::storage::TaskStorage;
 use chrono::{Duration, Utc};
@@ -349,6 +350,13 @@ fn sample_task() -> DownloadTask {
             ),
         ],
         output_path: PathBuf::from("downloads/Example - P1.mp4"),
+        export_target: Some(DownloadExportTarget::DocumentTree {
+            tree_uri: "content://com.android.externalstorage.documents/tree/primary%3ADownload"
+                .to_owned(),
+            relative_path: "Example/Example - P1.mp4".to_owned(),
+            duplicate_naming_strategy: DuplicateNamingStrategy::AppendSuffix,
+            document_uri: None,
+        }),
         refresh_intent: Some(DownloadTaskRefreshIntent {
             input: DownloadTaskRefreshInput::VideoBvid {
                 bvid: "BV1xx411c7mD".to_owned(),

@@ -5,7 +5,7 @@ use bpi_rs::user::{UserUploadedVideo, UserUploadedVideosParams};
 use std::sync::Arc;
 
 use super::paged::{PageRequest, PagedSourceKind, page_state};
-use super::{ResolveOptions, Resolver};
+use super::{ResolveOptions, Resolver, bilibili_publish_date};
 use crate::error::{BdlError, BdlResult};
 use crate::ids::{GroupId, ItemId, PartId, SourceId};
 use crate::input::ClassifiedInput;
@@ -23,6 +23,7 @@ pub struct ResolvedUploaderVideo {
     pub title: String,
     pub owner_mid: u64,
     pub owner_name: Option<String>,
+    pub publish_date: Option<String>,
     pub cover_url: Option<String>,
     pub duration_seconds: Option<u64>,
 }
@@ -179,6 +180,7 @@ impl From<UserUploadedVideo> for ResolvedUploaderVideo {
             title: video.title,
             owner_mid: video.mid.get(),
             owner_name: non_empty(video.author),
+            publish_date: bilibili_publish_date(video.created),
             cover_url: non_empty(video.pic),
             duration_seconds: duration_seconds_from_label(&video.length),
         }
@@ -193,6 +195,7 @@ fn map_video_item(source_mid: u64, video: ResolvedUploaderVideo) -> NormalizedIt
         title: video.title.clone(),
         owner_name: video.owner_name.clone(),
         owner_mid: Some(video.owner_mid),
+        publish_date: video.publish_date,
         cover_url: video.cover_url.clone(),
         duration_seconds: video.duration_seconds,
         parts: vec![NormalizedPart {

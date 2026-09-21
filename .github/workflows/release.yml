@@ -117,9 +117,91 @@ jobs:
             exit 1
           fi
 
+  android:
+    name: Build Android ARM64 release
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      ANDROID_KEY_BASE64: ${{ secrets.ANDROID_KEY_BASE64 }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Verify release tag matches app version
+        run: node ./scripts/verify-release-tag.mjs "${{ github.ref_name }}"
+
+      - name: Detect Android release signing
+        id: signing
+        shell: bash
+        run: |
+          if [[ -n "$ANDROID_KEY_BASE64" && -n "$ANDROID_KEY_ALIAS" && -n "$ANDROID_KEY_PASSWORD" ]]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Android release assets skipped because ANDROID_KEY_BASE64, ANDROID_KEY_ALIAS and ANDROID_KEY_PASSWORD are not all configured."
+          fi
+
+      - name: Install pnpm
+        if: steps.signing.outputs.enabled == 'true'
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.1.2
+
+      - name: Install Node.js
+        if: steps.signing.outputs.enabled == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: apps/desktop/pnpm-lock.yaml
+
+      - name: Install Rust Android target
+        if: steps.signing.outputs.enabled == 'true'
+        uses: dtolnay/rust-toolchain@1.88
+        with:
+          targets: aarch64-linux-android
+
+      - name: Install Java
+        if: steps.signing.outputs.enabled == 'true'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Android SDK
+        if: steps.signing.outputs.enabled == 'true'
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android platform and NDK
+        if: steps.signing.outputs.enabled == 'true'
+        shell: bash
+        run: |
+          sdkmanager "platforms;android-36" "build-tools;36.0.0" "ndk;27.2.12479018"
+          echo "NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
+
+      - name: Install frontend dependencies
+        if: steps.signing.outputs.enabled == 'true'
+        run: pnpm --dir apps/desktop install --frozen-lockfile
+
+      - name: Build signed Android release
+        if: steps.signing.outputs.enabled == 'true'
+        run: node ./scripts/package-android-release.mjs
+
+      - name: Upload Android release assets
+        if: steps.signing.outputs.enabled == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: gh release upload "${{ github.ref_name }}" dist/android/* --clobber
+
   publish:
     name: Publish staged release
-    needs: build
+    needs: [build, android]
     runs-on: ubuntu-latest
     timeout-minutes: 10
 

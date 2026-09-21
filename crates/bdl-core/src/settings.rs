@@ -51,10 +51,17 @@ pub struct NamingPreset {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DocumentTreeDirectory {
+    pub tree_uri: String,
+    pub display_name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AppSettings {
     pub settings_schema_version: u16,
     pub download_dir: Option<String>,
+    pub document_tree_output: Option<DocumentTreeDirectory>,
     pub parse_rules: ParseRules,
     pub naming_template: String,
     pub naming_presets: Vec<NamingPreset>,
@@ -87,6 +94,7 @@ impl Default for AppSettings {
         Self {
             settings_schema_version: 1,
             download_dir: None,
+            document_tree_output: None,
             parse_rules: ParseRules::default(),
             naming_template: DEFAULT_NAMING_TEMPLATE.to_owned(),
             naming_presets: Vec::new(),
@@ -129,6 +137,21 @@ impl AppSettings {
             .map(str::trim)
             .filter(|path| !path.is_empty())
             .map(ToOwned::to_owned);
+        self.document_tree_output = self.document_tree_output.and_then(|directory| {
+            let tree_uri = directory.tree_uri.trim().to_owned();
+            if tree_uri.is_empty() {
+                return None;
+            }
+            let display_name = directory.display_name.trim().to_owned();
+            Some(DocumentTreeDirectory {
+                tree_uri,
+                display_name: if display_name.is_empty() {
+                    "已选择目录".to_owned()
+                } else {
+                    display_name
+                },
+            })
+        });
         self.proxy_url = self
             .proxy_url
             .as_deref()
@@ -169,6 +192,13 @@ impl AppSettings {
         validate_proxy_url(self.proxy_url.as_deref())?;
         validate_segment_count(self.segment_count)?;
         validate_speed_limit(self.global_speed_limit_bytes_per_second, "全局下载限速")?;
+        if let Some(directory) = &self.document_tree_output
+            && !directory.tree_uri.starts_with("content://")
+        {
+            return Err(crate::error::BdlError::Planning {
+                message: "Android 导出目录无效，请重新选择保存位置。".to_owned(),
+            });
+        }
         Ok(())
     }
 }

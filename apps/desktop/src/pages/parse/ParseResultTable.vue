@@ -70,7 +70,10 @@ const handleRowKeydown = (event: KeyboardEvent, rowId: string) => {
           />
         </div>
         <div class="sequence-cell" role="cell">{{ String(index + 1).padStart(2, '0') }}</div>
-        <div class="title-cell" role="cell" :title="row.title">{{ row.title }}</div>
+        <div class="title-cell" role="cell" :title="row.title">
+          <span class="title-text">{{ row.title }}</span>
+          <span v-if="row.meta" class="mobile-meta">{{ row.meta }}</span>
+        </div>
         <div class="meta-cell" role="cell" :title="row.meta">{{ row.meta || '—' }}</div>
       </div>
     </div>
@@ -158,6 +161,17 @@ const handleRowKeydown = (event: KeyboardEvent, rowId: string) => {
   white-space: nowrap;
 }
 
+.title-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-meta {
+  display: none;
+}
+
 .title-cell {
   font-weight: 650;
 }
@@ -173,10 +187,43 @@ const handleRowKeydown = (event: KeyboardEvent, rowId: string) => {
 }
 
 @media (width <= 700px) {
+  .parse-result-table-body {
+    padding-inline-end: 0;
+    scrollbar-gutter: auto;
+  }
+
   .parse-result-table-header,
   .parse-result-table-row {
-    grid-template-columns: 32px 44px minmax(0, 1fr) 96px;
+    grid-template-columns: 32px 38px minmax(0, 1fr);
     column-gap: var(--space-2xs);
+  }
+
+  .parse-result-table-header {
+    min-height: 32px;
+  }
+
+  .parse-result-table-row {
+    min-height: 48px;
+  }
+
+  .meta-column,
+  .meta-cell {
+    display: none;
+  }
+
+  .title-cell {
+    display: grid;
+    gap: 2px;
+  }
+
+  .mobile-meta {
+    display: block;
+    overflow: hidden;
+    color: var(--color-muted);
+    font-size: var(--font-11);
+    font-weight: 500;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 }
 

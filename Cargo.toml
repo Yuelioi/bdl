@@ -3,6 +3,10 @@ resolver = "3"
 members = [
   "crates/bdl-core",
   "crates/bdl-tauri",
+  "crates/bdl-mobile-credentials",
+  "crates/bdl-mobile-execution",
+  "crates/bdl-mobile-media",
+  "crates/bdl-mobile-storage",
   "crates/bdl-cli",
   "apps/desktop/src-tauri",
 ]

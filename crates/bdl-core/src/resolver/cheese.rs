@@ -8,7 +8,7 @@ use std::sync::Arc;
 use url::Url;
 
 use super::paged::{PageRequest, PagedSourceKind};
-use super::{ResolveOptions, Resolver};
+use super::{ResolveOptions, Resolver, bilibili_publish_date};
 use crate::error::{BdlError, BdlResult};
 use crate::ids::{GroupId, ItemId, PartId, SourceId};
 use crate::input::ClassifiedInput;
@@ -49,6 +49,7 @@ pub struct ResolvedCheeseEpisode {
     pub ep_id: u64,
     pub index: u32,
     pub title: String,
+    pub publish_date: Option<String>,
     pub duration_seconds: Option<u64>,
 }
 
@@ -391,6 +392,7 @@ impl ResolvedCheeseEpisode {
             ep_id: episode.id,
             index: episode.index,
             title: cheese_episode_title(episode.index, &episode.title),
+            publish_date: bilibili_publish_date(episode.release_date),
             duration_seconds: (episode.duration > 0).then_some(episode.duration),
         })
     }
@@ -470,6 +472,7 @@ fn map_episode_item(
         title: episode.title.clone(),
         owner_name,
         owner_mid: None,
+        publish_date: episode.publish_date,
         cover_url: cover_url.clone(),
         duration_seconds: episode.duration_seconds,
         parts: vec![NormalizedPart {

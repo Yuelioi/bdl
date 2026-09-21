@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 
 import type {
+  DocumentTreeDirectory,
   DownloadMediaMode,
   DuplicateTaskPolicy,
   NormalizedGroup,
@@ -58,6 +59,7 @@ export interface CreateTaskOptions {
   partIdsBySource?: Record<string, string[]>
   silent?: boolean
   downloadDir?: string | null
+  documentTreeOutput?: DocumentTreeDirectory | null
   archiveMode?: SettingsSnapshot['archive_mode']
   outputExtension?: SettingsSnapshot['output_extension']
   namingTemplate?: string
@@ -81,6 +83,28 @@ export interface CreateTasksForSourcesResult extends SelectionCreateTasksResult 
   pendingSourceIds: string[]
   failedSourceIds: string[]
   failures: Array<{ sourceId: string; message: string }>
+}
+
+const mediaPreferencesForTaskRequest = (
+  options: CreateTaskOptions,
+  settings: SettingsSnapshot,
+): SettingsSnapshot['media_preferences'] => {
+  const source = options.mediaPreferences ?? settings.media_preferences
+  const preferences: SettingsSnapshot['media_preferences'] = {
+    video: source.video.map((rule) => ({ ...rule })),
+    audio: [...source.audio],
+    fallback: source.fallback,
+  }
+  if (
+    (options.quality !== undefined && options.quality !== 'best') ||
+    (options.codec !== undefined && options.codec !== 'auto')
+  ) {
+    preferences.video = []
+  }
+  if (options.audioQuality !== undefined && options.audioQuality !== 'best') {
+    preferences.audio = []
+  }
+  return preferences
 }
 
 export type PacedParsingResult = 'completed' | 'stopped' | 'failed'
@@ -541,6 +565,11 @@ export const useParseStore = defineStore('parse', {
         await settings.ensureLoaded()
         const downloadDir =
           options.downloadDir !== undefined ? options.downloadDir?.trim() : settings.saved.download_dir?.trim()
+        const documentTreeOutput =
+          options.documentTreeOutput !== undefined
+            ? options.documentTreeOutput
+            : settings.saved.document_tree_output
+        const mediaPreferences = mediaPreferencesForTaskRequest(options, settings.saved)
         const aggregate: CreateTasksForSourcesResult = {
           created: [],
           duplicates: [],
@@ -558,6 +587,7 @@ export const useParseStore = defineStore('parse', {
               source_id: sourceId,
               part_ids: options.partIdsBySource?.[sourceId] ?? this.selectionBySource[sourceId] ?? [],
               output_dir: downloadDir || undefined,
+              document_tree_output: documentTreeOutput ?? undefined,
               archive_mode: options.archiveMode ?? settings.saved.archive_mode,
               output_extension: options.outputExtension ?? settings.saved.output_extension,
               naming_template: options.namingTemplate ?? settings.saved.naming_template,
@@ -571,7 +601,7 @@ export const useParseStore = defineStore('parse', {
               quality: options.quality ?? settings.saved.quality,
               audio_quality: options.audioQuality ?? settings.saved.audio_quality,
               codec: options.codec ?? settings.saved.codec,
-              media_preferences: options.mediaPreferences ?? settings.saved.media_preferences,
+              media_preferences: mediaPreferences,
               duplicate_policy: options.duplicatePolicy ?? 'ask',
               scheduled_at: options.scheduledAt,
               speed_limit_bytes_per_second: options.speedLimitBytesPerSecond,

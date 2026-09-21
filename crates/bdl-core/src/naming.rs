@@ -34,6 +34,7 @@ pub struct NamingContext<'a> {
     pub quality: Option<&'a str>,
     pub codec: Option<&'a str>,
     pub date: Option<&'a str>,
+    pub publish_date: Option<&'a str>,
     pub ext: &'a str,
 }
 
@@ -201,6 +202,7 @@ fn variable_value(name: &str, context: &NamingContext<'_>) -> BdlResult<String> 
         "quality" => context.quality.unwrap_or_default().to_owned(),
         "codec" => context.codec.unwrap_or_default().to_owned(),
         "date" => context.date.unwrap_or_default().to_owned(),
+        "publish_date" => context.publish_date.unwrap_or_default().to_owned(),
         "ext" => context.ext.to_owned(),
         _ => unreachable!("naming variable was validated before rendering"),
     };
@@ -212,7 +214,8 @@ fn validate_variable_name(name: &str) -> BdlResult<()> {
     match name {
         "title" | "part_title" | "part_index" | "bvid" | "aid" | "cid" | "owner_name"
         | "owner_mid" | "series_title" | "season_index" | "episode_index" | "episode_title"
-        | "collection_title" | "index" | "quality" | "codec" | "date" | "ext" => Ok(()),
+        | "collection_title" | "index" | "quality" | "codec" | "date" | "publish_date"
+        | "ext" => Ok(()),
         "" => Err(BdlError::Planning {
             message: "命名模板存在空变量。".to_owned(),
         }),

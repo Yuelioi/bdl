@@ -23,6 +23,9 @@ pub(crate) fn start(app: &AppHandle) {
         }
 
         let result = run(&app, state.inner()).await;
+        if let Err(error) = state.task_execution().set_active(false) {
+            tracing::warn!("failed to stop platform task execution: {error}");
+        }
         state.finish_queue_worker();
 
         if let Err(error) = result {
@@ -42,6 +45,7 @@ async fn run(app: &AppHandle, state: &AppState) -> CommandResult<()> {
         state.settings()?.global_speed_limit_bytes_per_second,
     ));
     let mut running = FuturesUnordered::new();
+    let mut execution_active = false;
 
     loop {
         let current_settings = state.settings()?;
@@ -51,6 +55,14 @@ async fn run(app: &AppHandle, state: &AppState) -> CommandResult<()> {
             let Some(task) = state.take_next_startable_task()? else {
                 break;
             };
+            if !execution_active {
+                match state.task_execution().set_active(true) {
+                    Ok(()) => execution_active = true,
+                    Err(error) => {
+                        tracing::warn!("failed to activate platform task execution: {error}");
+                    }
+                }
+            }
             let launch =
                 queue_task_launch_context(state.settings()?, task.speed_limit_bytes_per_second);
 
@@ -67,15 +79,35 @@ async fn run(app: &AppHandle, state: &AppState) -> CommandResult<()> {
             ));
         }
 
+        let scheduled_wakeups = state.scheduled_wakeups()?;
+        let next_scheduled_at = scheduled_wakeups.first().copied();
+        let scheduled_wakeup_millis = scheduled_wakeups
+            .iter()
+            .map(|scheduled_at| scheduled_at.timestamp_millis())
+            .collect::<Vec<_>>();
+        if let Err(error) = state
+            .task_execution()
+            .sync_scheduled_wakeups(&scheduled_wakeup_millis)
+        {
+            tracing::warn!("failed to sync platform scheduled wakeups: {error}");
+        }
+
         if running.is_empty() {
-            let Some(scheduled_at) = state.next_scheduled_at()? else {
+            if execution_active {
+                if let Err(error) = state.task_execution().set_active(false) {
+                    tracing::warn!("failed to stop platform task execution: {error}");
+                } else {
+                    execution_active = false;
+                }
+            }
+            let Some(scheduled_at) = next_scheduled_at else {
                 break;
             };
             wait_for_schedule_or_queue_change(state, scheduled_at).await;
             continue;
         }
 
-        let completed = if let Some(scheduled_at) = state.next_scheduled_at()? {
+        let completed = if let Some(scheduled_at) = next_scheduled_at {
             tokio::select! {
                 completed = running.next() => completed,
                 () = wait_for_schedule_or_queue_change(state, scheduled_at) => None,

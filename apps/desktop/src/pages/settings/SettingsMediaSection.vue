@@ -5,9 +5,11 @@ import UiInlineNotice from '../../ui/InlineNotice.vue';
 import UiSelect from '../../ui/Select.vue';
 import { audioQualityOptions, outputFormatOptions, videoQualityOptions } from './settingsCatalog';
 import type { SettingsForm } from './useSettingsForm';
+import { isAndroidPlatform } from '../../utils/platform';
 
 const { form } = defineProps<{ form: SettingsForm }>();
 const { settingsVideoQuality, settingsAudioQuality, settingsOutputFormat, settingsEmbeddingFormatError } = form;
+const androidPlatform = isAndroidPlatform();
 const preferences = computed({
   get: () => form.settings.draft.media_preferences,
   set: (value) => form.settings.setMediaPreferences(value),
@@ -23,7 +25,7 @@ const preferences = computed({
     <UiSelect
       v-model="settingsOutputFormat"
       label="封装格式"
-      helper="嵌入封面和字幕时需使用 MKV"
+      :helper="androidPlatform ? 'Android 内置 FFmpeg 支持 MP4 与 MKV' : '嵌入封面和字幕时需使用 MKV'"
       :options="outputFormatOptions"
     />
     <UiInlineNotice v-if="settingsEmbeddingFormatError" tone="danger">

@@ -2,8 +2,14 @@ import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { DownloadDirectoryHealth, EnvironmentHealthSnapshot } from '../api/dto'
-import { environmentCreateDownloadDirectory, environmentHealth, settingsGet } from '../api/tauri'
-import { cloneMediaPreferences, embeddingContainerError, useSettingsStore } from './settings'
+import { environmentCreateDownloadDirectory, environmentHealth, settingsGet, settingsUpdate } from '../api/tauri'
+import {
+  cloneMediaPreferences,
+  embeddingContainerError,
+  namingVariables,
+  useSettingsStore,
+  validateNamingTemplate,
+} from './settings'
 
 vi.mock('../api/tauri', () => ({
   diagnosticsExport: vi.fn(),
@@ -18,6 +24,7 @@ vi.mock('../api/tauri', () => ({
 const mockedEnvironmentHealth = vi.mocked(environmentHealth)
 const mockedCreateDirectory = vi.mocked(environmentCreateDownloadDirectory)
 const mockedSettingsGet = vi.mocked(settingsGet)
+const mockedSettingsUpdate = vi.mocked(settingsUpdate)
 
 const healthSnapshot = (path: string, status: 'ready' | 'missing'): EnvironmentHealthSnapshot => ({
   ready: status === 'ready',
@@ -183,6 +190,34 @@ describe('settings defaults', () => {
 
     expect(store.draft.concurrent_tasks).toBe(1)
     expect(store.saved.concurrent_tasks).toBe(5)
+  })
+})
+
+describe('naming template persistence', () => {
+  beforeEach(() => {
+    vi.resetAllMocks()
+    setActivePinia(createPinia())
+  })
+
+  it('persists date and publish-date variables through the main save action', async () => {
+    const store = useSettingsStore()
+    const template = '{publish_date} - {date} - {title}.{ext}'
+    const updated = { ...store.saved, naming_template: template }
+    store.draft.naming_template = template
+    mockedSettingsUpdate.mockResolvedValueOnce(updated)
+    mockedEnvironmentHealth.mockResolvedValueOnce(healthSnapshot('downloads', 'ready'))
+
+    await store.save()
+
+    expect(mockedSettingsUpdate).toHaveBeenCalledWith(expect.objectContaining({ naming_template: template }))
+    expect(store.saved.naming_template).toBe(template)
+    expect(store.draft.naming_template).toBe(template)
+  })
+
+  it('keeps every advertised magic variable valid', () => {
+    for (const variable of namingVariables) {
+      expect(validateNamingTemplate(`{${variable.name}}.{ext}`)).toBeNull()
+    }
   })
 })
 

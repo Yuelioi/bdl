@@ -9,7 +9,7 @@ use chrono::{DateTime, Utc};
 use std::sync::Arc;
 use url::Url;
 
-use super::{ResolveOptions, Resolver};
+use super::{ResolveOptions, Resolver, bilibili_publish_date};
 use crate::error::{BdlError, BdlResult};
 use crate::ids::{GroupId, ItemId, PartId, SourceId};
 use crate::input::ClassifiedInput;
@@ -47,6 +47,7 @@ pub struct ResolvedBangumiEpisode {
     pub cid: u64,
     pub ep_id: u64,
     pub title: String,
+    pub publish_date: Option<String>,
     pub cover_url: Option<String>,
     pub duration_seconds: Option<u64>,
 }
@@ -351,6 +352,7 @@ impl ResolvedBangumiEpisode {
             cid: episode.cid,
             ep_id: episode.ep_id,
             title,
+            publish_date: bilibili_publish_date(episode.pub_time),
             cover_url: non_empty(episode.cover).or(fallback_cover_url),
             duration_seconds: duration_seconds(episode.duration),
         })
@@ -438,6 +440,7 @@ fn map_episode_item(
         title: episode.title.clone(),
         owner_name,
         owner_mid: None,
+        publish_date: episode.publish_date,
         cover_url: episode.cover_url.clone(),
         duration_seconds: episode.duration_seconds,
         parts: vec![NormalizedPart {

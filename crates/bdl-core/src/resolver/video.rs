@@ -4,12 +4,13 @@ use bpi_rs::danmaku::DanmakuXmlListParams;
 use bpi_rs::ids::{Aid, Bvid, Cid};
 use bpi_rs::models::{Fnval, VideoQuality};
 use bpi_rs::video::videostream_url::DashStream;
-use bpi_rs::video::{VideoPlayUrlParams, VideoPlayerInfoParams, VideoViewParams};
+use bpi_rs::video::{VideoPlayUrlParams, VideoPlayerInfoParams};
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
-use super::{ResolveOptions, Resolver};
+use super::{ResolveOptions, Resolver, bilibili_publish_date};
 use crate::error::{BdlError, BdlResult};
 use crate::ids::{GroupId, ItemId, PartId, SourceId};
 use crate::input::ClassifiedInput;
@@ -57,6 +58,7 @@ pub struct ResolvedVideo {
     pub title: String,
     pub owner_name: Option<String>,
     pub owner_mid: Option<u64>,
+    pub publish_date: Option<String>,
     pub cover_url: Option<String>,
     pub pages: Vec<ResolvedVideoPage>,
 }
@@ -209,6 +211,7 @@ where
             title: video.title.clone(),
             owner_name: video.owner_name.clone(),
             owner_mid: video.owner_mid,
+            publish_date: video.publish_date.clone(),
             cover_url: video.cover_url.clone(),
             duration_seconds: total_duration_seconds(&video.pages),
             parts,
@@ -252,6 +255,7 @@ where
 
 pub struct BpiVideoApi {
     client: Arc<BpiClient>,
+    view_snapshots: Mutex<HashMap<String, VideoViewSnapshot>>,
 }
 
 impl BpiVideoApi {
@@ -264,39 +268,50 @@ impl BpiVideoApi {
     pub fn from_client(client: impl Into<Arc<BpiClient>>) -> Self {
         Self {
             client: client.into(),
+            view_snapshots: Mutex::new(HashMap::new()),
         }
+    }
+
+    async fn view_snapshot(&self, id: &VideoInputId) -> BdlResult<VideoViewSnapshot> {
+        let key = id.input_label();
+        if let Some(snapshot) = self
+            .view_snapshots
+            .lock()
+            .map_err(|_| BdlError::Bpi("video view cache lock poisoned".to_owned()))?
+            .get(&key)
+            .cloned()
+        {
+            return Ok(snapshot);
+        }
+
+        let response = self
+            .client
+            .get(VIDEO_VIEW_API)
+            .query(&video_view_query(id))
+            .send()
+            .await
+            .map_err(|error| BdlError::Bpi(error.to_string()))?
+            .error_for_status()
+            .map_err(|error| BdlError::Bpi(error.to_string()))?;
+        let snapshot = response
+            .json::<VideoViewResponse>()
+            .await
+            .map_err(|error| BdlError::Bpi(error.to_string()))?
+            .into_snapshot()?;
+
+        self.view_snapshots
+            .lock()
+            .map_err(|_| BdlError::Bpi("video view cache lock poisoned".to_owned()))?
+            .insert(key, snapshot.clone());
+
+        Ok(snapshot)
     }
 }
 
 #[async_trait]
 impl VideoApi for BpiVideoApi {
     async fn view(&self, id: &VideoInputId) -> BdlResult<ResolvedVideo> {
-        let view = self
-            .client
-            .video()
-            .view(view_params(id)?)
-            .await
-            .map_err(|error| BdlError::Bpi(error.to_string()))?;
-
-        Ok(ResolvedVideo {
-            aid: view.aid.get(),
-            bvid: view.bvid.as_str().to_owned(),
-            default_cid: view.cid.get(),
-            title: view.title,
-            owner_name: non_empty(view.owner.name),
-            owner_mid: Some(view.owner.mid.get()),
-            cover_url: non_empty(view.pic),
-            pages: view
-                .pages
-                .into_iter()
-                .map(|page| ResolvedVideoPage {
-                    cid: page.cid.get(),
-                    index: page.page,
-                    title: page.part,
-                    duration_seconds: Some(page.duration),
-                })
-                .collect(),
-        })
+        Ok(self.view_snapshot(id).await?.video)
     }
 
     async fn play_url(&self, id: &VideoInputId, cid: u64) -> BdlResult<ResolvedPlayUrl> {
@@ -314,25 +329,7 @@ impl VideoApi for BpiVideoApi {
     }
 
     async fn collection_hint(&self, id: &VideoInputId) -> BdlResult<Option<VideoCollectionRef>> {
-        let query = match id {
-            VideoInputId::Aid(aid) => vec![("aid", aid.to_string())],
-            VideoInputId::Bvid(bvid) => vec![("bvid", bvid.clone())],
-        };
-        let response = self
-            .client
-            .get(VIDEO_VIEW_API)
-            .query(&query)
-            .send()
-            .await
-            .map_err(|error| BdlError::Bpi(error.to_string()))?
-            .error_for_status()
-            .map_err(|error| BdlError::Bpi(error.to_string()))?;
-        let payload = response
-            .json::<VideoCollectionHintResponse>()
-            .await
-            .map_err(|error| BdlError::Bpi(error.to_string()))?;
-
-        payload.into_hint()
+        Ok(self.view_snapshot(id).await?.collection_hint)
     }
 
     async fn player_info(&self, id: &VideoInputId, cid: u64) -> BdlResult<ResolvedPlayerInfo> {
@@ -366,15 +363,15 @@ impl VideoApi for BpiVideoApi {
 }
 
 #[derive(Debug, Deserialize)]
-struct VideoCollectionHintResponse {
+struct VideoViewResponse {
     code: i64,
     #[serde(default)]
     message: String,
-    data: Option<VideoCollectionHintData>,
+    data: Option<VideoViewData>,
 }
 
-impl VideoCollectionHintResponse {
-    fn into_hint(self) -> BdlResult<Option<VideoCollectionRef>> {
+impl VideoViewResponse {
+    fn into_snapshot(self) -> BdlResult<VideoViewSnapshot> {
         if self.code != 0 {
             return Err(BdlError::Bpi(format!(
                 "video view returned code {}: {}",
@@ -382,25 +379,93 @@ impl VideoCollectionHintResponse {
             )));
         }
 
-        Ok(self
+        let data = self
             .data
-            .and_then(|data| data.ugc_season)
-            .map(|season| VideoCollectionRef {
+            .ok_or_else(|| BdlError::Bpi("video view returned no data".to_owned()))?;
+        let owner_name = data
+            .owner
+            .as_ref()
+            .and_then(|owner| non_empty(owner.name.clone()));
+        let owner_mid = data
+            .owner
+            .as_ref()
+            .map(|owner| owner.mid)
+            .filter(|mid| *mid > 0);
+        let video = ResolvedVideo {
+            aid: data.aid,
+            bvid: data.bvid,
+            default_cid: data.cid,
+            title: data.title,
+            owner_name,
+            owner_mid,
+            publish_date: (data.pubdate > 0)
+                .then_some(data.pubdate)
+                .and_then(bilibili_publish_date),
+            cover_url: non_empty(data.pic),
+            pages: data
+                .pages
+                .into_iter()
+                .map(|page| ResolvedVideoPage {
+                    cid: page.cid,
+                    index: page.page,
+                    title: page.part,
+                    duration_seconds: Some(page.duration),
+                })
+                .collect(),
+        };
+        Ok(VideoViewSnapshot {
+            video,
+            collection_hint: data.ugc_season.map(|season| VideoCollectionRef {
                 mid: season.mid,
                 season_id: season.id,
-            }))
+            }),
+        })
     }
 }
 
 #[derive(Debug, Deserialize)]
-struct VideoCollectionHintData {
+struct VideoViewData {
+    aid: u64,
+    #[serde(default)]
+    bvid: String,
+    cid: u64,
+    title: String,
+    #[serde(default)]
+    pic: String,
+    #[serde(default)]
+    pubdate: u64,
+    owner: Option<VideoViewOwner>,
+    #[serde(default)]
+    pages: Vec<VideoViewPage>,
     ugc_season: Option<VideoCollectionHintSeason>,
+}
+
+#[derive(Debug, Deserialize)]
+struct VideoViewOwner {
+    mid: u64,
+    #[serde(default)]
+    name: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct VideoViewPage {
+    cid: u64,
+    page: u32,
+    #[serde(default)]
+    part: String,
+    duration: u64,
 }
 
 #[derive(Debug, Deserialize)]
 struct VideoCollectionHintSeason {
     id: u64,
     mid: u64,
+}
+
+#[derive(Debug, Clone)]
+struct VideoViewSnapshot {
+    video: ResolvedVideo,
+    collection_hint: Option<VideoCollectionRef>,
 }
 
 impl ResolvedPlayUrl {
@@ -439,15 +504,10 @@ impl From<DashStream> for ResolvedDashStream {
     }
 }
 
-fn view_params(id: &VideoInputId) -> BdlResult<VideoViewParams> {
+fn video_view_query(id: &VideoInputId) -> Vec<(&'static str, String)> {
     match id {
-        VideoInputId::Aid(aid) => Aid::new(*aid)
-            .map(VideoViewParams::from_aid)
-            .map_err(|error| BdlError::Bpi(error.to_string())),
-        VideoInputId::Bvid(bvid) => bvid
-            .parse::<Bvid>()
-            .map(VideoViewParams::from_bvid)
-            .map_err(|error| BdlError::Bpi(error.to_string())),
+        VideoInputId::Aid(aid) => vec![("aid", aid.to_string())],
+        VideoInputId::Bvid(bvid) => vec![("bvid", bvid.clone())],
     }
 }
 
@@ -704,7 +764,7 @@ fn non_empty(value: String) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{VideoCollectionHintResponse, VideoCollectionRef};
+    use super::{VideoCollectionRef, VideoViewResponse};
 
     #[test]
     fn media_preferences_request_all_supported_video_formats() {
@@ -748,11 +808,19 @@ mod tests {
 
     #[test]
     fn video_view_collection_hint_reads_ugc_season_identity() {
-        let payload: VideoCollectionHintResponse = serde_json::from_str(
+        let payload: VideoViewResponse = serde_json::from_str(
             r#"{
                 "code": 0,
                 "message": "0",
                 "data": {
+                    "aid": 1,
+                    "bvid": "BV1test",
+                    "cid": 2,
+                    "title": "云端镜像 01",
+                    "pic": "https://example.invalid/cover.jpg",
+                    "pubdate": 1767196800,
+                    "owner": {"mid": 592988861, "name": "测试UP"},
+                    "pages": [{"cid": 2, "page": 1, "part": "P1", "duration": 120}],
                     "ugc_season": {
                         "id": 8122710,
                         "mid": 592988861,
@@ -762,22 +830,29 @@ mod tests {
             }"#,
         )
         .expect("fixture should deserialize");
+        let snapshot = payload.into_snapshot().expect("payload should succeed");
 
         assert_eq!(
-            payload.into_hint().expect("payload should succeed"),
+            snapshot.collection_hint,
             Some(VideoCollectionRef {
                 mid: 592988861,
                 season_id: 8122710,
             })
         );
+        assert_eq!(snapshot.video.publish_date.as_deref(), Some("2026-01-01"));
+        assert_eq!(snapshot.video.owner_name.as_deref(), Some("测试UP"));
+        assert_eq!(snapshot.video.pages[0].duration_seconds, Some(120));
     }
 
     #[test]
     fn video_view_collection_hint_allows_plain_video() {
-        let payload: VideoCollectionHintResponse =
-            serde_json::from_str(r#"{"code":0,"message":"0","data":{"ugc_season":null}}"#)
-                .expect("fixture should deserialize");
+        let payload: VideoViewResponse = serde_json::from_str(
+            r#"{"code":0,"message":"0","data":{"aid":1,"bvid":"BV1plain","cid":2,"title":"plain","pic":"","pubdate":0,"owner":null,"pages":[],"ugc_season":null}}"#,
+        )
+        .expect("fixture should deserialize");
+        let snapshot = payload.into_snapshot().expect("payload should succeed");
 
-        assert_eq!(payload.into_hint().expect("payload should succeed"), None);
+        assert_eq!(snapshot.collection_hint, None);
+        assert_eq!(snapshot.video.publish_date, None);
     }
 }

@@ -62,6 +62,7 @@ async fn bangumi_resolver_maps_season_without_streams() -> Result<(), BdlError> 
     assert_eq!(item.id.0, "item:bangumi:123:455");
     assert_eq!(item.title, "第1话 - opening");
     assert_eq!(item.owner_name.as_deref(), Some("fixture studio"));
+    assert_eq!(item.publish_date.as_deref(), Some("2025-12-30"));
 
     let part = item.parts.first().expect("part should exist");
     assert_eq!(part.id.0, "part:bangumi:123:455:9001");
@@ -194,6 +195,7 @@ fn fake_api(expected_id: BangumiInputId) -> FakeBangumiApi {
                     cid: 9001,
                     ep_id: 455,
                     title: "第1话 - opening".to_owned(),
+                    publish_date: Some("2025-12-30".to_owned()),
                     cover_url: Some("https://example.invalid/ep1.jpg".to_owned()),
                     duration_seconds: Some(1200),
                 },
@@ -203,6 +205,7 @@ fn fake_api(expected_id: BangumiInputId) -> FakeBangumiApi {
                     cid: 9002,
                     ep_id: 456,
                     title: "第2话 - ending".to_owned(),
+                    publish_date: Some("2025-12-31".to_owned()),
                     cover_url: Some("https://example.invalid/ep2.jpg".to_owned()),
                     duration_seconds: Some(1201),
                 },

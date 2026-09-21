@@ -52,6 +52,14 @@ export interface TransferProgressSnapshot {
   updatedAt: number
 }
 
+export interface TransferPlatformCapabilities {
+  canOpenOutput: boolean
+}
+
+const defaultTransferPlatformCapabilities: TransferPlatformCapabilities = {
+  canOpenOutput: true,
+}
+
 export interface TransferTaskView {
   id: string
   isCompleted: boolean
@@ -80,13 +88,15 @@ export const createTransferTaskView = (
   progress: number,
   logs: QueueLogEntry[] = [],
   transferProgress: TransferProgressSnapshot | null = null,
+  capabilities: TransferPlatformCapabilities = defaultTransferPlatformCapabilities,
 ): TransferTaskView => {
   const titleParts = splitTaskTitle(task.title)
   const issue = classifyTaskIssue(task, logs)
-  const primaryAction = primaryActionForTask(task, issue)
+  const primaryAction = primaryActionForTask(task, issue, capabilities)
   const completedWithWarnings = task.status === 'completed' && hasWarningLogs(logs)
   const scheduled = isScheduledTask(task)
   const activelyTransferring = task.status === 'downloading'
+  const displayOutputPath = task.export_target?.relative_path ?? task.output_path
 
   return {
     id: task.id,
@@ -106,14 +116,14 @@ export const createTransferTaskView = (
         : '--',
     sizeLabel: transferProgress ? sizeLabel(transferProgress) : '--',
     issueLabel: completedWithWarnings ? '-' : issue.label,
-    shortLocation: shortLocation(task.output_path),
-    fullLocation: outputDir(task.output_path),
+    shortLocation: shortLocation(displayOutputPath),
+    fullLocation: outputDir(displayOutputPath),
     outputPath: task.output_path,
     sourceId: task.source_id,
     primaryAction,
     primaryActionLabel: actionLabel(primaryAction),
     primaryActionIcon: actionIcon(primaryAction),
-    secondaryActions: secondaryActionsForTask(task, primaryAction),
+    secondaryActions: secondaryActionsForTask(task, primaryAction, capabilities),
   }
 }
 
@@ -171,7 +181,11 @@ const formatBytes = (value: number): string => {
   return `${size.toFixed(precision)} ${units[unitIndex]}`
 }
 
-export const createTaskDiagnosticView = (task: DownloadTask, logs: QueueLogEntry[] = []): TaskDiagnosticView => {
+export const createTaskDiagnosticView = (
+  task: DownloadTask,
+  logs: QueueLogEntry[] = [],
+  capabilities: TransferPlatformCapabilities = defaultTransferPlatformCapabilities,
+): TaskDiagnosticView => {
   const issue = classifyTaskIssue(task, logs)
   const failedCount = task.resources.filter(
     (resource) => resource.status === 'failed' || resource.status === 'cancelled',
@@ -199,8 +213,8 @@ export const createTaskDiagnosticView = (task: DownloadTask, logs: QueueLogEntry
       summary: '任务已完成，但部分附加内容未处理',
       detail: warningLogs.map((log) => redactLogMessage(log.message)).join('；'),
       impact: trackImpact,
-      recommendedAction: 'open_file',
-      recommendedActionLabel: actionLabel('open_file'),
+      recommendedAction: capabilities.canOpenOutput ? 'open_file' : null,
+      recommendedActionLabel: capabilities.canOpenOutput ? actionLabel('open_file') : '',
       tone: 'warning',
     }
   }
@@ -208,10 +222,10 @@ export const createTaskDiagnosticView = (task: DownloadTask, logs: QueueLogEntry
   if (task.status === 'completed') {
     return {
       summary: '任务已完成',
-      detail: '输出文件已生成，可以直接打开文件或所在文件夹。',
+      detail: capabilities.canOpenOutput ? '输出文件已生成，可以直接打开文件或所在文件夹。' : '输出文件已生成。',
       impact: trackImpact,
-      recommendedAction: 'open_file',
-      recommendedActionLabel: actionLabel('open_file'),
+      recommendedAction: capabilities.canOpenOutput ? 'open_file' : null,
+      recommendedActionLabel: capabilities.canOpenOutput ? actionLabel('open_file') : '',
       tone: 'success',
     }
   }
@@ -510,7 +524,7 @@ const classifyTaskIssue = (task: DownloadTask, logs: QueueLogEntry[]): Classifie
   if (lastErrors.includes('ffmpeg') || lastErrors.includes('mux') || lastErrors.includes('合并')) {
     return {
       label: '合并失败',
-      detail: '下载轨道已经进入后处理阶段，但 ffmpeg 或封装命令失败。需要检查 ffmpeg 配置和原始日志。',
+      detail: '下载轨道已经完成，但媒体封装失败。Android 使用 APK 内置 FFmpeg，桌面使用配置或系统 FFmpeg；请查看原始日志中的具体封装错误。',
       trackLabel,
       recommendedAction: null,
       recommendedActionLabel: '查看原始日志',
@@ -567,12 +581,16 @@ const completionWarningLogs = (logs: QueueLogEntry[]): QueueLogEntry[] =>
 
 const hasWarningLogs = (logs: QueueLogEntry[]): boolean => completionWarningLogs(logs).length > 0
 
-const primaryActionForTask = (task: DownloadTask, issue: ClassifiedIssue): TaskActionKind => {
+const primaryActionForTask = (
+  task: DownloadTask,
+  issue: ClassifiedIssue,
+  capabilities: TransferPlatformCapabilities,
+): TaskActionKind => {
   if (isScheduledTask(task)) {
     return 'unschedule'
   }
   if (task.status === 'completed') {
-    return 'open_file'
+    return capabilities.canOpenOutput ? 'open_file' : 'none'
   }
   if (task.status === 'paused') {
     return 'resume'
@@ -594,7 +612,11 @@ const primaryActionForTask = (task: DownloadTask, issue: ClassifiedIssue): TaskA
   return 'none'
 }
 
-const secondaryActionsForTask = (task: DownloadTask, primaryAction: TaskActionKind): TaskActionDescriptor[] => {
+const secondaryActionsForTask = (
+  task: DownloadTask,
+  primaryAction: TaskActionKind,
+  capabilities: TransferPlatformCapabilities,
+): TaskActionDescriptor[] => {
   const actions: TaskActionDescriptor[] = []
 
   if (isScheduledTask(task)) {
@@ -604,7 +626,7 @@ const secondaryActionsForTask = (task: DownloadTask, primaryAction: TaskActionKi
 
   if (task.status === 'completed') {
     actions.push(
-      actionDescriptor('open_dir'),
+      ...(capabilities.canOpenOutput ? [actionDescriptor('open_dir')] : []),
       actionDescriptor('retry', '重新下载'),
       ...(taskSourcePageAvailable(task) ? [actionDescriptor('open_source')] : []),
       actionDescriptor('copy_source'),
@@ -616,7 +638,8 @@ const secondaryActionsForTask = (task: DownloadTask, primaryAction: TaskActionKi
   if (task.status === 'failed' || task.status === 'cancelled') {
     actions.push(actionDescriptor('retry'))
     if (task.status === 'failed') actions.push(actionDescriptor('speed_limit'))
-    actions.push(actionDescriptor('open_dir'), actionDescriptor('remove'))
+    if (capabilities.canOpenOutput) actions.push(actionDescriptor('open_dir'))
+    actions.push(actionDescriptor('remove'))
     return uniqueActions(actions).filter((action) => action.kind !== primaryAction)
   }
 

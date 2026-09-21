@@ -1,10 +1,14 @@
 [package]
 name = "bdl-desktop"
-version = "0.3.2"
+version = "0.4.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
+
+[lib]
+name = "bdl_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
 
 [dependencies]
 bdl-tauri = { path = "../../../crates/bdl-tauri" }
@@ -12,8 +16,16 @@ serde_json.workspace = true
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-process = "2.3.1"
 tauri-plugin-updater = "2.10.1"
+
+[target.'cfg(target_os = "android")'.dependencies]
+bdl-mobile-credentials = { path = "../../../crates/bdl-mobile-credentials" }
+bdl-mobile-execution = { path = "../../../crates/bdl-mobile-execution" }
+bdl-mobile-media = { path = "../../../crates/bdl-mobile-media" }
+bdl-mobile-storage = { path = "../../../crates/bdl-mobile-storage" }
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

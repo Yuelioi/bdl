@@ -31,6 +31,7 @@ impl VideoApi for CountingVideoApi {
             title: "large fixture".to_owned(),
             owner_name: None,
             owner_mid: None,
+            publish_date: None,
             cover_url: None,
             pages: (62131..62321)
                 .enumerate()
@@ -119,6 +120,7 @@ async fn video_resolver_resolves_bv_without_streams() -> Result<(), BdlError> {
     assert_eq!(item.id.0, "item:BV1xx411c7mD");
     assert_eq!(item.title, "fixture video");
     assert_eq!(item.owner_name.as_deref(), Some("fixture owner"));
+    assert_eq!(item.publish_date.as_deref(), Some("2025-12-31"));
     assert_eq!(
         item.cover_url.as_deref(),
         Some("https://example.invalid/cover.jpg")
@@ -295,6 +297,7 @@ fn fake_api() -> FakeVideoApi {
             title: "fixture video".to_owned(),
             owner_name: Some("fixture owner".to_owned()),
             owner_mid: Some(1001),
+            publish_date: Some("2025-12-31".to_owned()),
             cover_url: Some("https://example.invalid/cover.jpg".to_owned()),
             pages: vec![ResolvedVideoPage {
                 cid: 62131,

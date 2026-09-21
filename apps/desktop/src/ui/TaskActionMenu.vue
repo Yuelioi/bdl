@@ -4,9 +4,11 @@ import { computed } from 'vue'
 import type { TaskActionDescriptor, TaskActionKind, TransferTaskView } from '../stores/transferView'
 import UiIconButton from './IconButton.vue'
 
-const { view, disabled = false } = defineProps<{
+const { view, disabled = false, showPrimary = true, excludeActions = [] } = defineProps<{
   view: TransferTaskView
   disabled?: boolean
+  showPrimary?: boolean
+  excludeActions?: TaskActionKind[]
 }>()
 
 const emit = defineEmits<{
@@ -14,9 +16,12 @@ const emit = defineEmits<{
 }>()
 
 const hasPrimaryAction = computed(() => view.primaryAction !== 'none')
-const hasSecondaryActions = computed(() => view.secondaryActions.length > 0)
+const visibleSecondaryActions = computed(() =>
+  view.secondaryActions.filter((action) => !excludeActions.includes(action.kind)),
+)
+const hasSecondaryActions = computed(() => visibleSecondaryActions.value.length > 0)
 const dropdownItems = computed(() =>
-  view.secondaryActions.map((action) => ({
+  visibleSecondaryActions.value.map((action) => ({
     label: action.label,
     icon: tablerIcon(action.icon),
     color: action.tone === 'danger' ? 'error' : 'neutral',
@@ -56,7 +61,7 @@ const tablerIcon = (icon: string): string => {
 <template>
   <div class="task-action-menu">
     <UiIconButton
-      v-if="hasPrimaryAction"
+      v-if="showPrimary && hasPrimaryAction"
       class="primary-action"
       :icon="view.primaryActionIcon"
       :label="view.primaryActionLabel"

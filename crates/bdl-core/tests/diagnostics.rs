@@ -119,6 +119,7 @@ fn failed_task(audio_status: ResourceStatus) -> DownloadTask {
         source_id: "source:1".to_owned(),
         status: TaskStatus::Failed,
         output_path: PathBuf::from("downloads/example.mp4"),
+        export_target: None,
         refresh_intent: None,
         media_selection: DownloadTaskMediaSelection::default(),
         scheduled_at: None,

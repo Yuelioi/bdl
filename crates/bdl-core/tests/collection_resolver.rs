@@ -80,6 +80,7 @@ async fn collection_resolver_maps_first_page() -> Result<(), BdlError> {
     let item = group.items.first().expect("item should exist");
     assert_eq!(item.id.0, "item:collection:1001:678:BV1xx411c7mD");
     assert_eq!(item.title, "collection video");
+    assert_eq!(item.publish_date.as_deref(), Some("2025-12-31"));
     assert_eq!(item.duration_seconds, Some(62));
 
     let part = item.parts.first().expect("part should exist");
@@ -123,6 +124,7 @@ async fn series_resolver_maps_first_page_without_mid_in_input() -> Result<(), Bd
     let item = tree.groups[0].items.first().expect("item should exist");
     assert_eq!(item.id.0, "item:series:1001:987:BV1yy411c7mD");
     assert_eq!(item.owner_name.as_deref(), Some("fixture creator"));
+    assert_eq!(item.publish_date.as_deref(), Some("2025-12-31"));
 
     Ok(())
 }
@@ -332,6 +334,7 @@ fn archive_video(bvid: &str, title: &str) -> ResolvedArchiveVideo {
         title: title.to_owned(),
         owner_mid: 1001,
         owner_name: None,
+        publish_date: Some("2025-12-31".to_owned()),
         cover_url: Some("https://example.invalid/cover.jpg".to_owned()),
         duration_seconds: Some(62),
     }

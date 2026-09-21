@@ -93,6 +93,33 @@ fn validate_template_rejects_unclosed_variables() {
 }
 
 #[test]
+fn validate_template_accepts_publish_date_variable() {
+    validate_template("{publish_date} - {title}.{ext}")
+        .expect("publish date should be available to naming templates");
+}
+
+#[test]
+fn render_output_path_supports_download_and_publish_dates() -> Result<(), BdlError> {
+    let context = NamingContext {
+        title: "Fixture",
+        part_title: "Opening",
+        part_index: 1,
+        date: Some("2026-09-22"),
+        publish_date: Some("2025-12-31"),
+        ext: "mp4",
+        ..NamingContext::default()
+    };
+
+    let path = render_output_path("{date} - {publish_date} - {title}.{ext}", &context)?;
+
+    assert_eq!(
+        path,
+        PathBuf::from("2026-09-22 - 2025-12-31 - Fixture.mp4")
+    );
+    Ok(())
+}
+
+#[test]
 fn unique_path_adds_counter_for_reserved_paths() {
     let mut reserved = HashSet::new();
     let first = unique_path(PathBuf::from("downloads/video.mp4"), &mut reserved);

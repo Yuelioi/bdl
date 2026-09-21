@@ -8,6 +8,7 @@ const AUTO_CHECK_KEY = 'bdl.update.auto-check'
 
 export const useUpdateStore = defineStore('update', {
   state: () => ({
+    supported: true,
     currentVersion: '0.1.0',
     autoCheck: false,
     checking: false,
@@ -23,8 +24,9 @@ export const useUpdateStore = defineStore('update', {
     hasUpdate: (state) => Boolean(state.update),
   },
   actions: {
-    async initialize() {
-      this.autoCheck = localStorage.getItem(AUTO_CHECK_KEY) === 'true'
+    async initialize(supported = true) {
+      this.supported = supported
+      this.autoCheck = supported && localStorage.getItem(AUTO_CHECK_KEY) === 'true'
       try {
         this.currentVersion = await getVersion()
       } catch {
@@ -33,11 +35,13 @@ export const useUpdateStore = defineStore('update', {
       if (this.autoCheck) void this.checkForUpdate(true)
     },
     setAutoCheck(value: boolean) {
+      if (!this.supported) return
       this.autoCheck = value
       localStorage.setItem(AUTO_CHECK_KEY, String(value))
       if (value) void this.checkForUpdate(true)
     },
     async checkForUpdate(silent = false) {
+      if (!this.supported) return
       if (this.checking || this.installing) return
       this.checking = true
       this.error = null
@@ -54,6 +58,7 @@ export const useUpdateStore = defineStore('update', {
       }
     },
     async install() {
+      if (!this.supported) return
       if (!this.update || this.installing) return
       this.installing = true
       this.error = null

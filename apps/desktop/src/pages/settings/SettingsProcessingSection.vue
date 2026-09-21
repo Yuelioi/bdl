@@ -5,7 +5,7 @@ import UiTextField from '../../ui/TextField.vue';
 import { codecOptions, missingQualityOptions, segmentCountOptions } from './settingsCatalog';
 import type { SettingsForm } from './useSettingsForm';
 
-const { form } = defineProps<{ form: SettingsForm }>();
+const { form, desktopPaths = true } = defineProps<{ form: SettingsForm; desktopPaths?: boolean }>();
 const { settings, settingsCodec, settingsMissingQualityPolicy, settingsSegmentCount, settingsFfmpegPath } = form;
 </script>
 
@@ -16,7 +16,7 @@ const { settings, settingsCodec, settingsMissingQualityPolicy, settingsSegmentCo
       <UiSelect v-model="settingsMissingQualityPolicy" label="目标质量不可用" :options="missingQualityOptions" />
     </div>
     <UiSelect v-model="settingsSegmentCount" label="单任务分段数" :options="segmentCountOptions" />
-    <div class="directory-row">
+    <div v-if="desktopPaths" class="directory-row">
       <UiTextField
         v-model="settingsFfmpegPath"
         label="FFmpeg 路径"
@@ -26,7 +26,7 @@ const { settings, settingsCodec, settingsMissingQualityPolicy, settingsSegmentCo
         >选择</UiButton
       >
     </div>
-    <div v-if="settings.draft.ffmpeg_path" class="settings-actions">
+    <div v-if="desktopPaths && settings.draft.ffmpeg_path" class="settings-actions">
       <UiButton variant="ghost" :disabled="settings.loading || settings.saving" @click="settings.clearFfmpegPath"
         >使用系统 FFmpeg</UiButton
       >

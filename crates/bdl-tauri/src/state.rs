@@ -33,6 +33,8 @@ use bdl_core::{BdlError, BdlResult};
 use chrono::{DateTime, Utc};
 use tokio::sync::Notify;
 
+use crate::media_mux::MediaMuxBackend;
+use crate::mobile_storage::MobileStorage;
 #[cfg(test)]
 use crate::parse_session::{PartHydrationRequest, find_part};
 use crate::parse_session::{
@@ -50,6 +52,7 @@ use crate::queue_coordinator::{
     reset_interrupted_resources, reset_task_for_retry,
 };
 use crate::secure_store::SecureStore;
+use crate::task_execution::TaskExecutionBackend;
 
 pub struct AppState {
     parse_pacer: crate::parse_pacing::ParsePacer,
@@ -69,6 +72,9 @@ pub struct AppState {
     queue_cancellations: Mutex<HashMap<String, FetchCancelToken>>,
     startup_recovery: Mutex<StartupRecoverySnapshot>,
     secure_store: SecureStore,
+    mobile_storage: MobileStorage,
+    media_mux: MediaMuxBackend,
+    task_execution: TaskExecutionBackend,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -88,6 +94,57 @@ impl AppState {
     pub fn new(
         preferred_data_dir: impl Into<PathBuf>,
         default_download_dir: impl Into<PathBuf>,
+    ) -> BdlResult<Self> {
+        Self::new_inner(
+            preferred_data_dir,
+            default_download_dir,
+            None,
+            None,
+            None,
+            None,
+        )
+    }
+
+    pub fn new_with_secure_store(
+        preferred_data_dir: impl Into<PathBuf>,
+        default_download_dir: impl Into<PathBuf>,
+        secure_store: SecureStore,
+    ) -> BdlResult<Self> {
+        Self::new_inner(
+            preferred_data_dir,
+            default_download_dir,
+            Some(secure_store),
+            None,
+            None,
+            None,
+        )
+    }
+
+    pub fn new_with_platform_backends(
+        preferred_data_dir: impl Into<PathBuf>,
+        default_download_dir: impl Into<PathBuf>,
+        secure_store: SecureStore,
+        mobile_storage: MobileStorage,
+        media_mux: MediaMuxBackend,
+        task_execution: TaskExecutionBackend,
+    ) -> BdlResult<Self> {
+        Self::new_inner(
+            preferred_data_dir,
+            default_download_dir,
+            Some(secure_store),
+            Some(mobile_storage),
+            Some(media_mux),
+            Some(task_execution),
+        )
+    }
+
+    fn new_inner(
+        preferred_data_dir: impl Into<PathBuf>,
+        default_download_dir: impl Into<PathBuf>,
+        secure_store: Option<SecureStore>,
+        mobile_storage: Option<MobileStorage>,
+        media_mux: Option<MediaMuxBackend>,
+        task_execution: Option<TaskExecutionBackend>,
     ) -> BdlResult<Self> {
         let preferred_data_dir = preferred_data_dir.into();
         let legacy_data_dir = std::env::current_dir()?.join(".bdl");
@@ -115,7 +172,10 @@ impl AppState {
         } else {
             AccountCookieCache::Loaded(None)
         };
-        let secure_store = SecureStore::new(&data_dir);
+        let secure_store = secure_store.unwrap_or_else(|| SecureStore::new(&data_dir));
+        let mobile_storage = mobile_storage.unwrap_or_else(MobileStorage::unsupported);
+        let media_mux = media_mux.unwrap_or_else(MediaMuxBackend::platform_default);
+        let task_execution = task_execution.unwrap_or_else(TaskExecutionBackend::noop);
 
         Ok(Self {
             parse_pacer: Default::default(),
@@ -135,6 +195,9 @@ impl AppState {
             queue_cancellations: Mutex::new(HashMap::new()),
             startup_recovery: Mutex::new(startup_recovery),
             secure_store,
+            mobile_storage,
+            media_mux,
+            task_execution,
         })
     }
 
@@ -477,14 +540,26 @@ impl AppState {
     }
 
     pub fn next_scheduled_at(&self) -> BdlResult<Option<DateTime<Utc>>> {
-        Ok(self
+        Ok(self.scheduled_wakeups()?.into_iter().next())
+    }
+
+    pub fn scheduled_wakeups(&self) -> BdlResult<Vec<DateTime<Utc>>> {
+        self.scheduled_wakeups_at(Utc::now())
+    }
+
+    fn scheduled_wakeups_at(&self, now: DateTime<Utc>) -> BdlResult<Vec<DateTime<Utc>>> {
+        let mut scheduled = self
             .queue
             .lock()
             .map_err(|_| state_poisoned("queue"))?
             .iter()
             .filter(|task| task.status == TaskStatus::Waiting)
             .filter_map(|task| task.scheduled_at)
-            .min())
+            .filter(|scheduled_at| *scheduled_at > now)
+            .collect::<Vec<_>>();
+        scheduled.sort_unstable();
+        scheduled.dedup();
+        Ok(scheduled)
     }
 
     pub fn set_task_schedule(
@@ -846,6 +921,36 @@ impl AppState {
 
     pub fn data_dir(&self) -> PathBuf {
         self.data_dir.clone()
+    }
+
+    pub fn mobile_storage(&self) -> MobileStorage {
+        self.mobile_storage.clone()
+    }
+
+    pub fn media_mux(&self) -> MediaMuxBackend {
+        self.media_mux.clone()
+    }
+
+    pub fn task_execution(&self) -> TaskExecutionBackend {
+        self.task_execution.clone()
+    }
+
+    pub fn update_task_export_target(
+        &self,
+        task_id: &str,
+        export_target: Option<bdl_core::queue::DownloadExportTarget>,
+    ) -> BdlResult<DownloadTask> {
+        let mut queue = self.queue.lock().map_err(|_| state_poisoned("queue"))?;
+        let task = queue
+            .iter_mut()
+            .find(|task| task.id == task_id)
+            .ok_or_else(|| BdlError::Planning {
+                message: format!("未找到任务 {task_id}。"),
+            })?;
+        task.export_target = export_target;
+        let updated = task.clone();
+        self.persist_queue(&queue)?;
+        Ok(updated)
     }
 
     pub fn startup_recovery(&self) -> BdlResult<StartupRecoverySnapshot> {
@@ -2124,6 +2229,39 @@ mod tests {
     }
 
     #[test]
+    fn scheduled_wakeups_include_each_future_waiting_time_once() {
+        let data_dir = temp_state_dir();
+        let now = Utc::now();
+        let first_at = now + chrono::Duration::minutes(5);
+        let second_at = now + chrono::Duration::minutes(10);
+
+        let mut first = task_with_id("task:first");
+        first.status = TaskStatus::Waiting;
+        first.scheduled_at = Some(first_at);
+        let mut duplicate = task_with_id("task:duplicate");
+        duplicate.status = TaskStatus::Waiting;
+        duplicate.scheduled_at = Some(first_at);
+        let mut second = task_with_id("task:second");
+        second.status = TaskStatus::Waiting;
+        second.scheduled_at = Some(second_at);
+        let mut due = task_with_id("task:due");
+        due.status = TaskStatus::Waiting;
+        due.scheduled_at = Some(now);
+        let mut paused = task_with_id("task:paused");
+        paused.status = TaskStatus::Paused;
+        paused.scheduled_at = Some(second_at + chrono::Duration::minutes(5));
+
+        let state = test_state_with_tasks(&data_dir, vec![second, paused, duplicate, due, first]);
+
+        let wakeups = state
+            .scheduled_wakeups_at(now)
+            .expect("scheduled wakeups should be available");
+
+        assert_eq!(wakeups, vec![first_at, second_at]);
+        let _ = std::fs::remove_dir_all(data_dir);
+    }
+
+    #[test]
     fn pausing_a_scheduled_task_clears_its_schedule() {
         let data_dir = temp_state_dir();
         let mut task = task_with_id("task:scheduled");
@@ -2273,6 +2411,7 @@ mod tests {
         let item = &tree.groups[0].items[0];
         assert_eq!(item.id.0, "item:uploader:1001:BV1xx411c7mD");
         assert_eq!(item.owner_name.as_deref(), Some("fixture owner"));
+        assert_eq!(item.publish_date.as_deref(), Some("2025-12-31"));
         assert_eq!(
             item.cover_url.as_deref(),
             Some("https://example.invalid/list-cover.jpg")
@@ -2538,6 +2677,7 @@ mod tests {
             status: TaskStatus::Failed,
             resources: Vec::new(),
             output_path: PathBuf::from("downloads/fixture.mp4"),
+            export_target: None,
             refresh_intent: None,
             media_selection: DownloadTaskMediaSelection::default(),
             scheduled_at: None,
@@ -2636,6 +2776,9 @@ mod tests {
             queue_cancellations: Mutex::new(HashMap::new()),
             startup_recovery: Mutex::new(StartupRecoverySnapshot::default()),
             secure_store: SecureStore::in_memory(),
+            mobile_storage: crate::mobile_storage::MobileStorage::unsupported(),
+            media_mux: crate::media_mux::MediaMuxBackend::platform_default(),
+            task_execution: crate::task_execution::TaskExecutionBackend::noop(),
         }
     }
 
@@ -2679,6 +2822,7 @@ mod tests {
                     title: "fixture upload".to_owned(),
                     owner_name: Some("fixture owner".to_owned()),
                     owner_mid: Some(1001),
+                    publish_date: Some("2025-12-31".to_owned()),
                     cover_url: Some("https://example.invalid/list-cover.jpg".to_owned()),
                     duration_seconds: Some(62),
                     parts: vec![NormalizedPart {
@@ -2723,6 +2867,7 @@ mod tests {
                     title: "fixture episode".to_owned(),
                     owner_name: None,
                     owner_mid: None,
+                    publish_date: None,
                     cover_url: None,
                     duration_seconds: Some(62),
                     parts: vec![NormalizedPart {
@@ -2761,6 +2906,7 @@ mod tests {
                     title: "fixture upload page 2".to_owned(),
                     owner_name: Some("fixture owner".to_owned()),
                     owner_mid: Some(1001),
+                    publish_date: None,
                     cover_url: None,
                     duration_seconds: None,
                     parts: vec![NormalizedPart {
@@ -2805,6 +2951,7 @@ mod tests {
                     title: "fixture upload".to_owned(),
                     owner_name: None,
                     owner_mid: None,
+                    publish_date: None,
                     cover_url: None,
                     duration_seconds: None,
                     parts: vec![

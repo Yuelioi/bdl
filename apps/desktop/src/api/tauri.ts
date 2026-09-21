@@ -6,6 +6,7 @@ import type {
   AccountLibraryPage,
   BulkQueueResult,
   DiagnosticsExportResponse,
+  DocumentTreeDirectory,
   DownloadTask,
   DownloadDirectoryHealth,
   DuplicateTaskPolicy,
@@ -62,6 +63,7 @@ export interface SelectionCreateTasksRequest {
   source_id: string
   part_ids: string[]
   output_dir?: string
+  document_tree_output?: DocumentTreeDirectory
   archive_mode?: ArchiveMode
   output_extension?: string
   naming_template?: string
@@ -104,6 +106,13 @@ export interface EnvironmentHealthRequest {
   ffmpeg_path: string | null
 }
 
+export type NotificationPermissionState =
+  | 'granted'
+  | 'denied'
+  | 'prompt'
+  | 'prompt-with-rationale'
+  | 'unsupported'
+
 export const parseCreateSource = (request: ParseCreateSourceRequest) =>
   invokeCommand<NormalizedSourceTree>('parse_create_source', { request })
 
@@ -126,6 +135,15 @@ export const parseRefreshSource = (request: ParseSourcePageRequest) =>
 
 export const selectionCreateTasks = (request: SelectionCreateTasksRequest) =>
   invokeCommand<SelectionCreateTasksResult>('selection_create_tasks', { request })
+
+export const mobilePickExportDirectory = () =>
+  invokeCommand<DocumentTreeDirectory>('mobile_pick_export_directory')
+
+export const mobileSaveImageToGallery = (fileName: string, imageBase64: string) =>
+  invokeCommand<string>('mobile_save_image_to_gallery', { fileName, imageBase64 })
+
+export const mobilePrepareNotifications = () =>
+  invokeCommand<NotificationPermissionState>('mobile_prepare_notifications')
 
 export const queueList = () => invokeCommand<DownloadTask[]>('queue_list')
 

@@ -1,13 +1,14 @@
 import { open } from '@tauri-apps/plugin-dialog'
 import { defineStore } from 'pinia'
 
-import type { EnvironmentHealthSnapshot, SettingsSnapshot, MediaPreferences, NamingPreset } from '../api/dto'
+import type { DocumentTreeDirectory, EnvironmentHealthSnapshot, SettingsSnapshot, MediaPreferences, NamingPreset } from '../api/dto'
 import {
   diagnosticsExport,
   environmentCreateDownloadDirectory,
   environmentHealth,
   maintenanceCleanupCache,
   maintenanceCleanupTemp,
+  mobilePickExportDirectory,
   settingsGet,
   settingsUpdate,
 } from '../api/tauri'
@@ -29,7 +30,7 @@ export const namingTemplatePresets = [
   { label: '分P视频', value: defaultNamingTemplate },
   { label: '单文件', value: '{title}.{ext}' },
   { label: '合集/列表', value: '{collection_title}/{index} - {title}.{ext}' },
-  { label: '番剧/课程', value: '{series_title}/S{season_index}E{episode_index} - {episode_title}.{ext}' },
+  { label: '番剧/课程', value: '{series_title}/{episode_index} - {episode_title}.{ext}' },
 ]
 
 export const namingVariables = [
@@ -42,14 +43,14 @@ export const namingVariables = [
   { name: 'owner_name', desc: 'UP主名称' },
   { name: 'owner_mid', desc: 'UP主MID' },
   { name: 'series_title', desc: '番剧/课程/系列名' },
-  { name: 'season_index', desc: '季序号' },
   { name: 'episode_index', desc: '集序号' },
   { name: 'episode_title', desc: '集标题' },
   { name: 'collection_title', desc: '合集名' },
   { name: 'index', desc: '列表序号' },
   { name: 'quality', desc: '清晰度' },
   { name: 'codec', desc: '编码' },
-  { name: 'date', desc: '日期' },
+  { name: 'date', desc: '下载日期（任务创建日）' },
+  { name: 'publish_date', desc: '发布时间（B站发布日期）' },
   { name: 'ext', desc: '扩展名' },
 ]
 
@@ -57,6 +58,7 @@ const defaultSettings = (): SettingsSnapshot => ({
   settings_schema_version: 1,
   parse_rules: { pages_per_round: 3, interval_seconds: 1, rest_seconds: 3 },
   download_dir: null,
+  document_tree_output: null,
   naming_template: defaultNamingTemplate,
   naming_presets: [],
   quality: 'best',
@@ -103,7 +105,9 @@ const logLevels = new Set<SettingsSnapshot['log_level']>(['debug', 'info', 'warn
 const concurrentTaskCounts = new Set([1, 2, 3, 5])
 const retryCounts = new Set([0, 1, 3, 5])
 const segmentCounts = new Set([1, 2, 4, 8])
-const namingVariableNames = new Set(namingVariables.map((variable) => variable.name))
+// `season_index` was advertised before the source model had a reliable season ordinal.
+// Keep accepting saved templates for compatibility, but do not offer it for new templates.
+const namingVariableNames = new Set([...namingVariables.map((variable) => variable.name), 'season_index'])
 
 interface SettingsState {
   saved: SettingsSnapshot
@@ -250,6 +254,43 @@ export const useSettingsStore = defineStore('settings', {
         ui.pushToast(this.error, 'danger')
         return false
       }
+    },
+    async chooseDocumentTreeOutput(): Promise<boolean> {
+      const ui = useUiStore()
+      try {
+        this.draft.document_tree_output = await mobilePickExportDirectory()
+        return true
+      } catch (error) {
+        this.error = errorMessage(error)
+        ui.pushToast(this.error, 'danger')
+        return false
+      }
+    },
+    async saveDefaultDocumentTreeOutput(directory: DocumentTreeDirectory): Promise<boolean> {
+      const ui = useUiStore()
+      const previousSaved = this.saved.document_tree_output
+      const draftFollowedSaved = JSON.stringify(this.draft.document_tree_output) === JSON.stringify(previousSaved)
+      try {
+        const updated = normalizeSettings(await settingsUpdate({
+          ...cloneSettings(this.saved),
+          document_tree_output: { ...directory },
+        }))
+        this.saved = cloneSettings(updated)
+        if (draftFollowedSaved) {
+          this.draft.document_tree_output = updated.document_tree_output
+            ? { ...updated.document_tree_output }
+            : null
+        }
+        this.setNotice('已设为默认导出目录', 'success')
+        return true
+      } catch (error) {
+        this.error = errorMessage(error)
+        ui.pushToast(this.error, 'danger')
+        return false
+      }
+    },
+    clearDocumentTreeOutput() {
+      this.draft.document_tree_output = null
     },
     async chooseFfmpegPath(): Promise<boolean> {
       const ui = useUiStore()
@@ -525,6 +566,12 @@ const normalizeSettings = (saved: SettingsSnapshot): SettingsSnapshot => {
     ...settings,
     parse_rules: { pages_per_round: settings.parse_rules?.pages_per_round ?? 3, interval_seconds: settings.parse_rules?.interval_seconds ?? 1, rest_seconds: settings.parse_rules?.rest_seconds ?? 3 },
     download_dir: settings.download_dir?.trim() || null,
+    document_tree_output: settings.document_tree_output
+      ? {
+          tree_uri: settings.document_tree_output.tree_uri,
+          display_name: settings.document_tree_output.display_name,
+        }
+      : null,
     naming_template: normalizeNamingTemplate(settings.naming_template),
     naming_presets: (settings.naming_presets ?? []).map((preset) => ({ ...preset })),
     quality: videoQualities.has(settings.quality) ? settings.quality : 'best',
@@ -562,6 +609,7 @@ const normalizeSettings = (saved: SettingsSnapshot): SettingsSnapshot => {
 const cloneSettings = (settings: SettingsSnapshot): SettingsSnapshot => ({
   ...settings,
   parse_rules: { ...settings.parse_rules },
+  document_tree_output: settings.document_tree_output ? { ...settings.document_tree_output } : null,
   archive_assets: { ...settings.archive_assets },
   naming_presets: (settings.naming_presets ?? []).map((preset) => ({ ...preset })),
   media_preferences: cloneMediaPreferences(settings.media_preferences),
@@ -620,6 +668,12 @@ export const validateNamingTemplate = (template: string): string | null => {
 }
 
 export const previewTemplate = (template: string, ext: string): string => {
+  const now = new Date()
+  const localDate = [
+    now.getFullYear(),
+    String(now.getMonth() + 1).padStart(2, '0'),
+    String(now.getDate()).padStart(2, '0'),
+  ].join('-')
   const values: Record<string, string> = {
     title: '示例视频',
     part_title: '开场',
@@ -637,7 +691,8 @@ export const previewTemplate = (template: string, ext: string): string => {
     index: '1',
     quality: '80',
     codec: 'avc',
-    date: new Date().toISOString().slice(0, 10),
+    date: localDate,
+    publish_date: '2024-01-02',
     ext,
   }
 

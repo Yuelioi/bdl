@@ -6,7 +6,7 @@ import UiDialog from './Dialog.vue'
 
 const ModalStub = defineComponent({
   name: 'UModal',
-  props: { open: Boolean, title: String },
+  props: { open: Boolean, title: String, dismissible: Boolean },
   emits: ['update:open'],
   template: `
     <div v-if="open" role="dialog" aria-modal="true" :aria-label="title">
@@ -32,5 +32,14 @@ describe('Dialog', () => {
 
     await wrapper.get('button[type="button"]').trigger('click')
     expect(wrapper.emitted('update:modelValue')).toEqual([[false]])
+  })
+
+  it('passes non-dismissible mode through for protected flows', () => {
+    const wrapper = mount(UiDialog, {
+      props: { modelValue: true, title: '登录', dismissible: false },
+      global: { components: { UModal: ModalStub } },
+    })
+
+    expect(wrapper.findComponent(ModalStub).props('dismissible')).toBe(false)
   })
 })

@@ -12,6 +12,10 @@ $VersionPattern = '^\d+\.\d+\.\d+$'
 $ManifestPaths = @(
     "crates/bdl-core/Cargo.toml",
     "crates/bdl-tauri/Cargo.toml",
+    "crates/bdl-mobile-credentials/Cargo.toml",
+    "crates/bdl-mobile-execution/Cargo.toml",
+    "crates/bdl-mobile-media/Cargo.toml",
+    "crates/bdl-mobile-storage/Cargo.toml",
     "crates/bdl-cli/Cargo.toml",
     "apps/desktop/src-tauri/Cargo.toml"
 )
@@ -123,7 +127,16 @@ Write-Utf8File $readmePath $readme
 
 $lockPath = Join-Path $RepoRoot "Cargo.lock"
 $lock = Read-Utf8File $lockPath
-foreach ($packageName in @('bdl-core', 'bdl-tauri', 'bdl-cli', 'bdl-desktop')) {
+foreach ($packageName in @(
+    'bdl-core',
+    'bdl-tauri',
+    'bdl-mobile-credentials',
+    'bdl-mobile-execution',
+    'bdl-mobile-media',
+    'bdl-mobile-storage',
+    'bdl-cli',
+    'bdl-desktop'
+)) {
     $pattern = "(?ms)(\[\[package\]\]\r?\nname = `"$([regex]::Escape($packageName))`"\r?\nversion = `")\d+\.\d+\.\d+(`")"
     $updated = [regex]::Replace($lock, $pattern, "`${1}$nextVersion`${2}", 1)
     if ($updated -eq $lock) {

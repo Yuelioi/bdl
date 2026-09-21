@@ -25,6 +25,17 @@ describe('update preferences', () => {
     expect(update.currentVersion).toBe('1.2.3')
   })
 
+  it('keeps version reporting but disables updater commands on unsupported platforms', async () => {
+    localStorage.setItem('bdl.update.auto-check', 'true')
+    const update = useUpdateStore()
+    await update.initialize(false)
+
+    expect(update.supported).toBe(false)
+    expect(update.currentVersion).toBe('1.2.3')
+    expect(update.autoCheck).toBe(false)
+    expect(check).not.toHaveBeenCalled()
+  })
+
   it('persists and immediately enables automatic checks', async () => {
     const update = useUpdateStore()
     update.setAutoCheck(true)
