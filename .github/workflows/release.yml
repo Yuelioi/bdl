@@ -177,6 +177,8 @@ jobs:
       - name: Set up Android SDK
         if: steps.signing.outputs.enabled == 'true'
         uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
 
       - name: Install Android platform and NDK
         if: steps.signing.outputs.enabled == 'true'
