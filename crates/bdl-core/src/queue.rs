@@ -128,7 +128,6 @@ impl DownloadTask {
     ) -> BdlResult<Self> {
         let original_id = self.id.clone();
         let copy_id = format!("{}:copy:{copy_index}", self.logical_id());
-        let original_output = self.output_path.clone();
 
         for resource in &mut self.resources {
             let suffix =
@@ -142,13 +141,20 @@ impl DownloadTask {
                         ),
                     })?;
             resource.id = format!("{copy_id}{suffix}");
-            resource.target_path =
-                retarget_task_path(&resource.target_path, &original_output, &output_path)?;
-            resource.temp_path =
-                retarget_task_path(&resource.temp_path, &original_output, &output_path)?;
         }
 
         self.id = copy_id;
+        self.with_output_path(output_path)
+    }
+
+    /// Retarget a not-yet-enqueued task without changing its logical identity.
+    pub fn with_output_path(mut self, output_path: PathBuf) -> BdlResult<Self> {
+        for resource in &mut self.resources {
+            resource.target_path =
+                retarget_task_path(&resource.target_path, &self.output_path, &output_path)?;
+            resource.temp_path =
+                retarget_task_path(&resource.temp_path, &self.output_path, &output_path)?;
+        }
         self.output_path = output_path;
         Ok(self)
     }

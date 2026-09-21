@@ -474,7 +474,7 @@ pub async fn selection_create_tasks(
         .prepare_selection(&source_id, &selected_part_ids)
         .await?;
     let mut planned_tasks = plan_selected_parts(&prepared.tree, &prepared.part_ids, &options)?;
-    let skipped_existing = prepared.part_ids.len().saturating_sub(planned_tasks.len());
+    let mut skipped_existing = prepared.part_ids.len().saturating_sub(planned_tasks.len());
     for task in &mut planned_tasks {
         task.scheduled_at = scheduled_at;
         task.speed_limit_bytes_per_second = speed_limit_bytes_per_second;
@@ -484,7 +484,12 @@ pub async fn selection_create_tasks(
         events::emit(&app, events::PARSE_SOURCE_UPDATED, &prepared.tree)?;
     }
 
-    let outcome = state.enqueue_tasks_with_duplicate_policy(planned_tasks, duplicate_policy)?;
+    let outcome = state.enqueue_tasks_with_duplicate_policy(
+        planned_tasks,
+        duplicate_policy,
+        options.duplicate_naming_strategy,
+    )?;
+    skipped_existing += outcome.skipped_existing;
     let tasks = outcome.inserted;
     let duplicates = outcome
         .duplicates
@@ -1407,6 +1412,7 @@ pub(crate) async fn run_download_task(
     fetcher: &ReqwestFetcher,
     task: DownloadTask,
     runtime_options: DownloadRuntimeOptions,
+    cancel_token: FetchCancelToken,
 ) -> CommandResult<()> {
     if has_recoverable_completed_output(&task).await? {
         let completed = state.update_task_status(&task.id, TaskStatus::Completed)?;
@@ -1424,12 +1430,7 @@ pub(crate) async fn run_download_task(
         return Ok(());
     }
 
-    let task_id = task.id.clone();
-    let cancel_token = state.register_task_cancel_token(&task_id)?;
-    let outcome =
-        run_download_task_inner(app, state, fetcher, task, runtime_options, cancel_token).await;
-    state.clear_task_cancel_token(&task_id)?;
-    outcome
+    run_download_task_inner(app, state, fetcher, task, runtime_options, cancel_token).await
 }
 
 async fn run_download_task_inner(

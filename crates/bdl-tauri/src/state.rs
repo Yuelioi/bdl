@@ -15,6 +15,7 @@ use bdl_core::model::{
     MediaKind, MediaStream, NormalizedPart, NormalizedSourceTree, SourceKind, StreamCodec,
     StreamQuality,
 };
+use bdl_core::naming::DuplicateNamingStrategy;
 use bdl_core::queue::{
     DownloadResourceIntent, DownloadTask, DownloadTaskRefreshInput, DownloadTaskRefreshIntent,
     DuplicateTaskPolicy, QueueLogEntry, ResourceStatus, TaskStatus,
@@ -45,7 +46,8 @@ pub use crate::queue_coordinator::{
 };
 use crate::queue_coordinator::{
     append_new_tasks, dedupe_tasks_by_id, duplicate_task_matches, ignores_status_transition,
-    prepare_duplicate_copies, prepare_startup_recovery, reset_interrupted_resources,
+    prepare_duplicate_copies, prepare_startup_recovery, reserve_queued_paths,
+    reset_interrupted_resources, reset_task_for_retry,
 };
 use crate::secure_store::SecureStore;
 
@@ -374,6 +376,7 @@ impl AppState {
         &self,
         mut tasks: Vec<DownloadTask>,
         policy: DuplicateTaskPolicy,
+        naming_strategy: DuplicateNamingStrategy,
     ) -> BdlResult<DuplicateTaskEnqueueResult> {
         let mut queue = self.queue.lock().map_err(|_| state_poisoned("queue"))?;
         let removed_existing_duplicates = dedupe_tasks_by_id(&mut queue);
@@ -387,6 +390,7 @@ impl AppState {
                 inserted: Vec::new(),
                 duplicates,
                 requires_confirmation: true,
+                skipped_existing: 0,
             });
         }
 
@@ -404,6 +408,9 @@ impl AppState {
             DuplicateTaskPolicy::Ask => {}
         }
 
+        let planned_count = tasks.len();
+        let tasks = reserve_queued_paths(tasks, &queue, naming_strategy)?;
+        let skipped_existing = planned_count - tasks.len();
         let inserted = append_new_tasks(&mut queue, tasks);
         if removed_existing_duplicates || !inserted.is_empty() {
             self.persist_queue(&queue)?;
@@ -412,6 +419,7 @@ impl AppState {
             inserted,
             duplicates,
             requires_confirmation: false,
+            skipped_existing,
         })
     }
 
@@ -440,7 +448,15 @@ impl AppState {
         now: DateTime<Utc>,
     ) -> BdlResult<Option<DownloadTask>> {
         let mut queue = self.queue.lock().map_err(|_| state_poisoned("queue"))?;
-        let Some(task_index) = queue.iter().position(|task| task.can_start_at(now)) else {
+        // A paused attempt may still be unwinding after an immediate resume.
+        let cancellations = self
+            .queue_cancellations
+            .lock()
+            .map_err(|_| state_poisoned("queue_cancellations"))?;
+        let Some(task_index) = queue
+            .iter()
+            .position(|task| task.can_start_at(now) && !cancellations.contains_key(&task.id))
+        else {
             return Ok(None);
         };
 
@@ -549,6 +565,9 @@ impl AppState {
         }
         let task = queue[task_index].clone();
         self.persist_queue(&queue)?;
+        if matches!(status, TaskStatus::Paused | TaskStatus::Cancelled) {
+            self.cancel_running_task(task_id)?;
+        }
         Ok(task)
     }
 
@@ -620,18 +639,43 @@ impl AppState {
                 message: format!("任务 `{task_id}` 不存在。"),
             })?;
 
-        let should_redownload_all = queue[task_index].status == TaskStatus::Completed;
-        queue[task_index].status = TaskStatus::Waiting;
-        queue[task_index].scheduled_at = None;
-        for resource in &mut queue[task_index].resources {
-            if should_redownload_all || resource.status != ResourceStatus::Completed {
-                resource.status = ResourceStatus::Pending;
-            }
-        }
+        reset_task_for_retry(&mut queue[task_index]);
 
         let task = queue[task_index].clone();
         self.persist_queue(&queue)?;
         Ok(task)
+    }
+
+    pub(crate) fn finish_task_attempt(
+        &self,
+        task_id: &str,
+        next: TaskStatus,
+        cancel_token: &FetchCancelToken,
+    ) -> BdlResult<Option<DownloadTask>> {
+        let mut queue = self.queue.lock().map_err(|_| state_poisoned("queue"))?;
+        let Some(task) = queue.iter_mut().find(|task| task.id == task_id) else {
+            return Ok(None);
+        };
+        // Check and transition under the same lock as pause/cancel. A late
+        // completion must also leave an explicitly resumed/scheduled task alone.
+        let can_finish = match (task.status, next) {
+            (TaskStatus::Downloading, TaskStatus::Waiting | TaskStatus::Failed) => {
+                !cancel_token.is_cancelled()
+            }
+            (TaskStatus::Muxing, TaskStatus::Failed) => true,
+            _ => false,
+        };
+        if !can_finish {
+            return Ok(None);
+        }
+        if next == TaskStatus::Waiting {
+            reset_task_for_retry(task);
+        } else {
+            task.status = next;
+        }
+        let updated = task.clone();
+        self.persist_queue(&queue)?;
+        Ok(Some(updated))
     }
 
     pub async fn refresh_task_media_urls(&self, task_id: &str) -> BdlResult<DownloadTask> {
@@ -1468,6 +1512,7 @@ mod tests {
         HeaderPair, MediaKind, MediaStream, NormalizedGroup, NormalizedItem, NormalizedPart,
         NormalizedSourceTree, PageState, SourceKind, SourceSummary, StreamCodec, StreamQuality,
     };
+    use bdl_core::naming::DuplicateNamingStrategy;
     use bdl_core::queue::{
         DownloadResource, DownloadResourceIntent, DownloadResourceKind, DownloadTask,
         DownloadTaskMediaSelection, DownloadTaskRefreshInput, DownloadTaskRefreshIntent,
@@ -1522,6 +1567,178 @@ mod tests {
     }
 
     #[test]
+    fn resumed_task_waits_for_previous_attempt_to_exit() {
+        let data_dir = temp_state_dir();
+        let mut task = task_with_id("task:refresh");
+        task.status = TaskStatus::Downloading;
+        let state = test_state_with_tasks(&data_dir, vec![task]);
+        let token = state.register_task_cancel_token("task:refresh").unwrap();
+        state
+            .update_task_status("task:refresh", TaskStatus::Paused)
+            .unwrap();
+        assert!(token.is_cancelled());
+        state
+            .update_task_status("task:refresh", TaskStatus::Waiting)
+            .unwrap();
+        assert!(state.take_next_startable_task().unwrap().is_none());
+        assert!(
+            state
+                .finish_task_attempt("task:refresh", TaskStatus::Failed, &token)
+                .unwrap()
+                .is_none()
+        );
+        state.clear_task_cancel_token("task:refresh").unwrap();
+        assert_eq!(
+            state.take_next_startable_task().unwrap().unwrap().id,
+            "task:refresh"
+        );
+        drop(state);
+        let _ = std::fs::remove_dir_all(data_dir);
+    }
+
+    #[test]
+    fn active_attempt_can_retry_and_mux_failure_is_recorded() {
+        let data_dir = temp_state_dir();
+        let mut task = task_with_id("task:refresh");
+        task.status = TaskStatus::Downloading;
+        task.resources = vec![
+            resource_with_status(ResourceStatus::Completed),
+            resource_with_status(ResourceStatus::Failed),
+        ];
+        task.resources[1].id = "resource:audio".into();
+        let state = test_state_with_tasks(&data_dir, vec![task]);
+        let token = state.register_task_cancel_token("task:refresh").unwrap();
+        let retried = state
+            .finish_task_attempt("task:refresh", TaskStatus::Waiting, &token)
+            .unwrap()
+            .unwrap();
+        assert_eq!(retried.status, TaskStatus::Waiting);
+        assert_eq!(retried.resources[0].status, ResourceStatus::Completed);
+        assert_eq!(retried.resources[1].status, ResourceStatus::Pending);
+        state
+            .update_task_status("task:refresh", TaskStatus::Muxing)
+            .unwrap();
+        token.cancel(); // Pause during muxing is ignored; a real mux failure still counts.
+        let failed = state
+            .finish_task_attempt("task:refresh", TaskStatus::Failed, &token)
+            .unwrap()
+            .unwrap();
+        assert_eq!(failed.status, TaskStatus::Failed);
+        drop(state);
+        let _ = std::fs::remove_dir_all(data_dir);
+    }
+
+    #[test]
+    fn late_refresh_result_preserves_stopped_task() {
+        for status in [TaskStatus::Paused, TaskStatus::Cancelled] {
+            for next in [TaskStatus::Waiting, TaskStatus::Failed] {
+                let data_dir = temp_state_dir();
+                let mut task = task_with_id("task:refresh");
+                task.status = TaskStatus::Downloading;
+                let state = test_state_with_tasks(&data_dir, vec![task]);
+                let token = state.register_task_cancel_token("task:refresh").unwrap();
+                state.cancel_running_task("task:refresh").unwrap();
+                state.update_task_status("task:refresh", status).unwrap();
+                assert!(
+                    state
+                        .finish_task_attempt("task:refresh", next, &token)
+                        .unwrap()
+                        .is_none()
+                );
+                assert_eq!(state.task_status("task:refresh").unwrap(), status);
+                drop(state);
+                let _ = std::fs::remove_dir_all(data_dir);
+            }
+        }
+    }
+
+    #[test]
+    fn enqueue_rechecks_newly_completed_output_using_naming_preference() {
+        for strategy in [
+            DuplicateNamingStrategy::SkipExisting,
+            DuplicateNamingStrategy::AppendSuffix,
+            DuplicateNamingStrategy::OverwriteExisting,
+        ] {
+            let data_dir = temp_state_dir();
+            let state = test_state_with_tasks(&data_dir, Vec::new());
+            let mut task = task_with_id("task:new");
+            task.output_path = data_dir.join("same.mp4");
+            let path = task.output_path.clone();
+            // Planning already finished when an earlier task creates this file.
+            std::fs::write(&path, b"existing video").unwrap();
+            let result = state
+                .enqueue_tasks_with_duplicate_policy(
+                    vec![task],
+                    DuplicateTaskPolicy::Skip,
+                    strategy,
+                )
+                .unwrap();
+            match strategy {
+                DuplicateNamingStrategy::SkipExisting => {
+                    assert!(result.inserted.is_empty());
+                    assert_eq!(result.skipped_existing, 1);
+                }
+                DuplicateNamingStrategy::AppendSuffix => {
+                    assert_ne!(result.inserted[0].output_path, path)
+                }
+                DuplicateNamingStrategy::OverwriteExisting => {
+                    assert_eq!(result.inserted[0].output_path, path)
+                }
+            }
+            assert_eq!(std::fs::read(&path).unwrap(), b"existing video");
+            drop(state);
+            let _ = std::fs::remove_dir_all(data_dir);
+        }
+    }
+
+    #[test]
+    fn separate_enqueue_calls_reserve_same_named_outputs_and_resources() {
+        let data_dir = temp_state_dir();
+        let state = test_state_with_tasks(&data_dir, Vec::new());
+        let mut inserted = Vec::new();
+        for id in ["task:first", "task:second"] {
+            let mut task = task_with_id(id);
+            task.status = TaskStatus::Waiting;
+            task.output_path = data_dir.join("same.mp4");
+            let mut resource = resource_with_status(ResourceStatus::Pending);
+            resource.id = format!("{id}:resource:video");
+            resource.target_path = data_dir.join("same.video.m4s");
+            resource.temp_path = data_dir.join("same.video.m4s.bdlpart");
+            task.resources.push(resource);
+            inserted.extend(
+                state
+                    .enqueue_tasks_with_duplicate_policy(
+                        vec![task],
+                        DuplicateTaskPolicy::Skip,
+                        DuplicateNamingStrategy::AppendSuffix,
+                    )
+                    .unwrap()
+                    .inserted,
+            );
+        }
+        assert_eq!(inserted.len(), 2);
+        assert_ne!(inserted[0].output_path, inserted[1].output_path);
+        assert_ne!(
+            inserted[0].resources[0].target_path,
+            inserted[1].resources[0].target_path
+        );
+        assert_ne!(
+            inserted[0].resources[0].temp_path,
+            inserted[1].resources[0].temp_path
+        );
+        assert_eq!(inserted[1].id, "task:second");
+        assert_eq!(inserted[1].resources[0].id, "task:second:resource:video");
+        drop(state);
+        let persisted = TaskStorage::open(data_dir.join("tasks.sqlite"))
+            .unwrap()
+            .load_tasks()
+            .unwrap();
+        assert_eq!(persisted.len(), 2);
+        assert_ne!(persisted[0].output_path, persisted[1].output_path);
+        let _ = std::fs::remove_dir_all(data_dir);
+    }
+
+    #[test]
     fn duplicate_policy_ask_returns_matches_without_partial_insertion() {
         let data_dir = temp_state_dir();
         let existing = task_with_id("task:source:part");
@@ -1531,6 +1748,7 @@ mod tests {
             .enqueue_tasks_with_duplicate_policy(
                 vec![task_with_id("task:source:part")],
                 DuplicateTaskPolicy::Ask,
+                DuplicateNamingStrategy::SkipExisting,
             )
             .expect("duplicate preflight should succeed");
 
@@ -1560,7 +1778,11 @@ mod tests {
         }];
 
         let result = state
-            .enqueue_tasks_with_duplicate_policy(vec![planned], DuplicateTaskPolicy::Create)
+            .enqueue_tasks_with_duplicate_policy(
+                vec![planned],
+                DuplicateTaskPolicy::Create,
+                DuplicateNamingStrategy::AppendSuffix,
+            )
             .expect("duplicate copy should be created");
 
         assert_eq!(result.inserted[0].id, "task:source:part:copy:2");

@@ -3,7 +3,7 @@
 use std::collections::HashSet;
 
 use bdl_core::BdlResult;
-use bdl_core::naming::unique_path;
+use bdl_core::naming::{DuplicateNamingStrategy, resolve_duplicate_path, unique_path};
 use bdl_core::queue::{DownloadResource, DownloadTask, ResourceStatus, TaskStatus};
 use serde::Serialize;
 
@@ -20,6 +20,7 @@ pub struct DuplicateTaskEnqueueResult {
     pub inserted: Vec<DownloadTask>,
     pub duplicates: Vec<DuplicateTaskMatch>,
     pub requires_confirmation: bool,
+    pub skipped_existing: usize,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
@@ -101,6 +102,39 @@ pub(crate) fn prepare_duplicate_copies(
     Ok(prepared)
 }
 
+/// A separate planning call must not reuse an unfinished task's files. As with
+/// collisions within one plan, suffix live reservations even in overwrite mode;
+/// completed outputs remain subject to the planner's selected naming policy.
+pub(crate) fn reserve_queued_paths(
+    tasks: Vec<DownloadTask>,
+    existing: &[DownloadTask],
+    strategy: DuplicateNamingStrategy,
+) -> BdlResult<Vec<DownloadTask>> {
+    let mut reserved = existing
+        .iter()
+        .filter(|task| task.status != TaskStatus::Completed)
+        .map(|task| task.output_path.clone())
+        .collect::<HashSet<_>>();
+    let mut prepared = Vec::with_capacity(tasks.len());
+    for task in tasks {
+        let path = if reserved.contains(&task.output_path) {
+            Some(unique_path(task.output_path.clone(), &mut reserved))
+        } else {
+            // Recheck disk under the enqueue lock: an earlier download may have
+            // completed since the planner inspected its destination.
+            resolve_duplicate_path(task.output_path.clone(), &mut reserved, strategy)
+        };
+        if let Some(path) = path {
+            prepared.push(if path == task.output_path {
+                task
+            } else {
+                task.with_output_path(path)?
+            });
+        }
+    }
+    Ok(prepared)
+}
+
 pub(crate) fn append_new_tasks(
     queue: &mut Vec<DownloadTask>,
     tasks: Vec<DownloadTask>,
@@ -157,6 +191,17 @@ pub(crate) fn reset_interrupted_resources(resources: &mut [DownloadResource]) {
             resource.status,
             ResourceStatus::Downloading | ResourceStatus::Paused
         ) {
+            resource.status = ResourceStatus::Pending;
+        }
+    }
+}
+
+pub(crate) fn reset_task_for_retry(task: &mut DownloadTask) {
+    let redownload_all = task.status == TaskStatus::Completed;
+    task.status = TaskStatus::Waiting;
+    task.scheduled_at = None;
+    for resource in &mut task.resources {
+        if redownload_all || resource.status != ResourceStatus::Completed {
             resource.status = ResourceStatus::Pending;
         }
     }

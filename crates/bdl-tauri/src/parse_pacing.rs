@@ -76,13 +76,9 @@ impl ParsePacer {
         }
         phase(Phase::Running);
         let started = Instant::now();
-        let result = tokio::time::timeout(Duration::from_secs(60), operation)
-            .await
-            .unwrap_or_else(|_| {
-                Err(BdlError::Planning {
-                    message: "解析请求超时，已保留完成的结果，请重试。".into(),
-                })
-            });
+        // The shared BpiClient bounds each HTTP request. Hydrating a multi-part
+        // video can take many healthy requests, so do not cap the whole operation.
+        let result = operation.await;
         tracing::debug!(
             elapsed_ms = started.elapsed().as_millis() as u64,
             success = result.is_ok(),
@@ -209,12 +205,38 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn stuck_operation_times_out_and_releases_pool() {
+    async fn healthy_multi_part_hydration_can_exceed_one_minute() {
+        let pacer = ParsePacer::default();
+        let result = pacer
+            .run(
+                ParseRules::default(),
+                async {
+                    for _ in 0..31 {
+                        tokio::time::sleep(Duration::from_secs(1)).await;
+                        tokio::time::sleep(Duration::from_secs(1)).await;
+                    }
+                    Ok(31)
+                },
+                |_| 0,
+            )
+            .await;
+        assert_eq!(result.unwrap(), 31);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn request_timeout_releases_pool() {
         let pacer = ParsePacer::default();
         let result: BdlResult<()> = pacer
-            .run(ParseRules::default(), std::future::pending(), |_| 0)
+            .run(
+                ParseRules::default(),
+                async {
+                    tokio::time::sleep(Duration::from_secs(20)).await;
+                    Err(BdlError::Bpi("request timeout".into()))
+                },
+                |_| 0,
+            )
             .await;
-        assert!(result.unwrap_err().to_string().contains("超时"));
+        assert!(result.unwrap_err().to_string().contains("timeout"));
         assert!(
             pacer
                 .run(ParseRules::default(), async { Ok(()) }, |_| 0)
