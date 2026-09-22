@@ -1,5 +1,53 @@
 import type { AccountLibraryFolderKind, DownloadTask, NormalizedItem } from '../api/dto'
 
+const SHARE_URL_PATTERN = /https?:\/\/[^\s<>"'`]+/gi
+const INPUT_ID_PATTERN = /BV[0-9A-Za-z]{10}|[aA][vV]\d+/g
+const TRAILING_SHARE_PUNCTUATION = /[,.;!?)\]}，。；！？、）】》」』]+$/u
+
+const isBilibiliHost = (host: string): boolean => {
+  const normalized = host.toLowerCase()
+  return (
+    normalized === 'bilibili.com' ||
+    normalized.endsWith('.bilibili.com') ||
+    normalized === 'b23.tv' ||
+    normalized.endsWith('.b23.tv')
+  )
+}
+
+export const extractBilibiliInputs = (text: string): string[] => {
+  const candidates: Array<{ index: number; value: string }> = []
+  const urlRanges: Array<{ start: number; end: number }> = []
+
+  for (const match of text.matchAll(SHARE_URL_PATTERN)) {
+    const index = match.index ?? 0
+    const raw = match[0]
+    urlRanges.push({ start: index, end: index + raw.length })
+    const candidate = raw.replace(TRAILING_SHARE_PUNCTUATION, '')
+    try {
+      const url = new URL(candidate)
+      if (isBilibiliHost(url.hostname)) candidates.push({ index, value: candidate })
+    } catch {
+      // Ignore malformed URL-like text and let normal input validation handle the rest.
+    }
+  }
+
+  for (const match of text.matchAll(INPUT_ID_PATTERN)) {
+    const index = match.index ?? 0
+    const value = match[0]
+    const end = index + value.length
+    if (urlRanges.some((range) => index >= range.start && index < range.end)) continue
+
+    const before = index > 0 ? text[index - 1] : ''
+    const after = end < text.length ? text[end] : ''
+    if ((before && /[0-9A-Za-z]/.test(before)) || (after && /[0-9A-Za-z]/.test(after))) continue
+
+    candidates.push({ index, value })
+  }
+
+  candidates.sort((left, right) => left.index - right.index)
+  return Array.from(new Set(candidates.map((candidate) => candidate.value)))
+}
+
 export const bilibiliUserUrl = (mid: string | number | null | undefined): string | null => {
   const value = String(mid ?? '').trim()
   return /^\d+$/.test(value) ? `https://space.bilibili.com/${value}` : null

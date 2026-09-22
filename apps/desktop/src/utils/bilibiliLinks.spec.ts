@@ -1,9 +1,37 @@
 import { describe, expect, it } from 'vitest'
 
 import type { DownloadTask, NormalizedItem } from '../api/dto'
-import { bilibiliFavoriteCategoryUrl, bilibiliTaskUrl, bilibiliUserUrl, bilibiliVideoUrl } from './bilibiliLinks'
+import {
+  bilibiliFavoriteCategoryUrl,
+  bilibiliTaskUrl,
+  bilibiliUserUrl,
+  bilibiliVideoUrl,
+  extractBilibiliInputs,
+} from './bilibiliLinks'
 
 describe('Bilibili page links', () => {
+  it('extracts links and ids from pasted share text while ignoring titles', () => {
+    expect(
+      extractBilibiliInputs(
+        '【视频标题】 https://www.bilibili.com/video/BV1xx411c7mD/?spm_id_from=333.1007 复制打开\n' +
+          '另一个标题\nhttps://b23.tv/abc123。\nBV1xx411c7mD\nav170001',
+      ),
+    ).toEqual([
+      'https://www.bilibili.com/video/BV1xx411c7mD/?spm_id_from=333.1007',
+      'https://b23.tv/abc123',
+      'BV1xx411c7mD',
+      'av170001',
+    ])
+  })
+
+  it('does not extract nested Bilibili-looking values from unrelated URLs', () => {
+    expect(
+      extractBilibiliInputs(
+        '标题 https://example.com/watch?next=https://www.bilibili.com/video/BV1xx411c7mD&aid=av170001',
+      ),
+    ).toEqual([])
+  })
+
   it('builds safe user profile links only from numeric MID values', () => {
     expect(bilibiliUserUrl('4279370')).toBe('https://space.bilibili.com/4279370')
     expect(bilibiliUserUrl('javascript:alert(1)')).toBeNull()

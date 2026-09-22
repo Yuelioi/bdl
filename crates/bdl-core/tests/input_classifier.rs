@@ -41,6 +41,25 @@ fn classifies_short_url_as_unknown_source_kind() {
 }
 
 #[test]
+fn extracts_supported_inputs_from_share_text() {
+    assert_eq!(
+        classify_input("【测试标题】 https://www.bilibili.com/video/BV1xx411c7mD/?spm_id_from=333.1007 复制打开")
+            .unwrap(),
+        ClassifiedInput::VideoBvid("BV1xx411c7mD".into())
+    );
+
+    assert_eq!(
+        classify_input("分享：《测试标题》 https://b23.tv/abc123。").unwrap(),
+        ClassifiedInput::ShortUrl("https://b23.tv/abc123".into())
+    );
+
+    assert_eq!(
+        classify_input("测试标题\nBV1xx411c7mD").unwrap(),
+        ClassifiedInput::VideoBvid("BV1xx411c7mD".into())
+    );
+}
+
+#[test]
 fn classifies_supported_url_kinds_without_extracting_final_ids() {
     assert_eq!(
         classify_input("https://space.bilibili.com/12345/video")
@@ -157,6 +176,13 @@ fn rejects_false_positives_from_non_bilibili_urls() {
     for input in inputs {
         assert!(classify_input(input).is_err(), "{input} should be rejected");
     }
+
+    assert!(
+        classify_input(
+            "标题 https://example.com/watch?next=https://www.bilibili.com/video/BV1xx411c7mD"
+        )
+        .is_err()
+    );
 }
 
 #[test]

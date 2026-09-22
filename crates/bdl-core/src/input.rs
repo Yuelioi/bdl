@@ -46,7 +46,75 @@ pub fn classify_input(input: &str) -> BdlResult<ClassifiedInput> {
         return Ok(ClassifiedInput::VideoAid(aid));
     }
 
+    let contains_url = trimmed.contains("http://") || trimmed.contains("https://");
+    if let Some(classified) = classify_embedded_url(trimmed) {
+        return Ok(classified);
+    }
+
+    if !contains_url {
+        if let Some(bvid) = extract_embedded_bvid(trimmed) {
+            return Ok(ClassifiedInput::VideoBvid(bvid));
+        }
+
+        if let Some(aid) = extract_embedded_aid(trimmed) {
+            return Ok(ClassifiedInput::VideoAid(aid));
+        }
+    }
+
     Err(unrecognized())
+}
+
+fn classify_embedded_url(input: &str) -> Option<ClassifiedInput> {
+    let mut offset = 0;
+
+    while offset < input.len() {
+        let remaining = &input[offset..];
+        let http = remaining.find("http://");
+        let https = remaining.find("https://");
+        let relative_start = match (http, https) {
+            (Some(left), Some(right)) => left.min(right),
+            (Some(start), None) | (None, Some(start)) => start,
+            (None, None) => return None,
+        };
+        let start = offset + relative_start;
+        let tail = &input[start..];
+        let end = tail.find(char::is_whitespace).unwrap_or(tail.len());
+        let candidate = tail[..end].trim_end_matches(is_share_url_trailing_punctuation);
+
+        if let Ok(url) = Url::parse(candidate)
+            && let Some(classified) = classify_url(candidate, &url)
+        {
+            return Some(classified);
+        }
+
+        offset = start + end.max(1);
+    }
+
+    None
+}
+
+fn is_share_url_trailing_punctuation(ch: char) -> bool {
+    matches!(
+        ch,
+        ',' | '.'
+            | ';'
+            | '!'
+            | '?'
+            | ')'
+            | ']'
+            | '}'
+            | '，'
+            | '。'
+            | '；'
+            | '！'
+            | '？'
+            | '、'
+            | '）'
+            | '】'
+            | '》'
+            | '」'
+            | '』'
+    )
 }
 
 fn classify_url(raw_url: &str, url: &Url) -> Option<ClassifiedInput> {
@@ -156,6 +224,18 @@ fn extract_bvid(input: &str) -> Option<String> {
 
 fn extract_aid(input: &str) -> Option<u64> {
     parse_aid_token(input)
+}
+
+fn extract_embedded_bvid(input: &str) -> Option<String> {
+    input
+        .split(|ch: char| !ch.is_ascii_alphanumeric())
+        .find_map(|token| parse_bvid_token(token).map(ToOwned::to_owned))
+}
+
+fn extract_embedded_aid(input: &str) -> Option<u64> {
+    input
+        .split(|ch: char| !ch.is_ascii_alphanumeric())
+        .find_map(parse_aid_token)
 }
 
 fn parse_bvid_token(token: &str) -> Option<&str> {

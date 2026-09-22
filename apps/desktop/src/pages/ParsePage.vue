@@ -11,6 +11,7 @@ import UiWorkflowSteps, { type WorkflowStep } from '../ui/WorkflowSteps.vue'
 import ParseDownloadPlanner from './parse/ParseDownloadPlanner.vue'
 import ParseBatchWorkspace from './parse/ParseBatchWorkspace.vue'
 import ParseResultWorkspace from './parse/ParseResultWorkspace.vue'
+import { extractBilibiliInputs } from '../utils/bilibiliLinks'
 import { readClipboardText } from '../utils/clipboard'
 
 const parse = useParseStore()
@@ -44,7 +45,8 @@ const pasteInput = async () => {
       return
     }
 
-    parse.input = text
+    const extracted = extractBilibiliInputs(text)
+    parse.input = extracted.length > 0 ? extracted.join('\n') : text
     parse.clearNotice()
   } catch (error) {
     parse.setNotice(`读取剪贴板失败：${error instanceof Error ? error.message : String(error)}`, 'danger')
