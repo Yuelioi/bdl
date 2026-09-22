@@ -45,9 +45,10 @@ impl<R: Runtime> MediaMuxBackendImpl for AndroidMediaMuxBackend<R> {
                 message: "Android 内置 FFmpeg 当前暂不开放嵌入封面或字幕。".to_owned(),
             });
         }
-        let format_name = output_format_name(&request.output_path).ok_or_else(|| BdlError::Platform {
-            message: "Android 内置 FFmpeg 当前支持 MP4 与 MKV 封装。".to_owned(),
-        })?;
+        let format_name =
+            output_format_name(&request.output_path).ok_or_else(|| BdlError::Platform {
+                message: "Android 内置 FFmpeg 当前支持 MP4 与 MKV 封装。".to_owned(),
+            })?;
         if request.video_path.is_none() && request.audio_path.is_none() {
             return Err(BdlError::Platform {
                 message: "Android 媒体合并缺少视频或音频输入。".to_owned(),

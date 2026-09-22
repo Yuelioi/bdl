@@ -112,10 +112,7 @@ fn render_output_path_supports_download_and_publish_dates() -> Result<(), BdlErr
 
     let path = render_output_path("{date} - {publish_date} - {title}.{ext}", &context)?;
 
-    assert_eq!(
-        path,
-        PathBuf::from("2026-09-22 - 2025-12-31 - Fixture.mp4")
-    );
+    assert_eq!(path, PathBuf::from("2026-09-22 - 2025-12-31 - Fixture.mp4"));
     Ok(())
 }
 

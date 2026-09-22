@@ -214,8 +214,9 @@ fn validate_variable_name(name: &str) -> BdlResult<()> {
     match name {
         "title" | "part_title" | "part_index" | "bvid" | "aid" | "cid" | "owner_name"
         | "owner_mid" | "series_title" | "season_index" | "episode_index" | "episode_title"
-        | "collection_title" | "index" | "quality" | "codec" | "date" | "publish_date"
-        | "ext" => Ok(()),
+        | "collection_title" | "index" | "quality" | "codec" | "date" | "publish_date" | "ext" => {
+            Ok(())
+        }
         "" => Err(BdlError::Planning {
             message: "命名模板存在空变量。".to_owned(),
         }),
