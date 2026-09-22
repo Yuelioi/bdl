@@ -25,7 +25,7 @@ def main():
         "LICENSE-bpi-rs": root / "vendor/bpi-rs/LICENSE",
     }
     args.output.mkdir(parents=True, exist_ok=True)
-    archive = args.output / f"bdl-{version}-{args.target}.{'zip' if windows else 'tar.gz'}"
+    archive = args.output / f"bdl-cli-{version}-{args.target}.{'zip' if windows else 'tar.gz'}"
     if windows:
         with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as bundle:
             for name, path in files.items():

@@ -259,7 +259,7 @@ jobs:
               ['windows-x64', 'zip'], ['linux-x64', 'tar.gz'],
               ['macos-arm64', 'tar.gz'], ['macos-x64', 'tar.gz'],
             ]) {
-              const name = `bdl-${tag.slice(1)}-${platform}.${extension}`;
+              const name = `bdl-cli-${tag.slice(1)}-${platform}.${extension}`;
               for (const required of [name, `${name}.sha256`]) {
                 if (!assets.some(asset => asset.name === required && asset.size > 0)) {
                   throw new Error(`Missing CLI release asset ${required}`);

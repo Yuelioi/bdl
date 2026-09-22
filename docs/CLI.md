@@ -4,6 +4,8 @@
 
 ## 安装
 
+在 Releases 的 Assets 中下载 `bdl-cli-<版本>-<平台>` 压缩包；Windows 对应 `bdl-cli-0.5.0-windows-x64.zip`，解压后的 `bdl.exe` 就是命令行程序。桌面版安装程序与 CLI 分开提供。
+
 在仓库根目录使用 Rust 工具链安装：
 
 ```sh
