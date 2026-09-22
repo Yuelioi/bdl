@@ -65,8 +65,37 @@ fn render_output_path_supports_episode_title_alias() -> Result<(), BdlError> {
 
 #[test]
 fn sanitize_path_component_replaces_windows_invalid_characters_and_trims() {
-    assert_eq!(sanitize_path_component(" bad:name*?. "), "bad_name__");
+    assert_eq!(sanitize_path_component(" bad:name*?/\\. "), "bad_name____");
     assert_eq!(sanitize_path_component("..."), "untitled");
+}
+
+#[test]
+fn render_output_path_sanitizes_variable_values_before_splitting_template_directories()
+-> Result<(), BdlError> {
+    let context = NamingContext {
+        title: "【夏娜/绯色の空】遗忘的夏娜",
+        part_title: "Opening\\Ending",
+        owner_name: Some("owner/name"),
+        series_title: Some("series\\name"),
+        collection_title: Some("collection/name"),
+        quality: Some("1080/P"),
+        codec: Some("AV1\\Main"),
+        ext: "mp4",
+        ..NamingContext::default()
+    };
+
+    let path = render_output_path(
+        "{title}/{owner_name} - {part_title} - {series_title} - {collection_title} - {quality} - {codec}.{ext}",
+        &context,
+    )?;
+
+    assert_eq!(
+        path,
+        PathBuf::from("【夏娜_绯色の空】遗忘的夏娜").join(
+            "owner_name - Opening_Ending - series_name - collection_name - 1080_P - AV1_Main.mp4"
+        )
+    );
+    Ok(())
 }
 
 #[test]

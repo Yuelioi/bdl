@@ -122,23 +122,28 @@ pub fn resolve_duplicate_path(
 }
 
 pub fn sanitize_path_component(value: &str) -> String {
-    let sanitized: String = value
-        .chars()
-        .map(|ch| {
-            if ch.is_control() || matches!(ch, '<' | '>' | ':' | '"' | '|' | '?' | '*') {
-                '_'
-            } else {
-                ch
-            }
-        })
-        .collect();
-    let trimmed = sanitized.trim().trim_matches('.').to_owned();
+    let trimmed = sanitize_variable_value(value);
 
     if trimmed.is_empty() {
         "untitled".to_owned()
     } else {
         trimmed
     }
+}
+
+fn sanitize_variable_value(value: &str) -> String {
+    let sanitized: String = value
+        .chars()
+        .map(|ch| {
+            if ch.is_control() || matches!(ch, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*')
+            {
+                '_'
+            } else {
+                ch
+            }
+        })
+        .collect();
+    sanitized.trim().trim_matches('.').to_owned()
 }
 
 fn overwrite_existing_path(path: PathBuf, reserved: &mut HashSet<PathBuf>) -> PathBuf {
@@ -176,7 +181,10 @@ fn render_template(template: &str, context: &NamingContext<'_>) -> BdlResult<Str
             });
         }
 
-        rendered.push_str(&variable_value(name.trim(), context)?);
+        rendered.push_str(&sanitize_variable_value(&variable_value(
+            name.trim(),
+            context,
+        )?));
     }
 
     Ok(rendered)
