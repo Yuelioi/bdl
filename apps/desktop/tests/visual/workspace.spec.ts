@@ -11,6 +11,7 @@ const installTauriMock = async (
   await page.addInitScript(
     ({ selectedTheme, environmentReady, accountLoggedIn, taskCreationFails, collectionLoadDelayMs }) => {
       localStorage.setItem('bdl.theme', selectedTheme);
+      localStorage.setItem('bdl.usage-notice.v1', 'acknowledged');
       let callbackId = 1;
       let pagedFixtureLoaded = 9;
       const pagedFixtureItems = () =>
@@ -624,7 +625,7 @@ test('parse result selection controls live in the shared bottom action bar', asy
   await table.getByRole('checkbox', { name: '全选已加载' }).click();
   await expect(table.getByRole('checkbox', { name: '全选已加载' })).toBeChecked();
   const actionBar = page.locator('.selection-action-bar');
-  await expect(actionBar.getByRole('button', { name: /全选/ })).toHaveCount(0);
+  await expect(actionBar.getByRole('button', { name: '取消全选', exact: true })).toBeVisible();
   await expect(actionBar.getByRole('button', { name: /下载/ })).toHaveCount(0);
   await expect(page.locator('.source-function-toolbar').getByRole('button', { name: '下载所选 (1)' })).toBeVisible();
   await expect(page.locator('.source-result-header').getByRole('button', { name: /全选/ })).toHaveCount(0);
@@ -769,7 +770,7 @@ test('task-creation errors stay inside download settings instead of the parse pa
   await page.getByRole('button', { name: '下载所选 (1)' }).click();
 
   const dialog = page.getByRole('dialog', { name: '下载设置' });
-  await dialog.getByRole('button', { name: '加入传输' }).click();
+  await dialog.getByRole('button', { name: '开始下载' }).click();
   await expect(dialog.getByText(/Bilibili 暂时拒绝了请求/)).toBeVisible();
 
   await dialog.getByRole('button', { name: '取消' }).click();
@@ -970,7 +971,7 @@ test('media preferences reorder combinations while download keeps optimal qualit
   await dialog.getByRole('tab', { name: '画质与音频' }).click();
   await expect(dialog.getByRole('combobox', { name: /视频清晰度/ })).toContainText('最优画质');
   await expect(dialog.getByText('按本次优先顺序选择')).toBeVisible();
-  await dialog.getByRole('button', { name: '加入传输' }).click();
+  await dialog.getByRole('button', { name: '开始下载' }).click();
   const request = await page.evaluate(() => (window as unknown as { __BDL_MEDIA_REQUEST__: { media_preferences: unknown } }).__BDL_MEDIA_REQUEST__);
   expect(request.media_preferences).toEqual({ video: [{ quality: '125', codec: 'hevc' }, { quality: 'sdr', codec: 'auto' }], audio: ['30251'], fallback: 'best' });
 });
@@ -1002,7 +1003,7 @@ test('missing directory allows parsing and explicit SDR task creation', async ({
   await dialog.getByRole('tab', { name: '画质与音频' }).click();
   await dialog.getByRole('combobox', { name: /视频清晰度/ }).click();
   await page.getByRole('option', { name: 'SDR / 普通动态范围', exact: true }).click();
-  await dialog.getByRole('button', { name: '加入传输' }).click();
+  await dialog.getByRole('button', { name: '开始下载' }).click();
   const result = await page.evaluate(() => {
     const target = window as unknown as { __BDL_SDR_REQUEST__: { quality: string; media_preferences: { video: unknown[]; audio: string[] } }; __BDL_TEST_INVOKES__: string[] };
     return { request: target.__BDL_SDR_REQUEST__, creates: target.__BDL_TEST_INVOKES__.filter((name) => name === 'environment_create_download_directory').length };
@@ -1063,7 +1064,7 @@ test('download tabs use saved presets and keep overrides local', async ({ page }
   await expect(dialog.getByRole('button', { name: '恢复默认偏好' })).toBeInViewport();
   await expect(dialog.getByRole('tab', { name: '常规', exact: true })).toBeInViewport();
   await page.screenshot({ path: testInfo.outputPath('download-scroll.png') });
-  await dialog.getByRole('button', { name: '加入传输' }).click();
+  await dialog.getByRole('button', { name: '开始下载' }).click();
   const result = await page.evaluate(() => {
     const target = window as unknown as { __BDL_PRESET_REQUEST__: { naming_template: string; duplicate_naming_strategy: string }; __BDL_TEST_INVOKES__: string[] };
     return { request: target.__BDL_PRESET_REQUEST__, saves: target.__BDL_TEST_INVOKES__.filter((name) => name === 'settings_update').length };
@@ -1127,7 +1128,7 @@ test('download archive settings inherit defaults and override processing per tas
     await dialog.getByRole('checkbox', { name: label, exact: true }).uncheck();
   }
   await page.screenshot({ path: testInfo.outputPath('download-archive.png') });
-  await dialog.getByRole('button', { name: '加入传输' }).click();
+  await dialog.getByRole('button', { name: '开始下载' }).click();
   const result = await page.evaluate(() => {
     const target = window as unknown as { __BDL_ARCHIVE_REQUEST__: Record<string, unknown>; __BDL_TEST_INVOKES__: string[] };
     return { request: target.__BDL_ARCHIVE_REQUEST__, saves: target.__BDL_TEST_INVOKES__.filter((name) => name === 'settings_update').length };

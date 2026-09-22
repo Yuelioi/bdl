@@ -346,7 +346,7 @@
   overflow: hidden;
 }
 
-.main-region:has(> [aria-label="后台解析下载"]) {
+.main-region:has(> [aria-label='后台解析下载']) {
   grid-template-rows: auto minmax(0, 1fr);
 }
 
@@ -646,9 +646,7 @@
   min-width: 0;
   flex-direction: row;
   gap: 0;
-  padding:
-    5px
-    calc(var(--space-xs) + var(--bdl-safe-area-right, 0px))
+  padding: 5px calc(var(--space-xs) + var(--bdl-safe-area-right, 0px))
     calc(5px + var(--bdl-safe-area-bottom, env(safe-area-inset-bottom, 0px)))
     calc(var(--space-xs) + var(--bdl-safe-area-left, 0px));
   border-top: 1px solid var(--color-border);

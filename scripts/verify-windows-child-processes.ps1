@@ -6,7 +6,14 @@ $RustSourceRoot = Join-Path $RepoRoot "crates"
 $CommandHelper = Join-Path $RustSourceRoot "bdl-core/src/process.rs"
 $RawLaunchPattern = "Command::new\s*\("
 
-$rawLaunches = Get-ChildItem -Path $RustSourceRoot -Recurse -File -Filter "*.rs" |
+$RuntimeSourceRoots = @(
+    Get-ChildItem -Path $RustSourceRoot -Directory |
+        ForEach-Object { Join-Path $_.FullName "src" } |
+        Where-Object { Test-Path -LiteralPath $_ }
+    Join-Path $RepoRoot "apps/desktop/src-tauri/src"
+)
+
+$rawLaunches = Get-ChildItem -Path $RuntimeSourceRoots -Recurse -File -Filter "*.rs" |
     Select-String -Pattern $RawLaunchPattern |
     Where-Object { $_.Path -ne $CommandHelper }
 
