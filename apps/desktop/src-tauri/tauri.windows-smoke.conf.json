@@ -1,0 +1,17 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "BDL",
+        "width": 1080,
+        "height": 720,
+        "resizable": true,
+        "decorations": false,
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --remote-debugging-port=9222",
+        "dataDirectory": "webview-smoke"
+      }
+    ]
+  }
+}

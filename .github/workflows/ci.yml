@@ -90,7 +90,7 @@ jobs:
         run: ./scripts/check.ps1
 
       - name: Build Windows application for startup smoke test
-        run: pnpm --dir apps/desktop tauri build --no-bundle
+        run: pnpm --dir apps/desktop tauri build --no-bundle --config src-tauri/tauri.windows-smoke.conf.json
 
       - name: Verify Windows WebView renders application UI
         run: pnpm --dir apps/desktop test:windows-smoke

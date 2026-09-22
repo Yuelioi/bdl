@@ -32,10 +32,12 @@ run_step() {
 verify_windows_child_process_policy() {
   local helper="$repo_root/crates/bdl-core/src/process.rs"
   local raw_launches
+  local runtime_roots=("$repo_root"/crates/*/src "$repo_root/apps/desktop/src-tauri/src")
   if command -v rg >/dev/null 2>&1; then
-    raw_launches="$(cd "$repo_root/crates" && rg -n 'Command::new[[:space:]]*\(' -g '*.rs' -g '!bdl-core/src/process.rs' || true)"
+    raw_launches="$(rg -n 'Command::new[[:space:]]*\(' "${runtime_roots[@]}" -g '*.rs' || true)"
+    raw_launches="$(printf '%s\n' "$raw_launches" | grep -vF "$helper:" || true)"
   else
-    raw_launches="$(find "$repo_root/crates" -type f -name '*.rs' ! -path "$helper" -exec grep -nHE 'Command::new[[:space:]]*\(' {} + || true)"
+    raw_launches="$(find "${runtime_roots[@]}" -type f -name '*.rs' ! -path "$helper" -exec grep -nHE 'Command::new[[:space:]]*\(' {} + || true)"
   fi
   if [[ -n "$raw_launches" ]]; then
     echo "Runtime child processes bypass the hidden-window command helper:" >&2
