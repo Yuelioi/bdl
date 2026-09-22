@@ -224,9 +224,15 @@ pub struct ReqwestFetcher {
     config: FetchConfig,
     global_limiter: Option<Arc<BandwidthLimiter>>,
     task_limiter: Option<Arc<BandwidthLimiter>>,
+    stop_on_restriction: bool,
 }
 
 impl ReqwestFetcher {
+    /// CLI mode: stop before retries/CDN fallback when the server restricts access.
+    pub fn with_stop_on_restriction(mut self) -> Self {
+        self.stop_on_restriction = true;
+        self
+    }
     pub fn new() -> BdlResult<Self> {
         Self::with_config(FetchConfig::default())
     }
@@ -272,6 +278,7 @@ impl ReqwestFetcher {
             config,
             global_limiter,
             task_limiter,
+            stop_on_restriction: false,
         })
     }
 }
@@ -319,6 +326,11 @@ impl ReqwestFetcher {
                 {
                     Ok(outcome) => return Ok(outcome),
                     Err(error) => {
+                        if self.stop_on_restriction
+                            && crate::resolver::pacing::is_source_restriction(&error.to_string())
+                        {
+                            return Err(error);
+                        }
                         last_error = Some(error.to_string());
                     }
                 }

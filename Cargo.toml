@@ -1,5 +1,6 @@
 [workspace]
 resolver = "3"
+exclude = ["vendor/bpi-rs"]
 members = [
   "crates/bdl-core",
   "crates/bdl-tauri",
@@ -35,3 +36,7 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread", "fs", "process
 tracing = "0.1"
 url = "2"
 uuid = { version = "1", features = ["v4", "serde"] }
+fs2 = "0.4"
+
+[patch.crates-io]
+bpi-rs = { path = "vendor/bpi-rs" }

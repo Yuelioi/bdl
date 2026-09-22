@@ -284,18 +284,13 @@ impl BpiVideoApi {
             return Ok(snapshot);
         }
 
-        let response = self
-            .client
-            .get(VIDEO_VIEW_API)
-            .query(&video_view_query(id))
-            .send()
-            .await
-            .map_err(|error| BdlError::Bpi(error.to_string()))?
-            .error_for_status()
-            .map_err(|error| BdlError::Bpi(error.to_string()))?;
-        let snapshot = response
-            .json::<VideoViewResponse>()
-            .await
+        let response = bpi_rs::transport::ReqwestTransport::send_request_builder(
+            self.client.get(VIDEO_VIEW_API).query(&video_view_query(id)),
+            "video-view",
+        )
+        .await
+        .map_err(|error| BdlError::Bpi(error.to_string()))?;
+        let snapshot = serde_json::from_slice::<VideoViewResponse>(&response.body)
             .map_err(|error| BdlError::Bpi(error.to_string()))?
             .into_snapshot()?;
 

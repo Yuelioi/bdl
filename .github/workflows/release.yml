@@ -13,6 +13,12 @@ permissions:
   contents: write
 
 jobs:
+  cli:
+    name: Build standalone CLI
+    uses: ./.github/workflows/cli.yml
+    permissions:
+      contents: read
+
   build:
     name: Build ${{ matrix.name }} release
     strategy:
@@ -204,16 +210,35 @@ jobs:
 
   publish:
     name: Publish staged release
-    needs: [build, android]
+    needs: [build, android, cli]
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
     steps:
+      - uses: actions/checkout@v4
+
+      - name: Download CLI packages
+        uses: actions/download-artifact@v4
+        with:
+          pattern: bdl-cli-*
+          path: dist/cli
+          merge-multiple: true
+
+      - name: Attach CLI packages to staged release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          cd dist/cli
+          sha256sum --check *.sha256
+          gh release upload "${{ github.ref_name }}" ./* --clobber --repo "${{ github.repository }}"
+
       - name: Publish GitHub release
         uses: actions/github-script@v9
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
+            const fs = require('node:fs');
             const tag = context.ref.replace('refs/tags/', '');
             const releases = await github.paginate(
               github.rest.repos.listReleases,
@@ -223,11 +248,24 @@ jobs:
             if (!release) {
               throw new Error(`Draft release for ${tag} was not found.`);
             }
+            const notesPath = `docs/releases/${tag}.md`;
+            const notes = fs.existsSync(notesPath) ? fs.readFileSync(notesPath, 'utf8') : '';
             // Linux packages must never consume another installer's fallback URL.
             const assets = await github.paginate(github.rest.repos.listReleaseAssets, {
               ...context.repo, release_id: release.id, per_page: 100,
             });
             const manifestAsset = assets.find(({ name }) => name === 'latest.json');
+            for (const [platform, extension] of [
+              ['windows-x64', 'zip'], ['linux-x64', 'tar.gz'],
+              ['macos-arm64', 'tar.gz'], ['macos-x64', 'tar.gz'],
+            ]) {
+              const name = `bdl-${tag.slice(1)}-${platform}.${extension}`;
+              for (const required of [name, `${name}.sha256`]) {
+                if (!assets.some(asset => asset.name === required && asset.size > 0)) {
+                  throw new Error(`Missing CLI release asset ${required}`);
+                }
+              }
+            }
             if (!manifestAsset) throw new Error('Signed updater manifest is missing.');
             const response = await github.rest.repos.getReleaseAsset({
               ...context.repo, asset_id: manifestAsset.id,
@@ -249,6 +287,7 @@ jobs:
             const published = await github.rest.repos.updateRelease({
               ...context.repo,
               release_id: release.id,
+              body: notes ? `${notes}\n\n${release.body || ''}` : release.body,
               draft: false,
               prerelease: false,
               make_latest: 'true',

@@ -1,6 +1,6 @@
 [package]
 name = "bdl-core"
-version = "0.4.0"
+version = "0.5.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -12,6 +12,7 @@ bpi-rs.workspace = true
 bytes.workspace = true
 chrono.workspace = true
 futures.workspace = true
+fs2.workspace = true
 flate2.workspace = true
 qrcode.workspace = true
 reqwest.workspace = true

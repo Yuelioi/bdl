@@ -97,7 +97,7 @@ pnpm --dir apps/desktop dev
 ```text
 crates/bdl-core       领域模型、解析、任务规划、下载、存储与诊断
 crates/bdl-tauri      队列编排、Tauri 命令、事件、系统与凭据集成
-crates/bdl-cli        开发和故障诊断使用的命令行入口
+crates/bdl-cli        面向用户和脚本的 bdl 命令行入口
 apps/desktop          Vue 3 + Tailwind CSS + Tauri 桌面界面
 ```
 

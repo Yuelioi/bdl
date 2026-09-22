@@ -1,4 +1,72 @@
-use crate::model::PageState;
+use crate::error::{BdlError, BdlResult};
+use crate::model::{NormalizedSourceTree, PageState};
+use std::collections::HashSet;
+
+/// Merge a metadata page without losing list identity or silently accepting stalled paging.
+pub fn append_source_page(
+    existing: &mut NormalizedSourceTree,
+    next: NormalizedSourceTree,
+) -> BdlResult<()> {
+    let invalid = |message: &str| BdlError::Planning {
+        message: message.to_owned(),
+    };
+    if existing.source.id != next.source.id || existing.source.kind != next.source.kind {
+        return Err(invalid("page source does not match"));
+    }
+    if next.groups.len() != 1 {
+        return Err(invalid("expected one group in a paged source"));
+    }
+    let mut next_group = next
+        .groups
+        .into_iter()
+        .next()
+        .expect("group length checked");
+    let mut page = next_group
+        .page
+        .take()
+        .ok_or_else(|| invalid("next page has no page state"))?;
+    let group = existing
+        .groups
+        .iter_mut()
+        .find(|group| group.id == next_group.id)
+        .ok_or_else(|| invalid("page group does not match"))?;
+    let previous = group
+        .page
+        .as_ref()
+        .ok_or_else(|| invalid("source has no page state"))?;
+    if previous.page_number.checked_add(1) != Some(page.page_number)
+        || previous.page_size != page.page_size
+    {
+        return Err(invalid("page sequence does not advance correctly"));
+    }
+    let mut seen = group
+        .items
+        .iter()
+        .map(|item| item.id.clone())
+        .collect::<HashSet<_>>();
+    let additions = next_group
+        .items
+        .into_iter()
+        .filter(|item| seen.insert(item.id.clone()))
+        .collect::<Vec<_>>();
+    if additions.is_empty() && next.source.has_more {
+        return Err(invalid(
+            "paging made no progress while the server reports more items; retry later",
+        ));
+    }
+    group.items.extend(additions);
+    page.loaded_count = group.items.len();
+    page.total_count = next.source.total_count.or(existing.source.total_count);
+    page.has_more = next.source.has_more
+        && page
+            .total_count
+            .is_none_or(|total| page.loaded_count < total);
+    existing.source.has_more = page.has_more;
+    existing.source.total_count = page.total_count;
+    group.page = Some(page);
+    existing.source.loaded_count = existing.groups.iter().map(|group| group.items.len()).sum();
+    Ok(())
+}
 
 pub const MAX_PAGE_SIZE: u32 = 100;
 

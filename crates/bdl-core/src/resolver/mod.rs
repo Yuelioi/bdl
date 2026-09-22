@@ -2,7 +2,10 @@ pub mod bangumi;
 pub mod cheese;
 pub mod collection;
 pub mod favorite;
+pub mod http_guard;
+pub mod pacing;
 pub mod paged;
+pub mod source;
 pub mod uploader;
 pub mod video;
 

@@ -62,6 +62,32 @@ async fn fetcher_downloads_full_resource_and_sends_headers() {
 }
 
 #[tokio::test]
+async fn cli_restriction_mode_stops_before_cdn_fallback_or_retry() {
+    let blocked = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}/blocked", blocked.local_addr().unwrap());
+    let first = tokio::spawn(async move {
+        let (mut stream, _) = blocked.accept().await.unwrap();
+        let mut request = [0; 4096];
+        stream.read(&mut request).await.unwrap();
+        stream
+            .write_all(
+                b"HTTP/1.1 429 Too Many Requests\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+            )
+            .await
+            .unwrap();
+    });
+    let backup = TestServer::spawn(b"must not fetch".to_vec(), 0).await;
+    let dir = temp_case_dir("restriction").await;
+    let mut resource = resource(url, &dir, "blocked.bin");
+    resource.current_urls.push(backup.url());
+    let fetcher = ReqwestFetcher::new().unwrap().with_stop_on_restriction();
+    let error = fetcher.fetch(&resource, None).await.unwrap_err();
+    assert!(error.to_string().contains("429"));
+    assert_eq!(backup.get_count(), 0);
+    first.await.unwrap();
+}
+
+#[tokio::test]
 async fn fetcher_downloads_raw_deflate_response() {
     let xml = br#"<?xml version="1.0" encoding="UTF-8"?><i><chatid>39092555045</chatid></i>"#;
     let mut encoder = DeflateEncoder::new(Vec::new(), Compression::default());

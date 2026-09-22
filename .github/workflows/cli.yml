@@ -1,0 +1,64 @@
+name: CLI builds
+
+on:
+  workflow_call:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'crates/bdl-cli/**'
+      - 'crates/bdl-core/**'
+      - 'vendor/bpi-rs/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'scripts/package-cli.py'
+      - '.github/workflows/cli.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-latest
+            target: windows-x64
+            binary: bdl.exe
+          - runner: ubuntu-22.04
+            target: linux-x64
+            binary: bdl
+          - runner: macos-14
+            target: macos-arm64
+            binary: bdl
+          - runner: macos-15-intel
+            target: macos-x64
+            binary: bdl
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    env:
+      CARGO_TARGET_DIR: target
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.88
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: cli-${{ matrix.target }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check CLI
+        run: cargo test --locked -p bdl-cli
+      - name: Check HTTP coordination
+        run: cargo test --locked -p bdl-core --test http_guard
+      - name: Build CLI
+        run: cargo build --locked --release -p bdl-cli
+      - name: Check command startup
+        run: ./target/release/${{ matrix.binary }} --help
+      - name: Package executable and checksums
+        run: python scripts/package-cli.py --binary target/release/${{ matrix.binary }} --target ${{ matrix.target }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bdl-cli-${{ matrix.target }}
+          path: output/cli/*
+          if-no-files-found: error

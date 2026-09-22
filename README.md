@@ -7,7 +7,7 @@
 
 一个专注、可靠、本地优先的哔哩哔哩下载工具。BDL 基于 [bpi-rs](https://github.com/Yuelioi/bpi-rs) 实现 Bilibili API 能力，并使用 Rust、Tauri 与 Vue 构建，把来源解析、批量选择、下载队列、失败恢复和媒体后处理整合在统一的工作区中。
 
-> 当前版本：`0.4.0` · Windows/macOS 正式支持 · Linux 预览 · Android ARM64 开发预览
+> 当前版本：`0.5.0` · Windows/macOS 正式支持 · Linux 预览 · Android ARM64 开发预览
 
 ![BDL 解析页面](preview/home.png)
 
@@ -141,6 +141,10 @@ brew install ffmpeg
 4. 在“传输”页面管理进度、暂停、继续、重试或查看诊断信息。
 
 账号收藏夹和订阅合集可从“内容库”进入。应用只会在本机使用登录凭据，不会把 Cookie 写入项目文件或诊断导出。
+
+## 命令行
+
+首版 `bdl` 支持无交互解析、多个输入顺序下载、媒体选项、Cookie 文件和 JSON 输出。下载需明确选择范围，全量操作需显式开启并保存进度；解析有操作预算和节流，不能保证免于源站风控。v0.5.0 起可从 Releases 下载独立 CLI 归档，也可从源码安装：`cargo install --path crates/bdl-cli --locked`。命令示例、恢复方式、脚本协议和当前限制见 [CLI 使用指南](docs/CLI.md)。
 
 ## 开发
 
