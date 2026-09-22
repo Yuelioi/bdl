@@ -580,12 +580,14 @@ pub async fn selection_estimate_size(
     let mut options = DownloadOptions::new(PathBuf::from("downloads"));
     apply_media_options(
         &mut options,
-        request.media_mode.as_deref(),
-        request.quality.as_deref(),
-        request.audio_quality.as_deref(),
-        request.codec.as_deref(),
-        request.missing_quality_policy.as_deref(),
-        request.media_preferences.as_ref(),
+        MediaOptionOverrides {
+            media_mode: request.media_mode.as_deref(),
+            quality: request.quality.as_deref(),
+            audio_quality: request.audio_quality.as_deref(),
+            codec: request.codec.as_deref(),
+            missing_quality_policy: request.missing_quality_policy.as_deref(),
+            media_preferences: request.media_preferences.as_ref(),
+        },
         &settings,
     )?;
     let source_id = SourceId(request.source_id);
@@ -653,12 +655,14 @@ fn download_options_from_request(
         .unwrap_or(settings.duplicate_naming_strategy);
     apply_media_options(
         &mut options,
-        request.media_mode.as_deref(),
-        request.quality.as_deref(),
-        request.audio_quality.as_deref(),
-        request.codec.as_deref(),
-        request.missing_quality_policy.as_deref(),
-        request.media_preferences.as_ref(),
+        MediaOptionOverrides {
+            media_mode: request.media_mode.as_deref(),
+            quality: request.quality.as_deref(),
+            audio_quality: request.audio_quality.as_deref(),
+            codec: request.codec.as_deref(),
+            missing_quality_policy: request.missing_quality_policy.as_deref(),
+            media_preferences: request.media_preferences.as_ref(),
+        },
         settings,
     )?;
     options.archive_assets = request.archive_assets.unwrap_or(settings.archive_assets);
@@ -667,25 +671,35 @@ fn download_options_from_request(
     Ok(options)
 }
 
+struct MediaOptionOverrides<'a> {
+    media_mode: Option<&'a str>,
+    quality: Option<&'a str>,
+    audio_quality: Option<&'a str>,
+    codec: Option<&'a str>,
+    missing_quality_policy: Option<&'a str>,
+    media_preferences: Option<&'a bdl_core::media_preferences::MediaPreferences>,
+}
+
 fn apply_media_options(
     options: &mut DownloadOptions,
-    media_mode: Option<&str>,
-    quality: Option<&str>,
-    audio_quality: Option<&str>,
-    codec: Option<&str>,
-    missing_quality_policy: Option<&str>,
-    media_preferences: Option<&bdl_core::media_preferences::MediaPreferences>,
+    overrides: MediaOptionOverrides<'_>,
     settings: &SettingsSnapshot,
 ) -> CommandResult<()> {
-    options.media_mode = DownloadMediaMode::parse(media_mode.unwrap_or("audio_video"))?;
-    options.video_quality = StreamPreference::parse_video(quality.unwrap_or(&settings.quality))?;
-    options.audio_quality =
-        StreamPreference::parse(audio_quality.unwrap_or(&settings.audio_quality), "音频质量")?;
-    options.video_codec = parse_stream_codec(codec.unwrap_or(&settings.codec))?;
-    options.missing_quality_policy = MissingQualityPolicy::parse(
-        missing_quality_policy.unwrap_or(&settings.missing_quality_policy),
+    options.media_mode = DownloadMediaMode::parse(overrides.media_mode.unwrap_or("audio_video"))?;
+    options.video_quality =
+        StreamPreference::parse_video(overrides.quality.unwrap_or(&settings.quality))?;
+    options.audio_quality = StreamPreference::parse(
+        overrides.audio_quality.unwrap_or(&settings.audio_quality),
+        "音频质量",
     )?;
-    options.media_preferences = media_preferences
+    options.video_codec = parse_stream_codec(overrides.codec.unwrap_or(&settings.codec))?;
+    options.missing_quality_policy = MissingQualityPolicy::parse(
+        overrides
+            .missing_quality_policy
+            .unwrap_or(&settings.missing_quality_policy),
+    )?;
+    options.media_preferences = overrides
+        .media_preferences
         .cloned()
         .unwrap_or_else(|| settings.media_preferences.clone());
     options.media_preferences.validate()?;
@@ -727,7 +741,6 @@ pub async fn mobile_prepare_notifications(
     state: State<'_, AppState>,
 ) -> CommandResult<NotificationPermissionState> {
     let backend = state.task_execution();
-    drop(state);
 
     let checker = backend.clone();
     let current =

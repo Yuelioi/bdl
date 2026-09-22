@@ -30,7 +30,7 @@ impl ParsePacer {
         let first = self
             .run_observed(rules, operation(), &page_count, &phase)
             .await;
-        if first.as_ref().is_err_and(|error| is_transient(error)) {
+        if first.as_ref().is_err_and(is_transient) {
             let until = Instant::now() + Duration::from_secs(2);
             phase(Phase::Waiting(until));
             tokio::time::sleep_until(until).await;

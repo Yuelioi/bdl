@@ -27,7 +27,7 @@ fn server(status: &str, body: &str, extra: &str) -> (String, std::thread::JoinHa
             .set_read_timeout(Some(Duration::from_secs(5)))
             .unwrap();
         let mut request = [0; 4096];
-        stream.read(&mut request).unwrap();
+        assert!(stream.read(&mut request).unwrap() > 0);
         let _ = stream.write_all(response.as_bytes());
     });
     (url, handle)
@@ -72,7 +72,7 @@ async fn transient_get_retries_once_and_both_attempts_count() {
                 .set_read_timeout(Some(Duration::from_secs(5)))
                 .unwrap();
             let mut request = [0; 4096];
-            socket.read(&mut request).unwrap();
+            assert!(socket.read(&mut request).unwrap() > 0);
             socket
                 .write_all(
                     format!(

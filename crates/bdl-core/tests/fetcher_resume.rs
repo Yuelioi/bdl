@@ -68,7 +68,7 @@ async fn cli_restriction_mode_stops_before_cdn_fallback_or_retry() {
     let first = tokio::spawn(async move {
         let (mut stream, _) = blocked.accept().await.unwrap();
         let mut request = [0; 4096];
-        stream.read(&mut request).await.unwrap();
+        assert!(stream.read(&mut request).await.unwrap() > 0);
         stream
             .write_all(
                 b"HTTP/1.1 429 Too Many Requests\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
