@@ -11,8 +11,6 @@ const installTauriMock = async (
 ) => {
   await page.addInitScript(
     ({ selectedTheme, environmentReady, accountLoggedIn, taskCreationFails, collectionLoadDelayMs }) => {
-      localStorage.setItem('bdl.theme', selectedTheme);
-      localStorage.setItem('bdl.usage-notice.v1', 'acknowledged');
       let callbackId = 1;
       let pagedFixtureLoaded = 9;
       const pagedFixtureItems = () =>
@@ -57,6 +55,9 @@ const installTauriMock = async (
             if (command === 'settings_get') {
               return {
                 settings_schema_version: 1,
+                usage_notice_acknowledged: true,
+                auto_check_updates: false,
+                theme_preference: selectedTheme,
                 download_dir: 'C:\\Downloads',
                 naming_template: '{title}/P{part_index} - {part_title}.{ext}',
                 quality: 'best',
@@ -1265,3 +1266,58 @@ test('pagination presets save rules and allow custom cooldown', async ({ page },
   expect(await page.evaluate(() => (window as unknown as { __RULES__: unknown }).__RULES__)).toEqual({ pages_per_round: 5, interval_seconds: 1, rest_seconds: 10 });
   await page.screenshot({ path: testInfo.outputPath('pagination-presets.png') });
 });
+
+
+for (const scenario of ['confirmed', 'first-run', 'save-failure'] as const) {
+  test(`native preferences startup without browser preference storage: ${scenario}`, async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    await installTauriMock(page, 'dark');
+    await page.addInitScript(({ scenario }) => {
+      // Vite's Vue devtools use their own storage at import time. Deny all BDL
+      // preferences while leaving development-only tooling outside this test.
+      const getItem = Storage.prototype.getItem;
+      const setItem = Storage.prototype.setItem;
+      Storage.prototype.getItem = function (key) {
+        if (key.startsWith('bdl.')) throw new DOMException('Storage denied', 'SecurityError');
+        return getItem.call(this, key);
+      };
+      Storage.prototype.setItem = function (key, value) {
+        if (key.startsWith('bdl.')) throw new DOMException('Storage denied', 'SecurityError');
+        return setItem.call(this, key, value);
+      };
+      const target = window as unknown as {
+        __TAURI_INTERNALS__: { invoke: (command: string, args?: { settings?: unknown }) => Promise<unknown> };
+        __SAVED_PREFERENCES__?: unknown;
+      };
+      const invoke = target.__TAURI_INTERNALS__.invoke;
+      target.__TAURI_INTERNALS__.invoke = async (command, args) => {
+        if (command === 'settings_get') {
+          return { ...await invoke(command) as object, usage_notice_acknowledged: scenario === 'confirmed' };
+        }
+        if (command === 'settings_update') {
+          if (scenario === 'save-failure') throw new Error('Settings are read only');
+          target.__SAVED_PREFERENCES__ = args?.settings;
+          return args?.settings;
+        }
+        return invoke(command, args);
+      };
+    }, { scenario });
+    await page.goto('/');
+    await expect(page.locator('.nav-item')).toHaveCount(5);
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+    if (scenario !== 'confirmed') {
+      await page.getByRole('button', { name: '我已阅读并了解，继续使用' }).click();
+      await expect(page.getByRole('dialog', { name: '使用前请阅读' })).toBeHidden();
+      if (scenario === 'first-run') {
+        await expect.poll(() => page.evaluate(() => (window as unknown as { __SAVED_PREFERENCES__?: { usage_notice_acknowledged: boolean } }).__SAVED_PREFERENCES__?.usage_notice_acknowledged)).toBe(true);
+      } else {
+        await expect(page.getByText('设置保存失败：Settings are read only')).toBeVisible();
+      }
+    } else {
+      await expect(page.getByRole('dialog', { name: '使用前请阅读' })).toHaveCount(0);
+    }
+    await expect(page.locator('.main-region')).toHaveAttribute('data-page', 'parse');
+    expect(errors).toEqual([]);
+  });
+}

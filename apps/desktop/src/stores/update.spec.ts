@@ -1,3 +1,6 @@
+import { useSettingsStore } from './settings'
+import { settingsUpdate } from '../api/tauri'
+vi.mock('../api/tauri', () => ({ settingsUpdate: vi.fn() }))
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -12,7 +15,9 @@ import { useUpdateStore } from './update'
 describe('update preferences', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
-    localStorage.clear()
+    const settings = useSettingsStore()
+    settings.loaded = true
+    vi.mocked(settingsUpdate).mockImplementation(async (value) => value)
     check.mockReset().mockResolvedValue(null)
     relaunch.mockReset()
   })
@@ -26,7 +31,7 @@ describe('update preferences', () => {
   })
 
   it('keeps version reporting but disables updater commands on unsupported platforms', async () => {
-    localStorage.setItem('bdl.update.auto-check', 'true')
+    useSettingsStore().saved.auto_check_updates = true
     const update = useUpdateStore()
     await update.initialize(false)
 
@@ -38,14 +43,14 @@ describe('update preferences', () => {
 
   it('persists and immediately enables automatic checks', async () => {
     const update = useUpdateStore()
-    update.setAutoCheck(true)
+    await update.setAutoCheck(true)
     await vi.waitFor(() => expect(check).toHaveBeenCalledOnce())
-    expect(localStorage.getItem('bdl.update.auto-check')).toBe('true')
+    expect(useSettingsStore().saved.auto_check_updates).toBe(true)
   })
 
   it('keeps silent startup failures out of the interface', async () => {
     check.mockRejectedValue(new Error('offline'))
-    localStorage.setItem('bdl.update.auto-check', 'true')
+    useSettingsStore().saved.auto_check_updates = true
     const update = useUpdateStore()
     await update.initialize()
     await vi.waitFor(() => expect(update.checking).toBe(false))

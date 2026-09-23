@@ -61,6 +61,13 @@ pub struct CommandError {
 
 impl From<BdlError> for CommandError {
     fn from(error: BdlError) -> Self {
+        if matches!(&error, BdlError::Bpi(_)) {
+            tracing::warn!(
+                code = command_error_code(&error),
+                detail = %bdl_core::account::redact_sensitive(&error.to_string()),
+                "Bilibili operation failed"
+            );
+        }
         Self {
             code: command_error_code(&error).to_owned(),
             message: command_error_message(&error).unwrap_or_else(|| error.to_string()),
@@ -90,6 +97,10 @@ fn command_error_code(error: &BdlError) -> &'static str {
         BdlError::Fetch { message } | BdlError::Bpi(message) if is_login_expired_error(message) => {
             "login_required"
         }
+        BdlError::Bpi(message) if message.contains("failed to decode response") => {
+            "bilibili_response_decode_failed"
+        }
+        BdlError::Bpi(_) => "bilibili_api_error",
         _ => "core_error",
     }
 }
@@ -121,6 +132,10 @@ fn command_error_message(error: &BdlError) -> Option<String> {
         BdlError::Fetch { message } | BdlError::Bpi(message) if is_login_expired_error(message) => {
             Some("登录状态可能已失效，请重新登录后重试。".to_owned())
         }
+        BdlError::Bpi(message) if message.contains("failed to decode response") => Some(
+            "解析失败，返回的数据暂时无法解析。请稍后重试；如果持续失败，请反馈问题。".to_owned(),
+        ),
+        BdlError::Bpi(_) => Some("操作失败，暂时无法获取 Bilibili 数据，请稍后重试。".to_owned()),
         _ => None,
     }
 }
@@ -1051,14 +1066,15 @@ async fn refresh_urls_and_retry(
 ) -> CommandResult<DownloadTask> {
     emit_queue_log(&app, state, task_id, QueueLogLevel::Info, "刷新下载地址")?;
     if let Err(error) = state.refresh_task_media_urls(task_id).await {
+        let error = CommandError::from(error);
         emit_queue_log(
             &app,
             state,
             task_id,
             QueueLogLevel::Error,
-            &format!("刷新下载地址失败：{error}"),
+            &format!("刷新下载地址失败：{}", error.message),
         )?;
-        return Err(error.into());
+        return Err(error);
     }
 
     retry_task(app, state, task_id)
@@ -2591,6 +2607,31 @@ mod tests {
         assert_eq!(task.resources[0].headers[0].value, "<redacted>");
         assert_eq!(task.resources[0].headers[1].value, "<redacted>");
         assert!(!log.message.contains("secret-token"));
+    }
+
+    #[test]
+    fn command_error_hides_response_decode_details() {
+        for detail in [
+            "failed to decode response (Data) at line 1 column 15164",
+            "failed to decode response: missing field `data` at line 1 column 42",
+        ] {
+            let error = super::CommandError::from(BdlError::Bpi(detail.to_owned()));
+            assert_eq!(error.code, "bilibili_response_decode_failed");
+            assert!(error.message.contains("暂时无法解析"));
+            assert!(!error.message.contains("bpi error"));
+            assert!(!error.message.contains("column"));
+            assert!(!error.message.contains("missing field"));
+        }
+    }
+
+    #[test]
+    fn command_error_hides_unknown_bpi_failures() {
+        let error = super::CommandError::from(BdlError::Bpi(
+            "video view cache lock poisoned".to_owned(),
+        ));
+        assert_eq!(error.code, "bilibili_api_error");
+        assert!(error.message.contains("操作失败"));
+        assert!(!error.message.contains("lock poisoned"));
     }
 
     #[test]

@@ -261,20 +261,27 @@ const invokeCommand = async <T>(command: string, args?: Record<string, unknown>)
   try {
     return await invoke<T>(command, args)
   } catch (error) {
-    throw normalizeCommandError(error)
+    throw normalizeCommandError(error, command)
   }
 }
 
-const normalizeCommandError = (error: unknown): BdlCommandError => {
-  if (isCommandErrorShape(error)) {
-    return new BdlCommandError(error)
+const normalizeCommandError = (error: unknown, command: string): BdlCommandError => {
+  const normalized = isCommandErrorShape(error)
+    ? error
+    : { code: 'frontend_error', message: error instanceof Error ? error.message : String(error) }
+  const internalBpiError = ['bilibili_response_decode_failed', 'bilibili_api_error'].includes(normalized.code)
+    || /bpi error:|failed to decode response/i.test(normalized.message)
+  if (internalBpiError) {
+    const action = command.startsWith('parse_') || command.startsWith('selection_')
+      ? '解析失败'
+      : command === 'account_library_list'
+        ? '收藏夹加载失败'
+        : command.startsWith('queue_')
+          ? '下载操作失败'
+          : '操作失败'
+    return new BdlCommandError({ code: normalized.code, message: `${action}，请稍后重试；如果持续失败，请反馈问题。` })
   }
-
-  if (error instanceof Error) {
-    return new BdlCommandError({ code: 'frontend_error', message: error.message })
-  }
-
-  return new BdlCommandError({ code: 'frontend_error', message: String(error) })
+  return new BdlCommandError(normalized)
 }
 
 const isCommandErrorShape = (value: unknown): value is CommandErrorShape => {

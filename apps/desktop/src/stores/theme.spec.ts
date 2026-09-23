@@ -1,3 +1,6 @@
+import { useSettingsStore } from './settings'
+import { settingsUpdate } from '../api/tauri'
+vi.mock('../api/tauri', () => ({ settingsUpdate: vi.fn() }))
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -6,7 +9,9 @@ import { parseThemePreference, resolveEffectiveTheme, useThemeStore } from './th
 describe('theme preference', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
-    localStorage.clear()
+    const settings = useSettingsStore()
+    settings.loaded = true
+    vi.mocked(settingsUpdate).mockImplementation(async (value) => value)
     document.documentElement.classList.remove('dark')
     delete document.documentElement.dataset.theme
   })
@@ -29,12 +34,12 @@ describe('theme preference', () => {
     expect(parseThemePreference('sepia')).toBe('system')
   })
 
-  it('persists and applies an explicit dark preference', () => {
+  it('persists and applies an explicit dark preference', async () => {
     const theme = useThemeStore()
 
     theme.setPreference('dark')
 
-    expect(localStorage.getItem('bdl.theme')).toBe('dark')
+    await vi.waitFor(() => expect(useSettingsStore().saved.theme_preference).toBe('dark'))
     expect(document.documentElement.dataset.theme).toBe('dark')
     expect(document.documentElement.classList.contains('dark')).toBe(true)
   })

@@ -6,16 +6,7 @@
     <meta name="theme-color" content="#f1f5f2" />
     <script>
       (() => {
-        let stored = null
-        try {
-          stored = localStorage.getItem('bdl.theme')
-        } catch {
-          // Storage may be unavailable in restricted webviews.
-        }
-        const preference = stored === 'light' || stored === 'dark' ? stored : 'system'
-        const theme = preference === 'system'
-          ? (typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
-          : preference
+        const theme = typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
         document.documentElement.dataset.theme = theme
         document.documentElement.classList.toggle('dark', theme === 'dark')
         document.documentElement.style.colorScheme = theme

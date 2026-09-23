@@ -33,6 +33,7 @@ const jump = () => {
 <template>
   <nav class="ui-pagination" :aria-label="label">
     <UPagination
+      class="page-buttons"
       :page
       :total
       :items-per-page="itemsPerPage"
@@ -41,13 +42,12 @@ const jump = () => {
       show-edges
       size="xs"
       color="neutral"
-      variant="ghost"
+      variant="outline"
       active-color="primary"
-      active-variant="soft"
+      active-variant="solid"
       @update:page="emit('update:page', $event)"
     />
     <form class="page-jump" @submit.prevent="jump">
-      <span>跳至</span>
       <input
         v-model="targetPage"
         class="ui-native-control page-jump-input"
@@ -57,7 +57,6 @@ const jump = () => {
         :title="`输入 1–${pageCount} 页，按回车跳转`"
         :disabled
       />
-      <span>页</span>
       <UiButton type="submit" size="compact" variant="secondary" :disabled="disabled || !validTarget">跳转</UiButton>
     </form>
   </nav>
@@ -76,20 +75,41 @@ const jump = () => {
 }
 
 .page-jump {
+  gap: 0;
   color: var(--color-muted);
   font-size: var(--font-12);
 }
 
 .page-jump-input {
-  width: 58px;
+  width: 44px;
+  height: 28px;
   min-height: 28px;
+  border-start-end-radius: 0;
+  border-end-end-radius: 0;
+  background: var(--ui-bg);
   padding: var(--space-4) var(--space-6);
   text-align: center;
 }
 
+.page-jump :deep(.ui-button) {
+  margin-inline-start: -1px;
+  border-start-start-radius: 0;
+  border-end-start-radius: 0;
+}
+
+.page-buttons :deep(button) {
+  min-width: 28px;
+  height: 28px;
+  justify-content: center;
+  background: var(--ui-bg);
+}
+
+.page-buttons :deep(button:hover:not(:disabled, [aria-current='page'])) {
+  background: var(--color-hover-surface);
+}
+
 .ui-pagination :deep([aria-current='page']) {
-  color: #fff;
-  background: #ef5b7d;
+  color: var(--color-on-accent);
   background: var(--color-accent);
 }
 </style>

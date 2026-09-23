@@ -48,8 +48,7 @@ const environmentDialogOpen = computed({
   },
 })
 const startupRecoveryDialogOpen = ref(false)
-const usageNoticeStorageKey = 'bdl.usage-notice.v1'
-const usageNoticeOpen = ref(window.localStorage.getItem(usageNoticeStorageKey) !== 'acknowledged')
+const usageNoticeOpen = ref(false)
 const startupRecoveryPending = ref(false)
 const loginMode = ref<'qr' | 'cookie'>('qr')
 const cookieText = ref('')
@@ -151,7 +150,7 @@ const openUsageNoticeLink = async (url: string) => {
 }
 
 const acknowledgeUsageNotice = () => {
-  window.localStorage.setItem(usageNoticeStorageKey, 'acknowledged')
+  void settings.saveAppPreferences({ usage_notice_acknowledged: true })
   usageNoticeOpen.value = false
   void prepareMobileNotifications()
   if (startupRecoveryPending.value) {
@@ -261,6 +260,10 @@ const prepareMobileNotifications = async () => {
 }
 
 const initializeApp = async () => {
+  await settings.ensureLoaded()
+  theme.restorePreference()
+  usageNoticeOpen.value = !settings.saved.usage_notice_acknowledged
+  if (!usageNoticeOpen.value) void prepareMobileNotifications()
   await settings.initializeEnvironment()
 
   await updater.initialize(!isMobile)
@@ -317,7 +320,6 @@ const preventNativeContextMenu = (event: MouseEvent) => {
 
 onMounted(() => {
   void initializeApp()
-  if (!usageNoticeOpen.value) void prepareMobileNotifications()
   window.addEventListener('keydown', handleAppShortcut)
   document.addEventListener('contextmenu', preventNativeContextMenu)
 })

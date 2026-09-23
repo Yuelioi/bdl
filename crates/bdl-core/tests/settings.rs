@@ -34,6 +34,9 @@ fn settings_missing_fields_recursively_use_current_defaults() {
 fn settings_partial_config_preserves_choices_through_save_and_reload() {
     let saved = serde_json::json!({
         "download_dir": "D:/Videos",
+        "usage_notice_acknowledged": true,
+        "auto_check_updates": true,
+        "theme_preference": "dark",
         "naming_template": "{title}.{ext}",
         "quality": "80", "codec": "hevc", "audio_quality": "30280",
         "retry_count": 0, "segment_count": 1,

@@ -154,7 +154,6 @@ const hasSecondaryAction = (view: TransferTaskView, action: Exclude<TaskActionKi
               </div>
 
               <div v-if="mode === 'completed'" class="mobile-card-location" :title="view.fullLocation">
-                <UIcon name="i-tabler-folder" aria-hidden="true" />
                 <span>{{ view.fullLocation }}</span>
               </div>
               <template v-else>
@@ -229,7 +228,6 @@ const hasSecondaryAction = (view: TransferTaskView, action: Exclude<TaskActionKi
           </span>
 
           <span v-if="mode === 'completed'" class="location-cell" role="cell" :title="view.fullLocation">
-            <UIcon name="i-tabler-folder" aria-hidden="true" />
             <span>{{ view.fullLocation }}</span>
           </span>
           <template v-else>
@@ -428,11 +426,6 @@ const hasSecondaryAction = (view: TransferTaskView, action: Exclude<TaskActionKi
   white-space: nowrap;
 }
 
-.location-cell svg {
-  width: 15px;
-  height: 15px;
-  flex: 0 0 auto;
-}
 
 .location-cell > span:last-child {
   min-width: 0;
@@ -567,13 +560,8 @@ const hasSecondaryAction = (view: TransferTaskView, action: Exclude<TaskActionKi
   font-size: var(--font-12);
 }
 
-.mobile-card-location svg {
-  width: 16px;
-  height: 16px;
-  flex: 0 0 auto;
-}
 
-.mobile-card-location span {
+.mobile-card-location > span:last-child {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;

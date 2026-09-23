@@ -84,11 +84,10 @@ const handleRowKeydown = (event: KeyboardEvent, rowId: string) => {
 .parse-result-table {
   min-width: 0;
   min-height: 0;
-  display: grid;
-  grid-template-rows: 34px minmax(0, 1fr);
+  display: block;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-6);
-  overflow: hidden;
+  overflow: auto;
 }
 
 .parse-result-table-header,
@@ -102,6 +101,10 @@ const handleRowKeydown = (event: KeyboardEvent, rowId: string) => {
 }
 
 .parse-result-table-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  min-height: 34px;
   color: var(--color-muted);
   background: var(--color-panel);
   font-size: var(--font-12);
@@ -110,9 +113,6 @@ const handleRowKeydown = (event: KeyboardEvent, rowId: string) => {
 
 .parse-result-table-body {
   min-height: 0;
-  overflow-y: auto;
-  padding-inline-end: var(--space-xs);
-  scrollbar-gutter: stable;
 }
 
 .parse-result-table-row {
@@ -187,11 +187,6 @@ const handleRowKeydown = (event: KeyboardEvent, rowId: string) => {
 }
 
 @media (width <= 700px) {
-  .parse-result-table-body {
-    padding-inline-end: 0;
-    scrollbar-gutter: auto;
-  }
-
   .parse-result-table-header,
   .parse-result-table-row {
     grid-template-columns: 32px 38px minmax(0, 1fr);

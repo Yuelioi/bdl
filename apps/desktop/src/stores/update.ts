@@ -4,7 +4,7 @@ import { check, type Update } from '@tauri-apps/plugin-updater'
 import { defineStore } from 'pinia'
 import { markRaw } from 'vue'
 
-const AUTO_CHECK_KEY = 'bdl.update.auto-check'
+import { useSettingsStore } from './settings'
 
 export const useUpdateStore = defineStore('update', {
   state: () => ({
@@ -26,7 +26,9 @@ export const useUpdateStore = defineStore('update', {
   actions: {
     async initialize(supported = true) {
       this.supported = supported
-      this.autoCheck = supported && localStorage.getItem(AUTO_CHECK_KEY) === 'true'
+      const settings = useSettingsStore()
+      await settings.ensureLoaded()
+      this.autoCheck = supported && settings.saved.auto_check_updates
       try {
         this.currentVersion = await getVersion()
       } catch {
@@ -34,10 +36,10 @@ export const useUpdateStore = defineStore('update', {
       }
       if (this.autoCheck) void this.checkForUpdate(true)
     },
-    setAutoCheck(value: boolean) {
+    async setAutoCheck(value: boolean) {
       if (!this.supported) return
+      if (!await useSettingsStore().saveAppPreferences({ auto_check_updates: value })) return
       this.autoCheck = value
-      localStorage.setItem(AUTO_CHECK_KEY, String(value))
       if (value) void this.checkForUpdate(true)
     },
     async checkForUpdate(silent = false) {

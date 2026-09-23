@@ -257,6 +257,9 @@ export interface MediaPreferences {
 
 export interface SettingsSnapshot {
   settings_schema_version: number
+  usage_notice_acknowledged: boolean
+  auto_check_updates: boolean
+  theme_preference: 'system' | 'light' | 'dark'
   parse_rules: ParseRules
   download_dir: string | null
   document_tree_output: DocumentTreeDirectory | null

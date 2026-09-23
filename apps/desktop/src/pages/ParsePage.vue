@@ -267,7 +267,7 @@ const runNoticeAction = () => {
   min-width: 0;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
   gap: var(--space-md);
 }
 

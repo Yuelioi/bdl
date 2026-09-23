@@ -281,3 +281,53 @@ it('expands legacy unrestricted video rules into the default concrete quality or
   expect(preferences.video.every((rule) => rule.codec === 'hevc')).toBe(true)
   expect(legacy.video[0].quality).toBe('best')
 })
+
+
+describe('native app preferences', () => {
+  beforeEach(() => {
+    vi.resetAllMocks()
+    setActivePinia(createPinia())
+  })
+  it('serializes preference writes without saving unrelated drafts', async () => {
+    const store = useSettingsStore()
+    store.loaded = true
+    store.draft.download_dir = 'unsaved-directory'
+    mockedSettingsUpdate.mockImplementation(async (value) => value)
+    await Promise.all([
+      store.saveAppPreferences({ usage_notice_acknowledged: true }),
+      store.saveAppPreferences({ theme_preference: 'dark' }),
+      store.saveAppPreferences({ auto_check_updates: true }),
+    ])
+    expect(store.saved).toMatchObject({ usage_notice_acknowledged: true, theme_preference: 'dark', auto_check_updates: true, download_dir: null })
+    expect(store.draft.download_dir).toBe('unsaved-directory')
+    expect(store.draft.usage_notice_acknowledged).toBe(true)
+  })
+  it('keeps preferences when the settings form saves concurrently', async () => {
+    const store = useSettingsStore()
+    store.loaded = true
+    store.draft.download_dir = 'D:/Videos'
+    mockedSettingsUpdate.mockImplementation(async (value) => value)
+    mockedEnvironmentHealth.mockResolvedValue(healthSnapshot('D:/Videos', 'ready'))
+    await Promise.all([
+      store.saveAppPreferences({ usage_notice_acknowledged: true }),
+      store.save(),
+      store.saveAppPreferences({ theme_preference: 'dark' }),
+    ])
+    expect(store.saved).toMatchObject({ usage_notice_acknowledged: true, theme_preference: 'dark', download_dir: 'D:/Videos' })
+    expect(store.draft).toEqual(store.saved)
+  })
+  it('does not overwrite unread settings with defaults', async () => {
+    mockedSettingsGet.mockRejectedValue(new Error('unavailable'))
+    expect(await useSettingsStore().saveAppPreferences({ usage_notice_acknowledged: true })).toBe(false)
+    expect(mockedSettingsUpdate).not.toHaveBeenCalled()
+  })
+  it('handles a failed write and permits retry', async () => {
+    const store = useSettingsStore()
+    store.loaded = true
+    mockedSettingsUpdate.mockRejectedValueOnce(new Error('read only'))
+    expect(await store.saveAppPreferences({ usage_notice_acknowledged: true })).toBe(false)
+    expect(store.saved.usage_notice_acknowledged).toBe(false)
+    mockedSettingsUpdate.mockImplementation(async (value) => value)
+    expect(await store.saveAppPreferences({ usage_notice_acknowledged: true })).toBe(true)
+  })
+})

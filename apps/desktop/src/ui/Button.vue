@@ -14,7 +14,7 @@ const uiVariant = computed(() => {
     return 'solid'
   }
 
-  return variant === 'secondary' ? 'outline' : 'ghost'
+  return variant === 'secondary' ? 'soft' : 'ghost'
 })
 const toneClass = computed(() => `variant-${variant}`)
 const sizeClass = computed(() => `size-${size}`)
@@ -49,7 +49,7 @@ const sizeClass = computed(() => `size-${size}`)
 .ui-button.variant-secondary {
   border: 1px solid var(--color-border);
   color: var(--color-text);
-  background: var(--color-panel);
+  background: var(--ui-bg);
 }
 
 .ui-button.variant-ghost {
@@ -58,7 +58,7 @@ const sizeClass = computed(() => `size-${size}`)
 
 .ui-button.variant-secondary:hover:not(:disabled),
 .ui-button.variant-ghost:hover:not(:disabled) {
-  background: var(--color-panel-strong);
+  background: var(--color-hover-surface);
 }
 
 .ui-button.variant-secondary:hover:not(:disabled) {

@@ -3,7 +3,7 @@ import { defineStore } from 'pinia'
 export type ThemePreference = 'system' | 'light' | 'dark'
 export type EffectiveTheme = Exclude<ThemePreference, 'system'>
 
-const THEME_STORAGE_KEY = 'bdl.theme'
+import { useSettingsStore } from './settings'
 
 type SystemThemeSubscription = {
   query: MediaQueryList
@@ -35,9 +35,9 @@ export const useThemeStore = defineStore('theme', {
     },
     preferenceLabel(state): string {
       const labels: Record<ThemePreference, string> = {
-        system: '跟随系统',
-        light: '浅色',
-        dark: '深色',
+        system: '璺熼殢绯荤粺',
+        light: '娴呰壊',
+        dark: '娣辫壊',
       }
       return labels[state.preference]
     },
@@ -53,7 +53,7 @@ export const useThemeStore = defineStore('theme', {
         ? window.matchMedia('(prefers-color-scheme: dark)')
         : null
       this.systemDark = systemThemeQuery?.matches ?? false
-      this.preference = readPersistedTheme()
+      this.preference = parseThemePreference(useSettingsStore().saved.theme_preference)
       this.apply()
 
       if (systemThemeQuery) {
@@ -77,9 +77,13 @@ export const useThemeStore = defineStore('theme', {
       }
       this.initialized = false
     },
+    restorePreference() {
+      this.preference = parseThemePreference(useSettingsStore().saved.theme_preference)
+      this.apply()
+    },
     setPreference(preference: ThemePreference) {
       this.preference = preference
-      persistTheme(preference)
+      void useSettingsStore().saveAppPreferences({ theme_preference: preference })
       this.apply()
     },
     apply() {
@@ -94,19 +98,3 @@ export const useThemeStore = defineStore('theme', {
     },
   },
 })
-
-const readPersistedTheme = (): ThemePreference => {
-  try {
-    return parseThemePreference(window.localStorage.getItem(THEME_STORAGE_KEY))
-  } catch {
-    return 'system'
-  }
-}
-
-const persistTheme = (preference: ThemePreference) => {
-  try {
-    window.localStorage.setItem(THEME_STORAGE_KEY, preference)
-  } catch {
-    // The active theme still applies for this session when storage is unavailable.
-  }
-}

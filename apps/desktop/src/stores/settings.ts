@@ -56,6 +56,9 @@ export const namingVariables = [
 
 const defaultSettings = (): SettingsSnapshot => ({
   settings_schema_version: 1,
+  usage_notice_acknowledged: false,
+  auto_check_updates: false,
+  theme_preference: 'system',
   parse_rules: { pages_per_round: 3, interval_seconds: 1, rest_seconds: 3 },
   download_dir: null,
   document_tree_output: null,
@@ -129,6 +132,15 @@ interface EnvironmentCheckOverrides {
   ffmpegPath?: string | null
 }
 
+type AppPreferences = Pick<SettingsSnapshot, 'usage_notice_acknowledged' | 'auto_check_updates' | 'theme_preference'>
+const settingsWrites = new WeakMap<object, Promise<unknown>>()
+const enqueueSettingsWrite = <T>(store: object, write: () => Promise<T>): Promise<T> => {
+  const pending = (settingsWrites.get(store) ?? Promise.resolve()).then(write)
+  settingsWrites.set(store, pending.catch(() => undefined))
+  return pending
+}
+const settingsLoads = new WeakMap<object, Promise<void>>()
+
 export const useSettingsStore = defineStore('settings', {
   state: (): SettingsState => ({
     saved: defaultSettings(),
@@ -160,11 +172,16 @@ export const useSettingsStore = defineStore('settings', {
   },
   actions: {
     async ensureLoaded() {
-      if (this.loaded || this.loading) {
-        return
+      if (this.loaded) return
+      const pending = settingsLoads.get(this)
+      if (pending) return pending
+      const loading = this.load()
+      settingsLoads.set(this, loading)
+      try {
+        await loading
+      } finally {
+        settingsLoads.delete(this)
       }
-
-      await this.load()
     },
     async initializeEnvironment(): Promise<EnvironmentHealthSnapshot | null> {
       if (this.environmentInitialized) {
@@ -211,7 +228,28 @@ export const useSettingsStore = defineStore('settings', {
         this.loading = false
       }
     },
-    async save() {
+    saveAppPreferences(patch: Partial<AppPreferences>): Promise<boolean> {
+      return enqueueSettingsWrite(this, async () => {
+        await this.ensureLoaded()
+        if (!this.loaded) {
+          useUiStore().pushToast('设置未能读取，本次偏好无法保存。', 'warning')
+          return false
+        }
+        try {
+          const updated = normalizeSettings(await settingsUpdate({ ...cloneSettings(this.saved), ...patch }))
+          this.saved = cloneSettings(updated)
+          Object.assign(this.draft, patch)
+          return true
+        } catch (error) {
+          useUiStore().pushToast(`设置保存失败：${errorMessage(error)}`, 'warning')
+          return false
+        }
+      })
+    },
+    save() {
+      return enqueueSettingsWrite(this, () => this.saveDraft())
+    },
+    async saveDraft() {
       const ui = useUiStore()
       const namingError = validateNamingTemplate(this.draft.naming_template)
       const compatibilityError = embeddingContainerError(this.draft)
@@ -266,7 +304,10 @@ export const useSettingsStore = defineStore('settings', {
         return false
       }
     },
-    async saveDefaultDocumentTreeOutput(directory: DocumentTreeDirectory): Promise<boolean> {
+    saveDefaultDocumentTreeOutput(directory: DocumentTreeDirectory): Promise<boolean> {
+      return enqueueSettingsWrite(this, () => this.persistDefaultDocumentTreeOutput(directory))
+    },
+    async persistDefaultDocumentTreeOutput(directory: DocumentTreeDirectory): Promise<boolean> {
       const ui = useUiStore()
       const previousSaved = this.saved.document_tree_output
       const draftFollowedSaved = JSON.stringify(this.draft.document_tree_output) === JSON.stringify(previousSaved)

@@ -47,7 +47,7 @@ const sizeClass = computed(() => `size-${props.size}`)
 
 <template>
   <UButton
-    :class="['ui-icon-button', sizeClass]"
+    :class="['ui-icon-button', sizeClass, `variant-${props.variant}`]"
     square
     size="xs"
     :type="props.type"
@@ -71,6 +71,14 @@ const sizeClass = computed(() => `size-${props.size}`)
   place-items: center;
   padding: 0;
   line-height: 1;
+}
+
+.ui-icon-button.variant-secondary {
+  background: var(--ui-bg);
+}
+
+.ui-icon-button.variant-secondary:hover:not(:disabled) {
+  background: var(--color-hover-surface);
 }
 
 .ui-icon-button :deep(svg) {

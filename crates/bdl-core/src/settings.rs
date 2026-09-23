@@ -60,6 +60,9 @@ pub struct DocumentTreeDirectory {
 #[serde(default)]
 pub struct AppSettings {
     pub settings_schema_version: u16,
+    pub usage_notice_acknowledged: bool,
+    pub auto_check_updates: bool,
+    pub theme_preference: String,
     pub download_dir: Option<String>,
     pub document_tree_output: Option<DocumentTreeDirectory>,
     pub parse_rules: ParseRules,
@@ -93,6 +96,9 @@ impl Default for AppSettings {
     fn default() -> Self {
         Self {
             settings_schema_version: 1,
+            usage_notice_acknowledged: false,
+            auto_check_updates: false,
+            theme_preference: "system".to_owned(),
             download_dir: None,
             document_tree_output: None,
             parse_rules: ParseRules::default(),

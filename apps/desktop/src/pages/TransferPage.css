@@ -14,7 +14,7 @@
 .transfer-list-tools {
   min-width: 0;
   display: grid;
-  grid-template-columns: minmax(220px, 420px) minmax(150px, 190px);
+  grid-template-columns: minmax(0, 1fr) 190px;
   align-items: end;
   gap: var(--space-12);
 }
@@ -130,7 +130,7 @@
   }
 }
 
-@media (max-width: 980px) {
+@media (max-width: 620px) {
   .transfer-list-tools {
     grid-template-columns: minmax(0, 1fr);
   }

@@ -256,7 +256,10 @@ async fn handle_download_outcome(
                             state,
                             &task.id,
                             QueueLogLevel::Error,
-                            &format!("自动刷新过期链接失败：{refresh_error}"),
+                            &format!(
+                                "自动刷新过期链接失败：{}",
+                                crate::commands::CommandError::from(refresh_error).message
+                            ),
                         )?;
                     }
                 }
