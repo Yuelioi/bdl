@@ -1158,7 +1158,9 @@ impl AppState {
     }
 
     async fn append_next_page_unpaced(&self, tree: &mut NormalizedSourceTree) -> BdlResult<()> {
-        let page = self.resolve_source_page(tree, next_page_request(tree)?).await?;
+        let page = self
+            .resolve_source_page(tree, next_page_request(tree)?)
+            .await?;
         append_source_page(tree, page)
     }
 

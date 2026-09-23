@@ -2626,9 +2626,8 @@ mod tests {
 
     #[test]
     fn command_error_hides_unknown_bpi_failures() {
-        let error = super::CommandError::from(BdlError::Bpi(
-            "video view cache lock poisoned".to_owned(),
-        ));
+        let error =
+            super::CommandError::from(BdlError::Bpi("video view cache lock poisoned".to_owned()));
         assert_eq!(error.code, "bilibili_api_error");
         assert!(error.message.contains("操作失败"));
         assert!(!error.message.contains("lock poisoned"));
