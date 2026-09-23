@@ -48,6 +48,20 @@ export const extractBilibiliInputs = (text: string): string[] => {
   return Array.from(new Set(candidates.map((candidate) => candidate.value)))
 }
 
+export const isSingleVideoInput = (input: string): boolean => {
+  const value = input.trim()
+  if (/^(BV[0-9A-Za-z]{10}|av\d+)$/i.test(value)) return true
+  try {
+    const url = new URL(value)
+    if (!['http:', 'https:'].includes(url.protocol)) return false
+    if (['b23.tv', 'www.b23.tv'].includes(url.hostname)) return url.pathname.length > 1
+    return ['bilibili.com', 'www.bilibili.com', 'm.bilibili.com'].includes(url.hostname)
+      && /^\/video\/(BV[0-9A-Za-z]{10}|av\d+)\/?$/i.test(url.pathname)
+  } catch {
+    return false
+  }
+}
+
 export const bilibiliUserUrl = (mid: string | number | null | undefined): string | null => {
   const value = String(mid ?? '').trim()
   return /^\d+$/.test(value) ? `https://space.bilibili.com/${value}` : null

@@ -186,6 +186,29 @@ pub(crate) fn append_source_page(
     Ok(())
 }
 
+/// Cache a browsed page without moving the sequential parsing cursor past gaps.
+pub(crate) fn merge_browsed_page(
+    existing: &mut NormalizedSourceTree,
+    page: NormalizedSourceTree,
+) -> BdlResult<()> {
+    let cursors = existing
+        .groups
+        .iter()
+        .map(|group| group.page.clone())
+        .collect::<Vec<_>>();
+    let has_more = existing.source.has_more;
+    append_source_page(existing, page)?;
+    for (group, cursor) in existing.groups.iter_mut().zip(cursors) {
+        group.page = cursor.map(|mut cursor| {
+            cursor.loaded_count = group.items.len();
+            cursor.total_count = existing.source.total_count;
+            cursor
+        });
+    }
+    existing.source.has_more = has_more;
+    Ok(())
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct PartHydrationRequest {
     pub(crate) part_id: PartId,

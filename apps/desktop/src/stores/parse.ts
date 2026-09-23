@@ -16,12 +16,14 @@ import {
   parseCloseSource,
   parseCreateSource,
   parseLoadMore,
+  parseLoadPage,
   parseCancel,
   selectionCreateTasks,
   selectionEstimateSize,
 } from '../api/tauri'
 import { useQueueStore } from './queue'
 import { useSettingsStore } from './settings'
+import { isSingleVideoInput } from '../utils/bilibiliLinks'
 import type { InlineNotice, NoticeTone } from './feedback'
 import { NOTICE_CLEAR_DELAY } from './feedback'
 import { buildBatchSelectionBySource, selectedBatchSourceIds, toggleBatchEntrySelection } from './parseBatch'
@@ -172,11 +174,16 @@ export const useParseStore = defineStore('parse', {
         this.noticeTimer = null
       }
     },
-    async createSource(input?: string): Promise<boolean> {
+    async createSource(input?: string, options: { singleVideo?: boolean } = {}): Promise<boolean> {
       const inputs = splitParseInputs(input ?? this.input)
 
       if (inputs.length === 0) {
         this.setNotice('请输入链接或 BV/AV', 'warning')
+        return false
+      }
+
+      if (options.singleVideo && (inputs.length !== 1 || !isSingleVideoInput(inputs[0]))) {
+        this.setNotice('请输入一个视频链接或 BV / AV；合集、收藏夹等来源请切换到批量解析。', 'warning')
         return false
       }
 
@@ -193,7 +200,7 @@ export const useParseStore = defineStore('parse', {
             const tree = await parseCreateSource({
               input: sourceInput,
               fetch_streams: false,
-              expand_video_collection: !batch,
+              expand_video_collection: !batch && !options.singleVideo,
             })
             return { input: sourceInput, tree, error: null }
           } catch (error) {
@@ -204,8 +211,8 @@ export const useParseStore = defineStore('parse', {
         const validOutcomes: Array<(typeof outcomes)[number] & { tree: NormalizedSourceTree }> = []
         for (const outcome of outcomes) {
           if (!outcome.tree) continue
-          if (batch && outcome.tree.source.kind !== 'video') {
-            failures.push({ ...outcome, tree: null, error: '批量模式只支持视频链接' })
+          if ((batch || options.singleVideo) && outcome.tree.source.kind !== 'video') {
+            failures.push({ ...outcome, tree: null, error: options.singleVideo ? '该链接不是单个视频，请切换到批量解析。' : '批量模式只支持视频链接' })
             if (!this.sources[outcome.tree.source.id]) {
               try {
                 await parseCloseSource(outcome.tree.source.id)
@@ -259,7 +266,7 @@ export const useParseStore = defineStore('parse', {
           : []
         this.selectedBatchEntryIds = this.batchEntries.map((entry) => entry.id)
         this.syncBatchSelection()
-        this.input = failures.map((failure) => failure.input).join('\n')
+        if (!options.singleVideo) this.input = failures.map((failure) => failure.input).join('\n')
         if (failures.length > 0) {
           this.setNotice(`已解析 ${validOutcomes.length} 个链接，${failures.length} 个失败已保留`, 'warning')
         } else {
@@ -282,6 +289,22 @@ export const useParseStore = defineStore('parse', {
         this.loadingBySource[sourceId] = false
       }
     },
+    async loadPage(sourceId: string, pageNumber: number): Promise<string[] | null> {
+      if (!this.sources[sourceId] || this.loadingBySource[sourceId] || this.pacedParsingBySource[sourceId]) return null
+      this.loadingBySource[sourceId] = true
+      this.errorsBySource[sourceId] = null
+      try {
+        const result = await parseLoadPage({ source_id: sourceId, page_number: pageNumber })
+        if (!this.sources[sourceId]) return null
+        this.upsertSource(result.tree)
+        return result.item_ids
+      } catch (error) {
+        if (this.sources[sourceId]) this.errorsBySource[sourceId] = errorMessage(error)
+        return null
+      } finally {
+        this.loadingBySource[sourceId] = false
+      }
+    },
     async loadChunk(sourceId: string, chunkSize: number): Promise<boolean> {
       const current = this.sources[sourceId]
       if (!current?.source.has_more || this.loadingBySource[sourceId]) return false
@@ -294,10 +317,11 @@ export const useParseStore = defineStore('parse', {
         while (this.sources[sourceId]?.source.has_more && this.sources[sourceId].source.loaded_count < limit) {
           if (this.pacedParsingStopRequestedBySource[sourceId]) break
           const before = this.sources[sourceId].source.loaded_count
+          const pageBefore = this.sources[sourceId].groups[0]?.page?.page_number
           const tree = await parseLoadMore({ source_id: sourceId })
           if (!this.sources[sourceId]) break
           this.upsertSource(tree)
-          if (tree.source.loaded_count <= before) break
+          if (tree.source.loaded_count <= before && tree.groups[0]?.page?.page_number === pageBefore) break
         }
         return (this.sources[sourceId]?.source.loaded_count ?? 0) > loadedBefore
       } catch (error) {

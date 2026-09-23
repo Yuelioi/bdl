@@ -155,7 +155,7 @@ const hasSecondaryAction = (view: TransferTaskView, action: Exclude<TaskActionKi
 
               <div v-if="mode === 'completed'" class="mobile-card-location" :title="view.fullLocation">
                 <UIcon name="i-tabler-folder" aria-hidden="true" />
-                <span>{{ view.shortLocation }}</span>
+                <span>{{ view.fullLocation }}</span>
               </div>
               <template v-else>
                 <div class="mobile-card-progress">
@@ -172,10 +172,6 @@ const hasSecondaryAction = (view: TransferTaskView, action: Exclude<TaskActionKi
               </template>
 
               <div class="mobile-card-actions" @click.stop @keydown.stop>
-                <UiButton variant="secondary" size="compact" :disabled="loading" @click="emit('inspectTask', view.id)">
-                  <UIcon name="i-tabler-info-circle" aria-hidden="true" />
-                  详情
-                </UiButton>
                 <UiButton
                   v-if="view.primaryAction !== 'none'"
                   variant="secondary"
@@ -183,10 +179,11 @@ const hasSecondaryAction = (view: TransferTaskView, action: Exclude<TaskActionKi
                   :disabled="loading"
                   @click="emit('taskAction', view.id, view.primaryAction)"
                 >
-                  {{ view.primaryActionLabel }}
+                  <UIcon v-if="view.primaryAction === 'open_file'" name="i-tabler-player-play" aria-hidden="true" />
+                  {{ view.primaryAction === 'open_file' ? '播放' : view.primaryActionLabel }}
                 </UiButton>
                 <UiButton
-                  v-if="mode === 'completed' && hasSecondaryAction(view, 'open_dir')"
+                  v-if="view.isCompleted && hasSecondaryAction(view, 'open_dir')"
                   variant="secondary"
                   size="compact"
                   :disabled="loading"
@@ -199,7 +196,9 @@ const hasSecondaryAction = (view: TransferTaskView, action: Exclude<TaskActionKi
                   :view
                   :disabled="loading"
                   :show-primary="false"
-                  :exclude-actions="mode === 'completed' ? ['open_dir'] : []"
+                  show-inspect
+                  :exclude-actions="view.isCompleted ? ['open_dir'] : []"
+                  @inspect="emit('inspectTask', view.id)"
                   @action="(action) => emit('taskAction', view.id, action)"
                 />
               </div>
@@ -231,7 +230,7 @@ const hasSecondaryAction = (view: TransferTaskView, action: Exclude<TaskActionKi
 
           <span v-if="mode === 'completed'" class="location-cell" role="cell" :title="view.fullLocation">
             <UIcon name="i-tabler-folder" aria-hidden="true" />
-            {{ view.shortLocation }}
+            <span>{{ view.fullLocation }}</span>
           </span>
           <template v-else>
             <span class="progress-cell" role="cell">
@@ -247,14 +246,32 @@ const hasSecondaryAction = (view: TransferTaskView, action: Exclude<TaskActionKi
           </template>
           <span class="action-cell" role="cell" @click.stop @keydown.stop>
             <UiIconButton
-              icon="info"
-              label="详情和诊断"
+              v-if="view.primaryAction !== 'none'"
+              :icon="view.primaryAction === 'open_file' ? 'play' : view.primaryActionIcon"
+              :label="view.primaryAction === 'open_file' ? '播放' : view.primaryActionLabel"
               variant="ghost"
               size="compact"
               :disabled="loading"
-              @click="emit('inspectTask', view.id)"
+              @click="emit('taskAction', view.id, view.primaryAction)"
             />
-            <TaskActionMenu :view :disabled="loading" @action="(action) => emit('taskAction', view.id, action)" />
+            <UiIconButton
+              v-if="view.isCompleted && hasSecondaryAction(view, 'open_dir')"
+              icon="folder"
+              label="打开文件夹"
+              variant="ghost"
+              size="compact"
+              :disabled="loading"
+              @click="emit('taskAction', view.id, 'open_dir')"
+            />
+            <TaskActionMenu
+              :view
+              :disabled="loading"
+              :show-primary="false"
+              show-inspect
+              :exclude-actions="view.isCompleted ? ['open_dir'] : []"
+              @inspect="emit('inspectTask', view.id)"
+              @action="(action) => emit('taskAction', view.id, action)"
+            />
           </span>
           </template>
         </template>
@@ -415,6 +432,13 @@ const hasSecondaryAction = (view: TransferTaskView, action: Exclude<TaskActionKi
   width: 15px;
   height: 15px;
   flex: 0 0 auto;
+}
+
+.location-cell > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .progress-cell small {

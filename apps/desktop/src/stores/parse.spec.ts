@@ -10,6 +10,7 @@ const api = vi.hoisted(() => ({
   parseCreateSource: vi.fn(),
   parseLoadAll: vi.fn(),
   parseLoadMore: vi.fn(),
+  parseLoadPage: vi.fn(),
   parseCancel: vi.fn(),
   parseRefreshSource: vi.fn(),
   selectionCreateTasks: vi.fn(),
@@ -68,6 +69,40 @@ describe('parse store', () => {
 
   afterEach(() => {
     vi.useRealTimers()
+  })
+
+  it('requests only the target page and preserves selections; failed requests can retry', async () => {
+    const parse = useParseStore()
+    const tree = sourceTree('favorite:42', '收藏夹')
+    parse.upsertSource(tree)
+    parse.selectionBySource[tree.source.id] = ['part:favorite:42']
+    api.parseLoadPage.mockRejectedValueOnce(new Error('网络错误'))
+      .mockResolvedValueOnce({ tree, item_ids: ['item:page:8'] })
+    expect(await parse.loadPage(tree.source.id, 8)).toBeNull()
+    expect(parse.errorsBySource[tree.source.id]).toBe('网络错误')
+    expect(await parse.loadPage(tree.source.id, 8)).toEqual(['item:page:8'])
+    expect(api.parseLoadPage).toHaveBeenLastCalledWith({ source_id: tree.source.id, page_number: 8 })
+    expect(api.parseLoadMore).not.toHaveBeenCalled()
+    expect(parse.selectionBySource[tree.source.id]).toEqual(['part:favorite:42'])
+    expect(parse.errorsBySource[tree.source.id]).toBeNull()
+  })
+
+  it('continues sequential parsing through a page already loaded by a jump', async () => {
+    const parse = useParseStore()
+    const tree = sourceTree('favorite:42', '收藏夹')
+    tree.source.loaded_count = 40
+    tree.source.has_more = true
+    tree.groups[0].page = { page_number: 1, page_size: 20, loaded_count: 40, total_count: 60, has_more: true }
+    const duplicate = structuredClone(tree)
+    duplicate.groups[0].page!.page_number = 2
+    const last = structuredClone(duplicate)
+    last.source.loaded_count = 60
+    last.source.has_more = false
+    last.groups[0].page!.page_number = 3
+    parse.upsertSource(tree)
+    api.parseLoadMore.mockResolvedValueOnce(duplicate).mockResolvedValueOnce(last)
+    expect(await parse.loadChunk(tree.source.id, 20)).toBe(true)
+    expect(api.parseLoadMore).toHaveBeenCalledTimes(2)
   })
 
   it('parses all remaining items in paced chunks', async () => {
@@ -189,6 +224,34 @@ describe('parse store', () => {
       fetch_streams: false,
       expand_video_collection: true,
     })
+  })
+
+  it('single-video mode disables collection expansion and preserves the batch draft', async () => {
+    const parse = useParseStore()
+    parse.input = 'BV1xx411c7mD\nBV1xx411c7mE'
+    api.parseCreateSource.mockResolvedValue(sourceTree('video:one', '单个视频'))
+    expect(await parse.createSource('BV1xx411c7mD', { singleVideo: true })).toBe(true)
+    expect(api.parseCreateSource).toHaveBeenCalledWith({ input: 'BV1xx411c7mD', fetch_streams: false, expand_video_collection: false })
+    expect(parse.input).toBe('BV1xx411c7mD\nBV1xx411c7mE')
+    expect(parse.isBatch).toBe(false)
+  })
+
+  it('single-video mode rejects multiple inputs and containers before making a request', async () => {
+    const parse = useParseStore()
+    for (const input of ['BV1xx411c7mD\nBV1xx411c7mE', 'https://space.bilibili.com/42/favlist?fid=7']) {
+      expect(await parse.createSource(input, { singleVideo: true })).toBe(false)
+    }
+    expect(api.parseCreateSource).not.toHaveBeenCalled()
+  })
+
+  it('single-video mode refuses a container returned for a short link', async () => {
+    const parse = useParseStore()
+    const container = sourceTree('collection:42', '合集')
+    container.source.kind = 'collection'
+    api.parseCreateSource.mockResolvedValue(container)
+    expect(await parse.createSource('https://b23.tv/abc', { singleVideo: true })).toBe(false)
+    expect(parse.activeSource).toBeNull()
+    expect(api.parseCloseSource).toHaveBeenCalledWith(container.source.id)
   })
 
   it('rejects an empty submission without treating an existing result as a new parse', async () => {

@@ -24,6 +24,7 @@ use bdl_core::resolver::bangumi::BangumiResolver;
 use bdl_core::resolver::cheese::CheeseResolver;
 use bdl_core::resolver::collection::{CollectionResolver, SeriesResolver};
 use bdl_core::resolver::favorite::FavoriteResolver;
+use bdl_core::resolver::paged::PageRequest;
 use bdl_core::resolver::uploader::UploaderResolver;
 use bdl_core::resolver::video::VideoResolver;
 use bdl_core::resolver::{ResolveOptions, Resolver};
@@ -39,7 +40,7 @@ use crate::mobile_storage::MobileStorage;
 use crate::parse_session::{PartHydrationRequest, find_part};
 use crate::parse_session::{
     append_source_page, cheese_season_id, collection_ids, favorite_media_id,
-    hydrate_placeholder_part, next_page_request, normalize_selected_part_ids,
+    hydrate_placeholder_part, merge_browsed_page, next_page_request, normalize_selected_part_ids,
     remap_selected_part_ids, selected_hydration_requests, series_ids, should_continue_loading,
     should_expand_initial_source, uploader_mid,
 };
@@ -360,6 +361,43 @@ impl AppState {
         Ok(tree)
     }
 
+    pub async fn load_page(
+        &self,
+        source_id: &SourceId,
+        page_number: u32,
+    ) -> BdlResult<(NormalizedSourceTree, Vec<String>)> {
+        if page_number == 0 {
+            return Err(BdlError::Planning {
+                message: "页码必须大于 0。".to_owned(),
+            });
+        }
+        let current = self.source_snapshot(source_id)?;
+        let request = PageRequest {
+            page_number,
+            page_size: 20,
+        };
+        let operation = self.parse_control.begin(&source_id.0);
+        let page = operation
+            .run(self.parse_pacer.run_retry(
+                self.settings()?.parse_rules,
+                || self.resolve_source_page(&current, request),
+                |_| 1,
+                |phase| operation.phase(phase),
+            ))
+            .await?;
+        let item_ids = page
+            .groups
+            .iter()
+            .flat_map(|group| &group.items)
+            .map(|item| item.id.0.clone())
+            .collect();
+        // Re-read after the request so hydrated selections survive browsing.
+        let mut tree = self.source_snapshot(source_id)?;
+        merge_browsed_page(&mut tree, page)?;
+        self.store_source_tree(&tree)?;
+        Ok((tree, item_ids))
+    }
+
     pub async fn load_all(
         &self,
         source_id: &SourceId,
@@ -367,10 +405,10 @@ impl AppState {
     ) -> BdlResult<NormalizedSourceTree> {
         let mut tree = self.source_snapshot(source_id)?;
         while should_continue_loading(tree.source.has_more, tree.source.loaded_count, limit) {
-            let loaded_before = tree.source.loaded_count;
+            let page_before = next_page_request(&tree)?;
             self.append_next_page(&mut tree).await?;
             self.store_source_tree(&tree)?;
-            if tree.source.loaded_count == loaded_before {
+            if tree.source.has_more && next_page_request(&tree)? == page_before {
                 break;
             }
         }
@@ -1120,45 +1158,49 @@ impl AppState {
     }
 
     async fn append_next_page_unpaced(&self, tree: &mut NormalizedSourceTree) -> BdlResult<()> {
+        let page = self.resolve_source_page(tree, next_page_request(tree)?).await?;
+        append_source_page(tree, page)
+    }
+
+    async fn resolve_source_page(
+        &self,
+        tree: &NormalizedSourceTree,
+        request: PageRequest,
+    ) -> BdlResult<NormalizedSourceTree> {
         match tree.source.kind {
             SourceKind::Favorite => {
                 let media_id = favorite_media_id(tree)?;
-                let request = next_page_request(tree)?;
                 let next_page = self
                     .favorite_resolver()?
                     .resolve_page(media_id, request)
                     .await?;
-                append_source_page(tree, next_page)
+                Ok(next_page)
             }
             SourceKind::Uploader => {
                 let mid = uploader_mid(tree)?;
-                let request = next_page_request(tree)?;
                 let next_page = self.uploader_resolver()?.resolve_page(mid, request).await?;
-                append_source_page(tree, next_page)
+                Ok(next_page)
             }
             SourceKind::Collection => {
                 let ids = collection_ids(tree)?;
-                let request = next_page_request(tree)?;
                 let next_page = self
                     .collection_resolver()?
                     .resolve_page(ids, request)
                     .await?;
-                append_source_page(tree, next_page)
+                Ok(next_page)
             }
             SourceKind::Series => {
                 let ids = series_ids(tree)?;
-                let request = next_page_request(tree)?;
                 let next_page = self.series_resolver()?.resolve_page(ids, request).await?;
-                append_source_page(tree, next_page)
+                Ok(next_page)
             }
             SourceKind::Cheese => {
                 let season_id = cheese_season_id(tree)?;
-                let request = next_page_request(tree)?;
                 let next_page = self
                     .cheese_resolver()?
                     .resolve_page(season_id, request)
                     .await?;
-                append_source_page(tree, next_page)
+                Ok(next_page)
             }
             kind => Err(BdlError::UnsupportedSource {
                 kind: source_kind_name(kind).to_owned(),
@@ -1597,7 +1639,7 @@ mod tests {
     use super::{
         AccountCookieCache, AppState, PartHydrationRequest, StartupRecoverySnapshot,
         append_new_tasks, append_source_page, dedupe_tasks_by_id, hydrate_placeholder_part,
-        load_account_snapshot, next_page_request, normalize_selected_part_ids,
+        load_account_snapshot, merge_browsed_page, next_page_request, normalize_selected_part_ids,
         prepare_startup_recovery, remap_selected_part_ids, select_startup_data_dir,
         select_task_stream, selected_hydration_requests, should_continue_loading,
         should_expand_initial_source, task_media_refresh_ids,
@@ -2521,6 +2563,23 @@ mod tests {
                 page_size: 30,
             }
         );
+    }
+
+    #[test]
+    fn browsed_page_keeps_sequential_cursor_and_existing_items() {
+        let mut tree = uploader_tree();
+        tree.source.has_more = true;
+        let first = tree.groups[0].items[0].clone();
+        let mut page = next_uploader_tree();
+        page.groups[0].page.as_mut().unwrap().page_number = 8;
+        page.source.has_more = false;
+        merge_browsed_page(&mut tree, page.clone()).unwrap();
+        assert_eq!(next_page_request(&tree).unwrap().page_number, 2);
+        assert!(tree.source.has_more);
+        assert_eq!(tree.groups[0].items[0], first);
+        assert_eq!(tree.groups[0].items.len(), 2);
+        merge_browsed_page(&mut tree, page).unwrap();
+        assert_eq!(tree.groups[0].items.len(), 2);
     }
 
     #[test]

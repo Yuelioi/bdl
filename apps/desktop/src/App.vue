@@ -522,7 +522,7 @@ watch(
             {{ qrImageSaving ? '保存中' : '保存到相册' }}
           </UiButton>
           <button
-            v-else
+            v-if="!account.qrImageSrc"
             class="qr-box qr-box-action"
             :class="{ error: account.qrError }"
             type="button"

@@ -131,6 +131,9 @@ export const parseCreateSource = (request: ParseCreateSourceRequest) =>
 export const parseLoadMore = (request: ParseSourcePageRequest) =>
   invokeCommand<NormalizedSourceTree>('parse_load_more', { request })
 
+export const parseLoadPage = (request: ParseSourcePageRequest & { page_number: number }) =>
+  invokeCommand<{ tree: NormalizedSourceTree; item_ids: string[] }>('parse_load_page', { request })
+
 export const parseCancel = (sourceId: string) => invokeCommand<void>('parse_cancel', { sourceId })
 
 export const parseProgress = (sourceId: string) =>

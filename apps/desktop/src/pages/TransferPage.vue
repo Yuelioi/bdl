@@ -66,11 +66,11 @@ const tabs = computed<Array<{ label: string; value: QueueFilter; count: number }
   { label: '全部', value: 'all', count: queue.tasks.length },
 ]);
 const transferSortOptions = [
-  { label: '默认顺序', value: 'queue' },
-  { label: '名称 A-Z', value: 'name_asc' },
-  { label: '进度高优先', value: 'progress_desc' },
-  { label: '速度高优先', value: 'speed_desc' },
-  { label: '问题优先', value: 'issue_first' },
+  { label: '队列顺序', value: 'queue' },
+  { label: '名称（升序）', value: 'name_asc' },
+  { label: '进度（高到低）', value: 'progress_desc' },
+  { label: '速度（快到慢）', value: 'speed_desc' },
+  { label: '失败 / 取消在前', value: 'issue_first' },
 ];
 const completedSearchQuery = computed(() => completedSearch.value.trim().toLowerCase());
 const visibleTasks = computed(() => {
@@ -164,7 +164,7 @@ useTransferPageLifecycle(queue, { closeContextMenu, closeContextMenuOnEscape });
           placeholder="标题、来源或保存路径"
           :disabled="queue.loading"
         />
-        <UiSelect v-model="transferSort" label="排序" :options="transferSortOptions" :disabled="queue.loading" />
+        <UiSelect v-model="transferSort" label="列表排序" :options="transferSortOptions" :disabled="queue.loading" />
       </div>
 
       <div v-if="taskViews.length" class="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">

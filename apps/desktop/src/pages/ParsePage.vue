@@ -7,6 +7,7 @@ import UiButton from '../ui/Button.vue'
 import UiInlineNotice from '../ui/InlineNotice.vue'
 import UiStatusBadge from '../ui/StatusBadge.vue'
 import UiTextarea from '../ui/Textarea.vue'
+import UiTextField from '../ui/TextField.vue'
 import UiWorkflowSteps, { type WorkflowStep } from '../ui/WorkflowSteps.vue'
 import ParseDownloadPlanner from './parse/ParseDownloadPlanner.vue'
 import ParseBatchWorkspace from './parse/ParseBatchWorkspace.vue'
@@ -15,6 +16,8 @@ import { extractBilibiliInputs } from '../utils/bilibiliLinks'
 import { readClipboardText } from '../utils/clipboard'
 
 const parse = useParseStore()
+const inputMode = ref<'batch' | 'single'>('batch')
+const singleInput = ref('')
 const ui = useUiStore()
 const downloadPlanner = useTemplateRef<{ openDialog: () => Promise<void> }>('download-planner')
 const createLoading = computed(() => Boolean(parse.loadingBySource.__create__))
@@ -33,8 +36,29 @@ const workflowSteps = computed<WorkflowStep[]>(() => [
 const submitInput = async () => {
   if (createLoading.value) return
 
-  const parsed = await parse.createSource()
+  const parsed = inputMode.value === 'single'
+    ? await parse.createSource(singleInput.value, { singleVideo: true })
+    : await parse.createSource()
   if (parsed) activeStage.value = 'content'
+}
+
+const setSingleInput = (text: string) => {
+  const extracted = extractBilibiliInputs(text)
+  if (extracted.length > 1 || (extracted.length === 0 && text.trim().includes('\n'))) {
+    parse.setNotice('单个视频模式一次只解析一个链接，请只粘贴一个视频或切换到批量解析。', 'warning')
+    return
+  }
+  singleInput.value = extracted[0] ?? text.trim()
+  parse.clearNotice()
+}
+
+const switchInputMode = (mode: 'batch' | 'single') => {
+  inputMode.value = mode
+  parse.clearNotice()
+}
+
+const pasteSingleInput = (event: ClipboardEvent) => {
+  setSingleInput(event.clipboardData?.getData('text/plain') ?? '')
 }
 
 const pasteInput = async () => {
@@ -45,9 +69,13 @@ const pasteInput = async () => {
       return
     }
 
-    const extracted = extractBilibiliInputs(text)
-    parse.input = extracted.length > 0 ? extracted.join('\n') : text
-    parse.clearNotice()
+    if (inputMode.value === 'single') {
+      setSingleInput(text)
+    } else {
+      const extracted = extractBilibiliInputs(text)
+      parse.input = extracted.length > 0 ? extracted.join('\n') : text
+      parse.clearNotice()
+    }
   } catch (error) {
     parse.setNotice(`读取剪贴板失败：${error instanceof Error ? error.message : String(error)}`, 'danger')
   }
@@ -89,13 +117,33 @@ const runNoticeAction = () => {
           <header class="parse-entry-header">
             <div class="parse-entry-heading">
               <h2>解析链接</h2>
-              <p>粘贴一个或多个 Bilibili 来源，解析后再选择要下载的视频与分集。</p>
+              <p>{{ inputMode === 'single' ? '只解析当前视频及其分 P，不展开所属合集。' : '粘贴一个或多个 Bilibili 来源，解析后再选择要下载的视频与分集。' }}</p>
             </div>
             <UiStatusBadge v-if="createLoading" status="downloading">解析中</UiStatusBadge>
           </header>
 
           <form class="parse-entry-form" @submit.prevent="submitInput" @keydown.ctrl.enter.prevent="submitInput">
+            <div class="parse-mode-switch" role="group" aria-label="解析模式">
+              <UiButton
+                v-for="mode in ([{ value: 'batch', label: '批量解析' }, { value: 'single', label: '单个视频' }] as const)"
+                :key="mode.value"
+                size="compact"
+                variant="secondary"
+                :aria-pressed="inputMode === mode.value"
+                :disabled="createLoading"
+                @click="switchInputMode(mode.value)"
+              >{{ mode.label }}</UiButton>
+            </div>
+            <UiTextField
+              v-if="inputMode === 'single'"
+              v-model="singleInput"
+              label="视频链接或 BV / AV"
+              placeholder="https://www.bilibili.com/video/BV..."
+              :disabled="createLoading"
+              @paste.prevent="pasteSingleInput"
+            />
             <UiTextarea
+              v-else
               v-model="parse.input"
               label="Bilibili 链接或 BV / AV"
               hide-label
@@ -111,7 +159,7 @@ const runNoticeAction = () => {
                 粘贴链接
               </UiButton>
               <div class="parse-entry-submit">
-                <span class="parse-entry-shortcut" aria-hidden="true">Ctrl + Enter</span>
+                <span class="parse-entry-shortcut" aria-hidden="true">{{ inputMode === 'single' ? 'Enter' : 'Ctrl + Enter' }}</span>
                 <UiButton class="min-w-28" type="submit" :disabled="createLoading">
                   {{ createLoading ? '解析中' : '开始解析' }}
                 </UiButton>
@@ -119,7 +167,7 @@ const runNoticeAction = () => {
             </div>
           </form>
 
-          <aside class="parse-entry-sources" aria-label="支持的来源类型">
+          <aside v-if="inputMode === 'batch'" class="parse-entry-sources" aria-label="支持的来源类型">
             <strong>支持来源</strong>
             <ul>
               <li><UIcon name="i-tabler-video" aria-hidden="true" />视频与分 P</li>
@@ -193,6 +241,18 @@ const runNoticeAction = () => {
   min-width: 0;
   display: grid;
   gap: var(--space-md);
+}
+
+.parse-mode-switch {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+.parse-mode-switch :deep(button[aria-pressed='true']) {
+  border-color: var(--color-accent);
+  background: var(--color-selected-surface);
+  color: var(--color-accent-strong);
 }
 
 .parse-entry-form :deep(.textarea-control) {

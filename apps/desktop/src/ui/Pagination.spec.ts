@@ -27,6 +27,7 @@ describe('Pagination', () => {
       },
       global: {
         components: { UPagination: PaginationStub },
+        stubs: { UiButton: true },
       },
     })
 
@@ -40,5 +41,27 @@ describe('Pagination', () => {
     await wrapper.get('button').trigger('click')
 
     expect(wrapper.emitted('update:page')).toEqual([[3]])
+  })
+
+  it('jumps to valid pages, rejects invalid input, and follows page changes', async () => {
+    const wrapper = mount(UiPagination, {
+      props: { page: 1, total: 200 },
+      global: { components: { UPagination: PaginationStub }, stubs: { UiButton: true } },
+    })
+    const input = wrapper.get('input')
+    for (const value of ['', '0', '-1', '11', '1.5', 'abc']) {
+      await input.setValue(value)
+      await wrapper.get('form').trigger('submit')
+    }
+    expect(wrapper.emitted('update:page')).toBeUndefined()
+    await input.setValue('8')
+    await wrapper.get('form').trigger('submit')
+    expect(wrapper.emitted('update:page')).toEqual([[8]])
+    await wrapper.setProps({ page: 8 })
+    expect((input.element as HTMLInputElement).value).toBe('8')
+    await wrapper.setProps({ disabled: true })
+    await input.setValue('2')
+    await wrapper.get('form').trigger('submit')
+    expect(wrapper.emitted('update:page')).toEqual([[8]])
   })
 })

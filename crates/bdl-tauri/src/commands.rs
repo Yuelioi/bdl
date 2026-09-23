@@ -196,6 +196,18 @@ pub struct ParseSourcePageRequest {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+pub struct ParseLoadPageRequest {
+    pub source_id: String,
+    pub page_number: u32,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ParseLoadPageResponse {
+    pub tree: NormalizedSourceTree,
+    pub item_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct ParseLoadAllRequest {
     pub source_id: String,
     pub limit: Option<usize>,
@@ -445,6 +457,17 @@ pub async fn parse_load_more(
     let tree = state.load_more(&SourceId(request.source_id)).await?;
     events::emit(&app, events::PARSE_SOURCE_UPDATED, &tree)?;
     Ok(tree)
+}
+
+#[tauri::command]
+pub async fn parse_load_page(
+    state: State<'_, AppState>,
+    request: ParseLoadPageRequest,
+) -> CommandResult<ParseLoadPageResponse> {
+    let (tree, item_ids) = state
+        .load_page(&SourceId(request.source_id), request.page_number)
+        .await?;
+    Ok(ParseLoadPageResponse { tree, item_ids })
 }
 
 #[tauri::command]

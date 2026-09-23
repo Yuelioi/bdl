@@ -4,30 +4,34 @@ import { computed } from 'vue'
 import type { TaskActionDescriptor, TaskActionKind, TransferTaskView } from '../stores/transferView'
 import UiIconButton from './IconButton.vue'
 
-const { view, disabled = false, showPrimary = true, excludeActions = [] } = defineProps<{
+const { view, disabled = false, showPrimary = true, showInspect = false, excludeActions = [] } = defineProps<{
   view: TransferTaskView
   disabled?: boolean
   showPrimary?: boolean
+  showInspect?: boolean
   excludeActions?: TaskActionKind[]
 }>()
 
 const emit = defineEmits<{
   action: [action: Exclude<TaskActionKind, 'none'>]
+  inspect: []
 }>()
 
 const hasPrimaryAction = computed(() => view.primaryAction !== 'none')
 const visibleSecondaryActions = computed(() =>
   view.secondaryActions.filter((action) => !excludeActions.includes(action.kind)),
 )
-const hasSecondaryActions = computed(() => visibleSecondaryActions.value.length > 0)
-const dropdownItems = computed(() =>
-  visibleSecondaryActions.value.map((action) => ({
+const dropdownItems = computed(() => [
+  ...(showInspect
+    ? [{ label: '详情和诊断', icon: 'i-tabler-info-circle', color: 'neutral', onSelect: () => emit('inspect') }]
+    : []),
+  ...visibleSecondaryActions.value.map((action) => ({
     label: action.label,
     icon: tablerIcon(action.icon),
     color: action.tone === 'danger' ? 'error' : 'neutral',
     onSelect: () => runSecondary(action),
   })),
-)
+])
 
 const runPrimary = () => {
   if (view.primaryAction === 'none') {
@@ -71,7 +75,7 @@ const tablerIcon = (icon: string): string => {
       @click.stop="runPrimary"
     />
     <UDropdownMenu
-      v-if="hasSecondaryActions"
+      v-if="dropdownItems.length"
       :items="dropdownItems"
       :disabled
       :content="{ align: 'end', sideOffset: 4, collisionPadding: 12 }"

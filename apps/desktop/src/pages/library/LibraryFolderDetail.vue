@@ -23,6 +23,7 @@ const emit = defineEmits<{ back: []; download: [] }>()
 const parse = useParseStore()
 const pageSize = 20
 const currentPage = ref(1)
+const pageItemIds = ref<Record<number, string[]>>({})
 const failedCoverIds = ref<string[]>([])
 const loadBatchSize = ref('50')
 
@@ -35,8 +36,11 @@ const items = computed(() => source.value?.groups.flatMap((group) => group.items
 const totalCount = computed(() => source.value?.source.total_count ?? folder.media_count)
 const totalPages = computed(() => Math.max(1, Math.ceil(totalCount.value / pageSize)))
 const pageItems = computed(() => {
-  const start = (currentPage.value - 1) * pageSize
-  return items.value.slice(start, start + pageSize)
+  const byId = new Map(items.value.map((item) => [item.id, item]))
+  return (pageItemIds.value[currentPage.value] ?? []).flatMap((id) => {
+    const item = byId.get(id)
+    return item ? [item] : []
+  })
 })
 const selectedSet = computed(() => new Set(parse.activeSelection))
 const selectedCount = computed(() => parse.activeSelection.length)
@@ -52,8 +56,9 @@ const hasMore = computed(() => Boolean(source.value?.source.has_more))
 
 watch(sourceId, () => {
   currentPage.value = 1
+  pageItemIds.value = sourceId.value ? { 1: items.value.slice(0, pageSize).map((item) => item.id) } : {}
   failedCoverIds.value = []
-})
+}, { immediate: true })
 
 const itemPartIds = (item: NormalizedItem): string[] => item.parts.map((part) => part.id)
 const itemOwnerName = (item: NormalizedItem): string =>
@@ -119,15 +124,15 @@ const downloadAll = async () => {
 }
 
 const goToPage = async (targetPage: number) => {
-  if (!sourceId.value) return
+  if (!sourceId.value || loading.value) return
+  const requestedSource = sourceId.value
   const nextPage = Math.min(Math.max(1, targetPage), totalPages.value)
-  const nextStart = (nextPage - 1) * pageSize
-  while (nextStart >= items.value.length && source.value?.source.has_more) {
-    const loadedBefore = items.value.length
-    await parse.loadMore(sourceId.value)
-    if (items.value.length === loadedBefore) break
+  if (!pageItemIds.value[nextPage]) {
+    const ids = await parse.loadPage(requestedSource, nextPage)
+    if (ids === null || sourceId.value !== requestedSource) return
+    pageItemIds.value[nextPage] = ids
   }
-  if (nextStart < items.value.length) currentPage.value = nextPage
+  currentPage.value = nextPage
 }
 
 const formatDuration = (seconds: number | null): string => {
@@ -361,8 +366,9 @@ const formatDuration = (seconds: number | null): string => {
 }
 
 .library-pagination-status {
-  height: 28px;
+  min-height: 28px;
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-xs);
   color: var(--color-muted);

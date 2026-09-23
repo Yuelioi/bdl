@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import type { NormalizedSourceTree } from '../../src/api/dto';
 
 const installTauriMock = async (
   page: Page,
@@ -472,6 +473,46 @@ test('parse source can be submitted with Ctrl+Enter', async ({ page }) => {
   await expect(page.getByRole('row', { name: /测试视频/ })).toBeVisible();
 });
 
+test('single video mode uses one input and disables collection expansion', async ({ page }, testInfo) => {
+  await installTauriMock(page, 'light');
+  await page.goto('/');
+  await expect(page.getByRole('button', { name: '批量解析', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await page.locator('textarea').fill('BV1xx411c7mD\nBV1xx411c7mE');
+  await page.getByRole('button', { name: '单个视频', exact: true }).click();
+  await expect(page.locator('textarea')).toHaveCount(0);
+  const input = page.getByLabel('视频链接或 BV / AV', { exact: true });
+  await input.fill('BV1xx411c7mD');
+  await input.evaluate((element) => {
+    const clipboardData = new DataTransfer();
+    clipboardData.setData('text/plain', 'BV1xx411c7mD\nBV1xx411c7mE');
+    element.dispatchEvent(new ClipboardEvent('paste', { clipboardData, bubbles: true, cancelable: true }));
+  });
+  await expect(page.getByText(/一次只解析一个链接/)).toBeVisible();
+  await expect(input).toHaveValue('BV1xx411c7mD');
+  await page.getByRole('button', { name: '批量解析', exact: true }).click();
+  await expect(page.locator('textarea')).toHaveValue('BV1xx411c7mD\nBV1xx411c7mE');
+  await page.getByRole('button', { name: '单个视频', exact: true }).click();
+  await expect(input).toHaveValue('BV1xx411c7mD');
+  await page.screenshot({ path: testInfo.outputPath('single-video.png') });
+  await page.setViewportSize({ width: 540, height: 720 });
+  await expect(input).toBeVisible();
+  expect(await input.evaluate((element) => element.getBoundingClientRect().right)).toBeLessThanOrEqual(540);
+  await page.screenshot({ path: testInfo.outputPath('single-video-narrow.png') });
+  await page.evaluate(() => {
+    const runtime = (window as unknown as { __TAURI_INTERNALS__: { invoke: (command: string, args?: unknown) => Promise<unknown> } }).__TAURI_INTERNALS__;
+    const invoke = runtime.invoke;
+    runtime.invoke = async (command, args) => {
+      if (command === 'parse_create_source') Object.assign(window, { __SINGLE_REQUEST__: args });
+      return invoke(command, args);
+    };
+  });
+  await input.press('Enter');
+  await expect(page.getByRole('row', { name: /测试视频/ })).toBeVisible();
+  expect(await page.evaluate(() => (window as unknown as { __SINGLE_REQUEST__: unknown }).__SINGLE_REQUEST__)).toEqual({
+    request: { input: 'BV1xx411c7mD', fetch_streams: false, expand_video_collection: false },
+  });
+});
+
 test('the QR placeholder starts a session without a duplicate footer action', async ({ page }) => {
   await installTauriMock(page, 'light');
   await page.goto('/');
@@ -490,6 +531,12 @@ test('the QR placeholder starts a session without a duplicate footer action', as
   await expect(dialog.locator('.qr-box img')).toBeVisible();
   await expect(dialog.getByText('等待扫码')).toBeVisible();
   await expect(dialog.getByRole('button', { name: '刷新二维码' })).toBeVisible();
+  await expect(dialog.locator('.qr-box-action')).toHaveCount(0);
+
+  await dialog.getByRole('button', { name: '刷新二维码' }).click();
+  await expect(dialog.locator('.qr-box img')).toBeVisible();
+  await expect(dialog.locator('.qr-box-action')).toHaveCount(0);
+  await expect(dialog.getByRole('button', { name: '刷新二维码' })).toHaveCount(1);
 });
 
 test('startup environment warnings do not block parsing', async ({ page }) => {
@@ -842,6 +889,58 @@ test('library detail keeps pagination, page count, parsing, and selection on one
     caret: 'hide',
     maxDiffPixelRatio: 0.01,
   });
+});
+
+test('library page jump loads only the requested page and reuses visited pages', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1080, height: 720 });
+  await installTauriMock(page, 'light', true, true);
+  await page.goto('/');
+  await page.evaluate(() => {
+    const runtime = (window as unknown as { __TAURI_INTERNALS__: { invoke: (command: string, args?: { request?: { page_number?: number } }) => Promise<unknown> } }).__TAURI_INTERNALS__;
+    const invoke = runtime.invoke;
+    let tree: NormalizedSourceTree;
+    const requests: number[] = [];
+    Object.assign(window, { __PAGE_REQUESTS__: requests });
+    runtime.invoke = async (command, args) => {
+      if (command === 'parse_load_more') throw new Error('Page navigation must not load intervening pages');
+      if (command === 'parse_load_page') {
+        const number = args?.request?.page_number ?? 1;
+        requests.push(number);
+        const item = structuredClone(tree.groups[0].items[0]);
+        item.id = `item:page:${number}`;
+        item.title = `第 ${number} 页视频`;
+        item.parts[0].id = `part:page:${number}`;
+        tree.groups[0].items.push(item);
+        tree.source.loaded_count += 1;
+        return { tree: structuredClone(tree), item_ids: [item.id] };
+      }
+      const result = await invoke(command, args);
+      if (command === 'parse_create_source') {
+        tree = result as NormalizedSourceTree;
+        tree.source.total_count = 200;
+        tree.source.has_more = true;
+      }
+      return result;
+    };
+  });
+  await page.keyboard.press('Control+2');
+  await page.getByRole('tab', { name: /订阅合集/ }).click();
+  await page.getByRole('button', { name: '进入 双赢之路' }).click();
+  const pagination = page.getByRole('navigation', { name: '集合内容分页' });
+  await page.getByRole('button', { name: '全选本页', exact: true }).click();
+  await pagination.getByRole('textbox').fill('8');
+  await pagination.getByRole('textbox').press('Enter');
+  await expect(page.getByText('第 8 页视频', { exact: true })).toBeVisible();
+  await expect(page.locator('.library-selection-count')).toContainText('已选 5');
+  await pagination.getByRole('textbox').fill('1');
+  await pagination.getByRole('button', { name: '跳转', exact: true }).click();
+  await expect(page.getByText('合集视频 1', { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => (window as unknown as { __PAGE_REQUESTS__: number[] }).__PAGE_REQUESTS__)).toEqual([8]);
+  await page.screenshot({ path: testInfo.outputPath('library-page-jump.png') });
+  await page.setViewportSize({ width: 540, height: 720 });
+  await expect(pagination.getByRole('textbox')).toBeVisible();
+  expect(await pagination.evaluate((element) => element.getBoundingClientRect().right)).toBeLessThanOrEqual(540);
+  await page.screenshot({ path: testInfo.outputPath('library-page-jump-narrow.png') });
 });
 
 test('folder detail opens immediately and shows a skeleton while collection data loads', async ({ page }) => {
