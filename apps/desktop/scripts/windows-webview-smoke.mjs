@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 import { chromium } from '@playwright/test';
 import { resolveCargoTargetDir } from '../../../scripts/cargo-target.mjs';
+import { waitForFirstPage } from './windows-webview-smoke-utils.mjs';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(scriptDir, '..', '..', '..');
@@ -72,8 +73,7 @@ try {
   }
 
   browser = await chromium.connectOverCDP(endpoint, { timeout: 5_000 });
-  const page = browser.contexts().flatMap((context) => context.pages())[0];
-  if (!page) throw new Error('WebView2 started but no application page was exposed');
+  const page = await waitForFirstPage(browser);
 
   const pageErrors = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
