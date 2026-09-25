@@ -70,11 +70,14 @@ async fn media_muxer_probe_rejects_non_ffmpeg_executable() {
         .await
         .expect_err("a successful non-FFmpeg executable must be rejected");
 
-    assert!(matches!(
-        error,
-        MuxError::CommandFailed { stderr, .. }
-            if stderr.contains("unexpected FFmpeg version banner")
-    ));
+    assert!(
+        matches!(
+            error,
+            MuxError::CommandFailed { ref stderr, .. }
+                if stderr.contains("unexpected FFmpeg version banner")
+        ),
+        "unexpected probe error: {error:?}"
+    );
 }
 
 #[tokio::test]
@@ -236,6 +239,7 @@ async fn fake_version_program(dir: &Path, banner: &str) -> PathBuf {
 
 #[cfg(not(windows))]
 async fn fake_ffmpeg(dir: &Path, record_path: &Path, exit_code: i32, stderr: &str) -> PathBuf {
+    use std::io::Write;
     use std::os::unix::fs::PermissionsExt;
 
     let path = dir.join("ffmpeg");
@@ -244,26 +248,55 @@ async fn fake_ffmpeg(dir: &Path, record_path: &Path, exit_code: i32, stderr: &st
         record_path.display(),
         stderr
     );
-    tokio::fs::write(&path, script).await.unwrap();
-    let mut permissions = tokio::fs::metadata(&path).await.unwrap().permissions();
+    let mut file = std::fs::File::create(&path).unwrap();
+    file.write_all(script.as_bytes()).unwrap();
+    let mut permissions = file.metadata().unwrap().permissions();
     permissions.set_mode(0o755);
-    tokio::fs::set_permissions(&path, permissions)
-        .await
-        .unwrap();
+    file.set_permissions(permissions).unwrap();
+    drop(file);
+    wait_until_executable(&path).await;
     path
 }
 
 #[cfg(not(windows))]
 async fn fake_version_program(dir: &Path, banner: &str) -> PathBuf {
+    use std::io::Write;
     use std::os::unix::fs::PermissionsExt;
 
     let path = dir.join("version-program");
     let script = format!("#!/bin/sh\nprintf '%s\\n' '{banner}'\nexit 0\n");
-    tokio::fs::write(&path, script).await.unwrap();
-    let mut permissions = tokio::fs::metadata(&path).await.unwrap().permissions();
+    let mut file = std::fs::File::create(&path).unwrap();
+    file.write_all(script.as_bytes()).unwrap();
+    let mut permissions = file.metadata().unwrap().permissions();
     permissions.set_mode(0o755);
-    tokio::fs::set_permissions(&path, permissions)
-        .await
-        .unwrap();
+    file.set_permissions(permissions).unwrap();
+    drop(file);
+    wait_until_executable(&path).await;
     path
+}
+
+#[cfg(not(windows))]
+async fn wait_until_executable(path: &Path) {
+    let mut last_error = None;
+
+    for _ in 0..50 {
+        match tokio::process::Command::new(path)
+            .arg("-version")
+            .output()
+            .await
+        {
+            Ok(_) => return,
+            Err(error) if error.raw_os_error() == Some(26) => {
+                last_error = Some(error);
+                tokio::time::sleep(std::time::Duration::from_millis(2)).await;
+            }
+            Err(error) => panic!("failed to execute test fixture {}: {error}", path.display()),
+        }
+    }
+
+    panic!(
+        "test fixture {} stayed busy: {}",
+        path.display(),
+        last_error.unwrap()
+    );
 }
