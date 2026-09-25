@@ -69,6 +69,7 @@ export interface TransferTaskView {
   statusBadge: 'ready' | 'downloading' | 'queued' | 'done' | 'warning' | 'error' | 'paused'
   progressValue: number
   progressLabel: string
+  stageProgressLabel?: string
   speedLabel: string
   etaLabel: string
   sizeLabel: string
@@ -89,6 +90,7 @@ export const createTransferTaskView = (
   logs: QueueLogEntry[] = [],
   transferProgress: TransferProgressSnapshot | null = null,
   capabilities: TransferPlatformCapabilities = defaultTransferPlatformCapabilities,
+  stageProgress: number | null = null,
 ): TransferTaskView => {
   const titleParts = splitTaskTitle(task.title)
   const issue = classifyTaskIssue(task, logs)
@@ -103,10 +105,12 @@ export const createTransferTaskView = (
     isCompleted: task.status === 'completed',
     displayTitle: titleParts.displayTitle,
     subtitle: titleParts.subtitle,
-    statusLabel: completedWithWarnings ? '部分失败' : scheduled ? '已定时' : statusLabel(task.status),
+    statusLabel: completedWithWarnings ? '部分失败' : scheduled ? '已定时' : transferStageLabel(task),
     statusBadge: completedWithWarnings ? 'warning' : statusBadge(task.status),
     progressValue: progress,
     progressLabel: `${progress}%`,
+    stageProgressLabel:
+      task.status === 'muxing' ? '' : `${stageProgress == null ? progress : stageProgress}%`,
     speedLabel:
       activelyTransferring && transferProgress ? formatSpeedLabel(transferProgress.speedBytesPerSecond) : '--',
     etaLabel: scheduled
@@ -125,6 +129,25 @@ export const createTransferTaskView = (
     primaryActionIcon: actionIcon(primaryAction),
     secondaryActions: secondaryActionsForTask(task, primaryAction, capabilities),
   }
+}
+
+const transferStageLabel = (task: DownloadTask): string => {
+  if (task.status === 'muxing') {
+    return '合并中'
+  }
+  if (task.status !== 'downloading') {
+    return statusLabel(task.status)
+  }
+
+  const intent = task.resources.find((resource) => resource.status === 'downloading')?.intent
+  const labels: Partial<Record<DownloadResourceIntent, string>> = {
+    video: '下载视频中',
+    audio: '下载音频中',
+    cover: '下载封面中',
+    subtitle: '下载字幕中',
+    danmaku: '下载弹幕中',
+  }
+  return intent ? (labels[intent] ?? '处理中') : '准备下载'
 }
 
 export const formatSpeedLabel = (bytesPerSecond: number): string => {

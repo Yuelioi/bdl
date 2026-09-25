@@ -25,6 +25,7 @@ use bdl_core::resolver::cheese::CheeseResolver;
 use bdl_core::resolver::collection::{CollectionResolver, SeriesResolver};
 use bdl_core::resolver::favorite::FavoriteResolver;
 use bdl_core::resolver::paged::PageRequest;
+use bdl_core::resolver::source::SourceResolver;
 use bdl_core::resolver::uploader::UploaderResolver;
 use bdl_core::resolver::video::VideoResolver;
 use bdl_core::resolver::{ResolveOptions, Resolver};
@@ -226,6 +227,17 @@ impl AppState {
                 || {
                     let classified = classified.clone();
                     async move {
+                        // Short links have no source kind until their redirect is expanded.
+                        // Dispatch the resolved identity so video collection expansion and
+                        // paged sources behave exactly like their full URLs.
+                        let classified = match classified {
+                            ClassifiedInput::ShortUrl(url) => {
+                                SourceResolver::from_bpi_client(self.shared_resolver_client()?)
+                                    .expand_short_url(&url)
+                                    .await?
+                            }
+                            input => input,
+                        };
                         let tree = match classified.source_kind() {
                             SourceKind::Video if expand_video_collection => {
                                 let resolver = self.video_resolver()?;
@@ -1672,6 +1684,45 @@ mod tests {
     use bdl_core::storage::TaskStorage;
     use tokio::sync::Notify;
 
+    #[tokio::test]
+    #[ignore = "live Bilibili probe: set BDL_TEST_SHORT_URL and BDL_TEST_SHORT_BVID"]
+    async fn short_link_live_parse_source() {
+        let input = std::env::var("BDL_TEST_SHORT_URL").expect("BDL_TEST_SHORT_URL");
+        let bvid = std::env::var("BDL_TEST_SHORT_BVID").expect("BDL_TEST_SHORT_BVID");
+        let data_dir = temp_state_dir();
+        let state = test_state_with_tasks(&data_dir, Vec::new());
+        let result = state.parse_source(&input, false).await;
+        drop(state);
+        let _ = std::fs::remove_dir_all(data_dir);
+        let tree = result.expect("short link should resolve through the application entry");
+        assert_eq!(tree.source.kind, SourceKind::Video);
+        assert!(
+            tree.groups
+                .iter()
+                .flat_map(|group| &group.items)
+                .flat_map(|item| &item.parts)
+                .any(|part| part.bvid.as_deref() == Some(bvid.as_str()))
+        );
+    }
+
+    #[tokio::test]
+    async fn short_links_reach_redirect_validation_before_source_dispatch() {
+        let data_dir = temp_state_dir();
+        let state = test_state_with_tasks(&data_dir, Vec::new());
+        let error = state
+            .parse_source("https://user:secret@b23.tv/abc", false)
+            .await
+            .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("short link redirected outside supported"),
+            "short links must reach the redirect resolver, got: {error}"
+        );
+        drop(state);
+        let _ = std::fs::remove_dir_all(data_dir);
+    }
+
     #[test]
     fn startup_data_dir_uses_legacy_state_only_when_preferred_state_is_absent() {
         let root = temp_state_dir();
@@ -2633,6 +2684,8 @@ mod tests {
             },
             cid: 42,
             page_number: None,
+            cover_url: None,
+            duration_seconds: None,
         });
 
         let ids = task_media_refresh_ids(&task).expect("refresh intent should be used");

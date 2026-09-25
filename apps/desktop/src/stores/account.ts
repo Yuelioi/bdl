@@ -111,6 +111,7 @@ export const useAccountStore = defineStore('account', {
       this.saving = true
       try {
         this.profile = await accountImportCookie({ cookie: trimmed })
+        await this.verify()
         return true
       } catch (error) {
         ui.pushToast(errorMessage(error), 'danger')
@@ -182,6 +183,7 @@ export const useAccountStore = defineStore('account', {
           this.profile = response.account
           this.stopQrPolling()
           this.qrSession = null
+          await this.verify()
         } else if (response.status === 'expired') {
           this.stopQrPolling()
         }

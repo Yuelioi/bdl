@@ -1,104 +1,32 @@
 <script setup lang="ts">
-import { computed, ref, useTemplateRef, watch } from 'vue'
-
-import { useParseStore } from '../stores/parse'
-import { useUiStore } from '../stores/ui'
-import UiButton from '../ui/Button.vue'
-import UiInlineNotice from '../ui/InlineNotice.vue'
-import UiStatusBadge from '../ui/StatusBadge.vue'
-import UiTextarea from '../ui/Textarea.vue'
-import UiTextField from '../ui/TextField.vue'
-import UiWorkflowSteps, { type WorkflowStep } from '../ui/WorkflowSteps.vue'
-import ParseDownloadPlanner from './parse/ParseDownloadPlanner.vue'
-import ParseBatchWorkspace from './parse/ParseBatchWorkspace.vue'
-import ParseResultWorkspace from './parse/ParseResultWorkspace.vue'
-import { extractBilibiliInputs } from '../utils/bilibiliLinks'
-import { readClipboardText } from '../utils/clipboard'
-
-const parse = useParseStore()
-const inputMode = ref<'batch' | 'single'>('batch')
-const singleInput = ref('')
-const ui = useUiStore()
-const downloadPlanner = useTemplateRef<{ openDialog: () => Promise<void> }>('download-planner')
-const createLoading = computed(() => Boolean(parse.loadingBySource.__create__))
-const hasResults = computed(() => Boolean(parse.activeSource))
-const activeStage = ref<'source' | 'content'>(hasResults.value ? 'content' : 'source')
-const workflowSteps = computed<WorkflowStep[]>(() => [
-  { value: 'source', label: '解析来源', description: '输入链接', complete: hasResults.value },
-  {
-    value: 'content',
-    label: '选择内容',
-    description: hasResults.value ? '筛选并下载' : '等待解析',
-    disabled: !hasResults.value,
-  },
-])
-
-const submitInput = async () => {
-  if (createLoading.value) return
-
-  const parsed = inputMode.value === 'single'
-    ? await parse.createSource(singleInput.value, { singleVideo: true })
-    : await parse.createSource()
-  if (parsed) activeStage.value = 'content'
-}
-
-const setSingleInput = (text: string) => {
-  const extracted = extractBilibiliInputs(text)
-  if (extracted.length > 1 || (extracted.length === 0 && text.trim().includes('\n'))) {
-    parse.setNotice('单个视频模式一次只解析一个链接，请只粘贴一个视频或切换到批量解析。', 'warning')
-    return
-  }
-  singleInput.value = extracted[0] ?? text.trim()
-  parse.clearNotice()
-}
-
-const switchInputMode = (mode: 'batch' | 'single') => {
-  inputMode.value = mode
-  parse.clearNotice()
-}
-
-const pasteSingleInput = (event: ClipboardEvent) => {
-  setSingleInput(event.clipboardData?.getData('text/plain') ?? '')
-}
-
-const pasteInput = async () => {
-  try {
-    const text = (await readClipboardText()).trim()
-    if (!text) {
-      parse.setNotice('剪贴板里没有可粘贴的链接', 'warning')
-      return
-    }
-
-    if (inputMode.value === 'single') {
-      setSingleInput(text)
-    } else {
-      const extracted = extractBilibiliInputs(text)
-      parse.input = extracted.length > 0 ? extracted.join('\n') : text
-      parse.clearNotice()
-    }
-  } catch (error) {
-    parse.setNotice(`读取剪贴板失败：${error instanceof Error ? error.message : String(error)}`, 'danger')
-  }
-}
-
-const openDownloadSettings = () => {
-  void downloadPlanner.value?.openDialog()
-}
-
-watch(hasResults, (available) => {
-  activeStage.value = available ? 'content' : 'source'
-})
-
-const runNoticeAction = () => {
-  if (parse.notice?.actionLabel !== '查看传输') return
-  ui.setTab('transfer')
-  parse.clearNotice()
-}
+import UiButton from '../ui/Button.vue';
+import UiInlineNotice from '../ui/InlineNotice.vue';
+import UiStatusBadge from '../ui/StatusBadge.vue';
+import UiTextarea from '../ui/Textarea.vue';
+import UiTextField from '../ui/TextField.vue';
+import UiWorkflowSteps from '../ui/WorkflowSteps.vue';
+import ParseDownloadPlanner from './parse/ParseDownloadPlanner.vue';
+import ParseBatchWorkspace from './parse/ParseBatchWorkspace.vue';
+import ParseResultWorkspace from './parse/ParseResultWorkspace.vue';
+import { useParsePage } from './useParsePage';
+const {
+  parse,
+  inputMode,
+  singleInput,
+  createLoading,
+  activeStage,
+  workflowSteps,
+  submitInput,
+  switchInputMode,
+  pasteSingleInput,
+  pasteInput,
+  openDownloadSettings,
+  runNoticeAction,
+} = useParsePage();
 </script>
-
 <template>
   <section class="page-grid grid-cols-1">
-    <section class="panel min-h-0 gap-4 overflow-hidden bg-(--color-surface) p-4">
+    <section class="panel parse-panel min-h-0 gap-4 overflow-hidden bg-(--color-surface) p-4">
       <UiWorkflowSteps v-model="activeStage" :steps="workflowSteps" />
 
       <UiInlineNotice
@@ -109,15 +37,18 @@ const runNoticeAction = () => {
         >{{ parse.notice.message }}</UiInlineNotice
       >
 
-      <section
-        v-if="activeStage === 'source'"
-        class="parse-entry"
-      >
+      <section v-if="activeStage === 'source'" class="parse-entry">
         <div class="parse-entry-shell">
           <header class="parse-entry-header">
             <div class="parse-entry-heading">
               <h2>解析链接</h2>
-              <p>{{ inputMode === 'single' ? '只解析当前视频及其分 P，不展开所属合集。' : '粘贴一个或多个 Bilibili 来源，解析后再选择要下载的视频与分集。' }}</p>
+              <p>
+                {{
+                  inputMode === 'single'
+                    ? '只解析当前视频及其分 P，不展开所属合集。'
+                    : '粘贴一个或多个 Bilibili 来源，解析后再选择要下载的视频与分集。'
+                }}
+              </p>
             </div>
             <UiStatusBadge v-if="createLoading" status="downloading">解析中</UiStatusBadge>
           </header>
@@ -125,14 +56,18 @@ const runNoticeAction = () => {
           <form class="parse-entry-form" @submit.prevent="submitInput" @keydown.ctrl.enter.prevent="submitInput">
             <div class="parse-mode-switch" role="group" aria-label="解析模式">
               <UiButton
-                v-for="mode in ([{ value: 'batch', label: '批量解析' }, { value: 'single', label: '单个视频' }] as const)"
+                v-for="mode in [
+                  { value: 'batch', label: '批量解析' },
+                  { value: 'single', label: '单个视频' },
+                ] as const"
                 :key="mode.value"
                 size="compact"
                 variant="secondary"
                 :aria-pressed="inputMode === mode.value"
                 :disabled="createLoading"
                 @click="switchInputMode(mode.value)"
-              >{{ mode.label }}</UiButton>
+                >{{ mode.label }}</UiButton
+              >
             </div>
             <UiTextField
               v-if="inputMode === 'single'"
@@ -159,7 +94,9 @@ const runNoticeAction = () => {
                 粘贴链接
               </UiButton>
               <div class="parse-entry-submit">
-                <span class="parse-entry-shortcut" aria-hidden="true">{{ inputMode === 'single' ? 'Enter' : 'Ctrl + Enter' }}</span>
+                <span class="parse-entry-shortcut" aria-hidden="true">{{
+                  inputMode === 'single' ? 'Enter' : 'Ctrl + Enter'
+                }}</span>
                 <UiButton class="min-w-28" type="submit" :disabled="createLoading">
                   {{ createLoading ? '解析中' : '开始解析' }}
                 </UiButton>

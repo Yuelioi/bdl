@@ -18,6 +18,7 @@ export interface ToastAction {
 export const useUiStore = defineStore('ui', {
   state: () => ({
     activeTab: 'parse' as AppTab,
+    mobilePersonalPage: 'home' as 'home' | 'settings' | 'about',
     drawerOpen: false,
     dialogOpen: false,
     toasts: [] as ToastMessage[],

@@ -248,6 +248,10 @@ pub struct DownloadTaskRefreshIntent {
     pub cid: u64,
     #[serde(default)]
     pub page_number: Option<u32>,
+    #[serde(default)]
+    pub cover_url: Option<String>,
+    #[serde(default)]
+    pub duration_seconds: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

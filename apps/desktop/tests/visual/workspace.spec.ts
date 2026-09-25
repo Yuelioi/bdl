@@ -336,6 +336,371 @@ const installTauriMock = async (
   );
 };
 
+test('mobile shell keeps navigation and downloads usable without desktop steps', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Linux; Android 12) Mobile' });
+  });
+  await installTauriMock(page, 'light', true, true);
+  await page.goto('/');
+  await expect(page.locator('.app-mobile')).toBeVisible();
+  await expect(page.getByRole('navigation', { name: '主导航' }).getByRole('button')).toHaveCount(4);
+  await expect(page.locator('aside.side-nav')).toHaveCount(0);
+  await expect(page.getByRole('navigation', { name: '操作阶段' })).toHaveCount(0);
+  await expect(page.locator('.mobile-header')).toBeVisible();
+  expect((await page.locator('.mobile-header').boundingBox())!.height).toBeLessThanOrEqual(52);
+  await expect(page.locator('.mobile-header .account-button')).toHaveCount(0);
+  await expect(page.locator('.mobile-header').getByRole('button')).toHaveCount(0);
+  await page.getByLabel('Bilibili 链接或 BV / AV').fill('favorite:fixture');
+  await page.getByRole('button', { name: '开始解析' }).click();
+  const results = page.getByRole('list', { name: '解析结果' });
+  await expect(results).toBeVisible();
+  const parseRow = results.getByRole('listitem').first();
+  expect((await parseRow.boundingBox())!.height).toBeLessThanOrEqual(64);
+  expect((await parseRow.locator('.result-cover').boundingBox())!.height).toBeLessThanOrEqual(49);
+  expect(await parseRow.locator('.result-cover').evaluate((cover) => getComputedStyle(cover).borderRadius)).toBe('4px');
+  expect(await parseRow.locator('.result-copy strong').evaluate((title) => getComputedStyle(title).fontSize)).toBe('13px');
+  await expect(parseRow.locator('.result-copy').locator(':scope > *')).toHaveCount(2);
+  await results.getByRole('listitem').first().locator('.mobile-result-content').click();
+  await expect(page.locator('.mobile-download-bar').getByRole('button', { name: '下载所选 (1)' })).toBeEnabled();
+  await page.getByRole('navigation', { name: '主导航' }).getByRole('button', { name: '我的' }).click();
+  await expect(page.locator('.profile-card')).toBeVisible();
+  await expect(page.getByRole('heading', { name: '我的', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /外观：/ })).toBeVisible();
+  await page.getByRole('navigation', { name: '主导航' }).getByRole('button', { name: '解析' }).click();
+  await expect(page.locator('.mobile-download-bar').getByRole('button', { name: '下载所选 (1)' })).toBeEnabled();
+  await expect(page.locator('.workspace-enter-active, .workspace-leave-active')).toHaveCount(0);
+  for (const width of [390, 320]) {
+    await page.setViewportSize({ width, height: 844 });
+    const footer = await page.locator('.mobile-download-bar').boundingBox();
+    const action = await page.locator('.mobile-download-bar .ui-button').boundingBox();
+    const nav = await page.locator('.mobile-navigation').boundingBox();
+    expect(footer!.y + footer!.height).toBeLessThanOrEqual(nav!.y);
+    expect(action!.height).toBeLessThanOrEqual(32);
+    expect(action!.width).toBeLessThanOrEqual(112);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
+    await page.screenshot({ path: testInfo.outputPath(`mobile-result-${width}.png`) });
+  }
+  await page.getByRole('button', { name: '下载所选 (1)' }).click();
+  const downloadDialog = page.getByRole('dialog');
+  await expect(downloadDialog).toBeVisible();
+  const cancelBox = await downloadDialog.getByRole('button', { name: '取消', exact: true }).boundingBox();
+  const startBox = await downloadDialog.getByRole('button', { name: '开始下载' }).boundingBox();
+  expect(cancelBox!.x).toBeLessThan(startBox!.x);
+  await page.screenshot({ path: testInfo.outputPath('mobile-download-dialog.png') });
+});
+
+test('mobile library uses compact covers and shared page actions', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.addInitScript(() => Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Linux; Android 12) Mobile' }));
+  await installTauriMock(page, 'light', true, true);
+  await page.addInitScript(() => {
+    const target = window as unknown as { __TAURI_INTERNALS__: { invoke: (command: string, args?: unknown) => Promise<unknown> } };
+    const invoke = target.__TAURI_INTERNALS__.invoke;
+    target.__TAURI_INTERNALS__.invoke = async (command, args) => {
+      if (command === 'settings_update') return (args as { settings: unknown }).settings;
+      const result = await invoke(command, args);
+      if (command === 'parse_create_source') {
+        const tree = result as NormalizedSourceTree;
+        tree.groups?.forEach(group => group.items.forEach((item, index) => {
+          item.cover_url = index === 0 ? 'http://i0.hdslb.com/test-cover.svg' : null;
+        }));
+      }
+      return result;
+    };
+  });
+  const referers: Array<string | undefined> = [];
+  await page.route('https://i0.hdslb.com/test-cover.svg', async route => {
+    referers.push(route.request().headers().referer);
+    await route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="160" height="100"><rect width="160" height="100" fill="#c7d8cf"/></svg>' });
+  });
+  await page.goto('/');
+  const nav = page.getByRole('navigation', { name: '主导航' });
+  await nav.getByRole('button', { name: '内容库' }).click();
+  await page.getByRole('tab', { name: /订阅合集/ }).click();
+  await page.getByRole('button', { name: '进入 双赢之路' }).click();
+  await expect(page.locator('.folder-heading')).toContainText('双赢之路');
+  const cover = page.locator('.mobile-result img').first();
+  await expect(cover).toHaveAttribute('src', 'https://i0.hdslb.com/test-cover.svg');
+  await expect.poll(() => cover.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBe(160);
+  expect(referers).toEqual([undefined]);
+  const folderRow = page.locator('.mobile-result').first();
+  expect((await folderRow.boundingBox())!.height).toBeLessThanOrEqual(64);
+  expect((await folderRow.locator('.result-cover').boundingBox())!.height).toBeLessThanOrEqual(49);
+  expect(await folderRow.locator('.result-cover').evaluate((artwork) => getComputedStyle(artwork).borderRadius)).toBe('4px');
+  await page.locator('.mobile-result-content').first().click();
+  await expect(page.locator('.folder-download').getByRole('button', { name: '下载所选 (1)' })).toBeEnabled();
+  for (const width of [390, 320]) {
+    await page.setViewportSize({ width, height: 844 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
+    const footer = await page.locator('.folder-download').boundingBox();
+    const action = await page.locator('.folder-download .ui-button').boundingBox();
+    const navigation = await nav.boundingBox();
+    expect(footer!.y + footer!.height).toBeLessThanOrEqual(navigation!.y);
+    expect(action!.height).toBeLessThanOrEqual(32);
+    expect(action!.width).toBeLessThanOrEqual(112);
+    await page.screenshot({ path: testInfo.outputPath(`mobile-library-${width}.png`) });
+  }
+  await page.locator('.folder-download').getByRole('button').click();
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await nav.getByRole('button', { name: '我的' }).click();
+  await expect(page.locator('.profile-card')).toBeVisible();
+  await expect(page.locator('.workspace-enter-active, .workspace-leave-active')).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath('reference-personal.png') });
+  await page.getByRole('button', { name: /下载设置/ }).click();
+  await page.getByRole('button', { name: '下载 目录、并发与恢复' }).click();
+  await page.getByLabel('全局下载限速（MiB/s）', { exact: true }).fill('10');
+  await page.getByRole('button', { name: '保存', exact: true }).click();
+  await expect(page.getByRole('button', { name: '保存', exact: true })).toBeDisabled();
+  await page.screenshot({ path: testInfo.outputPath('mobile-settings.png') });
+  await nav.getByRole('button', { name: '传输' }).click();
+  await expect(page.locator('.transfer-main')).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('mobile-transfer.png') });
+  await nav.getByRole('button', { name: '我的' }).click();
+  await page.getByRole('button', { name: /关于 BDL/ }).click();
+  await expect(page.getByText('GitHub 仓库')).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
+  await page.screenshot({ path: testInfo.outputPath('mobile-about.png') });
+});
+
+test('mobile library collection index stays flat and two-line in dark theme', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 320, height: 844 });
+  await page.addInitScript(() =>
+    Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Linux; Android 12) Mobile' }),
+  );
+  await installTauriMock(page, 'dark', true, true);
+  await page.goto('/');
+  await page.getByRole('navigation', { name: '主导航' }).getByRole('button', { name: '内容库' }).click();
+  await page.getByRole('tab', { name: /订阅合集/ }).click();
+
+  const cards = page.locator('.library-card');
+  await expect(cards.first()).toBeVisible();
+  await expect(cards.locator('.library-description')).toHaveCount(0);
+  for (const card of await cards.all()) {
+    expect((await card.boundingBox())!.height).toBeLessThanOrEqual(64);
+    await expect(card.locator('.library-card-copy').locator(':scope > *')).toHaveCount(2);
+    expect(await card.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe('rgba(0, 0, 0, 0)');
+  }
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
+  await page.screenshot({ path: testInfo.outputPath('mobile-library-index-dark.png') });
+});
+
+test('mobile redesign keeps content first with populated lists and bottom sheets', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.addInitScript(() => Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Linux; Android 12) Mobile' }));
+  await installTauriMock(page, 'light', true, true);
+  await page.addInitScript(() => {
+    const target = window as unknown as { __TAURI_INTERNALS__: { invoke: (command: string, args?: unknown) => Promise<unknown> } };
+    const invoke = target.__TAURI_INTERNALS__.invoke;
+    target.__TAURI_INTERNALS__.invoke = async (command, args) => {
+      if (command === 'settings_update') return (args as { settings: unknown }).settings;
+      if (command === 'queue_logs') return [];
+      if (command === 'queue_list') return Array.from({ length: 123 }, (_, index) => ({
+        id: `mobile-task-${index}`, title: ['测试屏幕 · 壁纸级 4K 8K HDR 画面', 'bilibili 8K 带你看亚洲 33 个国家', '异环高效锄地路线 1'][index % 3],
+        source_id: 'video:fixture', status: index === 0 ? 'downloading' : index === 1 ? 'paused' : index === 2 ? 'failed' : 'completed', resources: index === 0 ? [{ id: 'resource:video', kind: 'video', intent: 'video', current_urls: [], headers: [], status: 'downloading', target_path: 'downloads/video.m4s', temp_path: 'downloads/video.m4s.part' }] : [], output_path: 'downloads/测试视频.mp4', refresh_intent: { input: { kind: 'video_bvid', bvid: 'BV1fixture' }, cid: index + 1, cover_url: 'http://i0.hdslb.com/transfer-cover.svg', duration_seconds: 60 }, media_selection: null, scheduled_at: null, speed_limit_bytes_per_second: null,
+      }));
+      const result = await invoke(command, args);
+      if (command === 'account_library_list') {
+        const list = result as { items: Array<{ title: string; source_url: string; media_count: number }>; total: number };
+        list.total = 33;
+        list.items[0] = { ...list.items[0], title: '默认收藏夹', source_url: 'favorite:fixture', media_count: 356 };
+      }
+      if (command === 'parse_create_source') {
+        const tree = result as NormalizedSourceTree;
+        tree.source.title = '默认收藏夹'; tree.source.total_count = 356; tree.source.loaded_count = 40;
+        const base = tree.groups[0].items[0];
+        tree.groups[0].items = Array.from({ length: 40 }, (_, index) => ({ ...base, id: `item-${index}`, title: ['测试屏幕 · 壁纸级 4K 8K HDR 画面', 'bilibili 8K 带你看亚洲 33 个国家', '异环高效锄地路线 1'][index % 3], parts: [{ ...base.parts[0], id: `part-${index}` }] }));
+      }
+      return result;
+    };
+  });
+  await page.route('https://i0.hdslb.com/transfer-cover.svg', (route) =>
+    route.fulfill({
+      contentType: 'image/svg+xml',
+      body: '<svg xmlns="http://www.w3.org/2000/svg" width="160" height="90"><rect width="160" height="90" fill="#d8c9d1"/></svg>',
+    }),
+  );
+  await page.goto('/');
+  const expectSheetInViewport = async (name: string) => {
+    const viewport = page.viewportSize();
+    expect(viewport).not.toBeNull();
+    await expect
+      .poll(async () => {
+        const sheet = await page.getByRole('dialog', { name }).boundingBox();
+        return {
+          left: Math.round(sheet!.x),
+          right: Math.round(sheet!.x + sheet!.width),
+          bottom: Math.round(sheet!.y + sheet!.height),
+        };
+      })
+      .toEqual({ left: 0, right: viewport!.width, bottom: viewport!.height });
+  };
+  await expect(page.getByRole('button', { name: '开始解析' })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('redesign-parse.png') });
+  const nav = page.getByRole('navigation', { name: '主导航' });
+  await nav.getByRole('button', { name: '内容库' }).click();
+  const firstCollection = page.locator('.library-card').first();
+  const firstCollectionCover = firstCollection.locator('.library-cover');
+  await expect(firstCollection.locator('.library-description')).toHaveCount(0);
+  await expect(firstCollection.locator('.library-card-copy').locator(':scope > *')).toHaveCount(2);
+  expect((await firstCollectionCover.boundingBox())!.height).toBeLessThanOrEqual(49);
+  expect(await firstCollectionCover.evaluate((cover) => getComputedStyle(cover).borderRadius)).toBe('4px');
+  expect(await firstCollection.locator('h3').evaluate((title) => getComputedStyle(title).fontSize)).toBe('13px');
+  expect((await firstCollection.boundingBox())!.height).toBeLessThanOrEqual(64);
+  await page.getByRole('button', { name: '进入 默认收藏夹' }).click();
+  await expect(page.locator('.folder-heading')).toContainText('356 个视频');
+  await expect(page.getByRole('tablist')).toHaveCount(0);
+  await expect(page.locator('.source-parse-controls')).toHaveCount(0);
+  await expect(page.getByRole('combobox')).toHaveCount(0);
+  const pagination = page.getByRole('navigation', { name: '集合内容分页' });
+  await expect(pagination.getByRole('button', { name: '上一页' })).toBeDisabled();
+  await expect(pagination.getByRole('button', { name: '下一页' })).toBeEnabled();
+  await expect(pagination.getByRole('textbox')).toHaveValue('1');
+  for (const width of [390, 320]) {
+    await page.setViewportSize({ width, height: 844 });
+    const first = await page.locator('.mobile-result').first().boundingBox();
+    expect(first!.y).toBeLessThan(220);
+    const paginationBox = await pagination.boundingBox();
+    const folderFooterBox = await page.locator('.folder-download').boundingBox();
+    expect(paginationBox!.width).toBeLessThanOrEqual(width - 24);
+    expect(paginationBox!.height).toBeLessThanOrEqual(32);
+    expect(
+      await pagination.evaluate((element) => {
+        const page = element.closest('.mobile-page');
+        return [getComputedStyle(element).backgroundColor, page ? getComputedStyle(page).backgroundColor : ''];
+      }),
+    ).toEqual(['rgb(251, 250, 251)', 'rgb(251, 250, 251)']);
+    expect(paginationBox!.y + paginationBox!.height).toBeLessThanOrEqual(folderFooterBox!.y);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
+    await page.screenshot({ path: testInfo.outputPath(`redesign-library-${width}.png`) });
+  }
+  await page.getByRole('button', { name: '内容操作' }).click();
+  await expect(page.getByRole('dialog', { name: '内容操作' })).toBeVisible();
+  await expect(page.getByLabel('每次加载')).toBeVisible();
+  await expectSheetInViewport('内容操作');
+  await page.screenshot({ path: testInfo.outputPath('redesign-source-sheet.png') });
+  await page.keyboard.press('Escape');
+  await nav.getByRole('button', { name: /传输/ }).click();
+  await expect(page.getByRole('list', { name: '传输任务' })).toBeVisible();
+  await expect(page.getByRole('table', { name: '传输任务' })).toHaveCount(0);
+  await expect(page.locator('.task-playback-action').first()).toBeVisible();
+  await expect(page.locator('.mobile-task').first()).toContainText('下载视频中');
+  expect((await page.locator('.mobile-task').first().boundingBox())!.height).toBeLessThanOrEqual(64);
+  expect((await page.locator('.task-artwork').first().boundingBox())!.height).toBeLessThanOrEqual(49);
+  expect(await page.locator('.task-artwork').first().evaluate((artwork) => getComputedStyle(artwork).borderRadius)).toBe('4px');
+  expect(await page.locator('.task-title').first().evaluate((title) => getComputedStyle(title).fontSize)).toBe('13px');
+  expect(await page.locator('.task-playback-action').first().locator('svg').evaluate((icon) => icon.childElementCount)).toBeGreaterThan(0);
+  const playbackBox = await page.locator('.task-playback-action').first().boundingBox();
+  const durationBox = await page.locator('.mobile-task').first().locator('.artwork-duration').boundingBox();
+  expect(playbackBox!.x + playbackBox!.width).toBeLessThan(durationBox!.x);
+  await page.screenshot({ path: testInfo.outputPath('redesign-transfer-active.png') });
+  await page.getByRole('tab', { name: /已完成/ }).click();
+  await expect(page.getByRole('button', { name: '搜索已完成任务' })).toBeVisible();
+  await expect(page.getByPlaceholder('搜索标题或保存位置')).toHaveCount(0);
+  await page.getByRole('button', { name: '搜索已完成任务' }).click();
+  await expect(page.getByPlaceholder('搜索标题或保存位置')).toBeVisible();
+  await page.getByRole('button', { name: '关闭搜索' }).click();
+  await expect(page.locator('.mobile-task img').first()).toHaveAttribute(
+    'src',
+    'https://i0.hdslb.com/transfer-cover.svg',
+  );
+  await expect(page.locator('.mobile-task').first().locator('.task-status-badge')).toHaveText('已完成');
+  await expect(page.locator('.mobile-task').first().getByRole('button', { name: '播放' })).toBeVisible();
+  await expect(page.locator('.mobile-task').first().getByText('打开文件', { exact: true })).toHaveCount(0);
+  await expect(page.locator('.mobile-task').first().locator('.task-heading, .task-meta')).toHaveCount(2);
+  await expect(page.locator('.mobile-header')).toBeVisible();
+  expect((await page.locator('.mobile-header').boundingBox())!.height).toBeLessThanOrEqual(52);
+  await expect(page.locator('.mobile-header')).toContainText('BDL');
+  expect((await page.locator('.mobile-navigation').boundingBox())!.height).toBeLessThanOrEqual(60);
+  expect((await page.locator('.mobile-task').first().boundingBox())!.height).toBeLessThanOrEqual(78);
+  const taskListBox = await page.locator('.mobile-task-list').boundingBox();
+  const taskListWidth = await page.locator('.mobile-task-list').evaluate((list) => ({
+    client: list.clientWidth,
+    scroll: list.scrollWidth,
+  }));
+  expect(taskListWidth.scroll).toBeLessThanOrEqual(taskListWidth.client);
+  const fullyVisibleTaskCount = await page.locator('.mobile-task').evaluateAll((tasks, bounds) =>
+    tasks.filter((task) => {
+      const box = task.getBoundingClientRect();
+      return box.top >= bounds.top && box.bottom <= bounds.bottom;
+    }).length,
+    { top: taskListBox!.y, bottom: taskListBox!.y + taskListBox!.height },
+  );
+  expect(fullyVisibleTaskCount).toBeGreaterThanOrEqual(8);
+  for (const tab of await page.getByRole('tab').all()) {
+    const box = await tab.boundingBox();
+    expect(box!.height).toBeLessThanOrEqual(42);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(320);
+  }
+  const firstTask = page.locator('.mobile-task').first();
+  const firstTaskBox = await firstTask.boundingBox();
+  await page.mouse.move(firstTaskBox!.x + firstTaskBox!.width / 2, firstTaskBox!.y + firstTaskBox!.height / 2);
+  await page.mouse.down();
+  await page.waitForTimeout(460);
+  await page.mouse.up();
+  await expect(firstTask.getByRole('checkbox')).toBeChecked();
+  await expect(page.getByRole('button', { name: '完成管理' })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('redesign-transfer-selection.png') });
+  await page.getByRole('button', { name: '完成管理' }).click();
+  await expect(firstTask.getByRole('checkbox')).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath('redesign-transfer.png') });
+  await page.getByRole('button', { name: /：更多操作/ }).first().click();
+  await expect(page.getByRole('dialog', { name: '任务操作' })).toBeVisible();
+  await expectSheetInViewport('任务操作');
+  await page.screenshot({ path: testInfo.outputPath('redesign-task-sheet.png') });
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: '传输选项' }).click();
+  await expect(page.getByRole('dialog', { name: '传输选项' })).toBeVisible();
+  await expectSheetInViewport('传输选项');
+  await page.keyboard.press('Escape');
+  await nav.getByRole('button', { name: '我的' }).click();
+  await expect(page.locator('.profile-card')).toBeVisible();
+  await expect(page.locator('.workspace-enter-active, .workspace-leave-active')).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath('reference-personal.png') });
+  await page.getByRole('button', { name: /下载设置/ }).click();
+  await expect(page.locator('.settings-category')).toHaveCount(6);
+  await expect(page.locator('.mobile-header')).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('redesign-settings.png') });
+  await page.getByRole('button', { name: '下载 目录、并发与恢复' }).click();
+  await expect(page.getByLabel('全局下载限速（MiB/s）', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '返回设置' }).click();
+  await expect(page.locator('.settings-category')).toHaveCount(6);
+  await page.getByRole('button', { name: '返回我的' }).click();
+  await page.getByRole('button', { name: /外观：/ }).first().click();
+  await page.getByRole('menuitemcheckbox', { name: '深色' }).click();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('html')).toHaveClass(/dark/);
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath('reference-personal-dark.png') });
+  await page.getByRole('button', { name: /下载设置/ }).click();
+  await page.screenshot({ path: testInfo.outputPath('redesign-settings-dark.png') });
+  await nav.getByRole('button', { name: /传输/ }).click();
+  await expect(page.locator('.mobile-task-list')).toBeVisible();
+  await expect(page.locator('.workspace-enter-active, .workspace-leave-active')).toHaveCount(0);
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath('redesign-transfer-dark.png') });
+});
+
+test('mobile batch selection and removal keep the download action reachable', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 844 });
+  await page.addInitScript(() => Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Linux; Android 12) Mobile' }));
+  await installTauriMock(page, 'light', true, true);
+  await page.goto('/');
+  await page.getByLabel('Bilibili 链接或 BV / AV').fill('BV1xx411c7mD\nBV1xx411c7mE');
+  await page.getByRole('button', { name: '开始解析' }).click();
+  const list = page.getByRole('list', { name: '批量解析结果' });
+  await expect(list.getByRole('listitem')).toHaveCount(2);
+  await list.getByRole('button', { name: '移除这个链接' }).last().click();
+  await expect(list.getByRole('listitem')).toHaveCount(1);
+  await list.getByRole('checkbox').first().setChecked(true);
+  await expect(page.getByRole('button', { name: '下载所选 (1)' })).toBeEnabled();
+  const footer = await page.locator('.mobile-download-footer').boundingBox();
+  const nav = await page.locator('.mobile-navigation').boundingBox();
+  expect(footer!.y + footer!.height).toBeLessThanOrEqual(nav!.y);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
+});
+
 test('renders navigation icon bodies before the first painted frame', async ({ page }) => {
   await page.addInitScript(() => {
     const samples: Array<{ navItems: number; icons: number }> = [];

@@ -155,6 +155,8 @@ export default defineConfig({
     ui({
       ui: {
         icons: nuxtUiIcons,
+        dropdownMenu: { slots: { item: 'items-center' } },
+        contextMenu: { slots: { item: 'items-center' } },
       },
       theme: {
         colors: ['primary', 'success', 'warning', 'error', 'neutral'],

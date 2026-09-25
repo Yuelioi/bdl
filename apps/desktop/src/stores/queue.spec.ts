@@ -37,3 +37,52 @@ describe('queue reconciliation', () => {
     expect(queue.reconciling).toBe(false)
   })
 })
+
+describe('queue stage progress', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
+  it('reports progress for the resource currently downloading', () => {
+    const queue = useQueueStore()
+    const downloading = task('downloading')
+    downloading.resources = [
+      {
+        id: 'resource:video',
+        kind: 'video',
+        intent: 'video',
+        current_urls: [],
+        headers: [],
+        status: 'completed',
+        target_path: 'downloads/video.m4s',
+        temp_path: 'downloads/video.m4s.part',
+      },
+      {
+        id: 'resource:audio',
+        kind: 'audio',
+        intent: 'audio',
+        current_urls: [],
+        headers: [],
+        status: 'downloading',
+        target_path: 'downloads/audio.m4s',
+        temp_path: 'downloads/audio.m4s.part',
+      },
+    ]
+    queue.applyProgress({
+      task_id: downloading.id,
+      resource_id: 'resource:video',
+      downloaded_bytes: 99,
+      total_bytes: 100,
+      created_at: '2026-09-25T00:00:00Z',
+    })
+    queue.applyProgress({
+      task_id: downloading.id,
+      resource_id: 'resource:audio',
+      downloaded_bytes: 17,
+      total_bytes: 20,
+      created_at: '2026-09-25T00:00:01Z',
+    })
+
+    expect(queue.taskStageProgress(downloading)).toBe(85)
+  })
+})

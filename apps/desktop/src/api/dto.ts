@@ -164,6 +164,8 @@ export interface DownloadTaskRefreshIntent {
   input: DownloadTaskRefreshInput
   cid: number
   page_number?: number | null
+  cover_url?: string | null
+  duration_seconds?: number | null
 }
 
 export type DownloadTaskRefreshInput =

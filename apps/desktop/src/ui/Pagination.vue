@@ -1,35 +1,10 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
-import UiButton from './Button.vue'
-
-const {
-  page,
-  total,
-  itemsPerPage = 20,
-  disabled = false,
-  label = '分页',
-} = defineProps<{
-  page: number
-  total: number
-  itemsPerPage?: number
-  disabled?: boolean
-  label?: string
-}>()
-
-const emit = defineEmits<{ 'update:page': [page: number] }>()
-const pageCount = computed(() => Math.max(1, Math.ceil(total / itemsPerPage)))
-const targetPage = ref(String(page))
-watch(() => page, (value) => {
-  targetPage.value = String(value)
-})
-const validTarget = computed(() =>
-  /^\d+$/.test(targetPage.value) && Number(targetPage.value) >= 1 && Number(targetPage.value) <= pageCount.value,
-)
-const jump = () => {
-  if (!disabled && validTarget.value && Number(targetPage.value) !== page) emit('update:page', Number(targetPage.value))
-}
+import UiButton from './Button.vue';
+import { usePagination, type PaginationProps } from './usePagination';
+const props = withDefaults(defineProps<PaginationProps>(), { itemsPerPage: 20, disabled: false, label: '分页' });
+const emit = defineEmits<{ 'update:page': [page: number] }>();
+const { pageCount, targetPage, validTarget, jump } = usePagination(props, (page) => emit('update:page', page));
 </script>
-
 <template>
   <nav class="ui-pagination" :aria-label="label">
     <UPagination

@@ -396,7 +396,13 @@ fn plan_part(
         resources,
         output_path,
         export_target: None,
-        refresh_intent: media_refresh_intent(tree.source.kind, part, selected.part_index + 1),
+        refresh_intent: media_refresh_intent(tree.source.kind, part, selected.part_index + 1).map(
+            |mut intent| {
+                intent.cover_url.clone_from(&item.cover_url);
+                intent.duration_seconds = part.duration_seconds.or(item.duration_seconds);
+                intent
+            },
+        ),
         media_selection: DownloadTaskMediaSelection {
             processing: options.processing,
             video_quality: video
@@ -675,6 +681,8 @@ fn video_refresh_intent(
         input,
         cid,
         page_number: u32::try_from(page_number).ok(),
+        cover_url: None,
+        duration_seconds: None,
     })
 }
 
@@ -698,6 +706,8 @@ fn episode_refresh_intent(part: &NormalizedPart, kind: &str) -> Option<DownloadT
         input,
         cid,
         page_number: None,
+        cover_url: None,
+        duration_seconds: None,
     })
 }
 

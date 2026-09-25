@@ -58,6 +58,39 @@ describe('scheduled transfer task view', () => {
   })
 })
 
+describe('active transfer stages', () => {
+  const activeTask = (intent: 'video' | 'audio', status: DownloadTask['status'] = 'downloading'): DownloadTask => ({
+    ...scheduledTask(),
+    status,
+    scheduled_at: null,
+    resources: [
+      {
+        id: `resource:${intent}`,
+        kind: intent === 'video' ? 'video' : 'audio',
+        intent,
+        current_urls: ['https://example.com/media'],
+        headers: [],
+        status: 'downloading',
+        target_path: `downloads/${intent}`,
+        temp_path: `downloads/${intent}.part`,
+      },
+    ],
+  })
+
+  it('labels video, audio and muxing as separate stages', () => {
+    expect(createTransferTaskView(activeTask('video'), 99, [], null, undefined, 99).statusLabel).toBe('下载视频中')
+    expect(createTransferTaskView(activeTask('audio'), 85, [], null, undefined, 85).statusLabel).toBe('下载音频中')
+    expect(createTransferTaskView(activeTask('video', 'muxing'), 99).statusLabel).toBe('合并中')
+  })
+
+  it('shows the current track percentage instead of the changing aggregate', () => {
+    const view = createTransferTaskView(activeTask('audio'), 92, [], null, undefined, 35)
+
+    expect(view.progressValue).toBe(92)
+    expect(view.stageProgressLabel).toBe('35%')
+  })
+})
+
 describe('completed transfer task warnings', () => {
   it('uses a compact status label when optional resources fail', () => {
     const task = scheduledTask()

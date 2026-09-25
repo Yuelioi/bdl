@@ -329,7 +329,8 @@ impl SourceResolver {
         .await
     }
 
-    async fn expand_short_url(&self, input: &str) -> BdlResult<ClassifiedInput> {
+    /// Expand a share link before dispatching to a source-specific resolver.
+    pub async fn expand_short_url(&self, input: &str) -> BdlResult<ClassifiedInput> {
         use bpi_rs::transport::observer::RequestObserver;
         let client = reqwest::Client::builder()
             .no_proxy()

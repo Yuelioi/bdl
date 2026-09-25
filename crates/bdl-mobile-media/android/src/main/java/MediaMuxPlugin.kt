@@ -69,7 +69,9 @@ class MediaMuxPlugin(private val activity: Activity) : Plugin(activity) {
 
     try {
       try {
-        FfmpegMuxer.mux(args.videoPath, args.audioPath, temporary.absolutePath, args.formatName)
+        muxWithNativeErrorHandling {
+          FfmpegMuxer.mux(args.videoPath, args.audioPath, temporary.absolutePath, args.formatName)
+        }
       } catch (error: Exception) {
         throw IllegalStateException(
           "Android 内置 FFmpeg 合并失败：${error.message ?: error.javaClass.simpleName}",

@@ -1,0 +1,344 @@
+.app-shell {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 224px minmax(0, 1fr);
+  grid-template-rows: 42px minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.app-titlebar {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-nav);
+  color: var(--color-nav-text);
+  user-select: none;
+}
+
+.titlebar-brand {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding-left: var(--space-sm);
+  pointer-events: none;
+}
+
+.platform-macos .titlebar-brand {
+  padding-left: 78px;
+}
+
+.titlebar-brand strong {
+  font-family: var(--font-display);
+  font-size: var(--font-13);
+  font-variation-settings: 'wdth' 92;
+}
+
+.titlebar-name {
+  overflow: hidden;
+  color: var(--color-nav-muted);
+  font-size: var(--font-11);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.titlebar-brand .titlebar-version {
+  color: var(--color-muted);
+  font-size: var(--font-11);
+}
+
+.titlebar-update {
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-6);
+  background: var(--color-accent-soft);
+  color: var(--color-accent-strong);
+  padding: 0 9px;
+  font-size: var(--font-11);
+  font-weight: 700;
+}
+
+.titlebar-mark {
+  width: 24px;
+  height: 20px;
+  display: inline-flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 3px;
+  border: 1px solid var(--color-accent);
+  border: 1px solid color-mix(in oklab, var(--color-accent) 62%, var(--color-nav));
+  border-radius: var(--radius-4);
+  background: var(--color-accent-faint);
+  background: color-mix(in oklab, var(--color-accent) 17%, var(--color-nav));
+  padding: 4px 5px;
+}
+
+.titlebar-mark i {
+  width: 4px;
+  border-radius: 1px;
+  background: var(--color-accent);
+}
+
+.titlebar-mark i:first-child {
+  height: 7px;
+}
+.titlebar-mark i:last-child {
+  height: 11px;
+}
+
+.titlebar-actions {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+}
+
+.platform-macos .titlebar-actions {
+  padding-right: var(--space-sm);
+}
+
+.window-controls {
+  height: 100%;
+  display: flex;
+  margin-left: var(--space-2xs);
+}
+
+.window-controls button {
+  width: 44px;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-nav-muted);
+}
+
+.window-controls button:hover {
+  background: var(--color-nav-raised);
+  color: var(--color-nav-text);
+}
+
+.window-controls button.close:hover {
+  background: var(--color-danger);
+  color: var(--color-on-accent);
+}
+
+.window-controls svg {
+  width: 15px;
+  height: 15px;
+}
+
+.side-nav {
+  grid-column: 1;
+  grid-row: 2;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+  padding: var(--space-md) var(--space-sm);
+  border-right: 1px solid var(--color-border);
+  background: var(--color-nav);
+  overflow: hidden;
+}
+
+.nav-list {
+  display: grid;
+  gap: var(--space-xs);
+}
+
+.nav-item {
+  position: relative;
+  min-height: 54px;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-sm);
+  border: 1px solid transparent;
+  border-radius: var(--radius-6);
+  background: transparent;
+  color: var(--color-nav-muted);
+  padding: var(--space-xs) var(--space-sm);
+  text-align: left;
+  transition:
+    background-color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+
+.nav-item:hover {
+  border-color: var(--color-border);
+  background: var(--color-nav-raised);
+  color: var(--color-nav-text);
+}
+
+.nav-icon {
+  width: 19px;
+  height: 19px;
+}
+
+.nav-copy {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.nav-copy strong,
+.nav-copy small,
+.nav-status strong,
+.nav-status small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nav-copy strong {
+  color: inherit;
+  font-size: var(--font-13);
+  font-weight: 720;
+}
+
+.nav-copy small {
+  color: var(--color-nav-muted);
+  font-size: var(--font-11);
+}
+
+.nav-item.active {
+  border-color: var(--color-accent-soft);
+  border-color: color-mix(in oklab, var(--color-accent) 28%, var(--color-border));
+  background: var(--color-accent-faint);
+  color: var(--color-nav-text);
+}
+
+.nav-item.active .nav-icon {
+  color: var(--color-accent-strong);
+}
+
+.nav-badge {
+  min-width: 20px;
+  height: 20px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  padding: 0 6px;
+  font-size: var(--font-12);
+  font-weight: 700;
+  line-height: 1;
+}
+
+.nav-status {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-xs);
+  margin-top: auto;
+  padding: var(--space-sm) var(--space-xs);
+  border-top: 1px solid var(--color-border);
+}
+
+.status-beacon {
+  width: 16px;
+  height: 16px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--color-success-soft);
+  background: color-mix(in oklab, var(--color-success) 16%, transparent);
+}
+
+.status-beacon::after {
+  width: 7px;
+  height: 7px;
+  border-radius: inherit;
+  background: var(--color-success);
+  content: '';
+}
+
+.status-beacon.attention {
+  background: var(--color-warning-soft);
+  background: color-mix(in oklab, var(--color-warning) 16%, transparent);
+}
+
+.status-beacon.attention::after {
+  background: var(--color-warning);
+}
+
+.nav-status > span:last-child {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.nav-status strong {
+  color: var(--color-nav-text);
+  font-size: var(--font-11);
+}
+
+.nav-status small {
+  color: var(--color-nav-muted);
+  font-size: 10px;
+}
+
+@media (max-width: 980px) {
+  .app-shell {
+    grid-template-columns: 72px minmax(0, 1fr);
+  }
+
+  .side-nav {
+    align-items: stretch;
+    padding-inline: var(--space-xs);
+  }
+
+  .nav-copy,
+  .nav-status > span:last-child {
+    display: none;
+  }
+
+  .nav-item {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    padding-inline: var(--space-xs);
+  }
+
+  .nav-badge {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    min-width: 16px;
+    height: 16px;
+    padding-inline: 4px;
+    font-size: 9px;
+  }
+
+  .nav-status {
+    min-height: 54px;
+    grid-template-columns: minmax(0, 1fr);
+    place-items: center;
+    gap: 0;
+    padding: 0;
+  }
+}
+
+@media (max-width: 720px) {
+  .titlebar-brand > span:last-child {
+    display: none;
+  }
+
+  .platform-macos .titlebar-mark,
+  .platform-macos .titlebar-name {
+    display: none;
+  }
+}

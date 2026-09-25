@@ -1,105 +1,44 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import UiButton from '../../ui/Button.vue';
+import UiEmptyState from '../../ui/EmptyState.vue';
+import UiInlineNotice from '../../ui/InlineNotice.vue';
+import SelectionActionBar from '../../ui/SelectionActionBar.vue';
+import ParseResultTable from './ParseResultTable.vue';
 
-import { useParseStore } from '../../stores/parse'
-import UiButton from '../../ui/Button.vue'
-import UiEmptyState from '../../ui/EmptyState.vue'
-import UiInlineNotice from '../../ui/InlineNotice.vue'
-import SelectionActionBar from '../../ui/SelectionActionBar.vue'
-import ParseResultTable from './ParseResultTable.vue'
-import SourceLoadStatus from './SourceLoadStatus.vue'
-import SourceParseControls from './SourceParseControls.vue'
-import {
-  flattenResultRows,
+import SourceLoadStatus from './SourceLoadStatus.vue';
+import SourceParseControls from './SourceParseControls.vue';
+import { useParseResultWorkspace } from './useParseResultWorkspace';
+const { embedded = false } = defineProps<{ embedded?: boolean }>();
+const emit = defineEmits<{ download: [] }>();
+const {
+  loadBatchSize,
+  activeSource,
+  selectedIds,
+  selectedCount,
+  totalPartCount,
+  tableRows,
+  sourceRequestLoading,
+  pacedParsing,
+  pacedWaiting,
+  pacedStopping,
+  activeLoading,
+  activeError,
+  hasMore,
+  allRowsSelected,
+  canCreateTasks,
+  createTaskLabel,
+  toggleAllResults,
+  clearSelection,
+  loadMore,
+  parseAll,
+  stopParsing,
+  downloadAllLoaded,
+  parseAndDownload,
+  returnToSource,
+  toggleNode,
   sourceKindLabels,
-  sourcePartCount,
-  toTreeNodes,
-} from './parseResultTree'
-
-const emit = defineEmits<{ download: [] }>()
-const { embedded = false } = defineProps<{ embedded?: boolean }>()
-const parse = useParseStore()
-const loadBatchSize = ref('50')
-const activeSource = computed(() => parse.activeSource)
-const selectedIds = computed(() => parse.activeSelection)
-const selectedCount = computed(() => selectedIds.value.length)
-const totalPartCount = computed(() => (activeSource.value ? sourcePartCount(activeSource.value) : 0))
-const tableRows = computed(() => (activeSource.value ? flattenResultRows(toTreeNodes(activeSource.value)) : []))
-const sourceRequestLoading = computed(() =>
-  Boolean(activeSource.value && parse.loadingBySource[activeSource.value.source.id]),
-)
-const pacedParsing = computed(() =>
-  Boolean(activeSource.value && parse.pacedParsingBySource[activeSource.value.source.id]),
-)
-const pacedWaiting = computed(() =>
-  Boolean(activeSource.value && parse.pacedParsingWaitingBySource[activeSource.value.source.id]),
-)
-const pacedStopping = computed(() =>
-  Boolean(activeSource.value && parse.pacedParsingStopRequestedBySource[activeSource.value.source.id]),
-)
-const activeLoading = computed(() => sourceRequestLoading.value || pacedParsing.value)
-const activeError = computed(() => (activeSource.value ? parse.errorsBySource[activeSource.value.source.id] : null))
-const hasMore = computed(() => Boolean(activeSource.value?.source.has_more))
-const allRowsSelected = computed(
-  () =>
-    tableRows.value.length > 0 &&
-    tableRows.value.flatMap((row) => row.partIds).every((partId) => selectedIds.value.includes(partId)),
-)
-const canCreateTasks = computed(() => Boolean(activeSource.value && selectedCount.value > 0 && !activeLoading.value))
-const createTaskLabel = computed(() => `下载所选 (${selectedCount.value})`)
-
-const toggleAllResults = () => {
-  if (!activeSource.value) return
-  if (allRowsSelected.value) {
-    parse.clearSelection(activeSource.value.source.id)
-    return
-  }
-  parse.selectPartIds(
-    activeSource.value.source.id,
-    tableRows.value.flatMap((row) => row.partIds),
-  )
-}
-
-const clearSelection = () => {
-  if (activeSource.value) parse.clearSelection(activeSource.value.source.id)
-}
-
-const loadMore = () => {
-  if (activeSource.value?.source.has_more) {
-    void parse.loadChunk(activeSource.value.source.id, Number(loadBatchSize.value))
-  }
-}
-
-const parseAll = () => {
-  if (activeSource.value?.source.has_more) {
-    void parse.parseAllPaced(activeSource.value.source.id, Number(loadBatchSize.value))
-  }
-}
-
-const stopParsing = () => {
-  if (activeSource.value) parse.stopPacedParsing(activeSource.value.source.id)
-}
-
-const downloadAllLoaded = () => {
-  if (!activeSource.value) return
-  parse.selectAllLoaded(activeSource.value.source.id)
-  emit('download')
-}
-
-const parseAndDownload = () => {
-  if (activeSource.value) void parse.startBackgroundDownload(activeSource.value.source.id)
-}
-
-const returnToSource = () => {
-  if (!activeLoading.value) void parse.clearWorkspace()
-}
-
-const toggleNode = (nodeId: string) => {
-  if (activeSource.value) parse.toggleNode(activeSource.value.source.id, nodeId)
-}
-
+} = useParseResultWorkspace(() => emit('download'));
 </script>
-
 <template>
   <section
     v-if="activeSource"
@@ -120,7 +59,7 @@ const toggleNode = (nodeId: string) => {
           <UIcon name="i-tabler-arrow-left" class="size-4" aria-hidden="true" />
         </button>
         <div class="flex min-w-0 items-center gap-2">
-          <strong class="truncate text-base text-(--color-text)" :title="activeSource.source.title">
+          <strong class="source-title truncate text-base text-(--color-text)" :title="activeSource.source.title">
             {{ activeSource.source.title }}
           </strong>
           <span class="shrink-0 text-[11px] font-bold text-(--color-muted)">

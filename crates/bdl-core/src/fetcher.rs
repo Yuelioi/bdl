@@ -10,8 +10,8 @@ use async_trait::async_trait;
 use flate2::read::{DeflateDecoder, ZlibDecoder};
 use futures::{StreamExt, future::try_join_all};
 use reqwest::header::{
-    CONTENT_ENCODING, CONTENT_LENGTH, ETAG, HeaderMap, HeaderName, HeaderValue, LAST_MODIFIED,
-    RANGE,
+    CONTENT_ENCODING, CONTENT_LENGTH, CONTENT_RANGE, ETAG, HeaderMap, HeaderName, HeaderValue,
+    LAST_MODIFIED, RANGE,
 };
 use reqwest::{Client, Proxy, StatusCode};
 use serde::{Deserialize, Serialize};
@@ -317,6 +317,7 @@ impl ReqwestFetcher {
         let mut attempted = 0;
         for _ in 0..attempts {
             ensure_not_cancelled(&cancel_token)?;
+            let mut retryable_error_seen = false;
             for url in &urls {
                 ensure_not_cancelled(&cancel_token)?;
                 attempted += 1;
@@ -331,9 +332,14 @@ impl ReqwestFetcher {
                         {
                             return Err(error);
                         }
-                        last_error = Some(error.to_string());
+                        let message = error.to_string();
+                        retryable_error_seen |= !message.contains("HTTP 404");
+                        last_error = Some(message);
                     }
                 }
+            }
+            if !retryable_error_seen {
+                break;
             }
         }
 
@@ -686,7 +692,30 @@ impl ReqwestFetcher {
         headers: HeaderMap,
         cancel_token: &FetchCancelToken,
     ) -> BdlResult<RemoteResourceMetadata> {
-        let request = self.client.head(url).headers(headers);
+        let request = self.client.head(url).headers(headers.clone());
+        let response = tokio::select! {
+            _ = cancel_token.cancelled() => return Err(cancelled_error()),
+            response = request.send() => response
+                .map_err(|error| fetch_error(format!("请求资源长度失败: {error}")))?,
+        };
+
+        if response.status().is_success() {
+            return remote_resource_metadata(response.headers(), false);
+        }
+        if self.stop_on_restriction
+            && crate::resolver::pacing::is_source_restriction(&response.status().to_string())
+        {
+            return Err(fetch_error(format!(
+                "请求资源长度失败: HTTP {}",
+                response.status()
+            )));
+        }
+
+        let request = self
+            .client
+            .get(url)
+            .headers(headers)
+            .header(RANGE, "bytes=0-0");
         let response = tokio::select! {
             _ = cancel_token.cancelled() => return Err(cancelled_error()),
             response = request.send() => response
@@ -700,8 +729,29 @@ impl ReqwestFetcher {
             )));
         }
 
-        let headers = response.headers();
-        let total_bytes = headers
+        remote_resource_metadata(
+            response.headers(),
+            response.status() == StatusCode::PARTIAL_CONTENT,
+        )
+    }
+}
+
+fn remote_resource_metadata(
+    headers: &HeaderMap,
+    range_probe: bool,
+) -> BdlResult<RemoteResourceMetadata> {
+    let total_bytes = if range_probe {
+        headers
+            .get(CONTENT_RANGE)
+            .map(|value| {
+                value
+                    .to_str()
+                    .map_err(|error| fetch_error(format!("无效 Content-Range: {error}")))
+                    .and_then(content_range_total)
+            })
+            .transpose()?
+    } else {
+        headers
             .get(CONTENT_LENGTH)
             .map(|value| {
                 value
@@ -710,16 +760,26 @@ impl ReqwestFetcher {
                     .parse::<u64>()
                     .map_err(|error| fetch_error(format!("无效 Content-Length: {error}")))
             })
-            .transpose()?;
+            .transpose()?
+    };
 
-        Ok(RemoteResourceMetadata {
-            total_bytes,
-            etag: header_to_string(headers, ETAG)?,
-            last_modified: header_to_string(headers, LAST_MODIFIED)?,
-            content_encoding: header_to_string(headers, CONTENT_ENCODING)?
-                .map(|value| value.to_ascii_lowercase()),
-        })
-    }
+    Ok(RemoteResourceMetadata {
+        total_bytes,
+        etag: header_to_string(headers, ETAG)?,
+        last_modified: header_to_string(headers, LAST_MODIFIED)?,
+        content_encoding: header_to_string(headers, CONTENT_ENCODING)?
+            .map(|value| value.to_ascii_lowercase()),
+    })
+}
+
+fn content_range_total(value: &str) -> BdlResult<u64> {
+    value
+        .rsplit_once('/')
+        .map(|(_, total)| total)
+        .filter(|total| *total != "*")
+        .ok_or_else(|| fetch_error(format!("无效 Content-Range: {value}")))?
+        .parse::<u64>()
+        .map_err(|error| fetch_error(format!("无效 Content-Range: {error}")))
 }
 
 pub async fn write_fetch_state(temp_path: &Path, state: &FetchState) -> BdlResult<()> {

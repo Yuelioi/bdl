@@ -5,6 +5,9 @@ import UiButton from '../../ui/Button.vue'
 import UiIconButton from '../../ui/IconButton.vue'
 import ParseBatchSizeSelect from './ParseBatchSizeSelect.vue'
 import ParseActivityStatus from '../../ui/ParseActivityStatus.vue'
+import { isMobilePlatform } from '../../utils/platform'
+
+const isMobile = isMobilePlatform()
 
 const batchSize = defineModel<string>('batchSize', { default: '50' })
 const {
@@ -51,7 +54,7 @@ const parseMenuItems = computed(() => [
       <ParseBatchSizeSelect v-model="batchSize" :disabled="loading" />
       <div class="parse-action-split">
         <UiButton size="compact" variant="secondary" :disabled="loading" @click="emit('parseBatch')">
-          {{ loading ? '解析中' : '解析' }}
+          {{ loading ? '解析中' : isMobile ? '继续解析' : '解析' }}
         </UiButton>
         <UDropdownMenu
           :items="parseMenuItems"

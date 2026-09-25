@@ -32,7 +32,7 @@ const { settings, settingsProxyUrl, settingsLogLevel, settingsDataDir } = form;
         ><UIcon name="i-tabler-database-off" class="size-4" aria-hidden="true" />清理缓存</UiButton
       >
       <UiButton class="maintenance-action" variant="secondary" :disabled="settings.loading || settings.saving" @click="settings.cleanupTemp"
-        ><UIcon name="i-tabler-broom" class="size-4" aria-hidden="true" />清理临时文件</UiButton
+        ><UIcon name="i-tabler-eraser" class="size-4" aria-hidden="true" />清理临时文件</UiButton
       >
       <UiButton class="maintenance-action" variant="secondary" :disabled="settings.loading || settings.saving" @click="settings.exportDiagnostics"
         ><UIcon name="i-tabler-file-export" class="size-4" aria-hidden="true" />导出诊断</UiButton

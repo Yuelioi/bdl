@@ -62,6 +62,28 @@ async fn fetcher_downloads_full_resource_and_sends_headers() {
 }
 
 #[tokio::test]
+async fn fetcher_falls_back_to_range_probe_when_head_is_rejected() {
+    let data = b"hello from bdl".to_vec();
+    let url = spawn_head_rejected_server(data.clone()).await;
+    let dir = temp_case_dir("head-rejected").await;
+    let resource = resource(url, &dir, "head-rejected.bin");
+    let fetcher = ReqwestFetcher::with_config(FetchConfig {
+        max_retries: 0,
+        segment_count: 1,
+        ..FetchConfig::default()
+    })
+    .expect("fetcher should be created");
+
+    let outcome = fetcher
+        .fetch(&resource, None)
+        .await
+        .expect("a range probe should recover when HEAD is rejected");
+
+    assert_eq!(outcome.bytes_written, data.len() as u64);
+    assert_eq!(tokio::fs::read(&resource.target_path).await.unwrap(), data);
+}
+
+#[tokio::test]
 async fn cli_restriction_mode_stops_before_cdn_fallback_or_retry() {
     let blocked = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = format!("http://{}/blocked", blocked.local_addr().unwrap());
@@ -168,6 +190,26 @@ async fn fetcher_stops_after_configured_retry_count() {
     assert!(error.to_string().contains("3 attempts"));
     assert_eq!(server.get_count(), 3);
     assert!(!resource.target_path.exists());
+}
+
+#[tokio::test]
+async fn fetcher_does_not_repeat_the_same_expired_url() {
+    let (url, request_count) = spawn_not_found_server().await;
+    let dir = temp_case_dir("expired-url").await;
+    let resource = resource(url, &dir, "expired.bin");
+    let fetcher = ReqwestFetcher::with_config(FetchConfig {
+        max_retries: 3,
+        ..FetchConfig::default()
+    })
+    .expect("fetcher should be created");
+
+    let error = fetcher
+        .fetch(&resource, None)
+        .await
+        .expect_err("an expired URL should fail after one candidate pass");
+
+    assert!(error.to_string().contains("1 attempts"));
+    assert_eq!(request_count.load(Ordering::SeqCst), 2);
 }
 
 #[tokio::test]
@@ -512,6 +554,82 @@ async fn spawn_stalled_server() -> (String, oneshot::Receiver<()>) {
     });
 
     (format!("http://{addr}/file"), started_rx)
+}
+
+async fn spawn_head_rejected_server(data: Vec<u8>) -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    tokio::spawn(async move {
+        loop {
+            let Ok((mut stream, _)) = listener.accept().await else {
+                return;
+            };
+            let data = data.clone();
+            tokio::spawn(async move {
+                let mut buffer = vec![0_u8; 4096];
+                let Ok(read) = stream.read(&mut buffer).await else {
+                    return;
+                };
+                let request = String::from_utf8_lossy(&buffer[..read]);
+                let mut lines = request.split("\r\n");
+                let method = lines
+                    .next()
+                    .and_then(|line| line.split_whitespace().next())
+                    .unwrap_or_default();
+                let headers = parse_headers(lines);
+                if method == "HEAD" {
+                    write_response(&mut stream, 404, "NOT FOUND", &[], b"").await;
+                    return;
+                }
+
+                if let Some((start, end)) = headers
+                    .get("range")
+                    .and_then(|range| parse_byte_range(range, data.len()))
+                {
+                    let body = &data[start..=end];
+                    let headers = [
+                        ("Content-Length", body.len().to_string()),
+                        (
+                            "Content-Range",
+                            format!("bytes {start}-{end}/{}", data.len()),
+                        ),
+                    ];
+                    write_response(&mut stream, 206, "PARTIAL", &headers, body).await;
+                } else {
+                    let headers = [("Content-Length", data.len().to_string())];
+                    write_response(&mut stream, 200, "OK", &headers, &data).await;
+                }
+            });
+        }
+    });
+
+    format!("http://{addr}/file")
+}
+
+async fn spawn_not_found_server() -> (String, Arc<AtomicUsize>) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let request_count = Arc::new(AtomicUsize::new(0));
+    let server_request_count = request_count.clone();
+
+    tokio::spawn(async move {
+        loop {
+            let Ok((mut stream, _)) = listener.accept().await else {
+                return;
+            };
+            server_request_count.fetch_add(1, Ordering::SeqCst);
+            tokio::spawn(async move {
+                let mut buffer = vec![0_u8; 4096];
+                let Ok(_) = stream.read(&mut buffer).await else {
+                    return;
+                };
+                write_response(&mut stream, 404, "NOT FOUND", &[], b"").await;
+            });
+        }
+    });
+
+    (format!("http://{addr}/file"), request_count)
 }
 
 struct TestServer {

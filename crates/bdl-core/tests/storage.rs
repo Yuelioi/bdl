@@ -363,6 +363,8 @@ fn sample_task() -> DownloadTask {
             },
             cid: 100,
             page_number: Some(2),
+            cover_url: Some("https://example.invalid/cover.jpg".to_owned()),
+            duration_seconds: Some(42),
         }),
         media_selection: DownloadTaskMediaSelection {
             processing: Some(bdl_core::queue::TaskProcessingOptions {

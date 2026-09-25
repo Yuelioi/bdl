@@ -274,6 +274,23 @@ export const useQueueStore = defineStore('queue', {
     taskTransferProgress(taskId: string): TransferProgressSnapshot | null {
       return this.progressByTask[taskId] ?? null
     },
+    taskStageProgress(task: DownloadTask): number | null {
+      if (task.status !== 'downloading') {
+        return null
+      }
+
+      const activeResource = task.resources.find((resource) => resource.status === 'downloading')
+      if (!activeResource) {
+        return null
+      }
+
+      const progress = this.progressByTask[task.id]?.resources[activeResource.id]
+      if (!progress?.totalBytes || progress.totalBytes <= 0) {
+        return 0
+      }
+
+      return Math.min(99, Math.round((progress.downloadedBytes / progress.totalBytes) * 100))
+    },
     totalSpeedBytesPerSecond(): number {
       const activeTaskIds = new Set(this.tasks.filter((task) => task.status === 'downloading').map((task) => task.id))
 

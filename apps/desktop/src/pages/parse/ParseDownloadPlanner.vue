@@ -369,10 +369,21 @@ const chooseDocumentTreeOutput = async () => {
       <UiInlineNotice v-if="embeddingFormatError || namingError || scheduleError || taskSpeedLimitError" tone="danger">{{ embeddingFormatError ?? namingError ?? scheduleError ?? taskSpeedLimitError }}</UiInlineNotice>
     </div>
     <template #footer>
-      <UiButton class="mr-auto" variant="ghost" :disabled="activeLoading" @click="restoreDefaults">恢复默认偏好</UiButton>
-      <span class="text-xs text-(--color-muted)" title="按所选媒体轨道的码率与时长估算，不含封面、字幕等附加文件。">{{ sizeEstimateLabel }}</span>
-      <UiButton variant="secondary" :disabled="activeLoading" @click="downloadDialogOpen = false">取消</UiButton>
-      <UiButton :disabled="activeLoading || selectedSourceIds.length === 0 || Boolean(namingError || scheduleError || taskSpeedLimitError || embeddingFormatError)" @click="createTasks()">开始下载</UiButton>
+      <div class="planner-dialog-footer">
+        <UiButton size="compact" variant="secondary" :disabled="activeLoading" @click="downloadDialogOpen = false"
+          >取消</UiButton
+        >
+        <UiButton class="planner-restore" size="compact" variant="ghost" :disabled="activeLoading" @click="restoreDefaults"
+          ><span class="restore-wide">恢复默认偏好</span><span class="restore-short">恢复</span></UiButton
+        >
+        <span class="planner-estimate" title="按所选媒体轨道的码率与时长估算，不含封面、字幕等附加文件。">{{ sizeEstimateLabel }}</span>
+        <UiButton
+          size="compact"
+          :disabled="activeLoading || selectedSourceIds.length === 0 || Boolean(namingError || scheduleError || taskSpeedLimitError || embeddingFormatError)"
+          @click="createTasks()"
+          >开始下载</UiButton
+        >
+      </div>
     </template>
   </UiDialog>
 
@@ -437,5 +448,37 @@ const chooseDocumentTreeOutput = async () => {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: end;
   gap: var(--space-8);
+}
+
+.planner-dialog-footer {
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.planner-estimate {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-muted);
+  font-size: 11px;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.restore-short {
+  display: none;
+}
+
+@media (width <= 600px) {
+  .restore-wide {
+    display: none;
+  }
+
+  .restore-short {
+    display: inline;
+  }
 }
 </style>

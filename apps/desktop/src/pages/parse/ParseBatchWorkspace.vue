@@ -1,43 +1,13 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-
-import { useParseStore } from '../../stores/parse'
-import { allBatchEntriesSelected, filterParseBatchEntries } from '../../stores/parseBatch'
 import UiButton from '../../ui/Button.vue'
 import UiIconButton from '../../ui/IconButton.vue'
 import UiTextField from '../../ui/TextField.vue'
 import SelectionActionBar from '../../ui/SelectionActionBar.vue'
-
-const emit = defineEmits<{ download: [] }>()
-const { embedded = false } = defineProps<{ embedded?: boolean }>()
-const parse = useParseStore()
-const query = ref('')
-
-const entries = computed(() => filterParseBatchEntries(parse.batchEntries, query.value))
-const selectedSet = computed(() => new Set(parse.selectedBatchEntryIds))
-const selectedCount = computed(() => parse.selectedBatchEntryIds.length)
-const allSelected = computed(() => allBatchEntriesSelected(parse.batchEntries, parse.selectedBatchEntryIds))
-const loading = computed(() => parse.sourceOrder.some((sourceId) => parse.loadingBySource[sourceId]))
-
-const toggleAll = () => {
-  if (allSelected.value) {
-    parse.clearBatchSelection()
-  } else {
-    parse.selectAllBatchEntries()
-  }
-}
-
-const handleRowKeydown = (event: KeyboardEvent, entryId: string) => {
-  if (event.key !== 'Enter' && event.key !== ' ') return
-  event.preventDefault()
-  parse.toggleBatchEntry(entryId)
-}
-
-const returnToSource = () => {
-  if (!loading.value) void parse.clearWorkspace()
-}
+import { useParseBatchWorkspace } from "./useParseBatchWorkspace";
+const { embedded = false } = defineProps<{embedded?: boolean}>();
+const emit = defineEmits<{download: []}>();
+const { parse, query, entries, selectedSet, selectedCount, allSelected, loading, toggleAll, handleRowKeydown, returnToSource } = useParseBatchWorkspace();
 </script>
-
 <template>
   <section class="min-h-0 overflow-hidden" :class="embedded ? 'flex flex-1 flex-col gap-3' : 'panel'">
     <header
@@ -134,6 +104,7 @@ const returnToSource = () => {
         >
           取消选择
         </UiButton>
+
       </template>
     </SelectionActionBar>
   </section>

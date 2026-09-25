@@ -1,51 +1,8 @@
 <script setup lang="ts">
-import { getVersion } from '@tauri-apps/api/app'
-import { onMounted, ref } from 'vue'
-
-import { openExternalUrl } from '../api/tauri'
-import { useUiStore } from '../stores/ui'
 import UiButton from '../ui/Button.vue'
-
-const ui = useUiStore()
-const version = ref('0.1.0')
-const links = [
-  {
-    label: 'GitHub 仓库',
-    value: 'github.com/Yuelioi/bdl',
-    url: 'https://github.com/Yuelioi/bdl',
-    icon: 'i-tabler-brand-github',
-  },
-  {
-    label: 'Bilibili 主页',
-    value: 'space.bilibili.com/4279370',
-    url: 'https://space.bilibili.com/4279370',
-    icon: 'i-tabler-brand-bilibili',
-  },
-  {
-    label: '个人网站',
-    value: 'www.yuelili.com',
-    url: 'https://www.yuelili.com',
-    icon: 'i-tabler-world-www',
-  },
-]
-
-const openLink = async (url: string) => {
-  try {
-    await openExternalUrl(url)
-  } catch (error) {
-    ui.pushToast(error instanceof Error ? error.message : String(error), 'danger')
-  }
-}
-
-onMounted(async () => {
-  try {
-    version.value = await getVersion()
-  } catch {
-    // The package version remains available in browser-only previews.
-  }
-})
+import { useAboutPage } from "./useAboutPage";
+const { version, links, openLink } = useAboutPage();
 </script>
-
 <template>
   <section class="page-grid grid-cols-1">
     <section class="panel mx-auto w-full max-w-3xl gap-8 p-8">

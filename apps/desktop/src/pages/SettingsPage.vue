@@ -1,6 +1,4 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
-
 import UiButton from '../ui/Button.vue';
 import UiInlineNotice from '../ui/InlineNotice.vue';
 import SettingsArchiveSection from './settings/SettingsArchiveSection.vue';
@@ -11,41 +9,9 @@ import SettingsNamingSection from './settings/SettingsNamingSection.vue';
 import SettingsProcessingSection from './settings/SettingsProcessingSection.vue';
 import SettingsUpdateSection from './settings/SettingsUpdateSection.vue';
 import SettingsSectionNav from './settings/SettingsSectionNav.vue';
-import { settingsSections } from './settings/settingsCatalog';
-import type { SettingsSectionId } from './settings/settingsSections';
-import { useSettingsForm } from './settings/useSettingsForm';
-import { useUpdateStore } from '../stores/update';
-import { isMobilePlatform } from '../utils/platform';
-
-const settingsForm = useSettingsForm();
-const updater = useUpdateStore();
-const supportsDesktopPaths = !isMobilePlatform();
-const {
-  settings,
-  settingsGlobalSpeedLimitError,
-  settingsFormChanged,
-  settingsEmbeddingFormatError,
-  resetSettingsDraft,
-  restoreDefaultSettings,
-  saveSettings,
-} = settingsForm;
-
-const restoreAllDefaults = () => {
-  restoreDefaultSettings();
-  updater.setAutoCheck(false);
-};
-
-const activeSettingsSection = ref<SettingsSectionId>('settings-download');
-const availableSettingsSections = computed(() =>
-  updater.supported ? settingsSections : settingsSections.filter((section) => section.id !== 'settings-update'),
-);
-const currentSettingsSection = computed(
-  () =>
-    availableSettingsSections.value.find((section) => section.id === activeSettingsSection.value) ??
-    availableSettingsSections.value[0],
-);
+import { useSettingsPage } from "./useSettingsPage";
+const { settingsForm, supportsDesktopPaths, settings, settingsGlobalSpeedLimitError, settingsFormChanged, settingsEmbeddingFormatError, resetSettingsDraft, saveSettings, restoreAllDefaults, activeSettingsSection, availableSettingsSections, currentSettingsSection } = useSettingsPage();
 </script>
-
 <template>
   <section class="page-grid settings-grid">
     <section class="panel settings-panel">
@@ -136,4 +102,5 @@ const currentSettingsSection = computed(
   </section>
 </template>
 
+<style src="./settings/SettingsForm.css"></style>
 <style src="./SettingsPage.css"></style>

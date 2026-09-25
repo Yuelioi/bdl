@@ -7,7 +7,7 @@
 
 一个专注、可靠、本地优先的哔哩哔哩下载工具。BDL 基于 [bpi-rs](https://github.com/Yuelioi/bpi-rs) 实现 Bilibili API 能力，并使用 Rust、Tauri 与 Vue 构建，把来源解析、批量选择、下载队列、失败恢复和媒体后处理整合在统一的工作区中。
 
-> 当前版本：`0.5.3` · Windows/macOS 正式支持 · Linux 预览 · Android ARM64 开发预览
+> 当前版本：`0.6.0` · Windows/macOS 正式支持 · Linux 预览 · Android ARM64 开发预览
 
 ![BDL 解析页面](preview/home.png)
 

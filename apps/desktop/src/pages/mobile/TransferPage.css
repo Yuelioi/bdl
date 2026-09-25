@@ -1,0 +1,110 @@
+.transfer-main {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  gap: 6px;
+}
+.transfer-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  min-height: 34px;
+  flex-shrink: 0;
+}
+.transfer-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+.transfer-header-actions > .mobile-icon-button {
+  width: 36px;
+  height: 34px;
+  flex-basis: 36px;
+}
+.transfer-header-actions > .mobile-icon-button svg {
+  width: 20px;
+  height: 20px;
+}
+.transfer-search {
+  height: 34px;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) 30px;
+  align-items: center;
+  gap: 6px;
+  padding-left: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 9px;
+  background: var(--color-inset);
+}
+.transfer-search > svg {
+  color: var(--color-muted);
+}
+.transfer-search input {
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--color-text);
+  font-size: var(--mobile-font-item-title);
+}
+.transfer-search button {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: var(--color-muted);
+}
+.transfer-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-shrink: 0;
+  border-top: 1px solid var(--color-border);
+  padding-top: 5px;
+}
+.transfer-select-all {
+  flex-shrink: 0;
+  min-height: 30px;
+  border: 0;
+  background: transparent;
+  color: var(--color-text);
+  font-size: var(--mobile-font-body);
+}
+.transfer-footer :deep(.bulk-action-bar.selected) {
+  min-height: 30px;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.transfer-footer :deep(.bulk-copy) {
+  display: none;
+}
+.transfer-footer :deep(.bulk-actions) {
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+  overflow-x: auto;
+}
+.transfer-footer :deep(.bulk-actions button) {
+  min-height: 30px;
+  padding: 4px 8px;
+  font-size: var(--mobile-font-body);
+}
+.task-detail-dialog {
+  min-height: 0;
+  height: min(680px, 75dvh);
+}
+.task-detail-dialog :deep(.task-inspector) {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+}
+.task-detail-dialog :deep(.ui-tabs),
+.task-detail-dialog :deep(.tab-panel) {
+  grid-column: auto;
+}

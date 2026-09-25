@@ -31,16 +31,21 @@ fn plan_selected_parts_creates_one_task_for_one_selected_part() {
     assert_eq!(tasks[0].source_id, "source:BV1");
     assert_eq!(tasks[0].status, TaskStatus::Waiting);
     assert!(tasks[0].output_path.ends_with("Fixture Video/P1 - P1.mp4"));
+    let refresh_intent = tasks[0]
+        .refresh_intent
+        .as_ref()
+        .expect("video task should be refreshable");
     assert_eq!(
-        tasks[0]
-            .refresh_intent
-            .as_ref()
-            .expect("video task should be refreshable")
-            .input,
+        refresh_intent.input,
         DownloadTaskRefreshInput::VideoBvid {
             bvid: "BV1xx411c7mD".to_owned(),
         }
     );
+    assert_eq!(
+        refresh_intent.cover_url.as_deref(),
+        Some("https://example.invalid/cover.jpg?token=fixture")
+    );
+    assert_eq!(refresh_intent.duration_seconds, Some(42));
 }
 
 #[test]

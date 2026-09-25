@@ -1,0 +1,23 @@
+# Page ownership
+
+- `pages/*Page.vue`: desktop page templates.
+- `pages/mobile/*Page.vue`: mobile page templates and their own layout styles.
+- `app/AppWorkspace.vue`: selects the platform's lazy page map; only one version mounts.
+- `use*Page.ts`, `parse/use*Workspace.ts`, `library/useLibraryFolderDetail.ts`: shared page state, lifecycle, selection and actions. Call once from the mounted page's setup, not at module scope.
+- `stores/`: existing application data, requests and task state remain shared.
+
+Mobile and desktop pages can evolve independently. Do not add platform branches to the page templates. Reuse small controls, settings sections, dialogs and task widgets where their interaction is the same. Shared settings field styles live in `settings/SettingsForm.css`; each page owns its surrounding layout.
+
+Template refs used by the page composables retain the `download-planner` ref name in both templates. Library detail passes reactive props into its composable so changing folders cannot retain an old source. Both pagination layouts use `ui/usePagination.ts`.
+
+Cover images use `utils/coverUrl.ts` to normalize HTTP and protocol-relative URLs. Set `referrerpolicy="no-referrer"` **before** `src` on the image: Vue's initial DOM mount can start the request as soon as it assigns `src`. The mobile library browser test verifies the actual request has no Referer header, not just that the attribute exists.
+
+## Mobile interaction patterns
+
+Mobile pages do not import desktop SourceParseControls, Tabs, or TransferTaskTable. MobileTabs renders counts as plain, nonshrinking text, without badge primitives. Library detail hides the category tabs; the heading contains title and load status only. MobileSourceMenu puts batch size and collection-wide operations in MobileSheet. Continue-loading stays at the end of the scrollable media list. MobileTransferList owns touch task rows and their action sheet, using the shared task view model and virtual-window utility. Settings uses a category list and a back action rather than desktop section tabs. MobileSheet enables UModal fullscreen mode and then constrains the content into a bottom sheet; do not reintroduce the centered modal translate utilities and try to cancel them with `translate: none`, because the production CSS transform can preserve Nuxt UI's `-50%` translation.
+
+The mobile library collection index is a flat dense list, not a card feed. Each row has a 72×48 cover with a 4px radius and exactly two text rows: one title, then owner + video count. Collection descriptions stay out of this index; use the detail view for deeper context. Keep the row background transparent in both themes and use only the divider for separation so dark mode does not produce large raised rectangles around every collection.
+
+Keep scroll ownership explicit: page → flex panel → min-height:0 list; pagination and the download footer cannot shrink. Verify with more rows than fit on screen. The mobile layout tests include 356-item collection metadata, 123 transfer records, 320px width, populated action sheets, light/dark themes, and batch selection. Browser fixtures must return queue_logs and settings_update responses when tasks or theme changes are included.
+
+The mobile navigation has four destinations: parse, library, transfer, and personal (internally the existing settings tab). The mobile shell uses a compact 48px logo + BDL brand header; main pages otherwise start with content or compact action controls, while settings/detail pages own their small back toolbar. `PersonalPage` owns the home/settings/about stack via `ui.mobilePersonalPage`; keep its single element root for the workspace transition/KeepAlive. Transfer rows use dense 76px native-style list sizing and long press to enter selection mode; keep exactly two text rows (title + status/meta), put the primary play/pause/retry action on the artwork, show completion as an artwork badge, and do not restore visible right-side action buttons. Active status names the current resource stage (`下载视频中`, `下载音频中`, optional assets, then `合并中`), and the mobile percentage belongs to that current resource rather than the aggregate whose denominator changes between tracks. Keep at least eight completed rows fully visible at 320×844, keep the task scroller free of horizontal overflow, and do not restore desktop-sized task cards or a permanent search field. Mobile card tokens are scoped to `.platform-mobile`, including their dark theme. `MediaArtwork` is shared by media rows and task cards; planner tasks persist cover and duration metadata in their refresh intent so transfer cards survive reloads, then fall back to matching parsed CID metadata or downloaded cover resources without extra requests or invented values.

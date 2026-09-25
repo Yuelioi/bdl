@@ -11,7 +11,9 @@ use crate::commands::{
 };
 use crate::events;
 use crate::state::{AppState, SettingsSnapshot};
-use crate::task_failure::{has_auto_refresh_attempt, is_expired_url_error};
+use crate::task_failure::{is_expired_url_error, recent_auto_refresh_attempt_count};
+
+const MAX_AUTO_REFRESH_ATTEMPTS: usize = 3;
 
 pub(crate) fn start(app: &AppHandle) {
     let app = app.clone();
@@ -208,21 +210,22 @@ async fn handle_download_outcome(
             )?;
         }
         _ => {
-            let already_refreshed = state
+            let auto_refresh_attempts = state
                 .task_logs(&task.id, 50)
-                .map(|logs| has_auto_refresh_attempt(&logs))
-                .unwrap_or(false);
+                .map(|logs| recent_auto_refresh_attempt_count(&logs))
+                .unwrap_or_default();
             if settings.auto_refresh_expired_urls
                 && matches!(state.task_status(&task.id), Ok(TaskStatus::Downloading))
                 && is_expired_url_error(&error.message)
-                && !already_refreshed
+                && auto_refresh_attempts < MAX_AUTO_REFRESH_ATTEMPTS
             {
+                let attempt = auto_refresh_attempts + 1;
                 emit_queue_log(
                     app,
                     state,
                     &task.id,
                     QueueLogLevel::Warning,
-                    "正在刷新过期链接",
+                    &format!("自动刷新过期链接（{attempt}/{MAX_AUTO_REFRESH_ATTEMPTS}）"),
                 )?;
 
                 let Some(refreshed) =
@@ -231,14 +234,6 @@ async fn handle_download_outcome(
                 else {
                     return Ok(());
                 };
-                // A cancelled wait does not consume the automatic refresh attempt.
-                emit_queue_log(
-                    app,
-                    state,
-                    &task.id,
-                    QueueLogLevel::Warning,
-                    "自动刷新过期链接",
-                )?;
                 match refreshed {
                     Ok(_) => {
                         if let Some(retried) = state.finish_task_attempt(

@@ -1,0 +1,122 @@
+.settings-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  gap: 8px;
+}
+.settings-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  min-height: 38px;
+  padding: 0;
+}
+.settings-heading-copy,
+.settings-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.settings-heading-copy {
+  min-width: 0;
+  align-items: center;
+}
+.settings-heading-copy > .mobile-icon-button {
+  width: 34px;
+  height: 34px;
+  flex-basis: 34px;
+}
+.settings-heading h2 {
+  margin: 0;
+  font-size: var(--mobile-font-page-title);
+  color: var(--color-text);
+  font-weight: var(--mobile-weight-title);
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+}
+.settings-heading-description {
+  display: none;
+}
+.settings-actions :deep(button) {
+  min-height: 34px;
+  border-radius: 9px;
+  padding-inline: 9px;
+}
+.dirty-indicator {
+  font-size: var(--mobile-font-body);
+  color: var(--color-muted);
+}
+.settings-index {
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0 12px 12px;
+  border-radius: 12px;
+  background: var(--mobile-card);
+}
+.settings-category {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 0;
+  text-align: left;
+  color: var(--color-text);
+  flex-shrink: 0;
+  min-height: 60px;
+  padding: 8px 0;
+  border-radius: 0;
+  border-bottom: 1px solid var(--color-border);
+  background: transparent;
+  box-shadow: none;
+}
+.settings-category:last-child {
+  border-bottom: 0;
+}
+.settings-category-icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  border-radius: 9px;
+  color: var(--color-accent-strong);
+  background: var(--color-accent-faint);
+  width: 34px;
+  height: 34px;
+}
+.settings-category-icon :deep(svg) {
+  width: 20px;
+  height: 20px;
+}
+.settings-category-copy {
+  display: grid;
+  gap: 2px;
+  flex: 1;
+}
+.settings-category-copy strong {
+  font-weight: var(--mobile-weight-item);
+  font-size: var(--mobile-font-item-title);
+}
+.settings-category-copy span {
+  color: var(--color-muted);
+  font-size: var(--mobile-font-caption);
+}
+.settings-chevron {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  color: var(--color-muted);
+}
+.settings-workspace,
+.settings-content {
+  flex: 1;
+  min-height: 0;
+}
+.settings-content {
+  height: 100%;
+  overflow-y: auto;
+}

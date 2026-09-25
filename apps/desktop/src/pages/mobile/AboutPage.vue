@@ -1,0 +1,73 @@
+<script setup lang="ts">
+import UiButton from '../../ui/Button.vue';
+import { useAboutPage } from '../useAboutPage';
+const { version, links, openLink } = useAboutPage();
+</script>
+<template>
+  <section class="page-grid grid-cols-1">
+    <section class="panel mobile-about-panel mx-auto w-full max-w-3xl gap-5 p-4 border-0 rounded-none shadow-none">
+      <header class="about-header flex min-w-0 items-center gap-4 border-b border-(--color-border) pb-6">
+        <span
+          class="about-icon grid size-12 shrink-0 place-items-center rounded-xl bg-(--color-accent) text-(--color-on-accent)"
+          aria-hidden="true"
+        >
+          <UIcon class="size-6" name="i-tabler-chart-bar" />
+        </span>
+        <div class="grid min-w-0 gap-0.5">
+          <span class="about-brand text-xs font-bold text-(--color-accent-strong)">BILIBILI DOWNLOAD LAB</span>
+          <h1 class="about-title text-balance m-0 text-(--color-text-strong)">BDL</h1>
+          <p class="about-tagline text-pretty m-0 text-xs leading-5 text-(--color-muted)">
+            一个专注解析、选择和稳定下载的 Bilibili 下载工具。
+          </p>
+        </div>
+      </header>
+
+      <dl class="about-details m-0 grid grid-cols-[120px_minmax(0,1fr)] gap-x-6 gap-y-3">
+        <dt class="text-(--color-muted)">当前版本</dt>
+        <dd class="tabular-nums m-0 font-bold text-(--color-text)">v{{ version }}</dd>
+        <dt class="text-(--color-muted)">应用名称</dt>
+        <dd class="m-0 font-bold text-(--color-text)">Bilibili Download Lab</dd>
+      </dl>
+
+      <section class="grid gap-3" aria-labelledby="creator-links-heading">
+        <h2 id="creator-links-heading" class="about-section-title m-0 text-(--color-text)">作者链接</h2>
+        <div class="grid gap-2">
+          <div
+            v-for="link in links"
+            :key="link.url"
+            class="flex min-w-0 items-center gap-3 rounded-lg border border-(--color-border) bg-(--color-surface) p-3"
+          >
+            <UIcon :name="link.icon" class="size-5 shrink-0 text-(--color-accent-strong)" aria-hidden="true" />
+            <span class="grid min-w-0 flex-1 gap-0.5">
+              <strong class="text-[13px] text-(--color-text)">{{ link.label }}</strong>
+              <span class="truncate text-xs text-(--color-muted)">{{ link.value }}</span>
+            </span>
+            <UiButton variant="secondary" size="compact" @click="openLink(link.url)">打开</UiButton>
+          </div>
+        </div>
+      </section>
+    </section>
+  </section>
+</template>
+
+<style scoped>
+.mobile-about-panel {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.about-title {
+  font-size: var(--mobile-font-page-title);
+  font-weight: var(--mobile-weight-title);
+}
+
+.about-section-title {
+  font-size: var(--mobile-font-section-title);
+  font-weight: var(--mobile-weight-item);
+}
+
+.about-details {
+  font-size: var(--mobile-font-body);
+}
+</style>
