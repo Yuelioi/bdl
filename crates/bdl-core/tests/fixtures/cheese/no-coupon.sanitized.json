@@ -1,0 +1,482 @@
+{
+  "code": 0,
+  "data": {
+    "abtest_info": {
+      "style_abtest": 0
+    },
+    "activity_list": [],
+    "be_subscription": false,
+    "brief": {
+      "content": "fixture",
+      "img": [],
+      "title": "fixture",
+      "type": 1
+    },
+    "consulting": {
+      "consulting_flag": false,
+      "consulting_url": ""
+    },
+    "cooperation": {
+      "link": "fixture"
+    },
+    "cooperators": [],
+    "course_content": "fixture",
+    "courses": [],
+    "cover": "fixture",
+    "ep_catalogue": [],
+    "ep_count": 7,
+    "episode_page": {
+      "next": false,
+      "num": 1,
+      "size": 7,
+      "total": 7
+    },
+    "episode_sort": 1,
+    "episode_tag": {
+      "part_preview_tag": "fixture",
+      "pay_tag": "fixture",
+      "preview_tag": "fixture"
+    },
+    "episodes": [
+      {
+        "aid": 116881210017842,
+        "catalogue_index": 0,
+        "cid": 39737494076,
+        "cover": "fixture",
+        "duration": 3015,
+        "ep_status": 0,
+        "episode_can_view": true,
+        "from": "fixture",
+        "id": 2694440,
+        "index": 1,
+        "label": "fixture",
+        "page": 1,
+        "play": 121,
+        "play_way": 1,
+        "playable": true,
+        "release_date": 1783465845,
+        "show_vt": false,
+        "status": 1,
+        "subtitle": "fixture",
+        "title": "fixture",
+        "watched": false,
+        "watchedHistory": 0
+      },
+      {
+        "aid": 116881209952050,
+        "catalogue_index": 0,
+        "cid": 39737493955,
+        "cover": "fixture",
+        "duration": 3677,
+        "ep_status": 0,
+        "episode_can_view": true,
+        "from": "fixture",
+        "id": 2694441,
+        "index": 2,
+        "page": 1,
+        "play": 4,
+        "play_way": 1,
+        "playable": false,
+        "release_date": 1783465852,
+        "show_vt": false,
+        "status": 2,
+        "subtitle": "fixture",
+        "title": "fixture",
+        "watched": false,
+        "watchedHistory": 0
+      },
+      {
+        "aid": 116881209953074,
+        "catalogue_index": 0,
+        "cid": 39737494078,
+        "cover": "fixture",
+        "duration": 3212,
+        "ep_status": 0,
+        "episode_can_view": true,
+        "from": "fixture",
+        "id": 2694442,
+        "index": 3,
+        "page": 1,
+        "play": 3,
+        "play_way": 1,
+        "playable": false,
+        "release_date": 1783465847,
+        "show_vt": false,
+        "status": 2,
+        "subtitle": "fixture",
+        "title": "fixture",
+        "watched": false,
+        "watchedHistory": 0
+      },
+      {
+        "aid": 116881209951794,
+        "catalogue_index": 0,
+        "cid": 39737494050,
+        "cover": "fixture",
+        "duration": 3500,
+        "ep_status": 0,
+        "episode_can_view": true,
+        "from": "fixture",
+        "id": 2694443,
+        "index": 4,
+        "page": 1,
+        "play": 4,
+        "play_way": 1,
+        "playable": false,
+        "release_date": 1783465848,
+        "show_vt": false,
+        "status": 2,
+        "subtitle": "fixture",
+        "title": "fixture",
+        "watched": false,
+        "watchedHistory": 0
+      },
+      {
+        "aid": 116881209951026,
+        "catalogue_index": 0,
+        "cid": 39737494049,
+        "cover": "fixture",
+        "duration": 2770,
+        "ep_status": 0,
+        "episode_can_view": true,
+        "from": "fixture",
+        "id": 2694444,
+        "index": 5,
+        "page": 1,
+        "play": 5,
+        "play_way": 1,
+        "playable": false,
+        "release_date": 1783465845,
+        "show_vt": false,
+        "status": 2,
+        "subtitle": "fixture",
+        "title": "fixture",
+        "watched": false,
+        "watchedHistory": 0
+      },
+      {
+        "aid": 116881210019122,
+        "catalogue_index": 0,
+        "cid": 39737494077,
+        "cover": "fixture",
+        "duration": 3485,
+        "ep_status": 0,
+        "episode_can_view": true,
+        "from": "fixture",
+        "id": 2694445,
+        "index": 6,
+        "page": 1,
+        "play": 3,
+        "play_way": 1,
+        "playable": false,
+        "release_date": 1783465852,
+        "show_vt": false,
+        "status": 2,
+        "subtitle": "fixture",
+        "title": "fixture",
+        "watched": false,
+        "watchedHistory": 0
+      },
+      {
+        "aid": 116881209952306,
+        "catalogue_index": 0,
+        "cid": 39738018156,
+        "cover": "fixture",
+        "duration": 2633,
+        "ep_status": 0,
+        "episode_can_view": true,
+        "from": "fixture",
+        "id": 2694446,
+        "index": 7,
+        "page": 1,
+        "play": 4,
+        "play_way": 1,
+        "playable": false,
+        "release_date": 1783465844,
+        "show_vt": false,
+        "status": 2,
+        "subtitle": "fixture",
+        "title": "fixture",
+        "watched": false,
+        "watchedHistory": 0
+      }
+    ],
+    "expiry_day": 0,
+    "expiry_info_content": "fixture",
+    "faq": {
+      "content": "fixture",
+      "link": "fixture",
+      "title": "fixture"
+    },
+    "faq1": {
+      "items": [
+        {
+          "answer": "fixture",
+          "question": "fixture"
+        },
+        {
+          "answer": "fixture",
+          "question": "fixture"
+        },
+        {
+          "answer": "fixture",
+          "question": "fixture"
+        },
+        {
+          "answer": "fixture",
+          "question": "fixture"
+        }
+      ],
+      "title": "fixture"
+    },
+    "is_enable_cash": false,
+    "is_series": false,
+    "live_ep_count": 0,
+    "notice": {},
+    "opened_ep_count": 7,
+    "pack_info": {
+      "pack_item_list": [],
+      "pack_notice2": "fixture",
+      "show_packs_right": false,
+      "title": "fixture"
+    },
+    "paid_jump": {
+      "jump_url_for_app": "fixture",
+      "url": ""
+    },
+    "paid_view": false,
+    "payment": {
+      "bp_enough": 0,
+      "desc": "fixture",
+      "my_bp": 0,
+      "pay_shade": "fixture",
+      "price": 0.01,
+      "price_format": "fixture",
+      "price_unit": "fixture",
+      "refresh_text": "fixture",
+      "select_text": "fixture"
+    },
+    "previewed_purchase_note": {
+      "long_watch_text": "fixture",
+      "pay_text": "fixture",
+      "price_format": "fixture",
+      "watch_text": "fixture",
+      "watching_text": "fixture"
+    },
+    "purchase_format_note": {
+      "content_list": [
+        {
+          "bold": false,
+          "content": "fixture",
+          "number": "fixture"
+        },
+        {
+          "bold": true,
+          "content": "fixture",
+          "number": "fixture"
+        },
+        {
+          "bold": false,
+          "content": "fixture",
+          "number": "fixture"
+        }
+      ],
+      "link": "fixture",
+      "title": "fixture"
+    },
+    "purchase_note": {
+      "content": "fixture",
+      "link": "fixture",
+      "title": "fixture"
+    },
+    "purchase_protocol": {
+      "link": "fixture",
+      "title": "fixture"
+    },
+    "recommend_seasons": [
+      {
+        "cover": "fixture",
+        "ep_count": "fixture",
+        "id": 659887967,
+        "season_url": "fixture",
+        "subtitle": "fixture",
+        "title": "fixture",
+        "view": 3095
+      },
+      {
+        "cover": "fixture",
+        "ep_count": "fixture",
+        "id": 713222827,
+        "season_url": "fixture",
+        "subtitle": "fixture",
+        "title": "fixture",
+        "view": 206
+      },
+      {
+        "cover": "fixture",
+        "ep_count": "fixture",
+        "id": 211258557,
+        "season_url": "fixture",
+        "subtitle": "fixture",
+        "title": "fixture",
+        "view": 65
+      },
+      {
+        "cover": "fixture",
+        "ep_count": "fixture",
+        "id": 28718,
+        "season_url": "fixture",
+        "subtitle": "fixture",
+        "title": "fixture",
+        "view": 1844898
+      },
+      {
+        "cover": "fixture",
+        "ep_count": "fixture",
+        "id": 127930255,
+        "season_url": "fixture",
+        "subtitle": "fixture",
+        "title": "fixture",
+        "view": 88750
+      },
+      {
+        "cover": "fixture",
+        "ep_count": "fixture",
+        "id": 367209938,
+        "season_url": "fixture",
+        "subtitle": "fixture",
+        "title": "fixture",
+        "view": 116
+      },
+      {
+        "cover": "fixture",
+        "ep_count": "fixture",
+        "id": 389531397,
+        "season_url": "fixture",
+        "subtitle": "fixture",
+        "title": "fixture",
+        "view": 154
+      },
+      {
+        "cover": "fixture",
+        "ep_count": "fixture",
+        "id": 22582,
+        "season_url": "fixture",
+        "subtitle": "fixture",
+        "title": "fixture",
+        "view": 31454
+      },
+      {
+        "cover": "fixture",
+        "ep_count": "fixture",
+        "id": 813197376,
+        "season_url": "fixture",
+        "subtitle": "fixture",
+        "title": "fixture",
+        "view": 0
+      },
+      {
+        "cover": "fixture",
+        "ep_count": "fixture",
+        "id": 22593,
+        "season_url": "fixture",
+        "subtitle": "fixture",
+        "title": "fixture",
+        "view": 13099
+      },
+      {
+        "cover": "fixture",
+        "ep_count": "fixture",
+        "id": 22608,
+        "season_url": "fixture",
+        "subtitle": "fixture",
+        "title": "fixture",
+        "view": 23735
+      },
+      {
+        "cover": "fixture",
+        "ep_count": "fixture",
+        "id": 669679536,
+        "season_url": "fixture",
+        "subtitle": "fixture",
+        "title": "fixture",
+        "view": 522
+      },
+      {
+        "cover": "fixture",
+        "ep_count": "fixture",
+        "id": 108951077,
+        "season_url": "fixture",
+        "subtitle": "fixture",
+        "title": "fixture",
+        "view": 1363
+      },
+      {
+        "cover": "fixture",
+        "ep_count": "fixture",
+        "id": 528015141,
+        "season_url": "fixture",
+        "subtitle": "fixture",
+        "title": "fixture",
+        "view": 94
+      },
+      {
+        "cover": "fixture",
+        "ep_count": "fixture",
+        "id": 275630096,
+        "season_url": "fixture",
+        "subtitle": "fixture",
+        "title": "fixture",
+        "view": 720
+      }
+    ],
+    "release_bottom_info": "fixture",
+    "release_info": "fixture",
+    "release_info2": "fixture",
+    "release_status": "fixture",
+    "season_id": 877726892,
+    "season_tag": 0,
+    "share_url": "fixture",
+    "short_link": "fixture",
+    "show_watermark": true,
+    "stat": {
+      "play": 144,
+      "play_desc": "fixture",
+      "show_vt": false
+    },
+    "status": 10,
+    "stop_sell": false,
+    "subscription_update_count_cycle_text": "",
+    "subtitle": "fixture",
+    "title": "fixture",
+    "up_info": {
+      "avatar": "fixture",
+      "brief": "fixture",
+      "follower": 524,
+      "is_follow": 0,
+      "is_living": false,
+      "link": "fixture",
+      "mid": 87185048,
+      "pendant": {
+        "image": "",
+        "name": "",
+        "pid": 0
+      },
+      "season_count": 1,
+      "uname": "fixture"
+    },
+    "update_status": 2,
+    "user_status": {
+      "bp": 0,
+      "expire_at": 0,
+      "favored": 0,
+      "favored_count": 0,
+      "is_expired": false,
+      "is_first_paid": true,
+      "payed": 0,
+      "user_expiry_content": "fixture"
+    },
+    "watermark_interval": 300
+  },
+  "message": "fixture"
+}

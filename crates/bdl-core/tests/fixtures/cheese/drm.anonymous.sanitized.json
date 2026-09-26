@@ -1,0 +1,320 @@
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "seek_param": "start",
+    "is_preview": 0,
+    "fnval": 4048,
+    "video_project": true,
+    "type": "DASH",
+    "result": "suee",
+    "seek_type": "offset",
+    "drm_tech_type": 3,
+    "from": "local",
+    "video_codecid": 7,
+    "is_drm": true,
+    "no_rexcode": 0,
+    "format": "hdflv2",
+    "support_formats": [
+      {
+        "display_desc": "4K",
+        "sub_description": "",
+        "superscript": "",
+        "need_login": true,
+        "codecs": [
+          "avc1.640033"
+        ],
+        "format": "hdflv2",
+        "description": "超清 4K",
+        "attribute": 4,
+        "quality": 120,
+        "new_description": "4K 超高清"
+      },
+      {
+        "display_desc": "1080P",
+        "sub_description": "",
+        "superscript": "",
+        "need_login": true,
+        "codecs": [
+          "avc1.640033"
+        ],
+        "format": "flv",
+        "description": "高清 1080P",
+        "attribute": 0,
+        "quality": 80,
+        "new_description": "1080P 高清"
+      },
+      {
+        "display_desc": "720P",
+        "sub_description": "",
+        "superscript": "",
+        "need_login": true,
+        "codecs": [
+          "avc1.640033"
+        ],
+        "format": "flv720",
+        "description": "高清 720P",
+        "attribute": 0,
+        "quality": 64,
+        "new_description": "720P 准高清"
+      },
+      {
+        "display_desc": "480P",
+        "sub_description": "",
+        "superscript": "",
+        "need_login": false,
+        "codecs": [
+          "avc1.640033"
+        ],
+        "format": "flv480",
+        "description": "清晰 480P",
+        "attribute": 0,
+        "quality": 32,
+        "new_description": "480P 标清"
+      },
+      {
+        "display_desc": "360P",
+        "sub_description": "",
+        "superscript": "",
+        "need_login": false,
+        "codecs": [
+          "avc1.640033"
+        ],
+        "format": "flv360",
+        "description": "流畅 360P",
+        "attribute": 0,
+        "quality": 16,
+        "new_description": "360P 流畅"
+      }
+    ],
+    "message": "Success",
+    "hls": {
+      "video": [
+        {
+          "id": 120,
+          "stream_url": "https://example.invalid/redacted"
+        },
+        {
+          "id": 80,
+          "stream_url": "https://example.invalid/redacted"
+        },
+        {
+          "id": 64,
+          "stream_url": "https://example.invalid/redacted"
+        },
+        {
+          "id": 32,
+          "stream_url": "https://example.invalid/redacted"
+        },
+        {
+          "id": 16,
+          "stream_url": "https://example.invalid/redacted"
+        }
+      ],
+      "audio": [
+        {
+          "id": 100010,
+          "stream_url": "https://example.invalid/redacted"
+        },
+        {
+          "id": 100009,
+          "stream_url": "https://example.invalid/redacted"
+        },
+        {
+          "id": 100008,
+          "stream_url": "https://example.invalid/redacted"
+        }
+      ]
+    },
+    "quality": 120,
+    "timelength": 244693,
+    "has_paid": false,
+    "drm_type": "bili_drm",
+    "dash": {
+      "duration": 245,
+      "min_buffer_time": 1.5,
+      "video": [
+        {
+          "start_with_sap": 1,
+          "bandwidth": 1848841,
+          "sar": "N/A",
+          "codecs": "avc1.640033",
+          "base_url": "https://example.invalid/redacted",
+          "backup_url": [
+            "https://example.invalid/redacted",
+            "https://example.invalid/redacted"
+          ],
+          "segment_base": {
+            "initialization": "0-1115",
+            "index_range": "1116-1735"
+          },
+          "frame_rate": "25.000",
+          "codecid": 7,
+          "size": 56548551,
+          "mime_type": "video/mp4",
+          "width": 3840,
+          "id": 120,
+          "height": 2160
+        },
+        {
+          "start_with_sap": 1,
+          "bandwidth": 455579,
+          "sar": "N/A",
+          "codecs": "avc1.640033",
+          "base_url": "https://example.invalid/redacted",
+          "backup_url": [
+            "https://example.invalid/redacted",
+            "https://example.invalid/redacted"
+          ],
+          "segment_base": {
+            "initialization": "0-1110",
+            "index_range": "1111-1730"
+          },
+          "frame_rate": "25.000",
+          "codecid": 7,
+          "size": 13935624,
+          "mime_type": "video/mp4",
+          "width": 1920,
+          "id": 80,
+          "height": 1080
+        },
+        {
+          "start_with_sap": 1,
+          "bandwidth": 218140,
+          "sar": "N/A",
+          "codecs": "avc1.640033",
+          "base_url": "https://example.invalid/redacted",
+          "backup_url": [
+            "https://example.invalid/redacted",
+            "https://example.invalid/redacted"
+          ],
+          "segment_base": {
+            "initialization": "0-1108",
+            "index_range": "1109-1728"
+          },
+          "frame_rate": "25.000",
+          "codecid": 7,
+          "size": 6673564,
+          "mime_type": "video/mp4",
+          "width": 1280,
+          "id": 64,
+          "height": 720
+        },
+        {
+          "start_with_sap": 1,
+          "bandwidth": 121027,
+          "sar": "N/A",
+          "codecs": "avc1.640033",
+          "base_url": "https://example.invalid/redacted",
+          "backup_url": [
+            "https://example.invalid/redacted",
+            "https://example.invalid/redacted"
+          ],
+          "segment_base": {
+            "initialization": "0-1109",
+            "index_range": "1110-1729"
+          },
+          "frame_rate": "25.000",
+          "codecid": 7,
+          "size": 3703349,
+          "mime_type": "video/mp4",
+          "width": 852,
+          "id": 32,
+          "height": 480
+        },
+        {
+          "start_with_sap": 1,
+          "bandwidth": 85001,
+          "sar": "N/A",
+          "codecs": "avc1.640033",
+          "base_url": "https://example.invalid/redacted",
+          "backup_url": [
+            "https://example.invalid/redacted",
+            "https://example.invalid/redacted"
+          ],
+          "segment_base": {
+            "initialization": "0-1117",
+            "index_range": "1118-1737"
+          },
+          "frame_rate": "25.000",
+          "codecid": 7,
+          "size": 2601496,
+          "mime_type": "video/mp4",
+          "width": 640,
+          "id": 16,
+          "height": 360
+        }
+      ],
+      "audio": [
+        {
+          "start_with_sap": 0,
+          "bandwidth": 121658,
+          "sar": "",
+          "codecs": "mp4a.40.2",
+          "base_url": "https://example.invalid/redacted",
+          "backup_url": [
+            "https://example.invalid/redacted",
+            "https://example.invalid/redacted"
+          ],
+          "segment_base": {
+            "initialization": "0-997",
+            "index_range": "998-1617"
+          },
+          "frame_rate": "",
+          "codecid": 0,
+          "size": 3722752,
+          "mime_type": "audio/mp4",
+          "width": 0,
+          "id": 100010,
+          "height": 0
+        },
+        {
+          "start_with_sap": 0,
+          "bandwidth": 100911,
+          "sar": "",
+          "codecs": "mp4a.40.2",
+          "base_url": "https://example.invalid/redacted",
+          "backup_url": [
+            "https://example.invalid/redacted",
+            "https://example.invalid/redacted"
+          ],
+          "segment_base": {
+            "initialization": "0-997",
+            "index_range": "998-1617"
+          },
+          "frame_rate": "",
+          "codecid": 0,
+          "size": 3088150,
+          "mime_type": "audio/mp4",
+          "width": 0,
+          "id": 100009,
+          "height": 0
+        },
+        {
+          "start_with_sap": 0,
+          "bandwidth": 65815,
+          "sar": "",
+          "codecs": "mp4a.40.2",
+          "base_url": "https://example.invalid/redacted",
+          "backup_url": [
+            "https://example.invalid/redacted",
+            "https://example.invalid/redacted"
+          ],
+          "segment_base": {
+            "initialization": "0-1005",
+            "index_range": "1006-1625"
+          },
+          "frame_rate": "",
+          "codecid": 0,
+          "size": 2014686,
+          "mime_type": "audio/mp4",
+          "width": 0,
+          "id": 100008,
+          "height": 0
+        }
+      ]
+    },
+    "fragment_videos": [],
+    "status": 0
+  }
+}

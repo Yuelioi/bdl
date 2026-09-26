@@ -105,11 +105,14 @@ impl AudioQuality {
 pub struct VideoStreamData {
     /// 当前分辨率代码
     pub quality: u32,
-    /// 分辨率代码列表
+    /// 分辨率代码列表；部分课程响应省略时为空
+    #[serde(default)]
     pub accept_quality: Vec<u32>,
-    /// 支持的格式
+    /// 支持的格式；部分课程响应省略时为空
+    #[serde(default)]
     pub accept_format: String,
-    /// 分辨率描述
+    /// 分辨率描述；部分课程响应省略时为空
+    #[serde(default)]
     pub accept_description: Vec<String>,
     /// 当前格式
     pub format: String,

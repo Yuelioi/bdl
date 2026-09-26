@@ -11,6 +11,12 @@ pub enum BdlError {
     #[error("bpi error: {0}")]
     Bpi(String),
 
+    #[error("该分集使用 DRM 加密，BDL 暂不支持下载。请前往哔哩哔哩观看。")]
+    DrmProtected,
+
+    #[error("当前账号只能试看此分集，请登录已购买该课程的账号后重试。")]
+    CoursePreviewOnly,
+
     #[error("planning error: {message}")]
     Planning { message: String },
 

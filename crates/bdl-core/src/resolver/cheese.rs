@@ -321,7 +321,7 @@ impl CheeseApi for BpiCheeseApi {
             .await
             .map_err(bpi_error)?;
 
-        Ok(ResolvedCheesePlayUrl::from_dash(data.base.dash))
+        ResolvedCheesePlayUrl::from_bpi(data)
     }
 }
 
@@ -399,6 +399,16 @@ impl ResolvedCheeseEpisode {
 }
 
 impl ResolvedCheesePlayUrl {
+    fn from_bpi(data: bpi_rs::cheese::videostream_url::CourseVideoStreamData) -> BdlResult<Self> {
+        if data.is_drm == Some(true) {
+            return Err(BdlError::DrmProtected);
+        }
+        if data.base.is_preview.is_some_and(|preview| preview != 0) {
+            return Err(BdlError::CoursePreviewOnly);
+        }
+        Ok(Self::from_dash(data.base.dash))
+    }
+
     fn from_dash(dash: Option<bpi_rs::models::DashStreams>) -> Self {
         let Some(dash) = dash else {
             return Self::default();
@@ -655,4 +665,80 @@ fn non_empty(value: String) -> Option<String> {
 
 fn bpi_error(error: BpiError) -> BdlError {
     BdlError::Bpi(error.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bpi_rs::ApiEnvelope;
+    use bpi_rs::cheese::videostream_url::CourseVideoStreamData;
+
+    #[test]
+    fn preview_streams_are_not_treated_as_complete_episodes() {
+        let data = ApiEnvelope::<CourseVideoStreamData>::from_slice(include_bytes!(
+            "../../tests/fixtures/cheese/preview.anonymous.sanitized.json"
+        ))
+        .unwrap()
+        .into_payload()
+        .unwrap();
+        // 以实际流的试看标记为准，不能仅凭账号或课程的付费标记认定内容完整。
+        for has_paid in [false, true] {
+            let mut preview = data.clone();
+            preview.base.has_paid = has_paid;
+            assert!(matches!(
+                ResolvedCheesePlayUrl::from_bpi(preview),
+                Err(BdlError::CoursePreviewOnly)
+            ));
+        }
+    }
+
+    #[test]
+    fn course_without_promotions_preserves_episode_directory() {
+        let info = ApiEnvelope::<bpi_rs::cheese::info::CourseInfo>::from_slice(include_bytes!(
+            "../../tests/fixtures/cheese/no-coupon.sanitized.json"
+        ))
+        .unwrap()
+        .into_payload()
+        .unwrap();
+        let ep_id = info.episodes[2].id;
+        for focused in [None, Some(ep_id)] {
+            let page = ResolvedCheesePage::from_info_episodes(
+                info.clone(),
+                PageRequest {
+                    page_number: 1,
+                    page_size: 100,
+                },
+                focused,
+            );
+            assert_eq!(page.season_id, 877726892);
+            assert_eq!(page.episodes.len(), 7);
+            assert!(page.episodes.iter().any(|episode| episode.ep_id == ep_id));
+            assert_eq!(page.focused_ep_id, focused);
+        }
+    }
+
+    #[test]
+    fn encrypted_course_streams_are_rejected_before_becoming_download_resources() {
+        let data = ApiEnvelope::<CourseVideoStreamData>::from_slice(include_bytes!(
+            "../../tests/fixtures/cheese/drm.anonymous.sanitized.json"
+        ))
+        .unwrap()
+        .into_payload()
+        .unwrap();
+        assert!(matches!(
+            ResolvedCheesePlayUrl::from_bpi(data.clone()),
+            Err(BdlError::DrmProtected)
+        ));
+        for (is_drm, has_paid) in [(None, false), (None, true), (Some(false), true)] {
+            let mut unencrypted = data.clone();
+            unencrypted.is_drm = is_drm;
+            unencrypted.base.has_paid = has_paid;
+            unencrypted.drm_type = None;
+            unencrypted.drm_tech_type = None;
+            unencrypted.hls = None;
+            let streams = ResolvedCheesePlayUrl::from_bpi(unencrypted).unwrap();
+            assert!(!streams.video.is_empty());
+            assert!(!streams.audio.is_empty());
+        }
+    }
 }

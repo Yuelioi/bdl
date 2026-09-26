@@ -1,5 +1,15 @@
 # BDL HTTP observation patch
 
+## Course response compatibility (BDL #5 / bpi-rs #15)
+
+Synced targeted model fixes from the sibling SDK: nullable course coupons,
+omitted discount descriptions and `accept_*` fields, plus optional DRM/HLS
+metadata. Regression fixtures live in `crates/bdl-core/tests/fixtures/cheese`;
+SDK model tests are maintained upstream. DRM metadata describes encryption;
+BDL rejects encrypted streams before creating download resources.
+
+## HTTP observation
+
 Source: crates.io bpi-rs 0.3.0, upstream revision in `.cargo_vcs_info.json`.
 The original MIT license and source are retained. The normalized Cargo manifest
 is copied from that release, with unshipped example/contract-test target declarations

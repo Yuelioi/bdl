@@ -79,6 +79,8 @@ fn command_error_code(error: &BdlError) -> &'static str {
     match error {
         BdlError::InvalidInput { .. } => "parse_unrecognized",
         BdlError::UnsupportedSource { .. } => "unsupported_source",
+        BdlError::DrmProtected => "drm_protected",
+        BdlError::CoursePreviewOnly => "course_preview_only",
         BdlError::Platform { .. } => "platform_error",
         BdlError::Mux(MuxError::FfmpegNotFound { .. }) => "missing_ffmpeg",
         BdlError::Io(error) if error.kind() == ErrorKind::PermissionDenied => {
@@ -137,6 +139,27 @@ fn command_error_message(error: &BdlError) -> Option<String> {
         ),
         BdlError::Bpi(_) => Some("操作失败，暂时无法获取 Bilibili 数据，请稍后重试。".to_owned()),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod course_error_tests {
+    use super::*;
+
+    #[test]
+    fn drm_error_preserves_actionable_message() {
+        let error = CommandError::from(BdlError::DrmProtected);
+        assert_eq!(error.code, "drm_protected");
+        assert!(error.message.contains("DRM"));
+        assert!(error.message.contains("暂不支持下载"));
+    }
+
+    #[test]
+    fn preview_error_preserves_actionable_message() {
+        let error = CommandError::from(BdlError::CoursePreviewOnly);
+        assert_eq!(error.code, "course_preview_only");
+        assert!(error.message.contains("只能试看"));
+        assert!(error.message.contains("已购买"));
     }
 }
 

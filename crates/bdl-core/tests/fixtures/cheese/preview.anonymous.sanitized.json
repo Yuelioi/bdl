@@ -1,0 +1,80 @@
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "accept_format": "mp4,mp4,mp4",
+    "seek_param": "start",
+    "is_preview": 1,
+    "fnval": 1,
+    "video_project": true,
+    "type": "MP4",
+    "result": "suee",
+    "seek_type": "second",
+    "from": "local",
+    "video_codecid": 7,
+    "durl": [
+      {
+        "size": 69030463,
+        "ahead": "",
+        "length": 258680,
+        "vhead": "",
+        "backup_url": [
+          "https://example.invalid/preview.mp4",
+          "https://example.invalid/preview.mp4"
+        ],
+        "url": "https://example.invalid/preview.mp4",
+        "order": 1
+      }
+    ],
+    "no_rexcode": 0,
+    "format": "mp4",
+    "support_formats": [
+      {
+        "display_desc": "720P",
+        "superscript": "",
+        "need_login": true,
+        "codecs": [],
+        "format": "mp4",
+        "description": "高清 720P",
+        "quality": 64,
+        "new_description": "720P 准高清"
+      },
+      {
+        "display_desc": "480P",
+        "superscript": "",
+        "need_login": false,
+        "codecs": [],
+        "format": "mp4",
+        "description": "清晰 480P",
+        "quality": 32,
+        "new_description": "480P 标清"
+      },
+      {
+        "display_desc": "360P",
+        "superscript": "",
+        "need_login": false,
+        "codecs": [],
+        "format": "mp4",
+        "description": "流畅 360P",
+        "quality": 16,
+        "new_description": "360P 流畅"
+      }
+    ],
+    "message": "Success",
+    "accept_quality": [
+      64,
+      32,
+      16
+    ],
+    "quality": 64,
+    "timelength": 258986,
+    "has_paid": false,
+    "fragment_videos": [],
+    "accept_description": [
+      "高清 720P",
+      "清晰 480P",
+      "流畅 360P"
+    ],
+    "status": 0
+  }
+}

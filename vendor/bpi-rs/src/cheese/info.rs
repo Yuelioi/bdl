@@ -11,7 +11,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CourseInfo {
     pub brief: CourseBrief,
-    pub coupon: CourseCoupon,
+    /// 优惠券；无可用优惠时可能为 null 或省略
+    pub coupon: Option<CourseCoupon>,
     pub cover: String,
     pub episode_page: CourseEpisodePage,
     pub episode_sort: i32,
@@ -108,6 +109,8 @@ pub struct CourseFaqItem {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CoursePayment {
     pub desc: String,
+    /// 无折扣时可能省略
+    #[serde(default)]
     pub discount_desc: String,
     #[serde(default)]
     pub discount_prefix: String,
