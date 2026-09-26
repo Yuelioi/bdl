@@ -240,16 +240,20 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist/updater
-          gh release download "${{ github.ref_name }}" \
-            --pattern latest.json \
-            --output dist/updater/latest.json \
-            --repo "${{ github.repository }}"
-          release_id="$(gh api "repos/${{ github.repository }}/releases/tags/${{ github.ref_name }}" --jq .id)"
+          release_id="$(gh api "repos/${{ github.repository }}/releases?per_page=100" \
+            --jq '.[] | select(.tag_name == "${{ github.ref_name }}") | .id')"
+          test -n "$release_id"
           gh api "repos/${{ github.repository }}/releases/${release_id}/assets?per_page=100" \
             > dist/updater/assets.json
+          manifest_id="$(jq -r '.[] | select(.name == "latest.json") | .id' dist/updater/assets.json)"
+          test -n "$manifest_id"
+          gh api -H 'Accept: application/octet-stream' \
+            "repos/${{ github.repository }}/releases/assets/${manifest_id}" \
+            > dist/updater/latest.json
           node scripts/normalize-updater-manifest.mjs \
             dist/updater/latest.json \
-            dist/updater/assets.json
+            dist/updater/assets.json \
+            "${{ github.ref_name }}"
           gh release upload "${{ github.ref_name }}" \
             dist/updater/latest.json \
             --clobber \
@@ -299,7 +303,8 @@ jobs:
               const target = `linux-x86_64-${format}`;
               const entry = manifest.platforms?.[target];
               if (!entry?.signature || !entry?.url) throw new Error(`Missing signed updater target ${target}`);
-              const artifact = assets.find((asset) => asset.browser_download_url === entry.url);
+              const artifact = assets.find((asset) =>
+                entry.url === `https://github.com/${context.repo.owner}/${context.repo.repo}/releases/download/${tag}/${asset.name}`);
               if (!artifact?.name.endsWith(extension)) {
                 throw new Error(`Updater target ${target} does not point to its uploaded ${extension} package.`);
               }

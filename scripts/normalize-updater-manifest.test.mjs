@@ -60,3 +60,17 @@ test('rejects updater targets that do not match an uploaded asset', () => {
     /does not match a release asset/,
   )
 })
+
+test('uses the tagged download URL for a draft release asset', () => {
+  const draftAsset = {
+    ...assets[1],
+    browser_download_url:
+      'https://github.com/Yuelioi/bdl/releases/download/untagged-abc/BDL_0.6.0_amd64.AppImage',
+  }
+  const result = normalizeUpdaterManifest(
+    { platforms: { 'linux-x86_64-appimage': { signature: 'signed-update', url: draftAsset.url } } },
+    [draftAsset],
+    'v0.6.0',
+  )
+  assert.equal(result.manifest.platforms['linux-x86_64-appimage'].url, assets[1].browser_download_url)
+})
