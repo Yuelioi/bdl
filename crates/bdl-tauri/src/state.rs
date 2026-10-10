@@ -452,9 +452,32 @@ impl AppState {
         source_id: &SourceId,
         selected_part_ids: &[PartId],
     ) -> BdlResult<PreparedSelection> {
+        self.prepare_selection_with_refresh(source_id, selected_part_ids, false)
+            .await
+    }
+
+    pub async fn refresh_selection(
+        &self,
+        source_id: &SourceId,
+        selected_part_ids: &[PartId],
+    ) -> BdlResult<PreparedSelection> {
+        self.prepare_selection_with_refresh(source_id, selected_part_ids, true)
+            .await
+    }
+
+    async fn prepare_selection_with_refresh(
+        &self,
+        source_id: &SourceId,
+        selected_part_ids: &[PartId],
+        force: bool,
+    ) -> BdlResult<PreparedSelection> {
         let mut tree = self.source_snapshot(source_id)?;
         let selected_part_ids = normalize_selected_part_ids(&tree, selected_part_ids);
-        let requests = selected_hydration_requests(&tree, &selected_part_ids)?;
+        let requests = if force {
+            crate::parse_session::selection_hydration_requests(&tree, &selected_part_ids, true)?
+        } else {
+            selected_hydration_requests(&tree, &selected_part_ids)?
+        };
         if requests.is_empty() {
             return Ok(PreparedSelection {
                 tree,
@@ -2606,6 +2629,27 @@ mod tests {
         assert_eq!(latest.concurrent_tasks, 3);
         assert_eq!(latest.ffmpeg_path.as_deref(), Some("C:/tools/ffmpeg.exe"));
         let _ = std::fs::remove_dir_all(data_dir);
+    }
+
+    #[test]
+    fn forced_hydration_refreshes_cached_audio_only_media() {
+        let mut tree = uploader_tree();
+        let part = &mut tree.groups[0].items[0].parts[0];
+        part.cid = Some(123);
+        part.streams = vec![media_stream(
+            MediaKind::Audio,
+            "https://cdn.example/audio.m4s",
+        )];
+        let id = part.id.clone();
+        assert!(
+            selected_hydration_requests(&tree, std::slice::from_ref(&id))
+                .unwrap()
+                .is_empty()
+        );
+        let refresh =
+            crate::parse_session::selection_hydration_requests(&tree, &[id], true).unwrap();
+        assert_eq!(refresh.len(), 1);
+        assert_eq!(refresh[0].target_cid, Some(123));
     }
 
     #[test]

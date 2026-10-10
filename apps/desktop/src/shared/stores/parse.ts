@@ -32,8 +32,21 @@ const MAX_BATCH_SOURCES = 20
 const PARSE_CONCURRENCY = 1
 const PACED_PARSE_POLL_INTERVAL_MS = 100
 
+interface BackgroundParseJob {
+  sourceId: string
+  title: string
+  status: 'running' | 'stopped' | 'completed' | 'failed'
+  processed: number
+  created: number
+  skipped: number
+  error: string | null
+  failures: Array<{ partId: string; title: string; message: string }>
+  donePartIds: string[]
+  options: CreateTaskOptions
+}
+
 interface ParseState {
-  backgroundJob: { sourceId: string; title: string; status: 'running' | 'stopped' | 'completed' | 'failed'; processed: number; created: number; error: string | null } | null
+  backgroundJob: BackgroundParseJob | null
   input: string
   sources: Record<string, NormalizedSourceTree>
   sourceOrder: string[]
@@ -334,23 +347,30 @@ export const useParseStore = defineStore('parse', {
         this.loadingBySource[sourceId] = false
       }
     },
-    async startBackgroundDownload(sourceId: string): Promise<void> {
+    async startBackgroundDownload(sourceId: string, retryFailed = false): Promise<void> {
       if (this.backgroundJob?.status === 'running' || this.pacedParsingBySource[sourceId] || this.loadingBySource[sourceId]) return
       const source = this.sources[sourceId]
       if (!source) return
-      const job = { sourceId, title: source.source.title, status: 'running' as 'running' | 'stopped' | 'completed' | 'failed', processed: 0, created: 0, error: null as string | null }
+      const previous = this.backgroundJob?.sourceId === sourceId ? this.backgroundJob : null
+      if (retryFailed && !previous?.failures.length) return
+      let job: BackgroundParseJob = previous ?? { sourceId, title: source.source.title, status: 'running', processed: 0, created: 0, skipped: 0, error: null, failures: [], donePartIds: [], options: {} }
+      job.status = 'running'
+      job.error = null
       this.backgroundJob = job
+      job = this.backgroundJob
       this.pacedParsingBySource[sourceId] = true
       this.pacedParsingStopRequestedBySource[sourceId] = false
       this.errorsBySource[sourceId] = null
-      const done = new Set<string>()
-      const finishedItems = new Set<string>()
+      const done = new Set(job.donePartIds)
+      const retryIds = retryFailed ? job.failures.map((failure) => failure.partId) : null
+      retryIds?.forEach((id) => done.delete(id))
+      const attempted = new Set<string>()
       const stopped = () => Boolean(this.pacedParsingStopRequestedBySource[sourceId]) || !this.sources[sourceId]
       try {
         const settings = useSettingsStore()
         await settings.ensureLoaded()
         const defaults: SettingsSnapshot = JSON.parse(JSON.stringify(settings.saved))
-        const options: CreateTaskOptions = {
+        const options: CreateTaskOptions = previous && Object.keys(job.options).length ? job.options : {
           downloadDir: defaults.download_dir ?? 'downloads', archiveMode: defaults.archive_mode,
           mediaMode: defaults.media_mode,
           downloadPresetId: defaults.selected_download_preset,
@@ -364,33 +384,41 @@ export const useParseStore = defineStore('parse', {
           audioQuality: defaults.media_preferences.audio.length ? 'best' : defaults.audio_quality,
           mediaPreferences: defaults.media_preferences, duplicatePolicy: 'skip', silent: true,
         }
+        job.options = options
         while (!stopped()) {
-          const pending = this.sources[sourceId].groups.flatMap((group) => group.items).filter((item) => !finishedItems.has(item.id)).flatMap((item) => item.parts.map((part) => part.id)).filter((id) => !done.has(id))
+          const pending = (retryIds ?? collectPartIds(this.sources[sourceId])).filter((id) => !done.has(id) && !attempted.has(id))
           // Enqueue each resolved selection immediately so downloading starts early.
           for (let index = 0; index < pending.length && !stopped(); index += 1) {
             const ids = pending.slice(index, index + 1)
+            const partId = ids[0]
+            attempted.add(partId)
+            const title = this.sources[sourceId].groups.flatMap((group) => group.items).flatMap((item) => item.parts).find((part) => part.id === partId)?.title
+              ?? job.failures.find((failure) => failure.partId === partId)?.title ?? partId
             const beforeIds = new Set(collectPartIds(this.sources[sourceId]))
             const result = await this.createTasksForSources([sourceId], { ...options, partIdsBySource: { [sourceId]: ids } })
             if (stopped() && (!result || result.failures.length)) break
-            if (!result || result.failures.length || result.requires_confirmation) throw new Error(result?.failures[0]?.message ?? '后台创建下载任务失败')
+            const message = !result || result.failures.length || result.requires_confirmation
+              ? result?.failures[0]?.message ?? '后台创建下载任务失败' : null
+            if (message && shouldStopBackgroundParsing(message)) throw new Error(message)
+            const wasFailed = job.failures.some((failure) => failure.partId === partId)
+            job.failures = job.failures.filter((failure) => failure.partId !== partId)
+            if (message) job.failures.push({ partId, title, message })
             ids.forEach((id) => done.add(id))
             // Hydration can replace placeholder IDs with real part IDs.
-            collectPartIds(this.sources[sourceId]).filter((id) => !beforeIds.has(id)).forEach((id) => done.add(id))
-            if (this.backgroundJob) {
-              this.backgroundJob.processed += ids.length
-              this.backgroundJob.created += result.created.length
+            if (!message) collectPartIds(this.sources[sourceId]).filter((id) => !beforeIds.has(id)).forEach((id) => done.add(id))
+            job.donePartIds = [...done]
+            if (!wasFailed) job.processed += ids.length
+            if (!message && result) {
+              job.created += result.created.length
+              if (!result.created.length) job.skipped += ids.length
             }
           }
-          if (this.sources[sourceId]) {
-            for (const item of this.sources[sourceId].groups.flatMap((group) => group.items)) {
-              if (item.parts.every((part) => done.has(part.id))) finishedItems.add(item.id)
-            }
-          }
-          if (stopped() || !this.sources[sourceId]?.source.has_more) break
+          if (retryFailed || stopped() || !this.sources[sourceId]?.source.has_more) break
           const progressed = await this.loadChunk(sourceId, 1)
           if (!progressed && !stopped()) throw new Error(this.errorsBySource[sourceId] ?? '分页没有返回新内容，已停止后台解析')
         }
-        if (this.backgroundJob) this.backgroundJob.status = stopped() ? 'stopped' : 'completed'
+        const remaining = retryFailed && this.sources[sourceId] && (this.sources[sourceId].source.has_more || collectPartIds(this.sources[sourceId]).some((id) => !done.has(id)))
+        if (this.backgroundJob) this.backgroundJob.status = stopped() || remaining ? 'stopped' : 'completed'
       } catch (error) {
         if (this.backgroundJob) {
           this.backgroundJob.status = stopped() ? 'stopped' : 'failed'
@@ -459,6 +487,7 @@ export const useParseStore = defineStore('parse', {
       this.input = ''
       this.clearNotice()
       this.sources = {}
+      this.backgroundJob = null
       this.sourceOrder = []
       this.activeSourceId = null
       this.batchMode = false
@@ -478,6 +507,7 @@ export const useParseStore = defineStore('parse', {
       try {
         await parseCloseSource(sourceId)
       } finally {
+        if (this.backgroundJob?.sourceId === sourceId) this.backgroundJob = null
         delete this.sources[sourceId]
         delete this.selectionBySource[sourceId]
         delete this.errorsBySource[sourceId]
@@ -828,4 +858,10 @@ const errorMessage = (error: unknown): string => {
   }
 
   return String(error)
+}
+
+const shouldStopBackgroundParsing = (message: string): boolean => {
+  // Content titles may themselves contain restriction words or HTTP-like numbers.
+  if (message.startsWith('planning error:') && /缺少(?:视频|音频)流|没有符合.*偏好|没有可用的 SDR/.test(message)) return false
+  return /(?:^|[^\d])(?:-352|-412|-509|-799|401|403|412|429)(?:[^\d]|$)|限流|验证|风控|captcha|too many requests|解析已因|源站限制|登录状态可能已失效|storage error|io error|platform error|保存目录|磁盘|空间不足|后台创建下载任务失败/i.test(message)
 }

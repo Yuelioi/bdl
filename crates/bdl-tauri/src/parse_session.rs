@@ -220,6 +220,14 @@ pub(crate) fn selected_hydration_requests(
     tree: &NormalizedSourceTree,
     selected_part_ids: &[PartId],
 ) -> BdlResult<Vec<PartHydrationRequest>> {
+    selection_hydration_requests(tree, selected_part_ids, false)
+}
+
+pub(crate) fn selection_hydration_requests(
+    tree: &NormalizedSourceTree,
+    selected_part_ids: &[PartId],
+    force: bool,
+) -> BdlResult<Vec<PartHydrationRequest>> {
     let mut seen = HashSet::new();
     let mut requests = Vec::new();
 
@@ -230,7 +238,7 @@ pub(crate) fn selected_hydration_requests(
         let Some(part) = find_part(tree, part_id) else {
             continue;
         };
-        if part.cid.is_some() && !part.streams.is_empty() {
+        if !force && part.cid.is_some() && !part.streams.is_empty() {
             continue;
         }
         requests.push(PartHydrationRequest {

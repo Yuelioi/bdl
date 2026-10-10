@@ -81,6 +81,22 @@ jobs:
         if: runner.os == 'Linux'
         run: bash scripts/install-linux-deps.sh
 
+      - name: Cache Windows installer tools
+        if: runner.os == 'Windows'
+        uses: actions/cache@v4
+        with:
+          path: ~/AppData/Local/tauri/NSIS
+          key: windows-nsis-3.11-tauri-utils-0.5.3
+
+      - name: Test Windows installer dependency retries
+        if: runner.os == 'Windows'
+        run: python scripts/test_prepare_windows_nsis.py
+
+      - name: Prepare Windows installer dependencies
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: python scripts/prepare-windows-nsis.py --tools-dir "$env:LOCALAPPDATA/tauri"
+
       - name: Build and stage release
         uses: tauri-apps/tauri-action@v1
         env:

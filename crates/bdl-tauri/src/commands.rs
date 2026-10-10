@@ -572,9 +572,20 @@ pub async fn selection_create_tasks(
         parse_speed_limit(request.speed_limit_bytes_per_second, "单任务下载限速")?;
     let selected_part_ids = request.part_ids.into_iter().map(PartId).collect::<Vec<_>>();
 
-    let prepared = state
+    let mut prepared = state
         .prepare_selection(&source_id, &selected_part_ids)
         .await?;
+    let missing = bdl_core::planner::missing_required_media_parts(
+        &prepared.tree,
+        &prepared.part_ids,
+        &options,
+    );
+    if !missing.is_empty() {
+        // One fresh resolution before planning; never retry enqueue side effects.
+        let refreshed = state.refresh_selection(&source_id, &missing).await?;
+        prepared.tree = refreshed.tree;
+        prepared.tree_updated = true;
+    }
     let mut planned_tasks = plan_selected_parts(&prepared.tree, &prepared.part_ids, &options)?;
     let mut skipped_existing = prepared.part_ids.len().saturating_sub(planned_tasks.len());
     for task in &mut planned_tasks {

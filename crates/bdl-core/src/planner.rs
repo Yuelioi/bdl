@@ -228,6 +228,34 @@ impl DownloadOptions {
     }
 }
 
+/// Refresh only absent media required by the effective download recipe.
+pub fn missing_required_media_parts(
+    tree: &NormalizedSourceTree,
+    selected_part_ids: &[PartId],
+    options: &DownloadOptions,
+) -> Vec<PartId> {
+    selected_part_ids
+        .iter()
+        .filter(|id| {
+            find_part(tree, id).is_some_and(|selected| {
+                (options.media_mode.includes_video()
+                    && !selected
+                        .part
+                        .streams
+                        .iter()
+                        .any(|s| s.kind == MediaKind::Video))
+                    || (options.media_mode.includes_audio()
+                        && !selected
+                            .part
+                            .streams
+                            .iter()
+                            .any(|s| s.kind == MediaKind::Audio))
+            })
+        })
+        .cloned()
+        .collect()
+}
+
 pub fn plan_selected_parts(
     tree: &NormalizedSourceTree,
     selected_part_ids: &[PartId],

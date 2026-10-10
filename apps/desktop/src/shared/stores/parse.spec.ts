@@ -567,6 +567,7 @@ describe('background parse and download', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     Object.values(api).forEach((mock) => mock.mockReset())
+    api.parseCancel.mockResolvedValue(undefined)
     useSettingsStore().loaded = true
     api.selectionCreateTasks.mockResolvedValue({ created: [], duplicates: [], skipped_existing: 1, requires_confirmation: false })
   })
@@ -596,6 +597,82 @@ describe('background parse and download', () => {
     expect(api.selectionCreateTasks.mock.calls.map(([request]) => request.part_ids)).toEqual([['part:source:background'], ['part:second']])
     expect(api.selectionCreateTasks.mock.calls.every(([request]) => request.naming_template === '{title}.{ext}' && request.duplicate_policy === 'skip')).toBe(true)
     expect(parse.selectionBySource[first.source.id]).toEqual([])
+    expect(parse.backgroundJob).toMatchObject({ status: 'completed', processed: 2 })
+  })
+
+  it('continues past a missing stream and retries only failed parts with the saved recipe', async () => {
+    const parse = useParseStore()
+    const tree = sourceTree('source:partial', '收藏夹')
+    const first = tree.groups[0].items[0]
+    tree.groups[0].items = ['first', 'bad', 'last'].map((name) => ({ ...first, id: `item:${name}`, parts: [{ ...first.parts[0], id: `part:${name}`, title: name }] }))
+    parse.upsertSource(tree)
+    useSettingsStore().saved.naming_template = '{title}.{ext}'
+    api.selectionCreateTasks.mockImplementation(async (request) => {
+      if (request.part_ids[0] === 'part:bad') throw new Error('planning error: `bad 风控403验证` 缺少视频流，请重新解析后再试。')
+      return { created: [], duplicates: [], skipped_existing: 1, requires_confirmation: false }
+    })
+    await parse.startBackgroundDownload(tree.source.id)
+    expect(api.selectionCreateTasks.mock.calls.map(([r]) => r.part_ids)).toEqual([['part:first'], ['part:bad'], ['part:last']])
+    expect(parse.backgroundJob).toMatchObject({ status: 'completed', processed: 3, skipped: 2, failures: [{ partId: 'part:bad', title: 'bad' }] })
+    useSettingsStore().saved.naming_template = '{bvid}.{ext}'
+    api.selectionCreateTasks.mockClear().mockResolvedValue({ created: [], duplicates: [], skipped_existing: 1, requires_confirmation: false })
+    await parse.startBackgroundDownload(tree.source.id, true)
+    expect(api.selectionCreateTasks).toHaveBeenCalledTimes(1)
+    expect(api.selectionCreateTasks.mock.calls[0][0]).toMatchObject({ part_ids: ['part:bad'], naming_template: '{title}.{ext}' })
+    expect(parse.backgroundJob).toMatchObject({ status: 'completed', processed: 3, skipped: 3, failures: [] })
+  })
+
+  it.each(['源站限制了请求，至少暂停60秒。HTTP 429', '登录状态可能已失效，请重新登录后重试。'])('stops on %s and resumes without replaying successful parts', async (message) => {
+    const parse = useParseStore()
+    const tree = sourceTree('source:restricted', '收藏夹')
+    const first = tree.groups[0].items[0]
+    tree.groups[0].items = ['first', 'blocked', 'last'].map((name) => ({ ...first, id: `item:${name}`, parts: [{ ...first.parts[0], id: `part:${name}` }] }))
+    parse.upsertSource(tree)
+    api.selectionCreateTasks.mockResolvedValueOnce({ created: [], duplicates: [], skipped_existing: 1, requires_confirmation: false }).mockRejectedValueOnce(new Error(message))
+    await parse.startBackgroundDownload(tree.source.id)
+    expect(parse.backgroundJob).toMatchObject({ status: 'failed', processed: 1, failures: [] })
+    expect(api.selectionCreateTasks).toHaveBeenCalledTimes(2)
+    api.selectionCreateTasks.mockClear().mockResolvedValue({ created: [], duplicates: [], skipped_existing: 1, requires_confirmation: false })
+    await parse.startBackgroundDownload(tree.source.id)
+    expect(api.selectionCreateTasks.mock.calls.map(([r]) => r.part_ids)).toEqual([['part:blocked'], ['part:last']])
+    expect(parse.backgroundJob).toMatchObject({ status: 'completed', processed: 3 })
+  })
+
+  it('keeps hydrated multi-part IDs in its checkpoint when resuming', async () => {
+    const parse = useParseStore()
+    const tree = sourceTree('source:hydrate', '多P')
+    parse.upsertSource(tree)
+    api.selectionCreateTasks.mockImplementationOnce(async () => {
+      const loaded = structuredClone(tree)
+      const part = loaded.groups[0].items[0].parts[0]
+      loaded.groups[0].items[0].parts = [{ ...part, id: 'part:p1' }, { ...part, id: 'part:p2' }]
+      parse.upsertSource(loaded)
+      parse.stopPacedParsing(tree.source.id)
+      return { created: [], duplicates: [], skipped_existing: 2, requires_confirmation: false }
+    })
+    await parse.startBackgroundDownload(tree.source.id)
+    expect(parse.backgroundJob?.failures).toEqual([])
+    expect(parse.backgroundJob?.donePartIds).toEqual(expect.arrayContaining(['part:p1', 'part:p2']))
+    api.selectionCreateTasks.mockClear()
+    await parse.startBackgroundDownload(tree.source.id)
+    expect(api.selectionCreateTasks).not.toHaveBeenCalled()
+    expect(parse.backgroundJob?.status).toBe('completed')
+  })
+
+  it('keeps unprocessed work resumable after retrying a failure from a paused batch', async () => {
+    const parse = useParseStore()
+    const tree = sourceTree('source:retry-paused', '收藏夹')
+    const first = tree.groups[0].items[0]
+    tree.groups[0].items.push({ ...first, id: 'item:blocked', parts: [{ ...first.parts[0], id: 'part:blocked' }] })
+    parse.upsertSource(tree)
+    api.selectionCreateTasks.mockRejectedValueOnce(new Error('planning error: `bad` 缺少视频流，请重新解析后再试。')).mockRejectedValueOnce(new Error('HTTP 429'))
+    await parse.startBackgroundDownload(tree.source.id)
+    expect(parse.backgroundJob?.status).toBe('failed')
+    api.selectionCreateTasks.mockClear().mockResolvedValue({ created: [], duplicates: [], skipped_existing: 1, requires_confirmation: false })
+    await parse.startBackgroundDownload(tree.source.id, true)
+    expect(parse.backgroundJob).toMatchObject({ status: 'stopped', processed: 1, failures: [] })
+    await parse.startBackgroundDownload(tree.source.id)
+    expect(api.selectionCreateTasks.mock.calls.map(([r]) => r.part_ids)).toEqual([['part:source:retry-paused'], ['part:blocked']])
     expect(parse.backgroundJob).toMatchObject({ status: 'completed', processed: 2 })
   })
 

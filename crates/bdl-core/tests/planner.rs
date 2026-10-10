@@ -13,10 +13,34 @@ use bdl_core::model::{
 use bdl_core::naming::DuplicateNamingStrategy;
 use bdl_core::planner::{
     ArchiveAssetSelection, ArchiveMode, DownloadMediaMode, DownloadOptions, MissingQualityPolicy,
-    StreamPreference, estimate_selected_parts_download_size, plan_selected_parts,
+    StreamPreference, estimate_selected_parts_download_size, missing_required_media_parts,
+    plan_selected_parts,
 };
 use bdl_core::queue::DownloadTaskRefreshInput;
 use bdl_core::queue::{DownloadResourceIntent, DownloadResourceKind, ResourceStatus, TaskStatus};
+
+#[test]
+fn missing_media_refresh_respects_the_recipe_and_audio_only_cache() {
+    let mut tree = fixture_tree(true);
+    let id = PartId("part:BV1:100".into());
+    tree.groups[0].items[0].parts[0]
+        .streams
+        .retain(|s| s.kind == MediaKind::Audio);
+    let mut options = DownloadOptions::new(PathBuf::from("downloads"));
+    assert_eq!(
+        missing_required_media_parts(&tree, std::slice::from_ref(&id), &options),
+        vec![id.clone()]
+    );
+    options.media_mode = DownloadMediaMode::AudioOnly;
+    assert!(missing_required_media_parts(&tree, std::slice::from_ref(&id), &options).is_empty());
+    tree.groups[0].items[0].parts[0].streams.clear();
+    assert_eq!(
+        missing_required_media_parts(&tree, std::slice::from_ref(&id), &options),
+        vec![id.clone()]
+    );
+    options.media_mode = DownloadMediaMode::AssetsOnly;
+    assert!(missing_required_media_parts(&tree, &[id], &options).is_empty());
+}
 
 #[test]
 fn custom_names_get_the_selected_workflow_container() {

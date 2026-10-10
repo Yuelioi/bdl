@@ -2226,6 +2226,66 @@ test('parse all can stop at a page boundary', async ({ page }) => {
   await expect(toolbar.getByRole('button', { name: '解析', exact: true })).toBeVisible();
 });
 
+for (const theme of ['light', 'dark'] as const) {
+  for (const platform of ['desktop', 'mobile'] as const) {
+  test(`background parsing failure recovery ${platform} ${theme}`, async ({ page }, testInfo) => {
+    if (platform === 'mobile') {
+      await page.setViewportSize({ width: 375, height: 844 });
+      await page.addInitScript(() => Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Linux; Android 12) Mobile' }));
+    }
+    await installTauriMock(page, theme);
+    await page.addInitScript(() => {
+      const target = window as unknown as {
+        __TAURI_INTERNALS__: { invoke: (command: string, args?: Record<string, unknown>) => Promise<unknown> };
+        __FAILED_PART__?: string;
+        __RETRY_ALLOWED__?: boolean;
+        __TASK_ATTEMPTS__: string[];
+      };
+      target.__TASK_ATTEMPTS__ = [];
+      const invoke = target.__TAURI_INTERNALS__.invoke;
+      target.__TAURI_INTERNALS__.invoke = async (command, args) => {
+        if (command === 'selection_create_tasks') {
+          const id = (args?.request as { part_ids: string[] }).part_ids[0];
+          target.__TASK_ATTEMPTS__.push(id);
+          target.__FAILED_PART__ ??= id;
+          if (id === target.__FAILED_PART__ && !target.__RETRY_ALLOWED__) throw new Error('planning error: `长标题' + '测试'.repeat(70) + '` 缺少视频流，请重新解析后再试。');
+        }
+        return invoke(command, args);
+      };
+    });
+    await page.goto('/');
+    await page.getByLabel('链接或 BV / AV').fill('favorite:fixture');
+    await page.getByRole('button', { name: '开始解析' }).click();
+    if (platform === 'mobile') {
+      await page.getByRole('button', { name: '内容操作', exact: true }).click();
+      await page.getByRole('dialog', { name: '内容操作' }).getByRole('button', { name: '下载整个集合', exact: true }).click();
+    } else {
+      await page.getByRole('button', { name: '更多解析方式' }).click();
+      await page.getByRole('menuitem', { name: '后台解析全部并下载' }).click();
+    }
+    const status = page.getByRole('region', { name: '后台解析下载' });
+    await expect(status).toContainText('后台解析下载已完成', { timeout: 15000 });
+    await expect(status).toContainText('1 项失败');
+    const before = await page.evaluate(() => (window as unknown as { __TASK_ATTEMPTS__: string[] }).__TASK_ATTEMPTS__.length);
+    expect(before).toBeGreaterThan(1);
+    await status.locator('summary').focus();
+    await page.keyboard.press('Enter');
+    for (const width of [1280, 375, 568]) {
+      await page.setViewportSize({ width, height: width === 568 ? 356 : 844 });
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await expect(status.getByRole('button', { name: '重试失败项' })).toBeInViewport();
+      await page.screenshot({ path: testInfo.outputPath(`failures-${width}.png`), animations: 'disabled' });
+    }
+    await page.evaluate(() => { (window as unknown as { __RETRY_ALLOWED__: boolean }).__RETRY_ALLOWED__ = true; });
+    await status.getByRole('button', { name: '重试失败项' }).focus();
+    await page.keyboard.press('Enter');
+    await expect(status).toContainText('后台解析下载已完成');
+    await expect(status.getByRole('button', { name: '重试失败项' })).not.toBeVisible();
+    expect(await page.evaluate(() => (window as unknown as { __TASK_ATTEMPTS__: string[] }).__TASK_ATTEMPTS__.length)).toBe(before + 1);
+  });
+  }
+}
+
 test('background parsing downloads progressively and remains visible on another page', async ({ page }, testInfo) => {
   await installTauriMock(page, 'light');
   await page.goto('/');
