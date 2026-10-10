@@ -3,6 +3,7 @@ import { ref } from 'vue';
 import type { SettingsSectionId } from '../../shared/features/settings/settingsSections';
 const props = defineProps<{ initialSection?: SettingsSectionId }>();
 const emit = defineEmits<{ back: [] }>();
+import SettingsLeaveDialog from '../../shared/features/settings/SettingsLeaveDialog.vue';
 import UiButton from '../../shared/ui/Button.vue';
 import UiInlineNotice from '../../shared/ui/InlineNotice.vue';
 import SettingsDownloadSection from '../../shared/features/settings/SettingsDownloadSection.vue';
@@ -13,6 +14,10 @@ import SettingsUpdateSection from '../../shared/features/settings/SettingsUpdate
 
 import { useSettingsPage } from '../../shared/features/settings/useSettingsPage';
 const {
+  settingsLeaveOpen,
+  requestSettingsLeave,
+  saveAndLeave,
+  discardAndLeave,
   settingsForm,
   supportsDesktopPaths,
   settings,
@@ -31,6 +36,16 @@ if (props.initialSection) activeSettingsSection.value = props.initialSection;
 </script>
 <template>
   <section class="mobile-page settings-grid">
+    <SettingsLeaveDialog
+      v-model="settingsLeaveOpen"
+      :saving="settings.saving"
+      :invalid="Boolean(settings.namingTemplateError || settingsGlobalSpeedLimitError || settingsEmbeddingFormatError)"
+      :error="
+        settings.error || settingsGlobalSpeedLimitError || settingsEmbeddingFormatError || settings.namingTemplateError
+      "
+      @save="saveAndLeave"
+      @discard="discardAndLeave"
+    />
     <section class="settings-panel">
       <div class="panel-heading settings-heading">
         <div class="settings-heading-copy">
@@ -38,7 +53,7 @@ if (props.initialSection) activeSettingsSection.value = props.initialSection;
             class="mobile-icon-button"
             type="button"
             :aria-label="sectionOpen ? '返回设置' : '返回我的'"
-            @click="sectionOpen ? (sectionOpen = false) : emit('back')"
+            @click="sectionOpen ? (sectionOpen = false) : requestSettingsLeave(() => emit('back'))"
           >
             <UIcon name="i-tabler-arrow-left" />
           </button>

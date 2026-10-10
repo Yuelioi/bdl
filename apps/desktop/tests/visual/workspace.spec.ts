@@ -1216,7 +1216,7 @@ test.describe('populated Android density', () => {
       await editor.getByRole('button', { name: '取消', exact: true }).click();
       await page.getByRole('button', { name: '返回设置', exact: true }).click();
       const categories = page.locator('.settings-category');
-      await expect(categories).toHaveCount(4);
+      await expect(categories).toHaveCount(5);
       const firstCategory = (await categories.first().boundingBox())!;
       const nextCategory = (await categories.nth(1).boundingBox())!;
       expect(nextCategory.y - firstCategory.y - firstCategory.height).toBeGreaterThanOrEqual(6);
@@ -1716,13 +1716,13 @@ test.describe('populated Android density', () => {
     await expect(page.locator('.workspace-enter-active, .workspace-leave-active')).toHaveCount(0);
     await page.screenshot({ path: testInfo.outputPath('reference-personal.png') });
     await page.getByRole('button', { name: /下载设置/ }).click();
-    await expect(page.locator('.settings-category')).toHaveCount(4);
+    await expect(page.locator('.settings-category')).toHaveCount(5);
     await expect(page.locator('.mobile-header')).toBeVisible();
     await page.screenshot({ path: testInfo.outputPath('redesign-settings.png') });
     await page.getByRole('button', { name: '下载 目录、速度与任务恢复' }).click();
     await expect(page.getByLabel('全局下载限速（MB/s）', { exact: true })).toBeVisible();
     await page.getByRole('button', { name: '返回设置' }).click();
-    await expect(page.locator('.settings-category')).toHaveCount(4);
+    await expect(page.locator('.settings-category')).toHaveCount(5);
     await page.getByRole('button', { name: '返回我的' }).click();
     await page
       .getByRole('button', { name: /外观：/ })
@@ -2757,6 +2757,7 @@ test('saved naming presets are reusable while unsaved defaults stay in settings'
   await page.screenshot({ path: testInfo.outputPath('naming-presets-settings.png') });
   await page.getByRole('textbox', { name: '命名模板', exact: true }).fill('{bvid}.{ext}');
   await page.getByRole('button', { name: '解析 添加与选择' }).click();
+  await page.getByRole('dialog', { name: '设置尚未保存' }).getByRole('button', { name: '放弃更改' }).click();
   await page.getByLabel('链接或 BV / AV').fill('BV1xx411c7mD');
   await page.getByRole('button', { name: '开始解析' }).click();
   await page.getByRole('button', { name: '选择 测试视频' }).click();
@@ -3385,4 +3386,200 @@ test('offline HTML danmaku renders safe text and synchronizes seeking', async ({
   await expect(page.locator('#overlay')).toContainText('中文弹幕');
   await expect(page.locator('#overlay')).toContainText('<img src=x onerror=alert(1)>');
   await expect(page.locator('#overlay .comment').last()).toHaveCSS('color', 'rgb(0, 0, 0)');
+});
+
+for (const theme of ['light', 'dark'] as const) {
+  test(`missing FFmpeg download link ${theme}`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 900, height: 700 });
+    await installTauriMock(page, theme, false);
+    await page.addInitScript(() => {
+      const target = window as unknown as {
+        __TAURI_INTERNALS__: { invoke: (command: string, args?: Record<string, unknown>) => Promise<unknown> };
+        __FFMPEG_DOWNLOAD_URL__?: unknown;
+      };
+      const invoke = target.__TAURI_INTERNALS__.invoke;
+      target.__TAURI_INTERNALS__.invoke = async (command, args) => {
+        if (command === 'open_external_url') target.__FFMPEG_DOWNLOAD_URL__ = args?.url;
+        return invoke(command, args);
+      };
+    });
+    await page.goto('/');
+    await page.keyboard.press('Control+4');
+    const download = page.getByRole('button', { name: '下载 FFmpeg', exact: true });
+    await download.scrollIntoViewIfNeeded();
+    await expect(download).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath('ffmpeg-download.png'), animations: 'disabled' });
+    await download.click();
+    await expect.poll(() => page.evaluate(() => (window as unknown as { __FFMPEG_DOWNLOAD_URL__?: unknown }).__FFMPEG_DOWNLOAD_URL__))
+      .toBe('https://apps.yuelili.com/software/ffmpeg');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  });
+
+  test(`settings leave guard and draft FFmpeg ${theme}`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await installTauriMock(page, theme);
+    await page.addInitScript(() => {
+      const target = window as unknown as {
+        __TAURI_INTERNALS__: { invoke: (command: string, args?: Record<string, unknown>) => Promise<unknown> };
+        __FAIL_SAVE__?: boolean;
+      };
+      const invoke = target.__TAURI_INTERNALS__.invoke;
+      target.__TAURI_INTERNALS__.invoke = async (command, args) => {
+        if (command === 'settings_update' && target.__FAIL_SAVE__) throw new Error('测试保存失败');
+        if (command === 'environment_health') {
+          const result = await invoke(command, args) as { ffmpeg: Record<string, unknown> };
+          const path = (args?.request as { ffmpeg_path?: string })?.ffmpeg_path;
+          if (path) result.ffmpeg = { status: 'ready', source: 'configured', path, version: 'ffmpeg version custom', message: 'FFmpeg 可用。' };
+          return result;
+        }
+        return invoke(command, args);
+      };
+    });
+    await page.goto('/');
+    await page.keyboard.press('Control+4');
+    const path = page.getByRole('textbox', { name: 'FFmpeg 路径', exact: true, includeHidden: true });
+    const custom = 'D:\\自定义工具\\' + 'long-directory-'.repeat(12) + 'ffmpeg.exe';
+    await path.fill(custom);
+    const summary = page.getByRole('region', { name: '运行环境' });
+    await expect(summary).toContainText('未检查');
+    await summary.getByRole('button', { name: '重新检查' }).click();
+    await expect(summary).toContainText('指定路径：' + custom);
+    await summary.scrollIntoViewIfNeeded();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath('ffmpeg-draft-path.png'), animations: 'disabled' });
+    await page.keyboard.press('Control+1');
+    const dialog = page.getByRole('dialog', { name: '设置尚未保存' });
+    await expect(dialog).toBeVisible();
+    await page.setViewportSize({ width: 900, height: 700 });
+    await page.screenshot({ path: testInfo.outputPath('settings-leave.png'), animations: 'disabled' });
+    await dialog.getByRole('button', { name: '继续编辑' }).focus();
+    await page.keyboard.press('Enter');
+    await expect(dialog).not.toBeVisible();
+    await expect(path).toHaveValue(custom);
+    await page.keyboard.press('Control+1');
+    await page.evaluate(() => { (window as unknown as { __FAIL_SAVE__: boolean }).__FAIL_SAVE__ = true; });
+    await dialog.getByRole('button', { name: '保存并离开' }).click();
+    await expect(dialog).toContainText('测试保存失败');
+    await expect(path).toHaveValue(custom);
+    await page.evaluate(() => { (window as unknown as { __FAIL_SAVE__: boolean }).__FAIL_SAVE__ = false; });
+    await dialog.getByRole('button', { name: '保存并离开' }).click();
+    await expect(dialog).not.toBeVisible();
+    await expect(page.getByLabel('链接或 BV / AV')).toBeVisible();
+    await page.keyboard.press('Control+4');
+    await expect(path).toHaveValue(custom);
+    await path.fill('D:\\discard.exe');
+    await page.keyboard.press('Control+1');
+    await dialog.getByRole('button', { name: '放弃更改' }).click();
+    await page.keyboard.press('Control+4');
+    await expect(path).toHaveValue(custom);
+  });
+}
+
+for (const theme of ['light', 'dark'] as const) {
+  test(`settings leave guard mobile ${theme}`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 375, height: 844 });
+    await page.addInitScript(() => Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Linux; Android 12) Mobile' }));
+    await installTauriMock(page, theme);
+    await page.goto('/');
+    const nav = page.getByRole('navigation', { name: '主导航' });
+    await nav.getByRole('button', { name: '我的', exact: true }).click();
+    await page.getByRole('button', { name: /下载设置/ }).click();
+    await page.getByRole('button', { name: /下载 目录/ }).click();
+    await page.getByRole('textbox', { name: '全局下载限速（MB/s）', exact: true }).fill('-1');
+    await page.getByRole('button', { name: '返回设置', exact: true }).click();
+    await page.getByRole('button', { name: '返回我的', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: '设置尚未保存' });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole('button', { name: '保存并离开' })).toBeDisabled();
+    await page.screenshot({ path: testInfo.outputPath('mobile-settings-leave.png'), animations: 'disabled' });
+    await page.keyboard.press('Escape');
+    await expect(dialog).not.toBeVisible();
+    await nav.getByRole('button', { name: '解析', exact: true }).click();
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole('button', { name: '放弃更改' }).click();
+    await expect(page.getByLabel('链接或 BV / AV')).toBeVisible();
+  });
+}
+
+for (const theme of ['light', 'dark'] as const) {
+  test(`Android update and transfer speed ${theme}`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 320, height: 844 });
+    await page.addInitScript(() => Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Linux; Android 12) Mobile' }));
+    await installTauriMock(page, theme);
+    await page.route('https://api.github.com/repos/Yuelioi/bdl/releases/latest', (route) => route.fulfill({
+      json: { tag_name: 'v0.8.3', draft: false, prerelease: false, body: '手机端更新与速度显示\nhttps://github.com/Yuelioi/bdl/' + 'long-path-'.repeat(32),
+        assets: [{ name: 'BDL-v0.8.3-android-arm64.apk', size: 100, browser_download_url: 'https://github.com/Yuelioi/bdl/releases/download/v0.8.3/BDL-v0.8.3-android-arm64.apk' }] },
+    }));
+    await page.addInitScript(() => {
+      const target = window as unknown as {
+        __TAURI_INTERNALS__: { invoke: (command: string, args?: Record<string, unknown>) => Promise<unknown>; transformCallback: (callback: (event: unknown) => void) => number };
+        __EMIT_MOBILE__: (event: string, payload: unknown) => void;
+        __APK_URL__?: string;
+      };
+      const callbacks = new Map<number, (event: unknown) => void>();
+      const listeners = new Map<string, number>();
+      let id = 1000;
+      target.__TAURI_INTERNALS__.transformCallback = (callback) => { callbacks.set(++id, callback); return id; };
+      target.__EMIT_MOBILE__ = (event, payload) => callbacks.get(listeners.get(event) ?? -1)?.({ event, id: listeners.get(event), payload });
+      const invoke = target.__TAURI_INTERNALS__.invoke;
+      const task = { id: 'mobile-speed', title: '一个很长的下载任务标题，手机和平板都应显示速度与进度', source_id: 'video:fixture', status: 'downloading', output_path: 'downloads/test.mp4', refresh_intent: null, media_selection: null, scheduled_at: null, speed_limit_bytes_per_second: null,
+        resources: [{ id: 'video', intent: 'video', status: 'downloading', current_urls: [], target_path: 'downloads/test.m4s' }] };
+      target.__TAURI_INTERNALS__.invoke = async (command, args) => {
+        if (command === 'plugin:app|version') return '0.8.2';
+        if (command === 'plugin:event|listen') { listeners.set(args?.event as string, args?.handler as number); return id++; }
+        if (command === 'queue_list') return [task];
+        if (command === 'queue_logs') return [];
+        if (command === 'open_external_url') { target.__APK_URL__ = args?.url as string; return null; }
+        return invoke(command, args);
+      };
+    });
+    await page.goto('/');
+    const nav = page.getByRole('navigation', { name: '主导航' });
+    await nav.getByRole('button', { name: '我的', exact: true }).click();
+    await page.getByRole('button', { name: /下载设置/ }).click();
+    await page.getByRole('button', { name: /应用更新/ }).click();
+    await expect(page.getByRole('switch', { name: '自动检测更新' })).not.toBeChecked();
+    await page.getByRole('button', { name: '检测更新', exact: true }).click();
+    await expect(page.getByText('发现新版本 v0.8.3')).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath('android-update.png'), animations: 'disabled' });
+    await page.getByRole('button', { name: '下载 APK' }).click();
+    await expect.poll(() => page.evaluate(() => (window as unknown as { __APK_URL__?: string }).__APK_URL__)).toBe('https://github.com/Yuelioi/bdl/releases/download/v0.8.3/BDL-v0.8.3-android-arm64.apk');
+    await nav.getByRole('button', { name: /传输/ }).click();
+    await page.evaluate(() => {
+      const emit = (window as unknown as { __EMIT_MOBILE__: (event: string, payload: unknown) => void }).__EMIT_MOBILE__;
+      const time = Date.now();
+      for (const [downloaded, offset] of [[512 * 1024 * 1024, -1000], [1024 * 1024 * 1024, 0]]) emit('queue://progress-updated', { task_id: 'mobile-speed', resource_id: 'video', downloaded_bytes: downloaded, total_bytes: 4 * 1024 * 1024 * 1024, created_at: new Date(time + offset).toISOString() });
+    });
+    const meta = page.locator('.mobile-task .task-meta').first();
+    await expect(meta).toContainText('MB/s');
+    await expect(meta).toContainText('25%');
+    for (const size of [{ width: 320, height: 844 }, { width: 568, height: 356 }, { width: 1280, height: 800 }]) {
+      await page.setViewportSize(size);
+      await expect(meta).toBeVisible();
+      expect(await meta.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+      await page.screenshot({ path: testInfo.outputPath(`mobile-speed-${size.width}.png`), animations: 'disabled' });
+    }
+    await page.evaluate(() => {
+      (window as unknown as { __EMIT_MOBILE__: (event: string, payload: unknown) => void }).__EMIT_MOBILE__('queue://task-updated', { id: 'mobile-speed', title: '已暂停', source_id: 'video:fixture', status: 'paused', resources: [], output_path: 'downloads/test.mp4', refresh_intent: null, media_selection: null, scheduled_at: null, speed_limit_bytes_per_second: null });
+    });
+    await expect(meta).not.toContainText('MB/s');
+  });
+}
+
+test('desktop update notice remains separate from Android APK guidance', async ({ page }) => {
+  await installTauriMock(page, 'light');
+  await page.addInitScript(() => {
+    const target = window as unknown as { __TAURI_INTERNALS__: { invoke: (command: string, args?: unknown) => Promise<unknown> } };
+    const invoke = target.__TAURI_INTERNALS__.invoke;
+    target.__TAURI_INTERNALS__.invoke = async (command, args) => command === 'plugin:updater|check'
+      ? { rid: 99, currentVersion: '0.8.2', version: '0.8.3', body: '桌面更新' } : invoke(command, args);
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: '设置 偏好与维护' }).click();
+  await page.getByRole('button', { name: /应用更新/ }).click();
+  await page.getByRole('button', { name: '检测更新', exact: true }).click();
+  await expect(page.getByText('发现新版本 v0.8.3')).toBeVisible();
+  await expect(page.getByRole('button', { name: '下载并安装' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '下载 APK' })).toHaveCount(0);
+  await expect(page.getByText('当前已是最新版本。')).toHaveCount(0);
 });

@@ -1,11 +1,58 @@
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
+import { environmentHealth } from '../../api/tauri';
+import type { EnvironmentHealthSnapshot } from '../../api/dto';
 
-import { defaultNamingTemplate, embeddingContainerError, selectedArchiveAssets, useSettingsStore } from '../../stores/settings';
+import {
+  defaultNamingTemplate,
+  embeddingContainerError,
+  selectedArchiveAssets,
+  useSettingsStore,
+} from '../../stores/settings';
 import { isAndroidPlatform } from '../../platform/environment';
 import { speedLimitMbError, toBytesPerSecond, toMbPerSecondInput } from '../../utils/speedLimit';
 
+const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
 export function useSettingsForm() {
   const settings = useSettingsStore();
+  const draftHealth = ref<EnvironmentHealthSnapshot | null>(null);
+  const draftChecking = ref(false);
+  const draftCheckError = ref<string | null>(null);
+  let draftCheckId = 0;
+  watch(
+    () => [settings.draft.ffmpeg_path, settings.draft.download_dir],
+    () => {
+      draftCheckId += 1;
+      draftHealth.value = null;
+      draftChecking.value = false;
+      draftCheckError.value = null;
+    },
+    { flush: 'sync' },
+  );
+  const settingsEnvironmentHealth = computed(
+    () =>
+      draftHealth.value ??
+      (settings.draft.ffmpeg_path === settings.saved.ffmpeg_path &&
+      settings.draft.download_dir === settings.saved.download_dir
+        ? settings.environmentHealth
+        : null),
+  );
+  const checkDraftEnvironment = async () => {
+    const checkId = ++draftCheckId;
+    draftChecking.value = true;
+    draftCheckError.value = null;
+    try {
+      const health = await environmentHealth({
+        download_dir: settings.draft.download_dir,
+        ffmpeg_path: settings.draft.ffmpeg_path,
+      });
+      if (checkId === draftCheckId) draftHealth.value = health;
+    } catch (error) {
+      if (checkId === draftCheckId) draftCheckError.value = errorMessage(error);
+    } finally {
+      if (checkId === draftCheckId) draftChecking.value = false;
+    }
+  };
 
   const settingsDownloadDir = computed({
     get: () => settings.draft.download_dir ?? '',
@@ -76,7 +123,9 @@ export function useSettingsForm() {
       toMbPerSecondInput(settings.draft.global_speed_limit_bytes_per_second),
   );
   const settingsFormChanged = computed(() => settings.changed || settingsGlobalSpeedInputDirty.value);
-  const settingsEmbeddingFormatError = computed(() => settings.downloadPresetError ?? embeddingContainerError(settings.draft));
+  const settingsEmbeddingFormatError = computed(
+    () => settings.downloadPresetError ?? embeddingContainerError(settings.draft),
+  );
   const updateGlobalSpeedLimit = (value: string) => {
     settingsGlobalSpeedLimitMb.value = value;
     if (!settingsGlobalSpeedLimitError.value) {
@@ -170,6 +219,10 @@ export function useSettingsForm() {
   });
 
   return {
+    settingsEnvironmentHealth,
+    draftChecking,
+    draftCheckError,
+    checkDraftEnvironment,
     settings,
     settingsDownloadDir,
     settingsArchiveCover,

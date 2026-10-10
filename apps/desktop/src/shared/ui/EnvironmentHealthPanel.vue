@@ -4,6 +4,7 @@ import { computed } from 'vue'
 import type { EnvironmentHealthSnapshot } from '../api/dto'
 import UiButton from './Button.vue'
 import UiStatusBadge from './StatusBadge.vue'
+import FfmpegDownloadButton from './FfmpegDownloadButton.vue'
 
 const { health, checking = false, compact = false } = defineProps<{
   health: EnvironmentHealthSnapshot | null
@@ -83,6 +84,7 @@ const ffmpegReady = computed(() => health?.ffmpeg.status === 'ready')
           <code v-if="health.ffmpeg.path" :title="health.ffmpeg.path">{{ health.ffmpeg.path }}</code>
         </div>
         <div v-if="!ffmpegReady" class="component-actions">
+          <FfmpegDownloadButton v-if="health.ffmpeg.status === 'missing'" />
           <UiButton variant="secondary" :disabled="checking" @click="emit('chooseFfmpeg')">选择 FFmpeg</UiButton>
           <UiButton
             v-if="health.ffmpeg.source === 'configured'"

@@ -145,7 +145,11 @@ const taskMetaLabel = (view: TransferTaskView) =>
     ? [rowHeight.value < 62 ? view.statusLabel : '', view.subtitle || view.shortLocation].filter(Boolean).join(' · ')
     : view.statusLabel;
 const taskMetaValue = (view: TransferTaskView) => {
-  if (!view.isCompleted) return view.stageProgressLabel ?? view.progressLabel;
+  if (!view.isCompleted) {
+    return [view.speedLabel === '--' ? '' : view.speedLabel, view.stageProgressLabel ?? view.progressLabel]
+      .filter(Boolean)
+      .join(' · ');
+  }
   const duration = artwork.value.get(view.id)?.duration;
   return [
     rowHeight.value < 62 && duration != null && duration > 0 ? formatDuration(duration) : '',

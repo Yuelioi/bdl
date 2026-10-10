@@ -5,10 +5,14 @@ import { defineStore } from 'pinia'
 import { markRaw } from 'vue'
 
 import { useSettingsStore } from './settings'
+import { checkAndroidUpdate } from '../api/androidUpdate'
+import { openExternalUrl } from '../api/tauri'
 
 export const useUpdateStore = defineStore('update', {
   state: () => ({
     supported: true,
+    android: false,
+    androidDownloadUrl: null as string | null,
     currentVersion: '0.1.0',
     autoCheck: false,
     checking: false,
@@ -21,14 +25,15 @@ export const useUpdateStore = defineStore('update', {
     update: null as Update | null,
   }),
   getters: {
-    hasUpdate: (state) => Boolean(state.update),
+    hasUpdate: (state) => Boolean(state.update || state.androidDownloadUrl),
   },
   actions: {
-    async initialize(supported = true) {
-      this.supported = supported
+    async initialize(supported = true, android = false) {
+      this.android = android
+      this.supported = supported || android
       const settings = useSettingsStore()
       await settings.ensureLoaded()
-      this.autoCheck = supported && settings.saved.auto_check_updates
+      this.autoCheck = this.supported && settings.saved.auto_check_updates
       try {
         this.currentVersion = await getVersion()
       } catch {
@@ -48,6 +53,13 @@ export const useUpdateStore = defineStore('update', {
       this.checking = true
       this.error = null
       try {
+        if (this.android) {
+          const availableUpdate = await checkAndroidUpdate(this.currentVersion)
+          this.androidDownloadUrl = availableUpdate?.downloadUrl ?? null
+          this.availableVersion = availableUpdate?.version ?? null
+          this.notes = availableUpdate?.notes ?? null
+          return
+        }
         const availableUpdate = await check()
         this.update = availableUpdate ? markRaw(availableUpdate) : null
         this.availableVersion = this.update?.version ?? null
@@ -61,6 +73,19 @@ export const useUpdateStore = defineStore('update', {
     },
     async install() {
       if (!this.supported) return
+      if (this.android) {
+        if (!this.androidDownloadUrl || this.installing) return
+        this.installing = true
+        this.error = null
+        try {
+          await openExternalUrl(this.androidDownloadUrl)
+        } catch (error) {
+          this.error = error instanceof Error ? error.message : String(error)
+        } finally {
+          this.installing = false
+        }
+        return
+      }
       if (!this.update || this.installing) return
       this.installing = true
       this.error = null

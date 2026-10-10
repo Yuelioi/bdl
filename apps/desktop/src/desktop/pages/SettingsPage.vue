@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import SettingsLeaveDialog from '../../shared/features/settings/SettingsLeaveDialog.vue';
 import UiButton from '../../shared/ui/Button.vue';
 import UiInlineNotice from '../../shared/ui/InlineNotice.vue';
 import SettingsDownloadSection from '../../shared/features/settings/SettingsDownloadSection.vue';
@@ -7,11 +8,37 @@ import SettingsMediaSection from '../../shared/features/settings/SettingsMediaSe
 import SettingsNamingSection from '../../shared/features/settings/SettingsNamingSection.vue';
 import SettingsUpdateSection from '../../shared/features/settings/SettingsUpdateSection.vue';
 import SettingsSectionNav from '../components/settings/SettingsSectionNav.vue';
-import { useSettingsPage } from "../../shared/features/settings/useSettingsPage";
-const { settingsForm, supportsDesktopPaths, settings, settingsGlobalSpeedLimitError, settingsFormChanged, settingsEmbeddingFormatError, resetSettingsDraft, saveSettings, restoreAllDefaults, activeSettingsSection, availableSettingsSections, currentSettingsSection } = useSettingsPage();
+import { useSettingsPage } from '../../shared/features/settings/useSettingsPage';
+const {
+  settingsLeaveOpen,
+  saveAndLeave,
+  discardAndLeave,
+  settingsForm,
+  supportsDesktopPaths,
+  settings,
+  settingsGlobalSpeedLimitError,
+  settingsFormChanged,
+  settingsEmbeddingFormatError,
+  resetSettingsDraft,
+  saveSettings,
+  restoreAllDefaults,
+  activeSettingsSection,
+  availableSettingsSections,
+  currentSettingsSection,
+} = useSettingsPage();
 </script>
 <template>
   <section class="page-grid settings-grid">
+    <SettingsLeaveDialog
+      v-model="settingsLeaveOpen"
+      :saving="settings.saving"
+      :invalid="Boolean(settings.namingTemplateError || settingsGlobalSpeedLimitError || settingsEmbeddingFormatError)"
+      :error="
+        settings.error || settingsGlobalSpeedLimitError || settingsEmbeddingFormatError || settings.namingTemplateError
+      "
+      @save="saveAndLeave"
+      @discard="discardAndLeave"
+    />
     <section class="panel settings-panel">
       <div class="panel-heading settings-heading">
         <div class="settings-heading-copy">

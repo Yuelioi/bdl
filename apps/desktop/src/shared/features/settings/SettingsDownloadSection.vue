@@ -13,6 +13,10 @@ import type { SettingsForm } from './useSettingsForm';
 const { form, desktopPaths = true } = defineProps<{ form: SettingsForm; desktopPaths?: boolean }>();
 const {
   settings,
+  settingsEnvironmentHealth,
+  draftChecking,
+  draftCheckError,
+  checkDraftEnvironment,
   settingsDownloadDir,
   settingsConcurrentTasks,
   settingsRetryCount,
@@ -89,12 +93,13 @@ const {
         >
       </div>
       <SettingsEnvironmentSummary
-        :health="settings.environmentHealth"
-        :checking="settings.environmentChecking"
-        @check="settings.checkEnvironment"
+        :health="settingsEnvironmentHealth"
+        :checking="draftChecking"
+        @check="checkDraftEnvironment"
         @choose-ffmpeg="settings.chooseFfmpegPath"
         @use-system-ffmpeg="settings.clearFfmpegPath"
       />
+      <p v-if="draftCheckError" class="settings-error">{{ draftCheckError }}</p>
     </SettingsCard>
   </section>
 </template>

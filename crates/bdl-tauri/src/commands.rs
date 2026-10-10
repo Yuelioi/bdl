@@ -1372,6 +1372,7 @@ fn is_allowed_external_url(value: &str) -> bool {
                 | "space.bilibili.com"
                 | "github.com"
                 | "www.yuelili.com"
+                | "apps.yuelili.com"
         )
     )
 }
@@ -2720,6 +2721,15 @@ mod tests {
             "https://space.bilibili.com/4279370"
         ));
         assert!(is_allowed_external_url("https://github.com/Yuelioi/bdl"));
+        assert!(is_allowed_external_url(
+            "https://apps.yuelili.com/software/ffmpeg"
+        ));
+        assert!(!is_allowed_external_url(
+            "https://apps.yuelili.com.example.test/software/ffmpeg"
+        ));
+        assert!(!is_allowed_external_url(
+            "http://apps.yuelili.com/software/ffmpeg"
+        ));
         assert!(!is_allowed_external_url(
             "http://www.bilibili.com/video/BV1"
         ));

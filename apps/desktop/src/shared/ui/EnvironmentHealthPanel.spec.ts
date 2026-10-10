@@ -1,8 +1,11 @@
 import { mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import type { EnvironmentHealthSnapshot } from '../api/dto'
 import EnvironmentHealthPanel from './EnvironmentHealthPanel.vue'
+
+const { openExternalUrl } = vi.hoisted(() => ({ openExternalUrl: vi.fn().mockResolvedValue(undefined) }))
+vi.mock('../api/tauri', () => ({ openExternalUrl }))
 
 const global = {
   stubs: {
@@ -31,6 +34,24 @@ const unhealthyEnvironment: EnvironmentHealthSnapshot = {
 }
 
 describe('EnvironmentHealthPanel', () => {
+  it('opens the software site when FFmpeg is missing', async () => {
+    const wrapper = mount(EnvironmentHealthPanel, {
+      props: {
+        health: {
+          ...unhealthyEnvironment,
+          ffmpeg: { ...unhealthyEnvironment.ffmpeg, status: 'missing' },
+        },
+      },
+      global,
+    })
+
+    await wrapper.findAll('button').find((button) => button.text() === '下载 FFmpeg')?.trigger('click')
+    expect(openExternalUrl).toHaveBeenCalledWith('https://apps.yuelili.com/software/ffmpeg')
+
+    await wrapper.setProps({ health: unhealthyEnvironment })
+    expect(wrapper.text()).not.toContain('下载 FFmpeg')
+  })
+
   it('announces checking state and marks the region busy', () => {
     const wrapper = mount(EnvironmentHealthPanel, {
       props: { health: null, checking: true },

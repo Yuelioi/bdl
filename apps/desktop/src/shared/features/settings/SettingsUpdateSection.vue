@@ -36,22 +36,25 @@ const update = useUpdateStore();
 
       <UiInlineNotice v-if="update.error" tone="danger">{{ update.error }}</UiInlineNotice>
       <div v-if="update.hasUpdate" class="rounded-lg border border-(--color-accent) bg-(--color-accent-soft) p-4">
-        <div class="flex items-start justify-between gap-4">
-          <div class="grid gap-1">
+        <div class="flex flex-wrap items-start justify-between gap-4">
+          <div class="grid min-w-0 flex-1 gap-1">
             <strong>发现新版本 v{{ update.availableVersion }}</strong>
-            <p v-if="update.notes" class="m-0 whitespace-pre-line text-sm text-(--color-muted)">{{ update.notes }}</p>
+            <p v-if="update.notes" class="m-0 whitespace-pre-line break-words text-sm text-(--color-muted)">{{ update.notes }}</p>
           </div>
           <UiButton :disabled="update.installing" @click="update.install">
-            {{ update.installing ? `更新中 ${update.progress}%` : '下载并安装' }}
+            {{ update.android ? '下载 APK' : update.installing ? `更新中 ${update.progress}%` : '下载并安装' }}
           </UiButton>
         </div>
       </div>
-      <UiInlineNotice v-else-if="update.checked && !update.checking && !update.error" tone="info">
+      <p v-if="update.android && update.hasUpdate" class="m-0 text-xs leading-5 text-(--color-muted)">
+        在浏览器下载 APK 后，打开安装包完成更新。
+      </p>
+      <UiInlineNotice v-if="!update.hasUpdate && update.checked && !update.checking && !update.error" tone="info">
         当前已是最新版本。
       </UiInlineNotice>
     </SettingsCard>
 
-    <p class="m-0 text-xs leading-5 text-(--color-muted)">
+    <p v-if="!update.android" class="m-0 text-xs leading-5 text-(--color-muted)">
       更新包必须通过 BDL 签名验证。更新服务支持静态清单和动态服务，后续可接入国内镜像而无需改动界面。
     </p>
   </div>

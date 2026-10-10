@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { FEEDBACK_AUTO_DISMISS_MS } from './feedback'
 
 export type AppTab = 'parse' | 'library' | 'transfer' | 'settings' | 'about'
+type NavigationGuard = (leave: () => void) => void
 
 export interface ToastMessage {
   id: number
@@ -25,10 +26,18 @@ export const useUiStore = defineStore('ui', {
     nextToastId: 1,
     loginDialogOpen: false,
     environmentDialogOpen: false,
+    settingsNavigationGuard: null as NavigationGuard | null,
   }),
   actions: {
     setTab(tab: AppTab) {
-      this.activeTab = tab
+      if (tab === this.activeTab) return
+      const leave = () => { this.activeTab = tab }
+      const guard = this.activeTab === 'settings' ? this.settingsNavigationGuard : null
+      if (guard) guard(leave)
+      else leave()
+    },
+    setSettingsNavigationGuard(guard: NavigationGuard | null) {
+      this.settingsNavigationGuard = guard
     },
     openLoginDialog() {
       this.loginDialogOpen = true
