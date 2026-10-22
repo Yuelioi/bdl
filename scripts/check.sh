@@ -7,15 +7,15 @@ repo_root="$(cd -- "$script_dir/.." && pwd)"
 cargo_target_dir="$(node "$script_dir/cargo-target.mjs" "$repo_root")"
 export CARGO_TARGET_DIR="$cargo_target_dir"
 skip_clippy=false
-run_visual=false
+run_browser=false
 
 while (($# > 0)); do
   case "$1" in
     --skip-clippy) skip_clippy=true ;;
-    --visual) run_visual=true ;;
+    --browser) run_browser=true ;;
     *)
       echo "Unknown option: $1" >&2
-      echo "Usage: ./scripts/check.sh [--skip-clippy] [--visual]" >&2
+      echo "Usage: ./scripts/check.sh [--skip-clippy] [--browser]" >&2
       exit 2
       ;;
   esac
@@ -78,11 +78,11 @@ run_step "Desktop style lint" pnpm --dir apps/desktop lint:styles
 run_step "Desktop style format" pnpm --dir apps/desktop format:styles:check
 run_step "Desktop frontend tests" pnpm --dir apps/desktop test
 
-if [[ "$run_visual" == true ]]; then
-  run_step "Desktop visual regression tests" pnpm --dir apps/desktop test:visual
+if [[ "$run_browser" == true ]]; then
+  run_step "Desktop browser functional tests" pnpm --dir apps/desktop test:browser
 else
-  printf '\n==> Desktop visual regression tests\nSkipped; Windows remains the canonical snapshot platform. Pass --visual to run locally.\n'
+  printf '\n==> Desktop browser functional tests\nSkipped; pass --browser to run functional browser checks locally.\n'
 fi
 
 run_step "Git whitespace check" git diff --check
-printf '\nAll checks passed.\n'
+printf '\nAll automated checks passed. Visual acceptance requires inspecting running UI screenshots.\n'

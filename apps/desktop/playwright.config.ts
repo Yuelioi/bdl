@@ -1,9 +1,10 @@
 import { defineConfig } from '@playwright/test';
 
-const productionPreview = process.env.BDL_VISUAL_PRODUCTION === '1';
+const productionPreview = process.env.BDL_BROWSER_PRODUCTION === '1';
 
 export default defineConfig({
-  testDir: './tests/visual',
+  // Functional browser checks; no screenshot baselines or visual acceptance.
+  testDir: './tests/browser',
   fullyParallel: false,
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? 'github' : 'list',

@@ -97,7 +97,7 @@ try {
   if (exit) throw new Error(`BDL exited during WebView smoke test: ${JSON.stringify(exit)}`);
 
   console.log(
-    `Windows WebView smoke passed: readyState=${rendered.readyState}, rootChildren=${rendered.rootChildren}, textLength=${rendered.textLength}`,
+    `Windows WebView startup/DOM smoke passed (not visual acceptance): readyState=${rendered.readyState}, rootChildren=${rendered.rootChildren}, textLength=${rendered.textLength}`,
   );
 } finally {
   await browser?.close().catch(() => {});

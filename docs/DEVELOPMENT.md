@@ -56,7 +56,7 @@ pnpm --dir apps/desktop dev
 
 ## 检查与打包
 
-在 Windows 上运行完整项目检查（包含 Windows 视觉基线）：
+在 Windows 上运行自动化项目检查（包含浏览器功能测试）：
 
 ```powershell
 ./scripts/check.ps1
@@ -68,7 +68,13 @@ pnpm --dir apps/desktop dev
 ./scripts/check.sh
 ```
 
-两者都包含 Rust 格式化、Clippy、工作区测试、Vue 类型检查、ESLint、Stylelint、Vitest 和生产构建。Windows 是当前的规范视觉快照平台；macOS 如需主动运行视觉测试，可使用 `./scripts/check.sh --visual` 并单独评估平台渲染差异。
+两者都包含 Rust 格式化、Clippy、工作区测试、Vue 类型检查、ESLint、Stylelint、Vitest 和生产构建。Windows 默认运行浏览器功能测试；macOS 可使用 `./scripts/check.sh --browser`。单独运行：`pnpm --dir apps/desktop test:browser`。需要检查构建后的功能时，先构建，再设置 `BDL_BROWSER_PRODUCTION=1` 运行该命令。
+
+### 视觉验收与功能测试的边界
+
+浏览器测试使用模拟的原生 API，只检查交互与业务状态；组件测试检查行为和可访问语义；Windows WebView smoke 仅检查启动、DOM 就绪和脚本错误。这些检查通过均不表示界面视觉合格，也不证明被模拟的原生集成正常。失败截图和 trace 仅供排查。
+
+禁止用截图基线比对、尺寸/间距/样式断言替代视觉验收。修改界面后，必须查看实际运行截图，亲自检查布局、对齐、间距、控件尺寸、组件一致性、状态、文字和留白，发现问题修改后复看；无法查看时明确报告“视觉尚未验收”。不要将生成截图或 CI 通过写成视觉验收通过。
 
 检查通过后构建本机安装包：
 

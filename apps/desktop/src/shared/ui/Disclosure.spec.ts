@@ -11,7 +11,6 @@ describe('UiDisclosure', () => {
       global: { stubs: { UIcon: true } },
     })
 
-    expect(wrapper.get('details').classes()).toContain('variant-panel')
     expect(wrapper.get('summary').text()).toContain('更多选项')
     expect(wrapper.text()).toContain('高级设置')
   })

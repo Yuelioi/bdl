@@ -71,8 +71,8 @@ try {
         pnpm --dir apps/desktop test
     }
 
-    Invoke-Step "Desktop visual regression tests" {
-        pnpm --dir apps/desktop test:visual
+    Invoke-Step "Desktop browser functional tests" {
+        pnpm --dir apps/desktop test:browser
     }
 
     Invoke-Step "Git whitespace check" {
@@ -80,7 +80,7 @@ try {
     }
 
     Write-Host ""
-    Write-Host "All checks passed."
+    Write-Host "All automated checks passed. Visual acceptance requires inspecting running UI screenshots."
 }
 finally {
     Pop-Location

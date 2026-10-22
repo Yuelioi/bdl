@@ -4,9 +4,9 @@ BDL 当前以 Windows 11 和 macOS 13+ 作为主要桌面目标。Linux x86_64 �
 
 | 平台                    | 支持级别 | CI                     | 发布包     | 人工验证重点                                  |
 | ----------------------- | -------- | ---------------------- | ---------- | --------------------------------------------- |
-| Windows 11 x64          | 主要支持 | 完整检查与视觉回归     | EXE/MSI    | 安装、标题栏、凭据存储、FFmpeg、暂停恢复      |
+| Windows 11 x64          | 主要支持 | 自动化检查与浏览器功能测试     | EXE/MSI    | 安装、标题栏、凭据存储、FFmpeg、暂停恢复      |
 | Windows 10 x64          | 兼容支持 | 与 Windows 11 共用     | EXE/MSI    | WebView2、长路径、文件占用与权限              |
-| macOS 13+ Apple Silicon | 主要支持 | 完整非视觉检查与包构建 | ad-hoc DMG | 本地加密凭据、原生窗口、Homebrew FFmpeg、首次打开 |
+| macOS 13+ Apple Silicon | 主要支持 | 自动化检查与包构建 | ad-hoc DMG | 本地加密凭据、原生窗口、Homebrew FFmpeg、首次打开 |
 | macOS 13+ Intel         | 兼容支持 | 交叉架构发布构建       | ad-hoc DMG | Intel Homebrew、ad-hoc 签名与升级             |
 | Ubuntu 22.04/24.04 x86_64 | 首发预览 | 22.04 CI 待首次运行；24.04 本地构建与局部检查通过 | AppImage/deb（已本地构建，未发布） | Secret Service、X11/Wayland、FFmpeg、更新 |
 | 其他 Linux / ARM64      | 尚未验证 | 暂无 | 暂无 | 按发行版、CPU 单独确认 |

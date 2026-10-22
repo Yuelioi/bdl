@@ -84,7 +84,7 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm --dir apps/desktop install --frozen-lockfile
 
-      - name: Install visual test browser
+      - name: Install functional test browser
         run: pnpm --dir apps/desktop exec playwright install chromium
 
       - name: Run workspace checks
@@ -94,7 +94,7 @@ jobs:
       - name: Build Windows application for startup smoke test
         run: pnpm --dir apps/desktop tauri build --no-bundle --config src-tauri/tauri.windows-smoke.conf.json
 
-      - name: Verify Windows WebView renders application UI
+      - name: Verify Windows WebView startup and DOM readiness
         run: pnpm --dir apps/desktop test:windows-smoke
 
   macos-check:

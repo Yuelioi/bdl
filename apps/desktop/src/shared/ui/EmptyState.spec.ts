@@ -19,7 +19,6 @@ describe('EmptyState', () => {
     })
 
     expect(wrapper.attributes('role')).toBe('alert')
-    expect(wrapper.classes()).toContain('tone-danger')
     expect(wrapper.get('h3').text()).toBe('读取失败')
     expect(wrapper.get('button').text()).toBe('重新加载')
   })

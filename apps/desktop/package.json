@@ -12,8 +12,7 @@
     "format:styles": "prettier --write \"src/**/*.css\"",
     "format:styles:check": "prettier --check \"src/**/*.css\"",
     "test": "vitest run",
-    "test:visual": "playwright test",
-    "test:visual:update": "playwright test --update-snapshots",
+    "test:browser": "playwright test",
     "test:windows-smoke": "node --test scripts/windows-webview-smoke.node-test.mjs && node scripts/windows-webview-smoke.mjs",
     "android:release": "node ../../scripts/package-android-release.mjs",
     "tauri": "node scripts/tauri.mjs"

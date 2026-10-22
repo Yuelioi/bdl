@@ -14,6 +14,5 @@ describe('IconButton', () => {
     })
 
     expect(wrapper.attributes('aria-label')).toBe('刷新内容')
-    expect(wrapper.classes()).toContain('size-compact')
   })
 })
