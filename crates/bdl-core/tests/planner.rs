@@ -34,6 +34,14 @@ fn missing_media_refresh_respects_the_recipe_and_audio_only_cache() {
     options.media_mode = DownloadMediaMode::AudioOnly;
     assert!(missing_required_media_parts(&tree, std::slice::from_ref(&id), &options).is_empty());
     tree.groups[0].items[0].parts[0].streams.clear();
+    let unknown = estimate_selected_parts_download_size(
+        &tree,
+        std::slice::from_ref(&id),
+        &DownloadOptions::new(PathBuf::from("downloads")),
+    )
+    .unwrap();
+    assert_eq!(unknown.estimated_bytes, 0);
+    assert_eq!(unknown.unknown_streams, 2);
     assert_eq!(
         missing_required_media_parts(&tree, std::slice::from_ref(&id), &options),
         vec![id.clone()]

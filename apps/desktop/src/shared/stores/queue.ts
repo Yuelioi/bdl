@@ -64,6 +64,7 @@ interface QueueState {
   startupRecoveryDismissed: boolean
   loading: boolean
   reconciling: boolean
+  bulkBusy: boolean
   notice: InlineNotice | null
   noticeTimer: number | null
   listening: boolean
@@ -105,6 +106,7 @@ export const useQueueStore = defineStore('queue', {
     startupRecoveryDismissed: false,
     loading: false,
     reconciling: false,
+    bulkBusy: false,
     notice: null,
     noticeTimer: null,
     listening: false,
@@ -148,7 +150,7 @@ export const useQueueStore = defineStore('queue', {
       const ui = useUiStore()
       this.loading = true
       try {
-        this.tasks = await queueList()
+        this.tasks = this.mergeTaskSnapshots(await queueList())
         this.applyDefaultFilter()
         this.selectedTaskIds = this.selectedTaskIds.filter((taskId) => this.tasks.some((task) => task.id === taskId))
         this.ensureSelectedTask(true)
@@ -207,7 +209,7 @@ export const useQueueStore = defineStore('queue', {
       if (this.loading || this.reconciling) return
       this.reconciling = true
       try {
-        this.tasks = await queueList()
+        this.tasks = this.mergeTaskSnapshots(await queueList())
         this.selectedTaskIds = this.selectedTaskIds.filter((taskId) => this.tasks.some((task) => task.id === taskId))
         this.applyDefaultFilter()
         this.ensureSelectedTask(true)
@@ -227,6 +229,13 @@ export const useQueueStore = defineStore('queue', {
     selectTask(taskId: string) {
       this.selectedTaskId = taskId
       void this.loadLogs(taskId)
+    },
+    mergeTaskSnapshots(incoming: DownloadTask[]): DownloadTask[] {
+      const previous = new Map(this.tasks.map(task => [task.id, task]))
+      return incoming.map(task => {
+        const existing = previous.get(task.id)
+        return existing && JSON.stringify(existing) === JSON.stringify(task) ? existing : task
+      })
     },
     upsertTask(task: DownloadTask) {
       if (task.status !== 'completed' || this.outputSizesByTask[task.id]?.path !== task.output_path) {
@@ -550,7 +559,11 @@ export const useQueueStore = defineStore('queue', {
       }
     },
     async runBulkCommand(command: () => Promise<BulkQueueResult>, actionLabel: string, successNote = '') {
+      if (this.bulkBusy) return
       const ui = useUiStore()
+      this.bulkBusy = true
+      this.setNotice(`正在${actionLabel.replace(/^已/, '')}任务…`, 'info')
+      if (this.noticeTimer !== null) { window.clearTimeout(this.noticeTimer); this.noticeTimer = null }
       try {
         const result = await command()
         this.applyBulkResult(result)
@@ -566,7 +579,10 @@ export const useQueueStore = defineStore('queue', {
           this.setNotice('没有可处理的任务', 'info')
         }
       } catch (error) {
+        this.setNotice(errorMessage(error), 'danger')
         ui.pushToast(errorMessage(error), 'danger')
+      } finally {
+        this.bulkBusy = false
       }
     },
     applyBulkResult(result: BulkQueueResult) {

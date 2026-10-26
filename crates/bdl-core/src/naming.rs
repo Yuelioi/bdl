@@ -7,6 +7,56 @@ use crate::error::{BdlError, BdlResult};
 
 pub const DEFAULT_NAMING_TEMPLATE: &str = "{title}/P{part_index} - {part_title}";
 
+/// Output reservations use conservative case-insensitive keys on Windows,
+/// including before the output files exist. Other platforms retain path case.
+#[derive(Default)]
+pub struct ReservedPaths(HashSet<PathBuf>);
+
+impl ReservedPaths {
+    pub fn new() -> Self {
+        Self::default()
+    }
+    fn key(path: &Path) -> PathBuf {
+        let path: PathBuf = path
+            .components()
+            .filter(|part| !matches!(part, std::path::Component::CurDir))
+            .collect();
+        #[cfg(windows)]
+        {
+            PathBuf::from(path.to_string_lossy().to_uppercase())
+        }
+        #[cfg(not(windows))]
+        {
+            path
+        }
+    }
+    pub fn contains(&self, path: &Path) -> bool {
+        self.0.contains(&Self::key(path))
+    }
+    pub fn insert(&mut self, path: PathBuf) -> bool {
+        self.0.insert(Self::key(&path))
+    }
+    pub fn remove(&mut self, path: &Path) -> bool {
+        self.0.remove(&Self::key(path))
+    }
+}
+
+impl Extend<PathBuf> for ReservedPaths {
+    fn extend<T: IntoIterator<Item = PathBuf>>(&mut self, paths: T) {
+        for path in paths {
+            self.insert(path);
+        }
+    }
+}
+
+impl FromIterator<PathBuf> for ReservedPaths {
+    fn from_iter<T: IntoIterator<Item = PathBuf>>(paths: T) -> Self {
+        let mut reserved = Self::new();
+        reserved.extend(paths);
+        reserved
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DuplicateNamingStrategy {
@@ -108,7 +158,7 @@ pub fn validate_template(template: &str) -> BdlResult<()> {
     Ok(())
 }
 
-pub fn unique_path(path: PathBuf, reserved: &mut HashSet<PathBuf>) -> PathBuf {
+pub fn unique_path(path: PathBuf, reserved: &mut ReservedPaths) -> PathBuf {
     let mut candidate = path.clone();
     let mut suffix = 1;
 
@@ -123,7 +173,7 @@ pub fn unique_path(path: PathBuf, reserved: &mut HashSet<PathBuf>) -> PathBuf {
 
 pub fn resolve_duplicate_path(
     path: PathBuf,
-    reserved: &mut HashSet<PathBuf>,
+    reserved: &mut ReservedPaths,
     strategy: DuplicateNamingStrategy,
 ) -> Option<PathBuf> {
     match strategy {
@@ -160,7 +210,7 @@ fn sanitize_variable_value(value: &str) -> String {
     sanitized.trim().trim_matches('.').to_owned()
 }
 
-fn overwrite_existing_path(path: PathBuf, reserved: &mut HashSet<PathBuf>) -> PathBuf {
+fn overwrite_existing_path(path: PathBuf, reserved: &mut ReservedPaths) -> PathBuf {
     if reserved.contains(&path) {
         return unique_path(path, reserved);
     }

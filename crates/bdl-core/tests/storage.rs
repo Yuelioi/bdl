@@ -308,7 +308,15 @@ fn task_storage_keeps_task_logs_when_replacing_existing_task() -> BdlResult<()> 
         storage.save_task(&task)?;
         storage.append_task_log(&log)?;
         task.status = TaskStatus::Downloading;
-        storage.replace_tasks(&[task])?;
+        storage.replace_tasks(std::slice::from_ref(&task))?;
+        let mut inserted = task.clone();
+        inserted.id = "task:inserted-first".into();
+        inserted.resources.clear();
+        let next = vec![inserted, task.clone()];
+        storage.apply_queue_changes(std::slice::from_ref(&task), &next)?;
+        assert_eq!(storage.load_tasks()?, next);
+        storage.apply_queue_changes(&next, std::slice::from_ref(&task))?;
+        assert_eq!(storage.load_tasks()?, vec![task]);
     }
 
     let storage = TaskStorage::open(&fixture.db_path)?;

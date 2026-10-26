@@ -244,7 +244,8 @@ export const queueOpenDir = (taskId: string) => invokeCommand<void>('queue_open_
 
 export const accountGet = () => invokeCommand<AccountSummary>('account_get')
 
-export const accountLoginQrStart = () => invokeCommand<QrLoginSession>('account_login_qr_start')
+export const accountLoginQrStart = (requestId: string) => invokeCommand<QrLoginSession>('account_login_qr_start', { requestId })
+export const accountLoginQrCancel = (requestId: string) => invokeCommand<void>('account_login_qr_cancel', { requestId })
 
 export const accountLoginQrPoll = (request: AccountLoginQrPollRequest) =>
   invokeCommand<QrLoginPollResponse>('account_login_qr_poll', { request })

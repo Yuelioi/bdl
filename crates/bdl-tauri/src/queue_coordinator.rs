@@ -3,9 +3,17 @@
 use std::collections::HashSet;
 
 use bdl_core::BdlResult;
-use bdl_core::naming::{DuplicateNamingStrategy, resolve_duplicate_path, unique_path};
+use bdl_core::naming::{
+    DuplicateNamingStrategy, ReservedPaths, resolve_duplicate_path, unique_path,
+};
 use bdl_core::queue::{DownloadResource, DownloadTask, ResourceStatus, TaskStatus};
 use serde::Serialize;
+
+#[derive(Default)]
+pub(crate) struct QueueMutationResult {
+    pub updated: Vec<DownloadTask>,
+    pub failed: Vec<(String, String)>,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DuplicateTaskMatch {
@@ -81,7 +89,7 @@ pub(crate) fn prepare_duplicate_copies(
     let mut reserved_paths = existing
         .iter()
         .flat_map(DownloadTask::file_paths)
-        .collect::<HashSet<_>>();
+        .collect::<ReservedPaths>();
     let mut prepared = Vec::with_capacity(tasks.len());
     for task in tasks {
         if !existing
@@ -114,7 +122,7 @@ pub(crate) fn reserve_queued_paths(
         .iter()
         .filter(|task| task.status != TaskStatus::Completed)
         .flat_map(DownloadTask::file_paths)
-        .collect::<HashSet<_>>();
+        .collect::<ReservedPaths>();
     let mut prepared = Vec::with_capacity(tasks.len());
     for task in tasks {
         if task.media_selection.workflow.is_some() {

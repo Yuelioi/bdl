@@ -1,5 +1,4 @@
 use std::time::Duration;
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
 use url::Url;
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -7,12 +6,15 @@ const MANIFEST: &str = "https://github.com/Yuelioi/bdl/releases/latest/download/
 
 // The URL template is transport configuration; the embedded updater public key
 // remains the authority for installation, including with a user-supplied mirror.
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
 fn mirrored(template: &str, original: &str) -> Result<Url, String> {
     let upstream = Url::parse(original).map_err(|e| e.to_string())?;
     if upstream.host_str() != Some("github.com")
         || !upstream.path().starts_with("/Yuelioi/bdl/releases/")
         || upstream.scheme() != "https"
+        || !upstream.username().is_empty()
+        || upstream.password().is_some()
+        || upstream.port().is_some()
+        || upstream.fragment().is_some()
     {
         return Err("更新清单包含非 BDL 官方下载地址。".into());
     }
@@ -33,6 +35,51 @@ fn mirrored(template: &str, original: &str) -> Result<Url, String> {
         return Err("加速地址须为不含账号和片段的 HTTPS 地址。".into());
     }
     Ok(url)
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadMirror {
+    template: String,
+    official_url: String,
+}
+
+fn download_url(value: &str, mirror: Option<&DownloadMirror>) -> Result<Url, String> {
+    let url = Url::parse(value).map_err(|_| "更新下载地址无效。")?;
+    if url.scheme() != "https"
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.port().is_some()
+        || url.fragment().is_some()
+    {
+        return Err("更新下载地址须为不含账号和片段的 HTTPS 地址。".into());
+    }
+    if let Some(mirror) = mirror {
+        if mirrored(mirror.template.trim(), &mirror.official_url)? == url {
+            return Ok(url);
+        }
+    } else if (url.host_str() == Some("github.com")
+        && url.path().starts_with("/Yuelioi/bdl/releases/"))
+        || (url.host_str() == Some("pan.quark.cn")
+            && url.path().starts_with("/s/")
+            && url.path().len() > 3)
+    {
+        return Ok(url);
+    }
+    Err("此地址不是已验证的 BDL 更新下载来源。".into())
+}
+
+#[tauri::command]
+pub fn update_open_download(
+    app: tauri::AppHandle,
+    url: String,
+    mirror: Option<DownloadMirror>,
+) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    let url = download_url(&url, mirror.as_ref())?;
+    app.opener()
+        .open_url(url.as_str(), None::<&str>)
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -129,6 +176,30 @@ mod tests {
             );
         }
         assert!(mirrored("http://mirror.test", MANIFEST).is_err());
+        // The same transport that builds a download URL must be accepted by
+        // the native update opener, without expanding generic link permissions.
+        let official = "https://github.com/Yuelioi/bdl/releases/download/v1.0.0/BDL.exe";
+        let context: DownloadMirror = serde_json::from_value(
+            serde_json::json!({ "template": "https://custom.test/{url}", "officialUrl": official }),
+        )
+        .unwrap();
+        let generated = mirrored(&context.template, official).unwrap();
+        assert_eq!(
+            download_url(generated.as_str(), Some(&context)).unwrap(),
+            generated
+        );
+        assert!(download_url(official, None).is_ok());
+        assert!(download_url("https://pan.quark.cn/s/test", None).is_ok());
+        for rejected in [
+            "https://arbitrary.test/file.exe",
+            "https://pan.quark.cn.evil.test/s/test",
+            "https://pan.quark.cn/other",
+            "https://user@pan.quark.cn/s/test",
+            "http://pan.quark.cn/s/test",
+        ] {
+            assert!(download_url(rejected, None).is_err());
+        }
+        assert!(download_url("https://custom.test/unrelated.exe", Some(&context)).is_err());
         assert!(
             mirrored(
                 "https://mirror.test",

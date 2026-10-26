@@ -1,5 +1,5 @@
 import { ref } from 'vue';
-import { computed } from 'vue';
+import { computed, type ComputedRef } from 'vue';
 import { sourceReference, useQueueStore, type QueueFilter } from '../../stores/queue';
 import { createTransferTaskView } from '../../stores/transferView';
 import { useUiStore } from '../../stores/ui';
@@ -84,9 +84,14 @@ export function useTransferPage() {
       speed: (taskId) => queue.taskTransferProgress(taskId)?.speedBytesPerSecond ?? 0,
     });
   });
-  const taskViews = computed(() =>
-    visibleTasks.value.map((task) =>
-      createTransferTaskView(
+  const rowViews = new Map<string, { task: (typeof queue.tasks)[number]; view: ComputedRef<ReturnType<typeof createTransferTaskView>> }>();
+  const taskViews = computed(() => {
+    const ids = new Set(queue.tasks.map(task => task.id));
+    for (const id of rowViews.keys()) if (!ids.has(id)) rowViews.delete(id);
+    return visibleTasks.value.map((task) => {
+      let row = rowViews.get(task.id);
+      if (!row || row.task !== task) {
+        row = { task, view: computed(() => createTransferTaskView(
         task,
         queue.taskProgress(task),
         queue.logsByTask[task.id] ?? [],
@@ -94,9 +99,12 @@ export function useTransferPage() {
         transferCapabilities,
         queue.taskStageProgress(task),
         queue.outputSizesByTask[task.id]?.path === task.output_path ? queue.outputSizesByTask[task.id]?.bytes ?? null : null,
-      ),
-    ),
-  );
+        )) };
+        rowViews.set(task.id, row);
+      }
+      return row.view.value;
+    });
+  });
   const {
     pausableTaskIds,
     cancellableTaskIds,

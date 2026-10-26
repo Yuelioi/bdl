@@ -90,7 +90,7 @@ const formatEstimatedBytes = (bytes: number) => {
   return `${value.toFixed(digits)} ${units[unitIndex]}`
 }
 const sizeEstimateLabel = computed(() => {
-  if (sizeEstimateLoading.value && !sizeEstimate.value) return '正在解析所选视频并估算大小…'
+  if (sizeEstimateLoading.value && !sizeEstimate.value) return '正在估算下载大小…'
   if (!sizeEstimate.value) return '预计大小暂不可用'
   if (sizeEstimate.value.estimated_bytes === 0 && sizeEstimate.value.unknown_streams > 0) {
     return '预计大小暂不可用'

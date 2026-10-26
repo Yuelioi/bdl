@@ -62,4 +62,18 @@ describe('transfer page sorting defaults', () => {
     await restored.queue.reconcile();
     expect(restored.taskViews.value.map((view) => view.id)).toEqual(['third', 'second', 'first']);
   });
+
+  it('preserves unaffected row views through one progress event and an identical durable snapshot', async () => {
+    const page = useTransferPage();
+    page.queue.setFilter('all');
+    page.queue.tasks = Array.from({ length: 500 }, (_, index) => task(`task-${index}`, 'downloading'));
+    const before = new Map(page.taskViews.value.map(view => [view.id, view]));
+    page.queue.applyProgress({ task_id: 'task-250', resource_id: 'video', downloaded_bytes: 50, total_bytes: 100, created_at: new Date().toISOString() });
+    const after = page.taskViews.value;
+    expect(after.filter(view => view !== before.get(view.id)).map(view => view.id)).toEqual(['task-250']);
+    api.queueList.mockResolvedValue(JSON.parse(JSON.stringify(page.queue.tasks)));
+    await page.queue.reconcile();
+    const reconciled = new Map(page.taskViews.value.map(view => [view.id, view]));
+    expect(after.every(view => reconciled.get(view.id) === view)).toBe(true);
+  });
 });

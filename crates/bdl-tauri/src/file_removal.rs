@@ -2,7 +2,7 @@
 use crate::{mobile_storage::DocumentSnapshot, state::AppState};
 use bdl_core::{
     BdlError, BdlResult,
-    fetcher::{segment_path_for, state_path_for},
+    fetcher::{segment_path_for, state_path_for, state_temp_path_for},
     queue::{DownloadExportTarget, DownloadTask, TaskStatus},
 };
 use serde::Serialize;
@@ -249,6 +249,47 @@ fn stamp(path: &Path) -> BdlResult<Option<FileStamp>> {
         identity,
     }))
 }
+
+/// Validate the entire cache tree before deleting anything. File deletion uses
+/// the same identity and ancestor checks as task removal.
+pub(crate) fn clear_cache_directory(root: &Path) -> BdlResult<usize> {
+    let root = absolute(root)?;
+    validate_ancestors(&root)?;
+    match fs::symlink_metadata(&root) {
+        Err(e) if e.kind() == ErrorKind::NotFound => return Ok(0),
+        Err(e) => return Err(file_io_error("读取缓存目录", &root, e)),
+        Ok(metadata) if !metadata.is_dir() => return Err(error("缓存入口不是目录。")),
+        Ok(_) => {}
+    }
+    let mut pending = vec![(root.clone(), 0usize)];
+    let mut directories = Vec::new();
+    let mut files = Vec::new();
+    while let Some((directory, depth)) = pending.pop() {
+        validate_ancestors(&directory)?;
+        if depth > 32 || directories.len() + files.len() > 100_000 {
+            return Err(error("缓存目录过大或层级过深，尚未清理文件。"));
+        }
+        directories.push(directory.clone());
+        for entry in fs::read_dir(&directory)? {
+            let path = entry?.path();
+            validate_ancestors(&path)?;
+            if fs::symlink_metadata(&path)?.is_dir() {
+                pending.push((path, depth + 1));
+            } else if let Some(stamp) = stamp(&path)? {
+                files.push(LocalFile { path, stamp });
+            }
+        }
+    }
+    let mut removed = 0;
+    for file in files {
+        removed += usize::from(delete_file(&file)?);
+    }
+    for directory in directories.into_iter().rev().filter(|path| path != &root) {
+        validate_ancestors(&directory)?;
+        fs::remove_dir(&directory).map_err(|e| file_io_error("清理缓存子目录", &directory, e))?;
+    }
+    Ok(removed)
+}
 #[cfg(windows)]
 fn windows_identity(file: &fs::File) -> BdlResult<(u64, u64)> {
     use std::os::windows::io::AsRawHandle;
@@ -337,6 +378,7 @@ pub(crate) fn temporary_paths(task: &DownloadTask) -> Vec<PathBuf> {
         }
         paths.push(resource.temp_path.clone());
         paths.push(state_path_for(&resource.temp_path));
+        paths.push(state_temp_path_for(&resource.temp_path));
         for index in 0..8 {
             paths.push(segment_path_for(&resource.temp_path, index));
         }
@@ -525,7 +567,7 @@ impl AppState {
         Ok(())
     }
     fn removal_guard(&self, ids: &[String]) -> BdlResult<RemovalGuard<'_>> {
-        let mut queue = self.queue.lock().map_err(|_| lock_error())?;
+        let mut queue = self.queue_edit()?;
         let mut removing = self.removals.lock().map_err(|_| lock_error())?;
         if ids.iter().any(|id| removing.contains(id)) {
             return Err(error("任务正在清理，请勿重复操作。"));
@@ -550,7 +592,7 @@ impl AppState {
         }
         // Drop the lock before the guard can run on a persistence error.
         drop(removing);
-        self.persist_queue(&queue)?;
+        self.persist_queue_edit(&mut queue)?;
         for id in ids {
             self.cancel_running_task(id)?;
         }
@@ -650,7 +692,7 @@ impl AppState {
             .filter(|t| t.id != task_id)
             .cloned()
             .collect::<Vec<_>>();
-        self.persist_queue(&updated)?;
+        self.persist_queue(&queue, &updated)?;
         self.invalidate_task_previews(&[task_id.to_owned()]);
         *queue = updated;
         Ok(true)
@@ -892,7 +934,7 @@ impl AppState {
             .filter(|t| !approved.task_ids.contains(&t.id))
             .cloned()
             .collect::<Vec<_>>();
-        self.persist_queue(&updated)?;
+        self.persist_queue(&queue, &updated)?;
         self.invalidate_task_previews(&approved.task_ids);
         *queue = updated;
         Ok(approved.task_ids)
@@ -1099,7 +1141,7 @@ mod tests {
         }
         fn insert(&self, tasks: Vec<DownloadTask>) {
             let mut queue = self.state.queue.lock().unwrap();
-            self.state.persist_queue(&tasks).unwrap();
+            self.state.persist_queue(&queue, &tasks).unwrap();
             *queue = tasks;
         }
     }
@@ -1510,7 +1552,20 @@ mod tests {
                 .is_err()
         );
         assert!(fixture.state.stop_and_remove_task(&task.id).await.is_err());
+        assert!(clear_cache_directory(path.parent().unwrap()).is_err());
         assert!(path.exists());
+        let cache = fixture.root.join("state/cache");
+        fs::create_dir_all(cache.join("child")).unwrap();
+        write(&cache.join("one"));
+        write(&cache.join("child/two"));
+        assert_eq!(clear_cache_directory(&cache).unwrap(), 2);
+        assert!(cache.exists());
+        assert!(!cache.join("child").exists());
+        let cleanup = fixture.root.clone();
+        drop(fixture);
+        if cleanup.exists() {
+            fs::remove_dir_all(cleanup).unwrap();
+        }
     }
 
     #[tokio::test]
@@ -1993,6 +2048,7 @@ mod tests {
                     downloaded_bytes: 1024,
                     etag: Some("\"fixture\"".into()),
                     last_modified: None,
+                    segment_ranges: None,
                 },
             )
             .await

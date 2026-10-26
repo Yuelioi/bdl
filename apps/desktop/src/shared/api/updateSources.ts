@@ -56,3 +56,7 @@ export async function checkMirror(template: string, proxy?: string): Promise<Upd
   const metadata = await invoke<ConstructorParameters<typeof Update>[0] | null>('update_check_mirror', { template, proxy })
   return metadata ? new Update(metadata) : null
 }
+
+export async function openUpdateDownload(url: string, mirror?: { template: string; officialUrl: string }): Promise<void> {
+  await invoke('update_open_download', { url, mirror })
+}

@@ -291,6 +291,7 @@ async fn fetcher_resumes_existing_bdlpart_with_range_request() {
             downloaded_bytes: 4,
             etag: None,
             last_modified: None,
+            segment_ranges: None,
         },
     )
     .await
@@ -487,6 +488,7 @@ async fn fetcher_resumes_existing_segment_parts() {
             downloaded_bytes: 0,
             etag: None,
             last_modified: None,
+            segment_ranges: Some(vec![(0, 1), (2, 3), (4, 5), (6, 7)]),
         },
     )
     .await
@@ -518,6 +520,80 @@ async fn fetcher_resumes_existing_segment_parts() {
 }
 
 #[tokio::test]
+async fn recovery_restarts_only_unfinished_resource_when_segment_layout_is_unknown_or_changed() {
+    for layout in [None, Some(vec![(0, 3), (4, 7)])] {
+        let server = TestServer::spawn(b"abcdefgh".to_vec(), 0).await;
+        let dir = temp_case_dir("layout-recovery").await;
+        let resource = resource(server.url(), &dir, "unfinished.bin");
+        let completed = dir.join("completed.bin");
+        tokio::fs::write(&completed, b"keep completed")
+            .await
+            .unwrap();
+        tokio::fs::write(segment_path_for(&resource.temp_path, 0), b"ab")
+            .await
+            .unwrap();
+        tokio::fs::write(segment_path_for(&resource.temp_path, 1), b"e")
+            .await
+            .unwrap();
+        tokio::fs::write(segment_path_for(&resource.temp_path, 7), b"stale")
+            .await
+            .unwrap();
+        write_fetch_state(
+            &resource.temp_path,
+            &FetchState {
+                total_bytes: Some(8),
+                downloaded_bytes: 3,
+                etag: None,
+                last_modified: None,
+                segment_ranges: layout,
+            },
+        )
+        .await
+        .unwrap();
+        // Exercise an actual legacy JSON checkpoint with no layout field.
+        if serde_json::from_slice::<serde_json::Value>(
+            &tokio::fs::read(state_path_for(&resource.temp_path))
+                .await
+                .unwrap(),
+        )
+        .unwrap()["segment_ranges"]
+            .is_null()
+        {
+            tokio::fs::write(
+                state_path_for(&resource.temp_path),
+                br#"{"total_bytes":8,"downloaded_bytes":3,"etag":null,"last_modified":null}"#,
+            )
+            .await
+            .unwrap();
+        }
+        ReqwestFetcher::with_config(FetchConfig {
+            segment_count: 4,
+            max_retries: 0,
+            ..Default::default()
+        })
+        .unwrap()
+        .fetch(&resource, None)
+        .await
+        .unwrap();
+        assert_eq!(
+            tokio::fs::read(&resource.target_path).await.unwrap(),
+            b"abcdefgh"
+        );
+        assert_eq!(
+            tokio::fs::read(&completed).await.unwrap(),
+            b"keep completed"
+        );
+        assert_eq!(
+            sorted_range_headers(server.ranges().await),
+            ["bytes=0-1", "bytes=2-3", "bytes=4-5", "bytes=6-7"]
+        );
+        assert!(!state_path_for(&resource.temp_path).exists());
+        assert!(!segment_path_for(&resource.temp_path, 7).exists());
+        tokio::fs::remove_dir_all(dir).await.unwrap();
+    }
+}
+
+#[tokio::test]
 async fn fetcher_restarts_when_content_length_changes_between_attempts() {
     let server = TestServer::spawn(b"abcdefghijkl".to_vec(), 0).await;
     let dir = temp_case_dir("changed-length").await;
@@ -532,6 +608,7 @@ async fn fetcher_restarts_when_content_length_changes_between_attempts() {
             downloaded_bytes: 4,
             etag: None,
             last_modified: None,
+            segment_ranges: None,
         },
     )
     .await
@@ -570,6 +647,7 @@ async fn fetcher_restarts_when_saved_etag_differs_from_remote_etag() {
             downloaded_bytes: 4,
             etag: Some("\"old\"".to_owned()),
             last_modified: None,
+            segment_ranges: None,
         },
     )
     .await

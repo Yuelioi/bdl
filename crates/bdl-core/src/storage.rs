@@ -6,7 +6,7 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 
 use crate::account::{AccountSummary, redact_sensitive};
-use crate::error::BdlResult;
+use crate::error::{BdlError, BdlResult};
 use crate::queue::{DownloadResource, DownloadTask, QueueLogEntry, QueueLogLevel};
 
 const MAX_COMPLETION_ERROR_SUMMARY_CHARS: usize = 2000;
@@ -94,6 +94,112 @@ impl TaskStorage {
 
         for (index, task) in tasks.iter().enumerate() {
             save_task_in_tx(&tx, task, index)?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Commit a queue edit without rewriting unrelated tasks or their resources.
+    pub fn apply_queue_changes(
+        &mut self,
+        previous: &[DownloadTask],
+        next: &[DownloadTask],
+    ) -> BdlResult<()> {
+        let old: std::collections::HashMap<_, _> = previous
+            .iter()
+            .enumerate()
+            .map(|(index, task)| (task.id.as_str(), (index, task)))
+            .collect();
+        let retained: std::collections::HashSet<_> =
+            next.iter().map(|task| task.id.as_str()).collect();
+        let mut inserted = false;
+        let insertion_before_existing = next.iter().any(|task| {
+            if old.contains_key(task.id.as_str()) {
+                inserted
+            } else {
+                inserted = true;
+                false
+            }
+        });
+        let reordered = insertion_before_existing
+            || !previous
+                .iter()
+                .filter(|task| retained.contains(task.id.as_str()))
+                .map(|task| &task.id)
+                .eq(next
+                    .iter()
+                    .filter(|task| old.contains_key(task.id.as_str()))
+                    .map(|task| &task.id));
+        let tx = self.conn.transaction()?;
+        for task in previous
+            .iter()
+            .filter(|task| !retained.contains(task.id.as_str()))
+        {
+            tx.execute("DELETE FROM tasks WHERE id = ?1", [&task.id])?;
+        }
+        let mut append_order: usize = tx.query_row(
+            "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM tasks",
+            [],
+            |row| row.get(0),
+        )?;
+        for (index, task) in next.iter().enumerate() {
+            if !reordered
+                && old
+                    .get(task.id.as_str())
+                    .is_some_and(|(_, old_task)| *old_task == task)
+            {
+                continue;
+            }
+            let order = if reordered {
+                index
+            } else if old.contains_key(task.id.as_str()) {
+                tx.query_row(
+                    "SELECT sort_order FROM tasks WHERE id = ?1",
+                    [&task.id],
+                    |row| row.get(0),
+                )?
+            } else {
+                let order = append_order;
+                append_order += 1;
+                order
+            };
+            if let Some((_, old_task)) = old.get(task.id.as_str()) {
+                save_task_row_in_tx(&tx, task, order)?;
+                if old_task.resources != task.resources {
+                    let resources: std::collections::HashMap<_, _> = old_task
+                        .resources
+                        .iter()
+                        .enumerate()
+                        .map(|(index, resource)| (resource.id.as_str(), (index, resource)))
+                        .collect();
+                    let retained: std::collections::HashSet<_> = task
+                        .resources
+                        .iter()
+                        .map(|resource| resource.id.as_str())
+                        .collect();
+                    for resource in old_task
+                        .resources
+                        .iter()
+                        .filter(|resource| !retained.contains(resource.id.as_str()))
+                    {
+                        tx.execute(
+                            "DELETE FROM resources WHERE task_id = ?1 AND id = ?2",
+                            params![task.id, resource.id],
+                        )?;
+                    }
+                    for (index, resource) in task.resources.iter().enumerate() {
+                        let previous = resources.get(resource.id.as_str());
+                        if previous
+                            .is_some_and(|(old_index, old)| *old_index == index && *old == resource)
+                        {
+                            continue;
+                        }
+                        save_resource_in_tx(&tx, &task.id, resource, index, previous.is_some())?;
+                    }
+                }
+            } else {
+                save_task_in_tx(&tx, task, order)?;
+            }
         }
         tx.commit()?;
         Ok(())
@@ -546,6 +652,19 @@ fn run_migrations(conn: &Connection) -> BdlResult<()> {
 }
 
 fn save_task_in_tx(tx: &Transaction<'_>, task: &DownloadTask, sort_order: usize) -> BdlResult<()> {
+    save_task_row_in_tx(tx, task, sort_order)?;
+    tx.execute("DELETE FROM resources WHERE task_id = ?1", [&task.id])?;
+    for (resource_order, resource) in task.resources.iter().enumerate() {
+        save_resource_in_tx(tx, &task.id, resource, resource_order, false)?;
+    }
+    Ok(())
+}
+
+fn save_task_row_in_tx(
+    tx: &Transaction<'_>,
+    task: &DownloadTask,
+    sort_order: usize,
+) -> BdlResult<()> {
     let refresh_intent_json = task
         .refresh_intent
         .as_ref()
@@ -590,12 +709,6 @@ fn save_task_in_tx(tx: &Transaction<'_>, task: &DownloadTask, sort_order: usize)
         ],
     )?;
 
-    tx.execute("DELETE FROM resources WHERE task_id = ?1", [&task.id])?;
-
-    for (resource_order, resource) in task.resources.iter().enumerate() {
-        save_resource_in_tx(tx, &task.id, resource, resource_order)?;
-    }
-
     Ok(())
 }
 
@@ -604,14 +717,20 @@ fn save_resource_in_tx(
     task_id: &str,
     resource: &DownloadResource,
     sort_order: usize,
+    update_existing: bool,
 ) -> BdlResult<()> {
-    tx.execute(
+    let query = if update_existing {
+        "UPDATE resources SET kind=?3, intent=?4, current_urls=?5, headers=?6, target_path=?7, temp_path=?8, status=?9, sort_order=?10, updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND task_id=?2"
+    } else {
         r#"
         INSERT INTO resources (
             id, task_id, kind, intent, current_urls, headers, target_path, temp_path, status, sort_order, updated_at
         )
         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, CURRENT_TIMESTAMP)
-        "#,
+        "#
+    };
+    let changed = tx.execute(
+        query,
         params![
             resource.id,
             task_id,
@@ -625,6 +744,11 @@ fn save_resource_in_tx(
             sort_order as i64,
         ],
     )?;
+    if changed != 1 {
+        return Err(BdlError::Planning {
+            message: "资源记录已变化，队列修改尚未提交。".into(),
+        });
+    }
     Ok(())
 }
 

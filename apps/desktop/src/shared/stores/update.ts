@@ -6,8 +6,7 @@ import { markRaw } from 'vue'
 
 import { useSettingsStore } from './settings'
 import { checkAndroidUpdate } from '../api/androidUpdate'
-import { openExternalUrl } from '../api/tauri'
-import { distributionUpdate, checkMirror, mirrorTemplate, mirrorUrl, newer, type DistributionUpdate } from '../api/updateSources'
+import { distributionUpdate, checkMirror, openUpdateDownload, mirrorTemplate, mirrorUrl, newer, type DistributionUpdate } from '../api/updateSources'
 
 export const useUpdateStore = defineStore('update', {
   state: () => ({
@@ -16,6 +15,7 @@ export const useUpdateStore = defineStore('update', {
     customMirror: '',
     distribution: null as DistributionUpdate | null,
     manualDownloadUrl: null as string | null,
+    downloadMirror: undefined as { template: string; officialUrl: string } | undefined,
     warning: null as string | null,
     android: false,
     androidDownloadUrl: null as string | null,
@@ -44,7 +44,7 @@ export const useUpdateStore = defineStore('update', {
         const site = await distributionUpdate()
         const url = site.sources.find(s => s.kind === 'cloud_drive' && s.delivery.url?.startsWith('https://pan.quark.cn/'))?.delivery.url
         if (!url) throw new Error('当前平台尚未提供夸克下载，请选择其他来源。')
-        await openExternalUrl(url)
+        await openUpdateDownload(url)
       } catch (error) {
         this.quarkError = error instanceof Error ? error.message : String(error)
       } finally {
@@ -59,6 +59,7 @@ export const useUpdateStore = defineStore('update', {
       this.update = null
       this.androidDownloadUrl = null
       this.manualDownloadUrl = null
+      this.downloadMirror = undefined
       this.availableVersion = null
       this.checked = false
       this.error = null
@@ -100,6 +101,7 @@ export const useUpdateStore = defineStore('update', {
       this.update = null
       this.androidDownloadUrl = null
       this.manualDownloadUrl = null
+      this.downloadMirror = undefined
       this.availableVersion = null
       this.distribution = null
       try {
@@ -125,6 +127,7 @@ export const useUpdateStore = defineStore('update', {
         }
         if (this.source === 'mirror' && !template) throw new Error('软件站暂无可用加速源，请填写自定义加速地址。')
         if (this.source === 'mirror') mirrorUrl(template, 'https://github.com/Yuelioi/bdl/releases/latest/download/latest.json')
+        if (this.source === 'mirror' && github) this.downloadMirror = { template, officialUrl: github }
         if (this.android) {
           if (this.source === 'mirror' && site && !github) throw new Error('当前平台尚未提供可加速的安装包，请选择其他来源。')
           if (site && github && newer(site.release.version, this.currentVersion)) {
@@ -177,7 +180,7 @@ export const useUpdateStore = defineStore('update', {
         this.installing = true
         this.error = null
         try {
-          await openExternalUrl((this.manualDownloadUrl || this.androidDownloadUrl)!)
+          await openUpdateDownload((this.manualDownloadUrl || this.androidDownloadUrl)!, this.downloadMirror)
         } catch (error) {
           this.error = error instanceof Error ? error.message : String(error)
         } finally {

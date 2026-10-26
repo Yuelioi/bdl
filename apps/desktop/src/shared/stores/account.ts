@@ -7,6 +7,7 @@ import {
   accountImportCookie,
   accountLoginQrPoll,
   accountLoginQrStart,
+  accountLoginQrCancel,
   accountLogout,
   accountVerify,
 } from '../api/tauri'
@@ -22,6 +23,9 @@ interface AccountState {
   qrPolling: boolean
   qrPollTimer: number | null
   qrRequestId: number
+  qrRequestToken: string | null
+  profileRequestId: number
+  sessionGeneration: number
   loading: boolean
   saving: boolean
   listening: boolean
@@ -47,6 +51,9 @@ export const useAccountStore = defineStore('account', {
     qrPolling: false,
     qrPollTimer: null,
     qrRequestId: 0,
+    qrRequestToken: null,
+    profileRequestId: 0,
+    sessionGeneration: 0,
     loading: false,
     saving: false,
     listening: false,
@@ -81,13 +88,16 @@ export const useAccountStore = defineStore('account', {
   actions: {
     async load() {
       const ui = useUiStore()
+      const generation = this.sessionGeneration
+      const request = ++this.profileRequestId
       this.loading = true
       try {
-        this.profile = await accountGet()
+        const account = await accountGet()
+        if (generation === this.sessionGeneration && request === this.profileRequestId) this.profile = account
       } catch (error) {
-        ui.pushToast(errorMessage(error), 'danger')
+        if (generation === this.sessionGeneration && request === this.profileRequestId) ui.pushToast(errorMessage(error), 'danger')
       } finally {
-        this.loading = false
+        if (generation === this.sessionGeneration && request === this.profileRequestId) this.loading = false
       }
     },
     async startEventListeners() {
@@ -96,8 +106,8 @@ export const useAccountStore = defineStore('account', {
       }
 
       this.listening = true
-      this.unlisten = await listen<AccountSummary>('account://updated', (event) => {
-        this.profile = event.payload
+      this.unlisten = await listen<AccountSummary>('account://updated', () => {
+        void this.load()
       })
     },
     async importCookie(cookie: string): Promise<boolean> {
@@ -109,29 +119,38 @@ export const useAccountStore = defineStore('account', {
       }
 
       this.saving = true
+      const generation = ++this.sessionGeneration
+      this.profileRequestId += 1
+      this.loading = false
+      this.resetQrLogin()
       try {
-        this.profile = await accountImportCookie({ cookie: trimmed })
+        const account = await accountImportCookie({ cookie: trimmed })
+        if (generation !== this.sessionGeneration) return false
+        this.profile = account
         await this.verify()
         return true
       } catch (error) {
-        ui.pushToast(errorMessage(error), 'danger')
+        if (generation === this.sessionGeneration) ui.pushToast(errorMessage(error), 'danger')
         return false
       } finally {
-        this.saving = false
+        if (generation === this.sessionGeneration) this.saving = false
       }
     },
     async startQrLogin() {
       const ui = useUiStore()
       const requestId = this.qrRequestId + 1
       this.qrRequestId = requestId
+      const requestToken = crypto.randomUUID()
+      this.qrRequestToken = requestToken
       this.stopQrPolling()
+      this.qrPolling = false
       this.qrSession = null
       this.qrStatus = null
       this.qrMessage = ''
       this.qrError = ''
       this.qrLoading = true
       try {
-        const session = await accountLoginQrStart()
+        const session = await accountLoginQrStart(requestToken)
         if (requestId !== this.qrRequestId) {
           return
         }
@@ -172,10 +191,13 @@ export const useAccountStore = defineStore('account', {
       }
 
       this.qrPolling = true
+      const requestId = this.qrRequestId
+      const key = this.qrSession.qrcode_key
       try {
         const response = await accountLoginQrPoll({
           qrcode_key: this.qrSession.qrcode_key,
         })
+        if (requestId !== this.qrRequestId || this.qrSession?.qrcode_key !== key) return
         this.qrStatus = response.status
         this.qrMessage = response.message || qrStatusText(response.status)
 
@@ -188,10 +210,11 @@ export const useAccountStore = defineStore('account', {
           this.stopQrPolling()
         }
       } catch (error) {
+        if (requestId !== this.qrRequestId) return
         this.stopQrPolling()
         ui.pushToast(errorMessage(error), 'danger')
       } finally {
-        this.qrPolling = false
+        if (requestId === this.qrRequestId) this.qrPolling = false
       }
     },
     stopQrPolling() {
@@ -201,6 +224,10 @@ export const useAccountStore = defineStore('account', {
       }
     },
     resetQrLogin() {
+      if (this.qrRequestToken) {
+        void accountLoginQrCancel(this.qrRequestToken).catch((error) => useUiStore().pushToast(errorMessage(error), 'danger'))
+      }
+      this.qrRequestToken = null
       this.qrRequestId += 1
       this.stopQrPolling()
       this.qrSession = null
@@ -212,25 +239,32 @@ export const useAccountStore = defineStore('account', {
     },
     async logout() {
       const ui = useUiStore()
+      const generation = ++this.sessionGeneration
+      this.profileRequestId += 1
+      this.loading = false
       this.saving = true
       try {
         this.resetQrLogin()
-        this.profile = await accountLogout()
+        const account = await accountLogout()
+        if (generation === this.sessionGeneration) this.profile = account
       } catch (error) {
         ui.pushToast(errorMessage(error), 'danger')
       } finally {
-        this.saving = false
+        if (generation === this.sessionGeneration) this.saving = false
       }
     },
     async verify() {
       const ui = useUiStore()
+      const generation = this.sessionGeneration
+      this.profileRequestId += 1
       this.loading = true
       try {
-        this.profile = await accountVerify()
+        const account = await accountVerify()
+        if (generation === this.sessionGeneration) this.profile = account
       } catch (error) {
-        ui.pushToast(errorMessage(error), 'danger')
+        if (generation === this.sessionGeneration) ui.pushToast(errorMessage(error), 'danger')
       } finally {
-        this.loading = false
+        if (generation === this.sessionGeneration) this.loading = false
       }
     },
   },

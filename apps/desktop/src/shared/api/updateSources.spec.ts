@@ -1,5 +1,8 @@
-import { describe, expect, it } from 'vitest'
-import { mirrorTemplate, mirrorUrl, newer } from './updateSources'
+import { describe, expect, it, vi } from 'vitest'
+import { invoke } from '@tauri-apps/api/core'
+import { mirrorTemplate, mirrorUrl, newer, openUpdateDownload } from './updateSources'
+
+vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn().mockResolvedValue(undefined) }))
 
 describe('update transport', () => {
   const official = 'https://github.com/Yuelioi/bdl/releases/download/v1.2.3/BDL.exe'
@@ -20,5 +23,15 @@ describe('update transport', () => {
     expect(newer('0.8.5', '0.8.5')).toBe(false)
     expect(newer('0.10.0', '0.9.9')).toBe(true)
     expect(() => newer('broken', '0.8.5')).toThrow()
+  })
+  it('carries the selected official asset and mirror template to the dedicated native opener', async () => {
+    const source = { id: '1', kind: 'external_link', label: 'mirror', delivery: { mode: 'file', url: `https://custom.test/${official}`, authenticationRequired: false } }
+    const template = mirrorTemplate(source, official)!
+    const url = mirrorUrl(template, official)
+    const mirror = { template, officialUrl: official }
+    await openUpdateDownload(url, mirror)
+    expect(invoke).toHaveBeenLastCalledWith('update_open_download', { url, mirror })
+    await openUpdateDownload('https://pan.quark.cn/s/test')
+    expect(invoke).toHaveBeenLastCalledWith('update_open_download', { url: 'https://pan.quark.cn/s/test', mirror: undefined })
   })
 })

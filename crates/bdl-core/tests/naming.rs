@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use bdl_core::naming::ReservedPaths;
 use std::path::PathBuf;
 
 use bdl_core::error::BdlError;
@@ -173,7 +173,7 @@ fn render_output_path_supports_download_and_publish_dates() -> Result<(), BdlErr
 
 #[test]
 fn unique_path_adds_counter_for_reserved_paths() {
-    let mut reserved = HashSet::new();
+    let mut reserved = ReservedPaths::new();
     let first = unique_path(PathBuf::from("downloads/video.mp4"), &mut reserved);
     let second = unique_path(PathBuf::from("downloads/video.mp4"), &mut reserved);
 

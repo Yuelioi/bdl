@@ -21,6 +21,75 @@ struct CountingVideoApi {
     calls: Arc<Mutex<Vec<(&'static str, u64)>>>,
 }
 
+#[derive(Debug)]
+struct MetadataOnlyApi(FakeVideoApi);
+#[async_trait]
+impl VideoApi for MetadataOnlyApi {
+    async fn view(&self, id: &VideoInputId) -> Result<ResolvedVideo, BdlError> {
+        self.0.view(id).await
+    }
+    async fn play_url(&self, _: &VideoInputId, _: u64) -> Result<ResolvedPlayUrl, BdlError> {
+        panic!("cover/NFO export must not depend on playback authorization")
+    }
+    async fn player_info(&self, _: &VideoInputId, _: u64) -> Result<ResolvedPlayerInfo, BdlError> {
+        panic!("cover/NFO export does not request subtitles")
+    }
+}
+
+#[tokio::test]
+async fn cover_and_nfo_plan_succeeds_without_playback_or_subtitle_requests() {
+    use bdl_core::{
+        planner::{DownloadOptions, plan_selected_parts},
+        queue::DownloadResourceIntent,
+        workflow::{AssetOutput, DownloadWorkflow, MediaInput},
+    };
+    let tree = VideoResolver::with_api(MetadataOnlyApi(fake_api()))
+        .resolve_assets(
+            ClassifiedInput::VideoBvid("BV1xx411c7mD".into()),
+            None,
+            false,
+        )
+        .await
+        .unwrap();
+    let mut options = DownloadOptions::new(std::path::PathBuf::from("downloads"));
+    DownloadWorkflow {
+        video: MediaInput::default(),
+        audio: MediaInput::default(),
+        cover: AssetOutput {
+            enabled: true,
+            ..Default::default()
+        },
+        nfo: true,
+        merge_media: false,
+        ..Default::default()
+    }
+    .apply(&mut options)
+    .unwrap();
+    let tasks = plan_selected_parts(
+        &tree,
+        &[tree.groups[0].items[0].parts[0].id.clone()],
+        &options,
+    )
+    .unwrap();
+    assert_eq!(tasks.len(), 1);
+    assert!(
+        tasks[0]
+            .resources
+            .iter()
+            .any(|resource| resource.intent == DownloadResourceIntent::Cover)
+    );
+    assert!(
+        tasks[0]
+            .resources
+            .iter()
+            .any(|resource| resource.intent == DownloadResourceIntent::Nfo)
+    );
+    assert!(tasks[0].resources.iter().all(|resource| matches!(
+        resource.intent,
+        DownloadResourceIntent::Cover | DownloadResourceIntent::Nfo
+    )));
+}
+
 #[async_trait]
 impl VideoApi for CountingVideoApi {
     async fn view(&self, _id: &VideoInputId) -> Result<ResolvedVideo, BdlError> {

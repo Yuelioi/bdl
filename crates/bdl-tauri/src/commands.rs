@@ -562,7 +562,7 @@ pub async fn selection_create_tasks(
     let selected_part_ids = request.part_ids.into_iter().map(PartId).collect::<Vec<_>>();
 
     let mut prepared = state
-        .prepare_selection(&source_id, &selected_part_ids)
+        .prepare_selection_for_options(&source_id, &selected_part_ids, &options)
         .await?;
     let missing = bdl_core::planner::missing_required_media_parts(
         &prepared.tree,
@@ -661,7 +661,6 @@ pub async fn selection_prepare(
 
 #[tauri::command]
 pub async fn selection_estimate_size(
-    app: AppHandle,
     state: State<'_, AppState>,
     request: SelectionEstimateSizeRequest,
 ) -> CommandResult<DownloadSizeEstimate> {
@@ -695,16 +694,10 @@ pub async fn selection_estimate_size(
     }
     let source_id = SourceId(request.source_id);
     let selected_part_ids = request.part_ids.into_iter().map(PartId).collect::<Vec<_>>();
-    let prepared = state
-        .prepare_selection(&source_id, &selected_part_ids)
-        .await?;
-    if prepared.tree_updated {
-        events::emit(&app, events::PARSE_SOURCE_UPDATED, &prepared.tree)?;
-    }
+    let tree = state.source_snapshot(&source_id)?;
+    let part_ids = crate::parse_session::normalize_selected_part_ids(&tree, &selected_part_ids);
     Ok(estimate_selected_parts_download_size(
-        &prepared.tree,
-        &prepared.part_ids,
-        &options,
+        &tree, &part_ids, &options,
     )?)
 }
 
@@ -1092,7 +1085,7 @@ pub async fn queue_refresh_urls_and_retry(
 }
 
 #[tauri::command]
-pub fn queue_bulk_pause(
+pub async fn queue_bulk_pause(
     app: AppHandle,
     state: State<'_, AppState>,
     request: BulkQueueRequest,
@@ -1106,7 +1099,7 @@ pub fn queue_bulk_pause(
 }
 
 #[tauri::command]
-pub fn queue_bulk_cancel(
+pub async fn queue_bulk_cancel(
     app: AppHandle,
     state: State<'_, AppState>,
     request: BulkQueueRequest,
@@ -1120,38 +1113,32 @@ pub fn queue_bulk_cancel(
 }
 
 #[tauri::command]
-pub fn queue_bulk_resume(
+pub async fn queue_bulk_resume(
     app: AppHandle,
     state: State<'_, AppState>,
     request: BulkQueueRequest,
 ) -> CommandResult<BulkQueueResult> {
     let result =
         bulk_update_task_status(&app, state.inner(), request.task_ids, TaskStatus::Waiting);
-    if !result.updated.is_empty() {
-        start_queue_worker(&app);
-    }
+    start_queue_worker(&app);
 
     Ok(result)
 }
 
 #[tauri::command]
-pub fn queue_bulk_retry(
+pub async fn queue_bulk_retry(
     app: AppHandle,
     state: State<'_, AppState>,
     request: BulkQueueRequest,
 ) -> CommandResult<BulkQueueResult> {
-    let mut result = BulkQueueResult::default();
-
-    for task_id in request.task_ids {
-        match retry_task(app.clone(), state.inner(), &task_id) {
-            Ok(task) => result.updated.push(task),
-            Err(error) => result.failed.push(BulkQueueFailure {
-                task_id,
-                message: error.message,
-            }),
-        }
-    }
-
+    let result = bulk_mutate_tasks(
+        &app,
+        state.inner(),
+        request.task_ids,
+        TaskStatus::Waiting,
+        true,
+    );
+    start_queue_worker(&app);
     Ok(result)
 }
 
@@ -1253,30 +1240,57 @@ fn bulk_update_task_status(
     task_ids: Vec<String>,
     status: TaskStatus,
 ) -> BulkQueueResult {
-    let mut result = BulkQueueResult::default();
+    bulk_mutate_tasks(app, state, task_ids, status, false)
+}
 
-    for task_id in task_ids {
-        match state.update_task_status(&task_id, status) {
-            Ok(task) => {
-                if matches!(status, TaskStatus::Paused | TaskStatus::Cancelled) {
-                    let _ = state.cancel_running_task(&task_id);
-                }
-                if let Err(error) = events::emit(app, events::QUEUE_TASK_UPDATED, &task) {
-                    result.failed.push(BulkQueueFailure {
+fn bulk_mutate_tasks(
+    app: &AppHandle,
+    state: &AppState,
+    task_ids: Vec<String>,
+    status: TaskStatus,
+    retry: bool,
+) -> BulkQueueResult {
+    let changed = match state.bulk_update_tasks(&task_ids, status, retry) {
+        Ok(changed) => changed,
+        Err(error) => {
+            return BulkQueueResult {
+                updated: vec![],
+                removed: vec![],
+                failed: task_ids
+                    .into_iter()
+                    .map(|task_id| BulkQueueFailure {
                         task_id,
-                        message: error.message,
-                    });
-                } else {
-                    result.updated.push(task);
-                }
+                        message: error.to_string(),
+                    })
+                    .collect(),
+            };
+        }
+    };
+    let mut result = BulkQueueResult {
+        updated: vec![],
+        removed: vec![],
+        failed: changed
+            .failed
+            .into_iter()
+            .map(|(task_id, message)| BulkQueueFailure { task_id, message })
+            .collect(),
+    };
+    for task in changed.updated {
+        let notification = events::emit(app, events::QUEUE_TASK_UPDATED, &task).and_then(|()| {
+            if retry {
+                emit_queue_log(app, state, &task.id, QueueLogLevel::Info, "重试任务")
+            } else {
+                Ok(())
             }
+        });
+        match notification {
+            Ok(()) => result.updated.push(task),
             Err(error) => result.failed.push(BulkQueueFailure {
-                task_id,
-                message: error.to_string(),
+                task_id: task.id,
+                message: error.message,
             }),
         }
     }
-
     result
 }
 
@@ -1458,7 +1472,14 @@ pub async fn maintenance_cleanup_cache(
     state: State<'_, AppState>,
 ) -> CommandResult<MaintenanceResult> {
     let cache_dir = state.data_dir().join("cache");
-    let removed_files = remove_dir_contents(&cache_dir).await?;
+    let cleanup_dir = cache_dir.clone();
+    let removed_files = tauri::async_runtime::spawn_blocking(move || {
+        crate::file_removal::clear_cache_directory(&cleanup_dir)
+    })
+    .await
+    .map_err(|error| BdlError::Planning {
+        message: format!("缓存清理任务失败：{error}"),
+    })??;
     Ok(MaintenanceResult {
         removed_files,
         path: cache_dir.to_string_lossy().into_owned(),
@@ -1567,8 +1588,22 @@ pub fn account_get(state: State<'_, AppState>) -> CommandResult<AccountSnapshot>
 }
 
 #[tauri::command]
-pub async fn account_login_qr_start() -> CommandResult<QrLoginSession> {
-    Ok(start_qr_login().await?)
+pub async fn account_login_qr_start(
+    state: State<'_, AppState>,
+    request_id: String,
+) -> CommandResult<QrLoginSession> {
+    let generation = state.begin_qr_login(&request_id)?;
+    let session = start_qr_login().await?;
+    state.register_qr_login(generation, &session.qrcode_key)?;
+    Ok(session)
+}
+
+#[tauri::command]
+pub fn account_login_qr_cancel(
+    state: State<'_, AppState>,
+    request_id: String,
+) -> CommandResult<()> {
+    Ok(state.cancel_qr_login(&request_id)?)
 }
 
 #[tauri::command]
@@ -1577,10 +1612,18 @@ pub async fn account_login_qr_poll(
     state: State<'_, AppState>,
     request: AccountLoginQrPollRequest,
 ) -> CommandResult<AccountLoginQrPollResponse> {
+    let generation = state.qr_login_generation(&request.qrcode_key)?;
     let outcome = poll_qr_login(&request.qrcode_key).await?;
+    if state.qr_login_generation(&request.qrcode_key)? != generation {
+        return Err(BdlError::Account {
+            message: "二维码会话已结束。".into(),
+        }
+        .into());
+    }
     let account = match outcome.cookie_header {
         Some(cookie_header) => {
-            let account = state.import_cookie(&cookie_header)?;
+            let account =
+                state.import_qr_cookie(&request.qrcode_key, generation, &cookie_header)?;
             events::emit(&app, events::ACCOUNT_UPDATED, &account)?;
             Some(account)
         }
@@ -2501,45 +2544,6 @@ fn open_path(app: &AppHandle, path: &Path) -> CommandResult<()> {
             code: "open_path_failed".to_owned(),
             message: format!("打开路径失败：{error}"),
         })
-}
-
-async fn remove_dir_contents(path: &Path) -> CommandResult<usize> {
-    remove_dir_contents_sync(path).map_err(Into::into)
-}
-
-fn remove_dir_contents_sync(path: &Path) -> BdlResult<usize> {
-    if !path.exists() {
-        return Ok(0);
-    }
-
-    let mut removed_files = 0;
-    for entry in std::fs::read_dir(path)? {
-        let entry = entry?;
-        let entry_path = entry.path();
-        let file_type = entry.file_type()?;
-        if file_type.is_dir() {
-            removed_files += count_files_sync(&entry_path)?;
-            std::fs::remove_dir_all(&entry_path)?;
-        } else {
-            std::fs::remove_file(&entry_path)?;
-            removed_files += 1;
-        }
-    }
-
-    Ok(removed_files)
-}
-
-fn count_files_sync(path: &Path) -> BdlResult<usize> {
-    let mut count = 0;
-    for entry in std::fs::read_dir(path)? {
-        let entry = entry?;
-        if entry.file_type()?.is_dir() {
-            count += count_files_sync(&entry.path())?;
-        } else {
-            count += 1;
-        }
-    }
-    Ok(count)
 }
 
 pub(crate) fn emit_queue_log(

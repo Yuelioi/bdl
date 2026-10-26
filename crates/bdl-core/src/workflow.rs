@@ -487,7 +487,7 @@ pub fn validate_presets(presets: &[DownloadPreset], selected: &str) -> BdlResult
 
 pub fn reserve_task_paths(
     task: crate::queue::DownloadTask,
-    reserved: &mut std::collections::HashSet<std::path::PathBuf>,
+    reserved: &mut crate::naming::ReservedPaths,
     strategy: crate::naming::DuplicateNamingStrategy,
 ) -> BdlResult<Option<crate::queue::DownloadTask>> {
     use crate::naming::DuplicateNamingStrategy;

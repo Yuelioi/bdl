@@ -176,6 +176,27 @@ where
         fetch_streams: bool,
         target_cid: Option<u64>,
     ) -> BdlResult<NormalizedSourceTree> {
+        self.resolve_with_requirements(input, fetch_streams, fetch_streams, target_cid)
+            .await
+    }
+
+    pub async fn resolve_assets(
+        &self,
+        input: ClassifiedInput,
+        target_cid: Option<u64>,
+        subtitles: bool,
+    ) -> BdlResult<NormalizedSourceTree> {
+        self.resolve_with_requirements(input, false, subtitles, target_cid)
+            .await
+    }
+
+    async fn resolve_with_requirements(
+        &self,
+        input: ClassifiedInput,
+        fetch_streams: bool,
+        fetch_subtitles: bool,
+        target_cid: Option<u64>,
+    ) -> BdlResult<NormalizedSourceTree> {
         let input_id = VideoInputId::from_classified(input)?;
         let input_label = input_id.input_label();
         let video = self.api.view(&input_id).await?;
@@ -187,12 +208,16 @@ where
             let part_key = format!("{canonical_key}:{}", page.cid);
             let should_fetch_streams =
                 fetch_streams && target_cid.is_none_or(|cid| cid == page.cid);
-            let (streams, player_info) = if should_fetch_streams {
+            let streams = if should_fetch_streams {
                 let play_url = self.api.play_url(&input_id, page.cid).await?;
-                let player_info = self.api.player_info(&input_id, page.cid).await?;
-                (map_play_url(&part_key, play_url, Utc::now()), player_info)
+                map_play_url(&part_key, play_url, Utc::now())
             } else {
-                (Vec::new(), ResolvedPlayerInfo::default())
+                Vec::new()
+            };
+            let player_info = if fetch_subtitles && target_cid.is_none_or(|cid| cid == page.cid) {
+                self.api.player_info(&input_id, page.cid).await?
+            } else {
+                ResolvedPlayerInfo::default()
             };
 
             parts.push(NormalizedPart {

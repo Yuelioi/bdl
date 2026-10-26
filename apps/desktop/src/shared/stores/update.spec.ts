@@ -1,8 +1,8 @@
-import { distributionUpdate, checkMirror } from '../api/updateSources'
-vi.mock('../api/updateSources', async (original) => ({ ...await original<object>(), distributionUpdate: vi.fn(), checkMirror: vi.fn() }))
+import { distributionUpdate, checkMirror, openUpdateDownload } from '../api/updateSources'
+vi.mock('../api/updateSources', async (original) => ({ ...await original<object>(), distributionUpdate: vi.fn(), checkMirror: vi.fn(), openUpdateDownload: vi.fn() }))
 import { useSettingsStore } from './settings'
-import { settingsUpdate, openExternalUrl } from '../api/tauri'
-vi.mock('../api/tauri', () => ({ settingsUpdate: vi.fn(), openExternalUrl: vi.fn() }))
+import { settingsUpdate } from '../api/tauri'
+vi.mock('../api/tauri', () => ({ settingsUpdate: vi.fn() }))
 import { checkAndroidUpdate } from '../api/androidUpdate'
 vi.mock('../api/androidUpdate', () => ({ checkAndroidUpdate: vi.fn() }))
 import { createPinia, setActivePinia } from 'pinia'
@@ -28,7 +28,7 @@ describe('update preferences', () => {
     check.mockReset().mockResolvedValue(null)
     relaunch.mockReset()
     vi.mocked(checkAndroidUpdate).mockReset().mockResolvedValue(null)
-    vi.mocked(openExternalUrl).mockReset().mockResolvedValue(undefined)
+    vi.mocked(openUpdateDownload).mockReset().mockResolvedValue(undefined)
   })
 
   it('does not check automatically by default', async () => {
@@ -68,7 +68,7 @@ describe('update preferences', () => {
     expect(checkAndroidUpdate).toHaveBeenCalledWith('1.2.3')
     expect(update.hasUpdate).toBe(true)
     await update.install()
-    expect(openExternalUrl).toHaveBeenCalledWith(url)
+    expect(openUpdateDownload).toHaveBeenCalledWith(url, undefined)
     expect(check).not.toHaveBeenCalled()
     expect(relaunch).not.toHaveBeenCalled()
     vi.mocked(checkAndroidUpdate).mockResolvedValue(null)
@@ -130,6 +130,11 @@ describe('update preferences', () => {
     await update.checkForUpdate()
     expect(checkMirror).toHaveBeenCalledWith('https://mirror.test/{url}', 'http://127.0.0.1:7890')
     expect(check).not.toHaveBeenCalled()
+    await update.install()
+    expect(openUpdateDownload).toHaveBeenCalledWith(
+      site.sources[1]!.delivery.url,
+      { template: 'https://mirror.test/{url}', officialUrl: site.sources[0]!.delivery.url },
+    )
   })
   it('opens Quark manually and invalidates previous installation on source change', async () => {
     vi.mocked(distributionUpdate).mockResolvedValue(site)
@@ -137,7 +142,7 @@ describe('update preferences', () => {
     update.setSource('quark')
     await update.checkForUpdate()
     await update.install()
-    expect(openExternalUrl).toHaveBeenCalledWith('https://pan.quark.cn/s/test')
+    expect(openUpdateDownload).toHaveBeenCalledWith('https://pan.quark.cn/s/test', undefined)
     expect(check).not.toHaveBeenCalled()
     expect(relaunch).not.toHaveBeenCalled()
     update.setSource('github')
@@ -164,8 +169,8 @@ describe('update preferences', () => {
       expect(update.hasUpdate).toBe(false)
       expect(update.checked).toBe(false)
     }
-    expect(openExternalUrl).toHaveBeenCalledTimes(2)
-    expect(openExternalUrl).toHaveBeenCalledWith('https://pan.quark.cn/s/test')
+    expect(openUpdateDownload).toHaveBeenCalledTimes(2)
+    expect(openUpdateDownload).toHaveBeenCalledWith('https://pan.quark.cn/s/test')
     expect(check).not.toHaveBeenCalled()
   })
   it('reports unavailable Quark sources and allows retry after failure', async () => {
@@ -176,11 +181,11 @@ describe('update preferences', () => {
     vi.mocked(distributionUpdate).mockResolvedValue({ ...site, sources: [] })
     await update.openQuark()
     expect(update.quarkError).toContain('尚未提供夸克下载')
-    expect(openExternalUrl).not.toHaveBeenCalled()
+    expect(openUpdateDownload).not.toHaveBeenCalled()
     vi.mocked(distributionUpdate).mockResolvedValue(site)
     await update.openQuark()
     expect(update.quarkError).toBeNull()
-    expect(openExternalUrl).toHaveBeenCalledOnce()
+    expect(openUpdateDownload).toHaveBeenCalledOnce()
   })
   it('does not report latest after a silent failure or retain stale update', async () => {
     const update = useUpdateStore()

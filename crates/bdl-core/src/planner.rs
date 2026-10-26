@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
@@ -13,8 +12,8 @@ use crate::model::{
     NormalizedSourceTree, SourceKind, StreamCodec, StreamQuality,
 };
 use crate::naming::{
-    DEFAULT_NAMING_TEMPLATE, DuplicateNamingStrategy, NamingContext, render_output_path,
-    resolve_duplicate_path,
+    DEFAULT_NAMING_TEMPLATE, DuplicateNamingStrategy, NamingContext, ReservedPaths,
+    render_output_path, resolve_duplicate_path,
 };
 use crate::queue::{
     DownloadResource, DownloadResourceIntent, DownloadResourceKind, DownloadTask,
@@ -53,11 +52,11 @@ impl DownloadMediaMode {
         }
     }
 
-    const fn includes_video(self) -> bool {
+    pub const fn includes_video(self) -> bool {
         matches!(self, Self::AudioVideo | Self::VideoOnly)
     }
 
-    const fn includes_audio(self) -> bool {
+    pub const fn includes_audio(self) -> bool {
         matches!(self, Self::AudioVideo | Self::AudioOnly)
     }
 }
@@ -261,7 +260,7 @@ pub fn plan_selected_parts(
     selected_part_ids: &[PartId],
     options: &DownloadOptions,
 ) -> BdlResult<Vec<DownloadTask>> {
-    let mut reserved_paths = HashSet::new();
+    let mut reserved_paths = ReservedPaths::new();
     let mut tasks = Vec::with_capacity(selected_part_ids.len());
 
     for part_id in selected_part_ids {
@@ -315,20 +314,38 @@ pub fn estimate_selected_parts_download_size(
             .count();
         }
         if options.media_mode.includes_video() {
-            add_stream_size_estimate(
-                select_video_stream(selected.part, options)?,
-                duration,
-                &mut estimated_bytes,
-                &mut unknown_streams,
-            );
+            if selected
+                .part
+                .streams
+                .iter()
+                .any(|stream| stream.kind == MediaKind::Video)
+            {
+                add_stream_size_estimate(
+                    select_video_stream(selected.part, options)?,
+                    duration,
+                    &mut estimated_bytes,
+                    &mut unknown_streams,
+                );
+            } else {
+                unknown_streams += 1;
+            }
         }
         if options.media_mode.includes_audio() {
-            add_stream_size_estimate(
-                select_audio_stream(selected.part, options)?,
-                duration,
-                &mut estimated_bytes,
-                &mut unknown_streams,
-            );
+            if selected
+                .part
+                .streams
+                .iter()
+                .any(|stream| stream.kind == MediaKind::Audio)
+            {
+                add_stream_size_estimate(
+                    select_audio_stream(selected.part, options)?,
+                    duration,
+                    &mut estimated_bytes,
+                    &mut unknown_streams,
+                );
+            } else {
+                unknown_streams += 1;
+            }
         }
     }
 
@@ -383,7 +400,7 @@ fn plan_part(
     tree: &NormalizedSourceTree,
     selected: SelectedPart<'_>,
     options: &DownloadOptions,
-    reserved_paths: &mut HashSet<PathBuf>,
+    reserved_paths: &mut ReservedPaths,
 ) -> BdlResult<Option<DownloadTask>> {
     let item = selected.item;
     let part = selected.part;
@@ -1087,7 +1104,7 @@ fn output_path_for(
     video: Option<&MediaStream>,
     audio: Option<&MediaStream>,
     options: &DownloadOptions,
-    reserved_paths: &mut HashSet<PathBuf>,
+    reserved_paths: &mut ReservedPaths,
 ) -> BdlResult<Option<PathBuf>> {
     let item = selected.item;
     let part = selected.part;

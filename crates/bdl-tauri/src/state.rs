@@ -70,6 +70,10 @@ pub struct AppState {
     account: Mutex<AccountSnapshot>,
     account_cookie: Mutex<AccountCookieCache>,
     account_session_revision: AtomicU64,
+    account_mutation: Mutex<()>,
+    qr_generation: AtomicU64,
+    qr_login: Mutex<Option<(String, u64, u64)>>,
+    qr_request: Mutex<Option<String>>,
     queue_worker_active: AtomicBool,
     queue_changed: Notify,
     pub(crate) queue_cancellations: Mutex<HashMap<String, FetchCancelToken>>,
@@ -101,6 +105,24 @@ pub struct PreparedSelection {
     pub tree: NormalizedSourceTree,
     pub part_ids: Vec<PartId>,
     pub tree_updated: bool,
+}
+
+pub(crate) struct QueueEdit<'a> {
+    current: std::sync::MutexGuard<'a, Vec<DownloadTask>>,
+    next: Vec<DownloadTask>,
+}
+
+impl std::ops::Deref for QueueEdit<'_> {
+    type Target = Vec<DownloadTask>;
+    fn deref(&self) -> &Self::Target {
+        &self.next
+    }
+}
+
+impl std::ops::DerefMut for QueueEdit<'_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.next
+    }
 }
 
 impl AppState {
@@ -206,6 +228,10 @@ impl AppState {
             account: Mutex::new(account),
             account_cookie: Mutex::new(account_cookie),
             account_session_revision: AtomicU64::new(0),
+            account_mutation: Mutex::new(()),
+            qr_generation: AtomicU64::new(0),
+            qr_login: Mutex::new(None),
+            qr_request: Mutex::new(None),
             queue_worker_active: AtomicBool::new(false),
             queue_changed: Notify::new(),
             queue_cancellations: Mutex::new(HashMap::new()),
@@ -495,13 +521,43 @@ impl AppState {
         selected_part_ids: &[PartId],
         force: bool,
     ) -> BdlResult<PreparedSelection> {
+        self.prepare_selection_requested(source_id, selected_part_ids, force, true, true)
+            .await
+    }
+
+    pub async fn prepare_selection_for_options(
+        &self,
+        source_id: &SourceId,
+        selected_part_ids: &[PartId],
+        options: &bdl_core::planner::DownloadOptions,
+    ) -> BdlResult<PreparedSelection> {
+        let media = options.media_mode.includes_video() || options.media_mode.includes_audio();
+        let subtitles = options.selected_archive_assets().subtitles
+            || options
+                .processing
+                .is_some_and(|processing| processing.embed_subtitles);
+        self.prepare_selection_requested(source_id, selected_part_ids, false, media, subtitles)
+            .await
+    }
+
+    async fn prepare_selection_requested(
+        &self,
+        source_id: &SourceId,
+        selected_part_ids: &[PartId],
+        force: bool,
+        media: bool,
+        subtitles: bool,
+    ) -> BdlResult<PreparedSelection> {
         let mut tree = self.source_snapshot(source_id)?;
         let selected_part_ids = normalize_selected_part_ids(&tree, selected_part_ids);
-        let requests = if force {
+        let mut requests = if force {
             crate::parse_session::selection_hydration_requests(&tree, &selected_part_ids, true)?
         } else {
             selected_hydration_requests(&tree, &selected_part_ids)?
         };
+        if !media && !subtitles {
+            requests.retain(|request| request.target_cid.is_none());
+        }
         if requests.is_empty() {
             return Ok(PreparedSelection {
                 tree,
@@ -517,30 +573,73 @@ impl AppState {
             let hydrated = operation
                 .run(self.parse_pacer.run_retry(
                     self.settings()?.parse_rules,
-                    || {
-                        self.resolve_media_input_with_streams_unpaced(
-                            request.input.clone(),
-                            request.target_cid,
-                        )
+                    || async {
+                        if media {
+                            self.resolve_media_input_with_streams_unpaced(
+                                request.input.clone(),
+                                request.target_cid,
+                            )
+                            .await
+                        } else {
+                            match request.input.source_kind() {
+                                SourceKind::Video => {
+                                    self.video_resolver()?
+                                        .resolve_assets(
+                                            request.input.clone(),
+                                            request.target_cid,
+                                            subtitles,
+                                        )
+                                        .await
+                                }
+                                SourceKind::Bangumi => {
+                                    self.bangumi_resolver()?
+                                        .resolve(
+                                            request.input.clone(),
+                                            ResolveOptions {
+                                                fetch_streams: subtitles,
+                                            },
+                                        )
+                                        .await
+                                }
+                                SourceKind::Cheese => {
+                                    self.cheese_resolver()?
+                                        .resolve(
+                                            request.input.clone(),
+                                            ResolveOptions {
+                                                fetch_streams: subtitles,
+                                            },
+                                        )
+                                        .await
+                                }
+                                kind => Err(BdlError::UnsupportedSource {
+                                    kind: source_kind_name(kind).into(),
+                                }),
+                            }
+                        }
                     },
                     |_| 0,
                     |phase| operation.phase(phase),
                 ))
                 .await?;
-            let hydrated_part_ids = hydrate_placeholder_part(
-                &mut tree,
-                &request.part_id,
-                request.target_cid,
-                hydrated,
-            )?;
+            let mut sources = self
+                .parse_sources
+                .lock()
+                .map_err(|_| state_poisoned("parse_sources"))?;
+            let latest = sources
+                .get_mut(source_id)
+                .ok_or_else(|| BdlError::Planning {
+                    message: "解析来源已关闭。".into(),
+                })?;
+            let current_ids =
+                normalize_selected_part_ids(latest, std::slice::from_ref(&request.part_id));
+            let current_id = current_ids.first().ok_or_else(|| BdlError::Planning {
+                message: "选中的内容已移除。".into(),
+            })?;
+            let hydrated_part_ids =
+                hydrate_placeholder_part(latest, current_id, request.target_cid, hydrated)?;
             remap_selected_part_ids(&mut part_ids, &request.part_id, &hydrated_part_ids);
-            self.store_source_tree(&tree)?;
+            tree = latest.clone();
         }
-
-        self.parse_sources
-            .lock()
-            .map_err(|_| state_poisoned("parse_sources"))?
-            .insert(tree.source.id.clone(), tree.clone());
 
         Ok(PreparedSelection {
             tree,
@@ -555,7 +654,7 @@ impl AppState {
         policy: DuplicateTaskPolicy,
         naming_strategy: DuplicateNamingStrategy,
     ) -> BdlResult<DuplicateTaskEnqueueResult> {
-        let mut queue = self.queue.lock().map_err(|_| state_poisoned("queue"))?;
+        let mut queue = self.queue_edit()?;
         if self.file_cleanup_active.load(Ordering::SeqCst) {
             return Err(BdlError::Planning {
                 message: "正在清理文件，请稍后创建任务。".into(),
@@ -566,7 +665,7 @@ impl AppState {
 
         if policy == DuplicateTaskPolicy::Ask && !duplicates.is_empty() {
             if removed_existing_duplicates {
-                self.persist_queue(&queue)?;
+                self.persist_queue_edit(&mut queue)?;
             }
             return Ok(DuplicateTaskEnqueueResult {
                 inserted: Vec::new(),
@@ -605,7 +704,7 @@ impl AppState {
         let skipped_existing = planned_count - tasks.len();
         let inserted = append_new_tasks(&mut queue, tasks);
         if removed_existing_duplicates || !inserted.is_empty() {
-            self.persist_queue(&queue)?;
+            self.persist_queue_edit(&mut queue)?;
         }
         Ok(DuplicateTaskEnqueueResult {
             inserted,
@@ -639,7 +738,7 @@ impl AppState {
         &self,
         now: DateTime<Utc>,
     ) -> BdlResult<Option<DownloadTask>> {
-        let mut queue = self.queue.lock().map_err(|_| state_poisoned("queue"))?;
+        let mut queue = self.queue_edit()?;
         if self.file_cleanup_active.load(Ordering::SeqCst) {
             return Ok(None);
         }
@@ -663,7 +762,7 @@ impl AppState {
         queue[task_index].status = TaskStatus::Downloading;
         queue[task_index].scheduled_at = None;
         let task = queue[task_index].clone();
-        self.persist_queue(&queue)?;
+        self.persist_queue_edit(&mut queue)?;
         cancellations.insert(task.id.clone(), FetchCancelToken::new());
         Ok(Some(task))
     }
@@ -708,7 +807,7 @@ impl AppState {
         task_id: &str,
         scheduled_at: Option<DateTime<Utc>>,
     ) -> BdlResult<DownloadTask> {
-        let mut queue = self.queue.lock().map_err(|_| state_poisoned("queue"))?;
+        let mut queue = self.queue_edit()?;
         self.ensure_not_removing(task_id)?;
         let task = queue
             .iter_mut()
@@ -726,7 +825,7 @@ impl AppState {
         task.scheduled_at = scheduled_at;
         reset_interrupted_resources(&mut task.resources);
         let updated = task.clone();
-        self.persist_queue(&queue)?;
+        self.persist_queue_edit(&mut queue)?;
         Ok(updated)
     }
 
@@ -736,7 +835,7 @@ impl AppState {
         speed_limit_bytes_per_second: Option<u64>,
     ) -> BdlResult<DownloadTask> {
         validate_speed_limit(speed_limit_bytes_per_second, "单任务下载限速")?;
-        let mut queue = self.queue.lock().map_err(|_| state_poisoned("queue"))?;
+        let mut queue = self.queue_edit()?;
         let task = queue
             .iter_mut()
             .find(|task| task.id == task_id)
@@ -754,13 +853,13 @@ impl AppState {
 
         task.speed_limit_bytes_per_second = speed_limit_bytes_per_second;
         let updated = task.clone();
-        self.persist_queue(&queue)?;
+        self.persist_queue_edit(&mut queue)?;
         self.notify_queue_changed();
         Ok(updated)
     }
 
     pub fn update_task_status(&self, task_id: &str, status: TaskStatus) -> BdlResult<DownloadTask> {
-        let mut queue = self.queue.lock().map_err(|_| state_poisoned("queue"))?;
+        let mut queue = self.queue_edit()?;
         if status.can_start() {
             self.ensure_not_removing(task_id)?;
         }
@@ -784,7 +883,7 @@ impl AppState {
             queue[task_index].scheduled_at = None;
         }
         let task = queue[task_index].clone();
-        self.persist_queue(&queue)?;
+        self.persist_queue_edit(&mut queue)?;
         if matches!(status, TaskStatus::Paused | TaskStatus::Cancelled) {
             self.cancel_running_task(task_id)?;
         }
@@ -799,6 +898,57 @@ impl AppState {
             .entry(task_id.to_owned())
             .or_default()
             .clone())
+    }
+
+    pub(crate) fn bulk_update_tasks(
+        &self,
+        task_ids: &[String],
+        status: TaskStatus,
+        retry: bool,
+    ) -> BdlResult<crate::queue_coordinator::QueueMutationResult> {
+        let mut queue = self.queue_edit()?;
+        let indices: HashMap<_, _> = queue
+            .iter()
+            .enumerate()
+            .map(|(index, task)| (task.id.clone(), index))
+            .collect();
+        let mut result = crate::queue_coordinator::QueueMutationResult::default();
+        let mut seen = HashSet::new();
+        for id in task_ids {
+            if !seen.insert(id) {
+                continue;
+            }
+            let Some(&index) = indices.get(id) else {
+                result
+                    .failed
+                    .push((id.clone(), format!("任务 `{id}` 不存在。")));
+                continue;
+            };
+            if (status.can_start() || retry)
+                && let Err(error) = self.ensure_not_removing(id)
+            {
+                result.failed.push((id.clone(), error.to_string()));
+                continue;
+            }
+            let task = &mut queue[index];
+            if retry {
+                reset_task_for_retry(task);
+            } else if !ignores_status_transition(task.status, status) {
+                task.status = status;
+                task.scheduled_at = None;
+                if status.can_start() {
+                    reset_interrupted_resources(&mut task.resources);
+                }
+            }
+            result.updated.push(task.clone());
+        }
+        self.persist_queue_edit(&mut queue)?;
+        for task in &result.updated {
+            if matches!(task.status, TaskStatus::Paused | TaskStatus::Cancelled) {
+                self.cancel_running_task(&task.id)?;
+            }
+        }
+        Ok(result)
     }
 
     pub fn cancel_running_task(&self, task_id: &str) -> BdlResult<bool> {
@@ -830,7 +980,7 @@ impl AppState {
         resource_id: &str,
         status: ResourceStatus,
     ) -> BdlResult<DownloadTask> {
-        let mut queue = self.queue.lock().map_err(|_| state_poisoned("queue"))?;
+        let mut queue = self.queue_edit()?;
         let task_index = queue
             .iter()
             .position(|task| task.id == task_id)
@@ -847,12 +997,12 @@ impl AppState {
 
         resource.status = status;
         let task = queue[task_index].clone();
-        self.persist_queue(&queue)?;
+        self.persist_queue_edit(&mut queue)?;
         Ok(task)
     }
 
     pub fn retry_task(&self, task_id: &str) -> BdlResult<DownloadTask> {
-        let mut queue = self.queue.lock().map_err(|_| state_poisoned("queue"))?;
+        let mut queue = self.queue_edit()?;
         self.ensure_not_removing(task_id)?;
         let task_index = queue
             .iter()
@@ -864,7 +1014,7 @@ impl AppState {
         reset_task_for_retry(&mut queue[task_index]);
 
         let task = queue[task_index].clone();
-        self.persist_queue(&queue)?;
+        self.persist_queue_edit(&mut queue)?;
         Ok(task)
     }
 
@@ -874,7 +1024,7 @@ impl AppState {
         next: TaskStatus,
         cancel_token: &FetchCancelToken,
     ) -> BdlResult<Option<DownloadTask>> {
-        let mut queue = self.queue.lock().map_err(|_| state_poisoned("queue"))?;
+        let mut queue = self.queue_edit()?;
         let Some(task) = queue.iter_mut().find(|task| task.id == task_id) else {
             return Ok(None);
         };
@@ -896,7 +1046,7 @@ impl AppState {
             task.status = next;
         }
         let updated = task.clone();
-        self.persist_queue(&queue)?;
+        self.persist_queue_edit(&mut queue)?;
         Ok(Some(updated))
     }
 
@@ -1020,7 +1170,7 @@ impl AppState {
         video: Option<&MediaStream>,
         audio: Option<&MediaStream>,
     ) -> BdlResult<DownloadTask> {
-        let mut queue = self.queue.lock().map_err(|_| state_poisoned("queue"))?;
+        let mut queue = self.queue_edit()?;
         let task_index = queue
             .iter()
             .position(|task| task.id == task_id)
@@ -1045,7 +1195,7 @@ impl AppState {
         }
 
         let task = queue[task_index].clone();
-        self.persist_queue(&queue)?;
+        self.persist_queue_edit(&mut queue)?;
         Ok(task)
     }
 
@@ -1107,7 +1257,7 @@ impl AppState {
         task_id: &str,
         export_target: Option<bdl_core::queue::DownloadExportTarget>,
     ) -> BdlResult<DownloadTask> {
-        let mut queue = self.queue.lock().map_err(|_| state_poisoned("queue"))?;
+        let mut queue = self.queue_edit()?;
         let task = queue
             .iter_mut()
             .find(|task| task.id == task_id)
@@ -1116,7 +1266,7 @@ impl AppState {
             })?;
         task.export_target = export_target;
         let updated = task.clone();
-        self.persist_queue(&queue)?;
+        self.persist_queue_edit(&mut queue)?;
         Ok(updated)
     }
 
@@ -1128,7 +1278,7 @@ impl AppState {
         owned_document_uris: Vec<String>,
         preserved_document_uris: Vec<String>,
     ) -> BdlResult<DownloadTask> {
-        let mut queue = self.queue.lock().map_err(|_| state_poisoned("queue"))?;
+        let mut queue = self.queue_edit()?;
         let task = queue
             .iter_mut()
             .find(|task| task.id == task_id)
@@ -1140,7 +1290,7 @@ impl AppState {
         task.media_selection.owned_document_uris = owned_document_uris;
         task.media_selection.preserved_document_uris = preserved_document_uris;
         let updated = task.clone();
-        self.persist_queue(&queue)?;
+        self.persist_queue_edit(&mut queue)?;
         Ok(updated)
     }
 
@@ -1153,7 +1303,7 @@ impl AppState {
     }
 
     pub fn verify_task_outputs(&self, task_id: &str) -> BdlResult<DownloadTask> {
-        let mut queue = self.queue.lock().map_err(|_| state_poisoned("queue"))?;
+        let mut queue = self.queue_edit()?;
         let task = queue
             .iter_mut()
             .find(|task| task.id == task_id)
@@ -1162,7 +1312,7 @@ impl AppState {
             })?;
         task.media_selection.outputs_verified = true;
         let updated = task.clone();
-        self.persist_queue(&queue)?;
+        self.persist_queue_edit(&mut queue)?;
         Ok(updated)
     }
 
@@ -1198,15 +1348,29 @@ impl AppState {
     }
 
     pub fn import_cookie(&self, raw_cookie: &str) -> BdlResult<AccountSnapshot> {
+        let _guard = self
+            .account_mutation
+            .lock()
+            .map_err(|_| state_poisoned("account_mutation"))?;
+        self.import_cookie_locked(raw_cookie)
+    }
+
+    fn import_cookie_locked(&self, raw_cookie: &str) -> BdlResult<AccountSnapshot> {
         let imported_cookie = ImportedCookie::parse(raw_cookie)?;
         let _resolver = VideoResolver::from_cookie(imported_cookie.as_header())?;
         let account = AccountSummary::from_imported_cookie(&imported_cookie);
 
+        let previous_cookie = self.secure_store.load_cookie()?;
         self.secure_store.save_cookie(imported_cookie.as_header())?;
-        self.storage
+        let persisted = self
+            .storage
             .lock()
             .map_err(|_| state_poisoned("storage"))?
-            .save_account_summary(&account)?;
+            .save_account_summary(&account);
+        if let Err(error) = persisted {
+            self.restore_account_cookie(previous_cookie.as_deref(), &error)?;
+            return Err(error);
+        }
         *self
             .account_cookie
             .lock()
@@ -1214,6 +1378,7 @@ impl AppState {
             AccountCookieCache::Loaded(Some(imported_cookie.as_header().to_owned()));
         *self.account.lock().map_err(|_| state_poisoned("account"))? = account.clone();
         self.account_session_revision.fetch_add(1, Ordering::SeqCst);
+        self.cancel_qr_login_locked()?;
 
         Ok(account)
     }
@@ -1223,14 +1388,38 @@ impl AppState {
     }
 
     pub async fn verify_account(&self) -> BdlResult<AccountSnapshot> {
-        let Some(raw_cookie) = self.account_cookie()? else {
+        let (revision, raw_cookie) = {
+            let _guard = self
+                .account_mutation
+                .lock()
+                .map_err(|_| state_poisoned("account_mutation"))?;
+            (
+                self.account_session_revision.load(Ordering::SeqCst),
+                self.account_cookie()?,
+            )
+        };
+        let Some(raw_cookie) = raw_cookie else {
+            let _guard = self
+                .account_mutation
+                .lock()
+                .map_err(|_| state_poisoned("account_mutation"))?;
+            if revision != self.account_session_revision.load(Ordering::SeqCst) {
+                return Err(account_session_changed());
+            }
             if self.account()?.logged_in {
-                return self.clear_account_state();
+                return self.clear_account_state_locked();
             }
             return self.account();
         };
 
         let account = verify_cookie_session(&raw_cookie).await?;
+        let _guard = self
+            .account_mutation
+            .lock()
+            .map_err(|_| state_poisoned("account_mutation"))?;
+        if revision != self.account_session_revision.load(Ordering::SeqCst) {
+            return Err(account_session_changed());
+        }
         if account.logged_in {
             self.storage
                 .lock()
@@ -1240,7 +1429,7 @@ impl AppState {
             return Ok(account);
         }
 
-        self.clear_account_state()
+        self.clear_account_state_locked()
     }
 
     pub async fn account_library(
@@ -1276,26 +1465,161 @@ impl AppState {
     }
 
     fn clear_account_state(&self) -> BdlResult<AccountSnapshot> {
+        let _guard = self
+            .account_mutation
+            .lock()
+            .map_err(|_| state_poisoned("account_mutation"))?;
+        self.clear_account_state_locked()
+    }
+
+    fn clear_account_state_locked(&self) -> BdlResult<AccountSnapshot> {
+        let previous_cookie = self.secure_store.load_cookie()?;
         self.secure_store.clear_cookie()?;
-        self.storage
+        let persisted = self
+            .storage
             .lock()
             .map_err(|_| state_poisoned("storage"))?
-            .clear_account_summary()?;
+            .clear_account_summary();
+        if let Err(error) = persisted {
+            self.restore_account_cookie(previous_cookie.as_deref(), &error)?;
+            return Err(error);
+        }
         *self
             .account_cookie
             .lock()
             .map_err(|_| state_poisoned("account_cookie"))? = AccountCookieCache::Loaded(None);
         *self.account.lock().map_err(|_| state_poisoned("account"))? = AccountSnapshot::default();
         self.account_session_revision.fetch_add(1, Ordering::SeqCst);
+        self.cancel_qr_login_locked()?;
 
         self.account()
     }
 
-    pub(crate) fn persist_queue(&self, queue: &[DownloadTask]) -> BdlResult<()> {
+    fn restore_account_cookie(&self, cookie: Option<&str>, cause: &BdlError) -> BdlResult<()> {
+        let result = match cookie {
+            Some(cookie) => self.secure_store.save_cookie(cookie),
+            None => self.secure_store.clear_cookie(),
+        };
+        result.map_err(|rollback| BdlError::Account {
+            message: format!("账号保存失败：{cause}；凭据回滚失败：{rollback}。请重新登录。"),
+        })
+    }
+
+    pub fn begin_qr_login(&self, request_id: &str) -> BdlResult<u64> {
+        let _guard = self
+            .account_mutation
+            .lock()
+            .map_err(|_| state_poisoned("account_mutation"))?;
+        let generation = self.cancel_qr_login_locked()?;
+        *self
+            .qr_request
+            .lock()
+            .map_err(|_| state_poisoned("qr_request"))? = Some(request_id.to_owned());
+        Ok(generation)
+    }
+
+    pub fn cancel_qr_login(&self, request_id: &str) -> BdlResult<()> {
+        let _guard = self
+            .account_mutation
+            .lock()
+            .map_err(|_| state_poisoned("account_mutation"))?;
+        let matches = self
+            .qr_request
+            .lock()
+            .map_err(|_| state_poisoned("qr_request"))?
+            .as_deref()
+            == Some(request_id);
+        if matches {
+            self.cancel_qr_login_locked()?;
+        }
+        Ok(())
+    }
+
+    fn cancel_qr_login_locked(&self) -> BdlResult<u64> {
+        let mut login = self
+            .qr_login
+            .lock()
+            .map_err(|_| state_poisoned("qr_login"))?;
+        let generation = self.qr_generation.fetch_add(1, Ordering::SeqCst) + 1;
+        *login = None;
+        *self
+            .qr_request
+            .lock()
+            .map_err(|_| state_poisoned("qr_request"))? = None;
+        Ok(generation)
+    }
+
+    pub fn register_qr_login(&self, generation: u64, key: &str) -> BdlResult<()> {
+        let _guard = self
+            .account_mutation
+            .lock()
+            .map_err(|_| state_poisoned("account_mutation"))?;
+        let mut login = self
+            .qr_login
+            .lock()
+            .map_err(|_| state_poisoned("qr_login"))?;
+        if generation != self.qr_generation.load(Ordering::SeqCst) {
+            return Err(account_session_changed());
+        }
+        *login = Some((
+            key.to_owned(),
+            generation,
+            self.account_session_revision.load(Ordering::SeqCst),
+        ));
+        Ok(())
+    }
+
+    pub fn qr_login_generation(&self, key: &str) -> BdlResult<u64> {
+        self.qr_login
+            .lock()
+            .map_err(|_| state_poisoned("qr_login"))?
+            .as_ref()
+            .filter(|(current, generation, revision)| {
+                current == key
+                    && *generation == self.qr_generation.load(Ordering::SeqCst)
+                    && *revision == self.account_session_revision.load(Ordering::SeqCst)
+            })
+            .map(|(_, generation, _)| *generation)
+            .ok_or_else(account_session_changed)
+    }
+
+    pub fn import_qr_cookie(
+        &self,
+        key: &str,
+        generation: u64,
+        cookie: &str,
+    ) -> BdlResult<AccountSnapshot> {
+        let _guard = self
+            .account_mutation
+            .lock()
+            .map_err(|_| state_poisoned("account_mutation"))?;
+        if self.qr_login_generation(key)? != generation {
+            return Err(account_session_changed());
+        }
+        self.import_cookie_locked(cookie)
+    }
+
+    pub(crate) fn queue_edit(&self) -> BdlResult<QueueEdit<'_>> {
+        let current = self.queue.lock().map_err(|_| state_poisoned("queue"))?;
+        let next = current.clone();
+        Ok(QueueEdit { current, next })
+    }
+
+    pub(crate) fn persist_queue_edit(&self, queue: &mut QueueEdit<'_>) -> BdlResult<()> {
+        self.persist_queue(&queue.current, &queue.next)?;
+        queue.current.clone_from(&queue.next);
+        Ok(())
+    }
+
+    pub(crate) fn persist_queue(
+        &self,
+        previous: &[DownloadTask],
+        next: &[DownloadTask],
+    ) -> BdlResult<()> {
         self.storage
             .lock()
             .map_err(|_| state_poisoned("storage"))?
-            .replace_tasks(queue)
+            .apply_queue_changes(previous, next)
     }
 
     fn store_source_tree(&self, tree: &NormalizedSourceTree) -> BdlResult<()> {
@@ -1842,6 +2166,53 @@ mod tests {
     use bdl_core::settings::AppSettings;
     use bdl_core::storage::TaskStorage;
     use tokio::sync::Notify;
+
+    #[test]
+    fn bulk_queue_commit_integrates_storage_rollback_cancellation_and_partial_ids() {
+        let data_dir = temp_state_dir();
+        let tasks = (0..500)
+            .map(|index| task_with_id(&format!("task:{index}")))
+            .collect::<Vec<_>>();
+        let state = test_state_with_tasks(&data_dir, tasks.clone());
+        let token = state.register_task_cancel_token("task:0").unwrap();
+        let db = rusqlite::Connection::open(data_dir.join("tasks.sqlite")).unwrap();
+        db.execute_batch("CREATE TRIGGER reject_last BEFORE UPDATE ON tasks WHEN OLD.id = 'task:499' BEGIN SELECT RAISE(ABORT, 'injected batch failure'); END;").unwrap();
+        let mut ids = tasks.iter().map(|task| task.id.clone()).collect::<Vec<_>>();
+        assert!(
+            state
+                .bulk_update_tasks(&ids, TaskStatus::Paused, false)
+                .is_err()
+        );
+        assert_eq!(state.queue_snapshot().unwrap(), tasks);
+        assert_eq!(
+            TaskStorage::open(data_dir.join("tasks.sqlite"))
+                .unwrap()
+                .load_tasks()
+                .unwrap(),
+            tasks
+        );
+        assert!(!token.is_cancelled());
+        db.execute_batch("DROP TRIGGER reject_last;").unwrap();
+        ids.extend(["missing".into(), "task:0".into()]);
+        let started = std::time::Instant::now();
+        let result = state
+            .bulk_update_tasks(&ids, TaskStatus::Paused, false)
+            .unwrap();
+        eprintln!("500-task batch commit: {:?}", started.elapsed());
+        assert_eq!(result.updated.len(), 500);
+        assert_eq!(result.failed.len(), 1);
+        assert!(token.is_cancelled());
+        assert_eq!(
+            TaskStorage::open(data_dir.join("tasks.sqlite"))
+                .unwrap()
+                .load_tasks()
+                .unwrap(),
+            state.queue_snapshot().unwrap()
+        );
+        drop(db);
+        drop(state);
+        std::fs::remove_dir_all(data_dir).unwrap();
+    }
 
     #[tokio::test]
     #[ignore = "live Bilibili probe: set BDL_TEST_SHORT_URL and BDL_TEST_SHORT_BVID"]
@@ -3222,6 +3593,10 @@ mod tests {
             account: Mutex::new(AccountSummary::default()),
             account_cookie: Mutex::new(AccountCookieCache::Loaded(None)),
             account_session_revision: AtomicU64::new(0),
+            account_mutation: Mutex::new(()),
+            qr_generation: AtomicU64::new(0),
+            qr_login: Mutex::new(None),
+            qr_request: Mutex::new(None),
             queue_worker_active: AtomicBool::new(false),
             queue_changed: Notify::new(),
             queue_cancellations: Mutex::new(HashMap::new()),

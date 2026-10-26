@@ -2701,7 +2701,7 @@ for (const theme of ['light', 'dark'] as const) {
         if (command === 'plugin:event|listen') { listeners.set(args?.event as string, args?.handler as number); return id++; }
         if (command === 'queue_list') return [task];
         if (command === 'queue_logs') return [];
-        if (command === 'open_external_url') { target.__APK_URL__ = args?.url as string; return null; }
+        if (command === 'update_open_download') { target.__APK_URL__ = args?.url as string; return null; }
         return invoke(command, args);
       };
     });
@@ -2775,7 +2775,7 @@ for (const [width, theme] of [[390, 'light'], [1280, 'dark'], [390, 'dark'], [12
           target.__UPDATE_TEMPLATE__ = (args as { template: string }).template;
           return { rid: 99, currentVersion: '0.8.5', version: '99.0.0', body: '镜像更新', rawJson: {} };
         }
-        if (command === 'open_external_url') { target.__UPDATE_URL__ = (args as { url: string }).url; return; }
+        if (command === 'update_open_download') { target.__UPDATE_URL__ = (args as { url: string }).url; return; }
         return original(command, args);
       };
     });

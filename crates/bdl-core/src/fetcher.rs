@@ -124,6 +124,8 @@ pub struct FetchState {
     pub etag: Option<String>,
     #[serde(default)]
     pub last_modified: Option<String>,
+    #[serde(default)]
+    pub segment_ranges: Option<Vec<(u64, u64)>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -554,14 +556,17 @@ impl ReqwestFetcher {
             .total_bytes
             .expect("segmented fetch requires content length");
         let ranges = segment_ranges(total_bytes, self.config.segment_count);
-        let can_resume_segments = segmented_resume_is_valid(&resource.temp_path, &metadata).await?;
+        let can_resume_segments =
+            segmented_resume_is_valid(&resource.temp_path, &metadata, &ranges).await?;
+        if !can_resume_segments {
+            for index in 0..8 {
+                remove_if_exists(&segment_path_for(&resource.temp_path, index)).await?;
+            }
+        }
         let mut resumed_by_segment = Vec::with_capacity(ranges.len());
         for (index, (start, end)) in ranges.iter().enumerate() {
             let expected_len = end - start + 1;
             let segment_path = segment_path_for(&resource.temp_path, index);
-            if !can_resume_segments {
-                remove_if_exists(&segment_path).await?;
-            }
             let existing_len = fs::metadata(&segment_path)
                 .await
                 .map(|metadata| metadata.len())
@@ -576,7 +581,17 @@ impl ReqwestFetcher {
         let progress_by_segment = Arc::new(Mutex::new(resumed_by_segment));
 
         remove_if_exists(&resource.temp_path).await?;
-        persist_fetch_progress(&resource.temp_path, &metadata, 0).await?;
+        write_fetch_state(
+            &resource.temp_path,
+            &FetchState {
+                total_bytes: metadata.total_bytes,
+                downloaded_bytes: 0,
+                etag: metadata.etag.clone(),
+                last_modified: metadata.last_modified.clone(),
+                segment_ranges: Some(ranges.clone()),
+            },
+        )
+        .await?;
 
         try_join_all(ranges.iter().enumerate().map(|(index, (start, end))| {
             self.fetch_segment(SegmentFetchRequest {
@@ -875,7 +890,9 @@ pub async fn write_fetch_state(temp_path: &Path, state: &FetchState) -> BdlResul
     ensure_parent_dir(&path).await?;
     let bytes = serde_json::to_vec(state)
         .map_err(|error| fetch_error(format!("序列化下载状态失败: {error}")))?;
-    fs::write(path, bytes).await?;
+    let temporary = state_temp_path_for(temp_path);
+    fs::write(&temporary, bytes).await?;
+    fs::rename(temporary, path).await?;
     Ok(())
 }
 
@@ -891,6 +908,7 @@ async fn persist_fetch_progress(
             downloaded_bytes,
             etag: metadata.etag.clone(),
             last_modified: metadata.last_modified.clone(),
+            segment_ranges: None,
         },
     )
     .await
@@ -925,6 +943,10 @@ fn cancelled_error() -> BdlError {
 
 pub fn state_path_for(temp_path: &Path) -> PathBuf {
     auxiliary_path_for(temp_path, ".state")
+}
+
+pub fn state_temp_path_for(temp_path: &Path) -> PathBuf {
+    auxiliary_path_for(temp_path, ".state.tmp")
 }
 
 // Keep existing short-path checkpoints compatible. Long title paths leave too
@@ -1022,6 +1044,7 @@ fn decode_deflate_body(encoded: &[u8]) -> BdlResult<Vec<u8>> {
 async fn segmented_resume_is_valid(
     temp_path: &Path,
     metadata: &RemoteResourceMetadata,
+    ranges: &[(u64, u64)],
 ) -> BdlResult<bool> {
     let state_path = state_path_for(temp_path);
     if !state_path.exists() {
@@ -1029,7 +1052,8 @@ async fn segmented_resume_is_valid(
     }
 
     let state = read_fetch_state(&state_path).await?;
-    Ok(state.total_bytes == metadata.total_bytes
+    Ok(state.segment_ranges.as_deref() == Some(ranges)
+        && state.total_bytes == metadata.total_bytes
         && validator_matches(&state.etag, &metadata.etag)
         && validator_matches(&state.last_modified, &metadata.last_modified))
 }
