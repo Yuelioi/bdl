@@ -4,7 +4,7 @@
   min-width: 0;
   min-height: 0;
   display: grid;
-  grid-template-columns: 224px minmax(0, 1fr);
+  grid-template-columns: 150px minmax(0, 1fr);
   grid-template-rows: 42px minmax(0, 1fr);
   overflow: hidden;
 }
@@ -68,32 +68,10 @@
   font-weight: 700;
 }
 
-.titlebar-mark {
+.titlebar-logo {
   width: 24px;
-  height: 20px;
-  display: inline-flex;
-  align-items: flex-end;
-  justify-content: center;
-  gap: 3px;
-  border: 1px solid var(--color-accent);
-  border: 1px solid color-mix(in oklab, var(--color-accent) 62%, var(--color-nav));
-  border-radius: var(--radius-4);
-  background: var(--color-accent-faint);
-  background: color-mix(in oklab, var(--color-accent) 17%, var(--color-nav));
-  padding: 4px 5px;
-}
-
-.titlebar-mark i {
-  width: 4px;
-  border-radius: 1px;
-  background: var(--color-accent);
-}
-
-.titlebar-mark i:first-child {
-  height: 7px;
-}
-.titlebar-mark i:last-child {
-  height: 11px;
+  height: 24px;
+  object-fit: contain;
 }
 
 .titlebar-actions {
@@ -146,7 +124,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-lg);
-  padding: var(--space-md) var(--space-sm);
+  padding: var(--space-sm) 0;
   border-right: 1px solid var(--color-border);
   background: var(--color-nav);
   overflow: hidden;
@@ -159,16 +137,16 @@
 
 .nav-item {
   position: relative;
-  min-height: 54px;
+  min-height: 42px;
   display: grid;
   grid-template-columns: 20px minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--space-sm);
   border: 1px solid transparent;
-  border-radius: var(--radius-6);
+  border-radius: 0;
   background: transparent;
   color: var(--color-nav-muted);
-  padding: var(--space-xs) var(--space-sm);
+  padding: var(--space-xs) 20px;
   text-align: left;
   transition:
     background-color var(--duration-fast) var(--ease-out),
@@ -177,7 +155,6 @@
 }
 
 .nav-item:hover {
-  border-color: var(--color-border);
   background: var(--color-nav-raised);
   color: var(--color-nav-text);
 }
@@ -205,7 +182,7 @@
 .nav-copy strong {
   color: inherit;
   font-size: var(--font-13);
-  font-weight: 720;
+  font-weight: 500;
 }
 
 .nav-copy small {
@@ -214,10 +191,8 @@
 }
 
 .nav-item.active {
-  border-color: var(--color-accent-soft);
-  border-color: color-mix(in oklab, var(--color-accent) 28%, var(--color-border));
   background: var(--color-accent-faint);
-  color: var(--color-nav-text);
+  color: var(--color-accent-strong);
 }
 
 .nav-item.active .nav-icon {
@@ -337,7 +312,7 @@
     display: none;
   }
 
-  .platform-macos .titlebar-mark,
+  .platform-macos .titlebar-logo,
   .platform-macos .titlebar-name {
     display: none;
   }

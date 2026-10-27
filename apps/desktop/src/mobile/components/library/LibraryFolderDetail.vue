@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import LibrarySourceSummary from '../../../shared/features/library/LibrarySourceSummary.vue';
 import CollectionTree from '../../../shared/ui/CollectionTree.vue';
 import { hasCollectionSections } from '../../../shared/features/parse/collectionTree';
 import ParseResultListMobile from '../parse/ParseResultListMobile.vue';
@@ -16,7 +17,12 @@ import MobileSourceMenu from '../MobileSourceMenu.vue';
 
 import { useLibraryFolderDetail } from '../../../shared/features/library/useLibraryFolderDetail';
 import type { LibraryContentSource } from '../../../shared/api/dto';
-const props = defineProps<{ folder: LibraryContentSource; embedded?: boolean; loadingInitial?: boolean }>();
+const props = defineProps<{
+  folder: LibraryContentSource;
+  categoryLabel?: string;
+  embedded?: boolean;
+  loadingInitial?: boolean;
+}>();
 const emit = defineEmits<{ back: []; download: [] }>();
 const {
   parse,
@@ -34,7 +40,8 @@ const {
 
   pacedStopping,
   loading,
-  activeError, activeErrorDetail,
+  activeError,
+  activeErrorDetail,
   hasMore,
   itemOwnerName,
   currentPageSelected,
@@ -52,6 +59,7 @@ const query = ref('');
 const searchOpen = ref(false);
 const toolsOpen = ref(false);
 const { managing, toggleManaging, select } = useMobileListSelection(clearSelection);
+managing.value = true;
 const visibleItems = computed(() => {
   const term = query.value.trim().toLocaleLowerCase();
   return term
@@ -62,12 +70,19 @@ const visibleItems = computed(() => {
 <template>
   <section class="mobile-folder" :aria-busy="loading">
     <header class="mobile-detail-heading folder-heading">
-      <button type="button" class="mobile-icon-button" v-if="!embedded" aria-label="返回内容集合" @click="emit('back')">
+      <UButton
+        variant="ghost"
+        color="neutral"
+        type="button"
+        class="mobile-icon-button"
+        v-if="!embedded"
+        aria-label="返回内容集合"
+        @click="emit('back')"
+      >
         <UIcon name="i-tabler-arrow-left" />
-      </button>
+      </UButton>
       <div class="mobile-detail-copy">
-        <h2 :title="folder.title">{{ folder.title }}</h2>
-        <p>{{ totalCount }} {{ source?.source.kind === 'video' ? '个分 P' : '个视频' }} · 已加载 {{ source?.source.kind === 'video' ? items.length : source?.source.loaded_count ?? items.length }}</p>
+        <h2>{{ categoryLabel || '内容库' }}</h2>
       </div>
       <MobileListActions
         v-model:search-open="searchOpen"
@@ -79,6 +94,13 @@ const visibleItems = computed(() => {
         @manage="toggleManaging"
       />
     </header>
+    <LibrarySourceSummary :folder="folder" :total="totalCount" :loading="loadingInitial" />
+    <div class="folder-load-controls">
+      <span>已加载 {{ source?.source.loaded_count ?? items.length }} / {{ totalCount }}</span
+      ><UiButton v-if="hasMore" variant="secondary" size="compact" :disabled="loading" @click="parseMore"
+        >继续解析</UiButton
+      >
+    </div>
     <MobileListSearch v-model="query" v-model:open="searchOpen" label="筛选视频" placeholder="筛选标题或作者" />
     <MobileSourceMenu
       v-model:open="toolsOpen"
@@ -93,19 +115,23 @@ const visibleItems = computed(() => {
       @download-all="downloadAll"
       @stop="stopParsing"
     />
-    <UiInlineNotice v-if="parse.notice" :tone="parse.notice.tone" :detail="parse.notice.detail">{{ parse.notice.message }}</UiInlineNotice>
-    <UiInlineNotice v-if="activeError" tone="danger" :detail="activeErrorDetail ?? undefined">{{ activeError }}</UiInlineNotice>
+    <UiInlineNotice v-if="parse.notice" :tone="parse.notice.tone" :detail="parse.notice.detail">{{
+      parse.notice.message
+    }}</UiInlineNotice>
+    <UiInlineNotice v-if="activeError" tone="danger" :detail="activeErrorDetail ?? undefined">{{
+      activeError
+    }}</UiInlineNotice>
     <div v-if="loadingInitial" class="folder-loading" role="status">正在加载内容…</div>
     <template v-else>
-    <CollectionTree
-      v-if="source && hasCollectionSections(source)"
-      :source="source"
-      :selected-ids="parse.activeSelection"
-      :visible-item-ids="pageItems.map((item) => item.id)"
-      :disabled="loading"
-      :query="query"
-      @toggle="parse.togglePartIds(source.source.id, $event)"
-    />
+      <CollectionTree
+        v-if="source && hasCollectionSections(source)"
+        :source="source"
+        :selected-ids="parse.activeSelection"
+        :visible-item-ids="pageItems.map((item) => item.id)"
+        :disabled="loading"
+        :query="query"
+        @toggle="parse.togglePartIds(source.source.id, $event)"
+      />
       <ParseResultListMobile
         v-else-if="source && visibleItems.length"
         :rows="
@@ -157,7 +183,13 @@ const visibleItems = computed(() => {
       <footer class="mobile-download-footer folder-download">
         <UiCheckbox
           v-if="managing"
-          :model-value="currentPageSelected"
+          :model-value="
+            currentPageSelected
+              ? true
+              : pageItems.some((item) => item.parts.some((part) => parse.activeSelection.includes(part.id)))
+                ? 'indeterminate'
+                : false
+          "
           label="全选本页"
           :disabled="loading"
           @update:model-value="toggleCurrentPageSelection"
@@ -172,6 +204,15 @@ const visibleItems = computed(() => {
   </section>
 </template>
 <style scoped>
+.folder-load-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  color: var(--color-muted);
+  font-size: var(--font-12);
+}
+
 .mobile-folder {
   display: flex;
   flex: 1;

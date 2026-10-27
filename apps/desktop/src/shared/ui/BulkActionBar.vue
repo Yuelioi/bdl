@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed } from 'vue';
 
-import UiButton from './Button.vue'
+import UiButton from './Button.vue';
 
 const {
   selectedCount,
@@ -14,28 +14,28 @@ const {
   canRemove,
   loading = false,
 } = defineProps<{
-  selectedCount: number
-  completedCount: number
-  canPause: boolean
-  canCancel: boolean
-  canResume: boolean
-  canRetry: boolean
-  canRefreshRetry: boolean
-  canRemove: boolean
-  loading?: boolean
-}>()
+  selectedCount: number;
+  completedCount: number;
+  canPause: boolean;
+  canCancel: boolean;
+  canResume: boolean;
+  canRetry: boolean;
+  canRefreshRetry: boolean;
+  canRemove: boolean;
+  loading?: boolean;
+}>();
 
 const emit = defineEmits<{
-  pause: []
-  cancel: []
-  resume: []
-  retry: []
-  refreshRetry: []
-  remove: []
-  deleteFiles: []
-  clearCompleted: []
-  refresh: []
-}>()
+  pause: [];
+  cancel: [];
+  resume: [];
+  retry: [];
+  refreshRetry: [];
+  remove: [];
+  deleteFiles: [];
+  clearCompleted: [];
+  refresh: [];
+}>();
 
 const moreItems = computed(() => [
   [
@@ -58,7 +58,7 @@ const moreItems = computed(() => [
       onSelect: () => emit('resume'),
     },
   ],
-])
+]);
 </script>
 
 <template>
@@ -68,16 +68,16 @@ const moreItems = computed(() => [
     </div>
 
     <div v-if="selectedCount > 0" class="bulk-actions">
-      <UiButton v-if="canPause" size="compact" variant="secondary" :disabled="loading" @click="emit('pause')"
+      <UiButton v-if="canPause" size="compact" variant="ghost" :disabled="loading" @click="emit('pause')"
         >暂停</UiButton
       >
-      <UiButton v-if="canCancel" size="compact" variant="secondary" :disabled="loading" @click="emit('cancel')"
+      <UiButton v-if="canCancel" size="compact" variant="ghost" :disabled="loading" @click="emit('cancel')"
         >取消</UiButton
       >
-      <UiButton v-if="canResume" size="compact" variant="secondary" :disabled="loading" @click="emit('resume')"
+      <UiButton v-if="canResume" size="compact" variant="ghost" :disabled="loading" @click="emit('resume')"
         >继续</UiButton
       >
-      <UiButton v-if="canRetry" size="compact" variant="secondary" :disabled="loading" @click="emit('retry')"
+      <UiButton v-if="canRetry" size="compact" variant="ghost" :disabled="loading" @click="emit('retry')"
         >重试</UiButton
       >
       <UiButton
@@ -89,10 +89,30 @@ const moreItems = computed(() => [
       >
         刷新链接并重试
       </UiButton>
-      <UiButton v-if="canRemove" size="compact" variant="secondary" title="移除任务记录并清理临时文件，保留成品" :disabled="loading" @click="emit('remove')"
+      <UiButton
+        v-if="canRemove"
+        size="compact"
+        variant="ghost"
+        title="移除任务记录并清理临时文件，保留成品"
+        :disabled="loading"
+        @click="emit('remove')"
         >移除任务</UiButton
       >
-      <UiButton v-if="canRemove" size="compact" variant="danger" :disabled="loading" @click="emit('deleteFiles')">删除任务及文件</UiButton>
+      <UDropdownMenu
+        v-if="canRemove"
+        :items="[
+          {
+            label: '删除任务及文件',
+            icon: 'i-tabler-trash',
+            color: 'error',
+            disabled: loading,
+            onSelect: () => emit('deleteFiles'),
+          },
+        ]"
+        :content="{ align: 'end' }"
+        ><UiButton size="compact" variant="ghost" aria-label="更多批量操作" :disabled="loading"
+          ><UIcon name="i-tabler-dots" class="size-4" /></UiButton
+      ></UDropdownMenu>
     </div>
 
     <div v-else class="bulk-actions">
@@ -105,13 +125,13 @@ const moreItems = computed(() => [
       >
         移除已完成记录
       </UiButton>
-      <UiButton size="compact" variant="secondary" :disabled="loading" @click="emit('refresh')">刷新</UiButton>
+      <UiButton size="compact" variant="ghost" :disabled="loading" @click="emit('refresh')">刷新</UiButton>
       <UDropdownMenu
         :items="moreItems"
         :content="{ align: 'end', sideOffset: 4, collisionPadding: 12 }"
         :ui="{ content: 'min-w-32' }"
       >
-        <UiButton size="compact" variant="secondary" :disabled="loading">更多</UiButton>
+        <UiButton size="compact" variant="ghost" :disabled="loading">更多</UiButton>
       </UDropdownMenu>
     </div>
   </div>
@@ -124,49 +144,37 @@ const moreItems = computed(() => [
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: var(--space-12);
+  gap: 0.75rem;
 }
 
 .bulk-action-bar.selected {
-  min-height: 2.5rem;
   justify-content: space-between;
-  padding: var(--space-8) var(--space-12);
-  border: 0.0625rem solid var(--color-border);
-  border-radius: var(--radius-8);
-  border-color: color-mix(in oklab, var(--color-accent) 38%, var(--color-border));
-  background: var(--color-selected-surface);
+  background: transparent;
+  border: 0;
+  padding: 0;
 }
 
 .bulk-copy {
   min-width: 0;
-  display: grid;
-  gap: 0.125rem;
+  white-space: nowrap;
 }
 
 .bulk-copy strong {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--color-text);
   font-size: var(--font-13);
+  font-weight: 500;
 }
 
 .bulk-actions {
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: var(--space-4);
+  gap: 0.25rem;
 }
 
-@media (width <= 1180px) {
+@media (width <= 720px) {
   .bulk-action-bar.selected {
     align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .bulk-actions {
-    justify-content: flex-start;
+    flex-wrap: wrap;
   }
 }
 </style>

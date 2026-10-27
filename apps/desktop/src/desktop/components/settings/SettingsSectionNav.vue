@@ -6,11 +6,11 @@ defineProps<{ sections: readonly SettingsSection[] }>();
 </script>
 
 <template>
-  <nav
-    class="settings-section-nav"
-    aria-label="设置分区"
-  >
-    <button
+  <nav class="settings-section-nav" aria-label="设置分区">
+    <UButton
+      variant="ghost"
+      color="neutral"
+      :ui="{ label: 'contents' }"
       v-for="section in sections"
       :key="section.id"
       type="button"
@@ -24,7 +24,7 @@ defineProps<{ sections: readonly SettingsSection[] }>();
         <strong>{{ section.label }}</strong>
         <small>{{ section.description }}</small>
       </span>
-    </button>
+    </UButton>
   </nav>
 </template>
 
@@ -33,119 +33,58 @@ defineProps<{ sections: readonly SettingsSection[] }>();
   min-width: 0;
   display: grid;
   align-content: start;
-  gap: var(--space-4);
+  gap: 0.25rem;
 }
 
 .settings-section-tab {
-  position: relative;
   min-width: 0;
-  min-height: 52px;
-  display: grid;
-  grid-template-columns: 18px minmax(0, 1fr);
+  min-height: 2.5rem;
+  display: flex;
   align-items: center;
-  gap: var(--space-10);
+  gap: 0.5rem;
   border: 1px solid transparent;
-  border-radius: var(--radius-8);
+  border-radius: var(--radius-4);
   background: transparent;
   color: var(--color-muted);
-  padding: var(--space-8) var(--space-10);
+  padding: 0.5rem 0.75rem;
   text-align: left;
 }
 
-.settings-section-tab:hover,
-.settings-section-tab:focus-visible {
-  background: var(--color-panel);
+.settings-section-tab:hover {
+  background: var(--color-hover-surface);
   color: var(--color-text);
 }
 
 .settings-section-tab.active {
-  border-color: var(--color-accent);
-  background: var(--color-accent-soft);
+  background: var(--color-accent-faint);
   color: var(--color-accent-strong);
 }
 
 .settings-section-tab-icon {
-  width: 17px;
-  height: 17px;
+  display: none;
 }
 
 .settings-section-tab-copy {
   min-width: 0;
-  display: grid;
-  gap: 1px;
-}
-
-.settings-section-tab-copy strong,
-.settings-section-tab-copy small {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .settings-section-tab-copy strong {
-  color: currentcolor;
   font-size: var(--font-13);
-  font-weight: 720;
+  font-weight: 500;
 }
 
 .settings-section-tab-copy small {
-  color: var(--color-muted);
-  font-size: var(--font-11);
+  display: none;
 }
 
 @media (width <= 840px) {
   .settings-section-nav {
     display: flex;
-    gap: var(--space-6);
-    overflow-x: auto;
-    padding-bottom: var(--space-4);
+    overflow: auto;
   }
 
   .settings-section-tab {
-    min-width: 128px;
-    flex: 0 0 auto;
-  }
-}
-
-@media (width <= 620px) {
-  .settings-section-nav {
-    gap: var(--space-4);
-    border-bottom: 1px solid var(--color-border);
-    padding-bottom: 0;
-  }
-
-  .settings-section-tab {
-    min-width: max-content;
-    min-height: 44px;
-    grid-template-columns: 17px auto;
-    gap: var(--space-6);
-    border: 0;
-    border-radius: var(--radius-6) var(--radius-6) 0 0;
-    padding: var(--space-8) var(--space-10);
-  }
-
-  .settings-section-tab.active {
-    background: transparent;
-  }
-
-  .settings-section-tab:hover,
-  .settings-section-tab:focus-visible {
-    background: transparent;
-  }
-
-  .settings-section-tab.active::after {
-    position: absolute;
-    right: var(--space-8);
-    bottom: 0;
-    left: var(--space-8);
-    height: 3px;
-    border-radius: 999px 999px 0 0;
-    background: var(--color-accent);
-    content: '';
-  }
-
-  .settings-section-tab-copy small {
-    display: none;
+    flex-shrink: 0;
   }
 }
 </style>

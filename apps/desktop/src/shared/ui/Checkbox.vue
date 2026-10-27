@@ -1,10 +1,14 @@
 <script setup lang="ts">
-const model = defineModel<boolean | 'indeterminate'>({ default: false })
-const { label, disabled = false, compact = false } = defineProps<{
-  label: string
-  disabled?: boolean
-  compact?: boolean
-}>()
+const model = defineModel<boolean | 'indeterminate'>({ default: false });
+const {
+  label,
+  disabled = false,
+  compact = false,
+} = defineProps<{
+  label: string;
+  disabled?: boolean;
+  compact?: boolean;
+}>();
 </script>
 
 <template>
@@ -45,7 +49,7 @@ const { label, disabled = false, compact = false } = defineProps<{
 .ui-checkbox :deep(.ui-checkbox-box) {
   border: 0.0625rem solid var(--color-border-strong, var(--color-border));
   background: var(--color-surface);
-  box-shadow: inset 0 0 0 0.0625rem var(--color-border-strong, var(--color-border));
+  box-shadow: none;
 }
 
 .ui-checkbox :deep(.ui-checkbox-box[data-state='checked']),

@@ -166,7 +166,7 @@ describe('settings defaults', () => {
       naming_template: '{title}/{title} - P{part_index} - {part_title}.{ext}',
       quality: '80', codec: 'hevc', segment_count: 1, retry_count: 0,
       auto_refresh_expired_urls: false, archive_assets: { cover: false },
-      parse_rules: { interval_seconds: 2 }, media_preferences: { video: [], fallback: 'error' },
+      parse_rules: { interval_seconds: 2 }, media_preferences: { video: [] },
     }
     store.apply(partial as unknown as Parameters<typeof store.apply>[0])
     expect(store.saved).toMatchObject(partial)
@@ -258,10 +258,12 @@ describe('media preferences settings', () => {
     expect(store.draft.quality).toBe('125')
     store.setVideoQuality('126')
     expect(store.draft.quality).toBe('126')
-    const preferences = { video: [{ quality: '125', codec: 'hevc' as const }], audio: ['30251', '30280'], fallback: 'error' as const }
+    const preferences = { video: [{ quality: '125', codec: 'hevc' as const }], audio: ['30251', '30280'], video_codecs: ['hevc' as const, 'avc' as const], audio_codecs: ['flac' as const, 'aac' as const] }
     store.apply({ ...store.saved, media_preferences: preferences })
     store.draft.media_preferences.video[0]!.quality = '126'
     store.draft.media_preferences.audio.reverse()
+    store.draft.media_preferences.video_codecs!.reverse()
+    store.draft.media_preferences.audio_codecs!.reverse()
     expect(store.saved.media_preferences).toEqual(preferences)
     expect(store.changed).toBe(true)
   })
@@ -271,7 +273,7 @@ describe('media preferences settings', () => {
     const oldSettings = JSON.parse(JSON.stringify(store.saved))
     delete oldSettings.media_preferences
     store.apply(oldSettings)
-    expect(store.draft.media_preferences).toEqual({ video: [], audio: [], fallback: 'best' })
+    expect(store.draft.media_preferences).toEqual({ video: [], audio: [], video_codecs: [], audio_codecs: [] })
   })
 })
 
@@ -300,7 +302,7 @@ describe('naming presets', () => {
 
 
 it('expands legacy unrestricted video rules into the default concrete quality order', () => {
-  const legacy = { video: [{ quality: 'best', codec: 'hevc' as const }], audio: [], fallback: 'best' as const }
+  const legacy = { video: [{ quality: 'best', codec: 'hevc' as const }], audio: [] }
   const preferences = cloneMediaPreferences(legacy)
   expect(preferences.video.map((rule) => rule.quality)).toEqual(['127', '126', '125', '120', '116', '112', '80', '74', '64', '32', '16'])
   expect(preferences.video.every((rule) => rule.codec === 'hevc')).toBe(true)

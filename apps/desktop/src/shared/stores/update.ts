@@ -8,12 +8,16 @@ import { useSettingsStore } from './settings'
 import { checkAndroidUpdate } from '../api/androidUpdate'
 import { distributionUpdate, checkMirror, openUpdateDownload, mirrorTemplate, mirrorUrl, newer, type DistributionUpdate } from '../api/updateSources'
 
+type UpdateSource = 'github' | 'mirror' | 'quark' | `official:${string}`
+
 export const useUpdateStore = defineStore('update', {
   state: () => ({
     supported: true,
-    source: 'github' as 'github' | 'mirror' | 'quark',
+    source: 'github' as UpdateSource,
     customMirror: '',
     distribution: null as DistributionUpdate | null,
+    loadingSources: false,
+    sourcesError: null as string | null,
     manualDownloadUrl: null as string | null,
     downloadMirror: undefined as { template: string; officialUrl: string } | undefined,
     warning: null as string | null,
@@ -34,8 +38,38 @@ export const useUpdateStore = defineStore('update', {
   }),
   getters: {
     hasUpdate: (state) => Boolean(state.update || state.androidDownloadUrl || state.manualDownloadUrl),
+    sourceOptions(state): { label: string; value: UpdateSource; disabled?: boolean }[] {
+      const options: { label: string; value: UpdateSource; disabled?: boolean }[] = [{ label: 'GitHub 下载', value: 'github' }]
+      const github = state.distribution?.sources.find(s => s.kind === 'github')?.delivery.url
+      if (github) {
+        for (const source of state.distribution!.sources) {
+          const template = mirrorTemplate(source, github)
+          if (template) options.push({ label: source.label, value: `official:${template}` })
+        }
+      }
+      if (state.source.startsWith('official:') && !options.some(option => option.value === state.source)) {
+        options.push({ label: '所选加速源（当前未提供）', value: state.source, disabled: true })
+      }
+      if (state.source === 'quark' || state.distribution?.sources.some(s => s.kind === 'cloud_drive' && s.delivery.url?.startsWith('https://pan.quark.cn/'))) {
+        options.push({ label: '夸克手动下载', value: 'quark' })
+      }
+      options.push({ label: '自定义加速', value: 'mirror' })
+      return options
+    },
   },
   actions: {
+    async loadSources() {
+      if (this.loadingSources || this.checking) return
+      this.loadingSources = true
+      this.sourcesError = null
+      try {
+        this.distribution = await distributionUpdate()
+      } catch (error) {
+        this.sourcesError = error instanceof Error ? error.message : String(error)
+      } finally {
+        this.loadingSources = false
+      }
+    },
     async openQuark() {
       if (this.openingQuark) return
       this.openingQuark = true
@@ -51,7 +85,7 @@ export const useUpdateStore = defineStore('update', {
         this.openingQuark = false
       }
     },
-    setSource(source: 'github' | 'mirror' | 'quark', customMirror?: string) {
+    setSource(source: UpdateSource, customMirror?: string) {
       if (this.checking || this.installing) return
       this.source = source
       this.customMirror = (customMirror ?? this.customMirror).trim()
@@ -69,7 +103,7 @@ export const useUpdateStore = defineStore('update', {
     async initialize(supported = true, android = false) {
       try {
         const saved = JSON.parse(localStorage.getItem('bdl.update-source') ?? '{}')
-        if (['github', 'mirror', 'quark'].includes(saved.source)) this.source = saved.source
+        if (typeof saved.source === 'string' && (['github', 'mirror', 'quark'].includes(saved.source) || saved.source.startsWith('official:'))) this.source = saved.source as UpdateSource
         if (typeof saved.customMirror === 'string') this.customMirror = saved.customMirror
       } catch { /* Ignore invalid preferences. */ }
       this.android = android
@@ -103,16 +137,27 @@ export const useUpdateStore = defineStore('update', {
       this.manualDownloadUrl = null
       this.downloadMirror = undefined
       this.availableVersion = null
-      this.distribution = null
       try {
         let siteError: unknown
-        try { this.distribution = await distributionUpdate() } catch (error) { siteError = error }
-        const site = this.distribution
+        let site: DistributionUpdate | null = null
+        try {
+          site = await distributionUpdate()
+          this.distribution = site
+          this.sourcesError = null
+        } catch (error) { siteError = error }
         const github = site?.sources.find(s => s.kind === 'github')?.delivery.url
         const quark = site?.sources.find(s => s.kind === 'cloud_drive' && s.delivery.url?.startsWith('https://pan.quark.cn/'))
-        let template = this.customMirror
-        if (!template && github) {
-          template = site?.sources.map(s => mirrorTemplate(s, github)).find(Boolean) ?? ''
+        let template = ''
+        if (this.source.startsWith('official:')) {
+          if (!site) throw siteError ?? new Error('软件站暂时无法连接。')
+          const selected = this.source.slice('official:'.length)
+          if (!github || !site.sources.some(s => mirrorTemplate(s, github) === selected)) {
+            throw new Error('软件站已不再提供所选加速源，请重新选择更新来源。')
+          }
+          template = selected
+        } else if (this.source === 'mirror') {
+          template = this.customMirror
+          if (!template) throw new Error('请填写自定义加速地址，或选择软件站提供的更新来源。')
         }
         if (this.source === 'quark') {
           if (!site) throw siteError ?? new Error('软件站暂时无法连接。')
@@ -125,13 +170,12 @@ export const useUpdateStore = defineStore('update', {
           this.checked = true
           return
         }
-        if (this.source === 'mirror' && !template) throw new Error('软件站暂无可用加速源，请填写自定义加速地址。')
-        if (this.source === 'mirror') mirrorUrl(template, 'https://github.com/Yuelioi/bdl/releases/latest/download/latest.json')
-        if (this.source === 'mirror' && github) this.downloadMirror = { template, officialUrl: github }
+        if (template) mirrorUrl(template, 'https://github.com/Yuelioi/bdl/releases/latest/download/latest.json')
+        if (template && github) this.downloadMirror = { template, officialUrl: github }
         if (this.android) {
-          if (this.source === 'mirror' && site && !github) throw new Error('当前平台尚未提供可加速的安装包，请选择其他来源。')
+          if (template && site && !github) throw new Error('当前平台尚未提供可加速的安装包，请选择其他来源。')
           if (site && github && newer(site.release.version, this.currentVersion)) {
-            this.androidDownloadUrl = this.source === 'mirror' ? mirrorUrl(template, github) : github
+            this.androidDownloadUrl = template ? mirrorUrl(template, github) : github
             this.availableVersion = site.release.version
             this.notes = site.releaseNotes
           } else if (this.source === 'github') {
@@ -147,14 +191,14 @@ export const useUpdateStore = defineStore('update', {
         }
         const proxy = useSettingsStore().saved.proxy_url ?? undefined
         try {
-          const availableUpdate = this.source === 'mirror'
+          const availableUpdate = template
             ? await checkMirror(template, proxy)
             : await check({ timeout: 20_000, ...(proxy ? { proxy } : {}) })
           this.update = availableUpdate ? markRaw(availableUpdate) : null
           this.availableVersion = this.update?.version ?? null
           this.notes = this.update?.body ?? null
           if (!this.update && site && github && newer(site.release.version, this.currentVersion)) {
-            this.manualDownloadUrl = this.source === 'mirror' ? mirrorUrl(template, github) : github
+            this.manualDownloadUrl = template ? mirrorUrl(template, github) : github
             this.availableVersion = site.release.version
             this.notes = site.releaseNotes
             this.warning = '软件站已有新版本，自动安装尚未就绪，可先下载后手动安装。'
@@ -162,7 +206,7 @@ export const useUpdateStore = defineStore('update', {
           this.checked = true
         } catch (error) {
           if (!site || !github || !newer(site.release.version, this.currentVersion)) throw error
-          this.manualDownloadUrl = this.source === 'mirror' ? mirrorUrl(template, github) : github
+          this.manualDownloadUrl = template ? mirrorUrl(template, github) : github
           this.availableVersion = site.release.version
           this.notes = site.releaseNotes
           this.warning = '自动安装服务暂不可用，可在浏览器下载此版本后手动安装。'

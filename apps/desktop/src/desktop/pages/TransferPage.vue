@@ -65,6 +65,7 @@ const {
 <template>
   <section class="page-grid transfer-page">
     <section class="panel transfer-main">
+      <h2 class="transfer-page-title">传输</h2>
       <UiInlineNotice v-if="queue.notice" :tone="queue.notice.tone">
         {{ queue.notice.message }}
       </UiInlineNotice>
@@ -84,16 +85,19 @@ const {
       </div>
 
       <div v-if="queue.activeFilter === 'completed'" class="transfer-list-tools">
-        <label class="transfer-search">
-          <UIcon name="i-tabler-search" aria-hidden="true" />
-          <input
-            v-model="completedSearch"
-            type="search"
-            aria-label="搜索已完成"
-            placeholder="搜索标题、来源或保存路径"
-            :disabled="queue.loading"
-          />
-        </label>
+        <UInput
+          v-model="completedSearch"
+          class="transfer-search"
+          type="search"
+          aria-label="搜索已完成"
+          icon="i-tabler-search"
+          placeholder="搜索标题、来源或保存路径"
+          :disabled="queue.loading"
+          color="neutral"
+          variant="outline"
+          size="sm"
+          :ui="{ base: 'h-9 text-(length:--font-13)', leadingIcon: 'size-4' }"
+        />
       </div>
 
       <div v-if="taskViews.length" class="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">

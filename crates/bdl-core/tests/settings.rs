@@ -83,7 +83,7 @@ fn settings_partial_config_preserves_choices_through_save_and_reload() {
         "global_speed_limit_bytes_per_second": null,
         "archive_assets": { "cover": false },
         "parse_rules": { "interval_seconds": 2 },
-        "media_preferences": { "video": [], "fallback": "error" },
+        "media_preferences": { "video": [] },
         "future_unknown_option": true
     });
     let settings: AppSettings = serde_json::from_value(saved.clone()).unwrap();

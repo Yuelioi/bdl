@@ -1,20 +1,18 @@
 <script setup lang="ts">
+import { ref } from 'vue';
 import CollectionTree from '../../../shared/ui/CollectionTree.vue';
 import { hasCollectionSections } from '../../../shared/features/parse/collectionTree';
 import UiButton from '../../../shared/ui/Button.vue';
+import UiIconButton from '../../../shared/ui/IconButton.vue';
+import UiCheckbox from '../../../shared/ui/Checkbox.vue';
 import UiEmptyState from '../../../shared/ui/EmptyState.vue';
 import UiInlineNotice from '../../../shared/ui/InlineNotice.vue';
-
+import ParseSourceSummary from '../../../shared/features/parse/ParseSourceSummary.vue';
+import ParseResultFilters from '../../../shared/features/parse/ParseResultFilters.vue';
 import ParseResultListMobile from './ParseResultListMobile.vue';
-import { computed, ref } from 'vue';
-import MobileListActions from '../MobileListActions.vue';
-import MobileListSearch from '../MobileListSearch.vue';
-import UiCheckbox from '../../../shared/ui/Checkbox.vue';
-import { useMobileListSelection } from '../useMobileListSelection';
-
 import MobileSourceMenu from '../MobileSourceMenu.vue';
 import { useParseResultWorkspace } from '../../../shared/features/parse/useParseResultWorkspace';
-const { embedded = false } = defineProps<{ embedded?: boolean }>();
+const { embedded = false, inlineDownload = false } = defineProps<{ embedded?: boolean; inlineDownload?: boolean }>();
 const emit = defineEmits<{ download: [] }>();
 const {
   parse,
@@ -24,17 +22,19 @@ const {
   selectedIds,
   selectedCount,
   tableRows,
+  query,
+  sort,
+  selectRange,
   sourceRequestLoading,
   pacedParsing,
-
   pacedStopping,
   activeLoading,
-  activeError, activeErrorDetail,
+  activeError,
+  activeErrorDetail,
   hasMore,
   allRowsSelected,
   canCreateTasks,
   toggleAllResults,
-  clearSelection,
   loadMore,
   parseAll,
   stopParsing,
@@ -42,47 +42,50 @@ const {
   returnToSource,
   toggleNode,
 } = useParseResultWorkspace(() => emit('download'));
-const query = ref('');
-const searchOpen = ref(false);
 const toolsOpen = ref(false);
-const { managing, toggleManaging, select } = useMobileListSelection(clearSelection);
-const visibleRows = computed(() => {
-  const term = query.value.trim().toLocaleLowerCase();
-  return term
-    ? tableRows.value.filter((row) => `${row.title} ${row.meta ?? ''}`.toLocaleLowerCase().includes(term))
-    : tableRows.value;
-});
 </script>
+
 <template>
   <section v-if="activeSource" class="mobile-result-workspace" :class="{ embedded }">
-    <header class="mobile-detail-heading">
-      <button
-        class="mobile-icon-button"
-        type="button"
-        aria-label="返回解析首页"
+    <header class="result-source-heading">
+      <ParseSourceSummary :source="activeSource" />
+      <UiIconButton
+        icon="x"
+        label="返回解析首页"
+        variant="ghost"
+        size="compact"
         :disabled="activeLoading"
         @click="returnToSource"
-      >
-        <UIcon name="i-tabler-arrow-left" />
-      </button>
-      <div class="mobile-detail-copy">
-        <h2 :title="activeSource.source.title">{{ activeSource.source.title }}</h2>
-        <p>
-          已加载 {{ activeSource.source.loaded_count
-          }}<template v-if="activeSource.source.total_count"> / {{ activeSource.source.total_count }}</template> 项
-        </p>
-      </div>
-      <MobileListActions
-        v-model:search-open="searchOpen"
-        search-label="搜索视频"
-        options-label="内容操作"
-        manage-label="管理视频"
-        :managing="managing"
-        @options="toolsOpen = true"
-        @manage="toggleManaging"
       />
     </header>
-    <MobileListSearch v-model="query" v-model:open="searchOpen" label="筛选视频" placeholder="筛选标题或作者" />
+    <ParseResultFilters
+      v-model:query="query"
+      v-model:sort="sort"
+      :loaded="tableRows.length"
+      :grouped="hasCollectionSections(activeSource)"
+      :disabled="activeLoading"
+      :apply-range="selectRange"
+    />
+    <div class="result-selection-toolbar">
+      <UiCheckbox
+        :model-value="allRowsSelected ? true : selectedCount > 0 ? 'indeterminate' : false"
+        label="全选已加载"
+        :disabled="activeLoading"
+        @update:model-value="toggleAllResults"
+      />
+      <span>已选 {{ selectedCount }} 项</span>
+      <UButton
+        class="result-content-actions"
+        variant="link"
+        color="neutral"
+        size="xs"
+        trailing-icon="i-tabler-chevron-down"
+        :disabled="activeLoading"
+        aria-label="内容操作"
+        @click="toolsOpen = true"
+        >内容操作</UButton
+      >
+    </div>
     <MobileSourceMenu
       v-model:open="toolsOpen"
       v-model:batch-size="loadBatchSize"
@@ -104,15 +107,18 @@ const visibleRows = computed(() => {
       @toggle="parse.togglePartIds(activeSource.source.id, $event)"
     />
     <ParseResultListMobile
-      v-else-if="visibleRows.length"
-      :rows="visibleRows"
+      v-else-if="tableRows.length"
+      managing
+      :rows="tableRows"
       :source="activeSource"
-      :managing="managing"
       :selected-ids="selectedIds"
       :disabled="activeLoading"
-      @toggle="(id) => select(() => toggleNode(id))"
+      @toggle="toggleNode"
     >
-      <button
+      <UButton
+        variant="ghost"
+        color="neutral"
+        :ui="{ base: 'p-0', label: 'contents' }"
         v-if="hasMore || pacedParsing"
         type="button"
         class="mobile-load-more"
@@ -120,34 +126,37 @@ const visibleRows = computed(() => {
         @click="loadMore"
       >
         {{ pacedParsing ? '正在加载更多内容…' : sourceRequestLoading ? '加载中…' : '继续加载内容' }}
-      </button>
+      </UButton>
     </ParseResultListMobile>
     <UiEmptyState
       v-else
       :title="query ? '没有匹配的视频' : '没有可选择内容'"
-      :description="query ? '修改关键词，或关闭搜索以清除筛选。' : '当前来源没有可下载的视频或分集。'"
+      :description="query ? '修改关键词或清除搜索。' : '当前来源没有可下载的视频或分集。'"
       icon="i-tabler-folder-open"
       compact
       embedded
     />
-    <UiButton v-if="hasCollectionSections(activeSource) && hasMore" variant="secondary" :disabled="activeLoading" @click="loadMore">继续加载内容</UiButton>
-    <UiInlineNotice v-if="activeError" tone="danger" :detail="activeErrorDetail ?? undefined">{{ activeError }}</UiInlineNotice>
-    <footer class="mobile-download-footer mobile-download-bar">
-      <UiCheckbox
-        v-if="managing"
-        :model-value="allRowsSelected ? true : selectedCount > 0 ? 'indeterminate' : false"
-        label="全选已加载"
-        :disabled="activeLoading"
-        @update:model-value="toggleAllResults"
-      />
+    <UiButton
+      v-if="hasCollectionSections(activeSource) && hasMore"
+      variant="secondary"
+      :disabled="activeLoading"
+      @click="loadMore"
+      >继续加载内容</UiButton
+    >
+    <UiInlineNotice v-if="activeError" tone="danger" :detail="activeErrorDetail ?? undefined">{{
+      activeError
+    }}</UiInlineNotice>
+    <footer v-if="!inlineDownload" class="mobile-download-footer mobile-download-bar">
       <span
         >已选 <strong>{{ selectedCount }}</strong> 项</span
-      ><UiButton size="compact" :disabled="!canCreateTasks" @click="emit('download')"
+      >
+      <UiButton size="compact" :disabled="!canCreateTasks" @click="emit('download')"
         >下载所选 ({{ selectedCount }})</UiButton
       >
     </footer>
   </section>
 </template>
+
 <style scoped>
 .mobile-result-workspace {
   min-height: 0;
@@ -155,6 +164,32 @@ const visibleRows = computed(() => {
   flex: 1;
   flex-direction: column;
   gap: 0.375rem;
-  overflow: visible;
+  overflow: hidden;
+}
+
+.result-source-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.result-source-heading > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.result-selection-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+  min-height: 1.875rem;
+  color: var(--color-muted);
+  font-size: var(--font-12);
+}
+
+.result-content-actions {
+  margin-left: auto;
 }
 </style>

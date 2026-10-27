@@ -4,9 +4,9 @@ import type { AppTab } from '../stores/ui';
 
 export const navItems: Array<{ value: AppTab; label: string; description: string; icon: string; shortcut: string }> = [
   { value: 'parse', label: '解析', description: '添加与选择', icon: 'i-tabler-link', shortcut: '1' },
-  { value: 'library', label: '内容库', description: '收藏与订阅', icon: 'i-tabler-books', shortcut: '2' },
+  { value: 'library', label: '内容库', description: '收藏与订阅', icon: 'i-tabler-folder', shortcut: '2' },
   { value: 'transfer', label: '传输', description: '队列与恢复', icon: 'i-tabler-transfer', shortcut: '3' },
-  { value: 'settings', label: '设置', description: '偏好与维护', icon: 'i-tabler-adjustments', shortcut: '4' },
+  { value: 'settings', label: '设置', description: '偏好与维护', icon: 'i-tabler-settings', shortcut: '4' },
   { value: 'about', label: '关于', description: '版本与链接', icon: 'i-tabler-info-circle', shortcut: '5' },
 ];
 

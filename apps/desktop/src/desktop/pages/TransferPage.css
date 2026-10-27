@@ -9,6 +9,12 @@
 
 .transfer-main {
   overflow: hidden;
+  gap: 1rem;
+}
+.transfer-page-title {
+  margin: 0;
+  font-size: var(--font-18);
+  font-weight: 600;
 }
 
 .transfer-list-tools {
@@ -30,35 +36,13 @@
 }
 
 .transfer-sort {
-  width: 160px;
+  width: 128px;
   flex-shrink: 0;
 }
 
 .transfer-search {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 36px;
-  padding-inline: 12px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-6);
-  color: var(--color-muted);
-  background: var(--color-inset);
-}
-
-.transfer-search input {
+  width: 100%;
   min-width: 0;
-  flex: 1;
-  border: 0;
-  outline: 0;
-  background: transparent;
-  color: var(--color-text);
-  font-size: var(--font-13);
-}
-
-.transfer-search:focus-within {
-  outline: 2px solid var(--color-focus-outline);
-  outline-offset: -2px;
 }
 
 .transfer-footer {

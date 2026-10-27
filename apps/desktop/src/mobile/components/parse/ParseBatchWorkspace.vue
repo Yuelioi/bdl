@@ -4,7 +4,7 @@ import UiCheckbox from '../../../shared/ui/Checkbox.vue';
 import UiTextField from '../../../shared/ui/TextField.vue';
 
 import { useParseBatchWorkspace } from '../../../shared/features/parse/useParseBatchWorkspace';
-const { embedded = false } = defineProps<{ embedded?: boolean }>();
+const { embedded = false, inlineDownload = false } = defineProps<{ embedded?: boolean; inlineDownload?: boolean }>();
 const emit = defineEmits<{ download: [] }>();
 const {
   parse,
@@ -22,7 +22,10 @@ const {
 <template>
   <section class="mobile-batch" :class="{ embedded }">
     <header class="mobile-detail-heading">
-      <button
+      <UButton
+        variant="ghost"
+        color="neutral"
+        :ui="{ base: 'p-0', label: 'contents' }"
         class="mobile-icon-button"
         type="button"
         aria-label="返回解析首页"
@@ -30,7 +33,7 @@ const {
         @click="returnToSource"
       >
         <UIcon name="i-tabler-arrow-left" />
-      </button>
+      </UButton>
       <div class="mobile-detail-copy">
         <h2>批量视频</h2>
         <p>{{ parse.batchEntries.length }} 个链接</p>
@@ -59,10 +62,21 @@ const {
           compact
           :disabled="loading"
           @update:model-value="parse.toggleBatchEntry(entry.id)"
-        /><button class="batch-copy" type="button" :disabled="loading" @click="parse.toggleBatchEntry(entry.id)">
+        /><UButton
+          variant="ghost"
+          color="neutral"
+          :ui="{ base: 'p-0', label: 'contents' }"
+          class="batch-copy"
+          type="button"
+          :disabled="loading"
+          @click="parse.toggleBatchEntry(entry.id)"
+        >
           <strong>{{ entry.title }}</strong
-          ><span>{{ entry.input }}</span></button
-        ><button
+          ><span>{{ entry.input }}</span></UButton
+        ><UButton
+          variant="ghost"
+          color="neutral"
+          :ui="{ base: 'p-0', label: 'contents' }"
           class="mobile-icon-button"
           type="button"
           aria-label="移除这个链接"
@@ -70,11 +84,11 @@ const {
           @click="parse.removeBatchEntry(entry.id)"
         >
           <UIcon name="i-tabler-x" />
-        </button>
+        </UButton>
       </div>
       <p v-if="!entries.length">没有匹配的视频</p>
     </div>
-    <footer class="mobile-download-footer">
+    <footer v-if="!inlineDownload" class="mobile-download-footer">
       <span
         >已选 <strong>{{ selectedCount }}</strong> 项</span
       ><UiButton :disabled="!selectedCount || loading" @click="emit('download')"
@@ -102,14 +116,14 @@ const {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  min-height: 5.5rem;
-  padding: 0.75rem 0;
+  min-height: 3.5rem;
+  padding: 0.375rem 0;
   border-bottom: 0.0625rem solid var(--color-border);
 }
 
 .batch-copy {
   display: grid;
-  gap: 0.5rem;
+  gap: 0.125rem;
   flex: 1;
   min-width: 0;
   border: 0;
@@ -124,7 +138,7 @@ const {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   font-size: var(--mobile-font-item-title);
-  font-weight: var(--mobile-weight-item);
+  font-weight: 500;
   line-height: 1.5;
 }
 

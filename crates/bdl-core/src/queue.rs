@@ -317,6 +317,8 @@ pub struct DownloadTaskMediaSelection {
     pub video_quality: String,
     pub audio_quality: String,
     pub video_codec: String,
+    #[serde(default)]
+    pub audio_codec: Option<String>,
     pub container: String,
     #[serde(default)]
     pub processing: Option<TaskProcessingOptions>,
@@ -335,6 +337,7 @@ impl Default for DownloadTaskMediaSelection {
             video_quality: "unknown".to_owned(),
             audio_quality: "unknown".to_owned(),
             video_codec: "unknown".to_owned(),
+            audio_codec: None,
             container: "unknown".to_owned(),
         }
     }

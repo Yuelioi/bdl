@@ -23,9 +23,13 @@ const { pageCount, targetPage, validTarget, jump } = usePagination(props, (page)
       @update:page="emit('update:page', $event)"
     />
     <form class="page-jump" @submit.prevent="jump">
-      <input
+      <UInput
         v-model="targetPage"
-        class="ui-native-control page-jump-input"
+        class="page-jump-input"
+        color="neutral"
+        variant="outline"
+        size="xs"
+        :ui="{ base: 'h-7 min-h-7 rounded-e-none px-1.5 py-1 text-center text-(length:--font-12)' }"
         type="text"
         inputmode="numeric"
         :aria-label="`${label}：跳转页码`"
@@ -57,13 +61,6 @@ const { pageCount, targetPage, validTarget, jump } = usePagination(props, (page)
 
 .page-jump-input {
   width: 2.75rem;
-  height: 1.75rem;
-  min-height: 1.75rem;
-  border-start-end-radius: 0;
-  border-end-end-radius: 0;
-  background: var(--ui-bg);
-  padding: var(--space-4) var(--space-6);
-  text-align: center;
 }
 
 .page-jump :deep(.ui-button) {

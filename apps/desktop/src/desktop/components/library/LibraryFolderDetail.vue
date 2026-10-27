@@ -3,48 +3,87 @@ import CollectionTree from '../../../shared/ui/CollectionTree.vue';
 import { hasCollectionSections } from '../../../shared/features/parse/collectionTree';
 import { computed } from 'vue';
 import SourceMediaList from '../parse/SourceMediaList.vue';
-import UiButton from '../../../shared/ui/Button.vue'
-import UiEmptyState from '../../../shared/ui/EmptyState.vue'
-import UiInlineNotice from '../../../shared/ui/InlineNotice.vue'
-import UiPagination from '../../../shared/ui/Pagination.vue'
-import SelectionActionBar from '../../../shared/ui/SelectionActionBar.vue'
-import ExternalLinkButton from '../../../shared/ui/ExternalLinkButton.vue'
-import SourceParseControls from '../parse/SourceParseControls.vue'
-import SourceLoadStatus from '../parse/SourceLoadStatus.vue'
-import { useLibraryFolderDetail } from "../../../shared/features/library/useLibraryFolderDetail";
-import type { LibraryContentSource } from "../../../shared/api/dto";
-const props = defineProps<{folder: LibraryContentSource; embedded?: boolean; loadingInitial?: boolean}>();
-const emit = defineEmits<{back: []; download: []}>();
-const { parse, pageSize, currentPage, loadBatchSize, source, sourceId, items, totalCount, totalPages, pageItems, selectedCount, sourceRequestLoading, pacedParsing, pacedWaiting, pacedStopping, loading, activeError, activeErrorDetail, hasMore, itemOwnerName, toggleItem, toggleCurrentPageSelection, clearSelection, downloadSelected, parseMore, parseAll, stopParsing, downloadAll, goToPage } = useLibraryFolderDetail(props, () => emit("download"));
-const rows = computed(() => pageItems.value.map((item) => ({ id: item.id, title: item.title, meta: itemOwnerName(item), partIds: item.parts.map((part) => part.id) })));
+import UiButton from '../../../shared/ui/Button.vue';
+import UiEmptyState from '../../../shared/ui/EmptyState.vue';
+import UiInlineNotice from '../../../shared/ui/InlineNotice.vue';
+import UiPagination from '../../../shared/ui/Pagination.vue';
+import SelectionActionBar from '../../../shared/ui/SelectionActionBar.vue';
+import LibrarySourceSummary from '../../../shared/features/library/LibrarySourceSummary.vue';
+import SourceParseControls from '../parse/SourceParseControls.vue';
+import SourceLoadStatus from '../parse/SourceLoadStatus.vue';
+import { useLibraryFolderDetail } from '../../../shared/features/library/useLibraryFolderDetail';
+import type { LibraryContentSource } from '../../../shared/api/dto';
+const props = defineProps<{
+  folder: LibraryContentSource;
+  embedded?: boolean;
+  loadingInitial?: boolean;
+  categoryLabel?: string;
+}>();
+const emit = defineEmits<{ back: []; download: [] }>();
+const {
+  parse,
+  pageSize,
+  currentPage,
+  loadBatchSize,
+  source,
+  sourceId,
+  items,
+  totalCount,
+  totalPages,
+  pageItems,
+  selectedCount,
+  sourceRequestLoading,
+  pacedParsing,
+  pacedWaiting,
+  pacedStopping,
+  loading,
+  activeError,
+  activeErrorDetail,
+  hasMore,
+  itemOwnerName,
+  toggleItem,
+  toggleCurrentPageSelection,
+  clearSelection,
+  downloadSelected,
+  parseMore,
+  parseAll,
+  stopParsing,
+  downloadAll,
+  goToPage,
+} = useLibraryFolderDetail(props, () => emit('download'));
+const rows = computed(() =>
+  pageItems.value.map((item) => ({
+    id: item.id,
+    title: item.title,
+    meta: itemOwnerName(item),
+    partIds: item.parts.map((part) => part.id),
+  })),
+);
 </script>
 <template>
   <section class="flex min-h-0 flex-1 flex-col gap-4" :aria-busy="loading">
+    <div v-if="!embedded" class="folder-breadcrumb">
+      <UButton
+        variant="ghost"
+        color="neutral"
+        icon="i-tabler-arrow-left"
+        aria-label="返回内容集合"
+        size="xs"
+        @click="emit('back')"
+      /><span
+        >内容库 / <template v-if="categoryLabel">{{ categoryLabel }} / </template
+        ><strong>{{ folder.title }}</strong></span
+      >
+    </div>
     <header
       class="library-folder-header flex min-w-0 items-center justify-between gap-4 border-b border-(--color-border) pb-4"
     >
-      <div class="library-folder-title flex min-w-0 flex-1 items-center gap-3">
-        <button
-          type="button"
-          class="grid size-8 shrink-0 place-items-center rounded-md text-(--color-muted) hover:bg-(--color-panel) hover:text-(--color-text)"
-          v-if="!embedded" aria-label="返回内容集合"
-          @click="emit('back')"
-        >
-          <UIcon name="i-tabler-arrow-left" class="size-4" aria-hidden="true" />
-        </button>
-        <h2 class="truncate m-0 min-w-0 text-sm text-(--color-text)" :title="folder.title">
-          <ExternalLinkButton
-            class="max-w-full"
-            :href="folder.source_url"
-            :label="`在 Bilibili 打开 ${folder.title}`"
-            :show-icon="false"
-          >
-            <span class="truncate text-(--color-text)">{{ folder.title }}</span>
-          </ExternalLinkButton>
-        </h2>
-      </div>
+      <LibrarySourceSummary class="min-w-0 flex-1" :folder="folder" :total="totalCount" :loading="loadingInitial" />
       <div v-if="!loadingInitial" class="source-function-toolbar">
-        <SourceLoadStatus :loaded="source?.source.kind === 'video' ? items.length : source?.source.loaded_count ?? items.length" :total="totalCount" />
+        <SourceLoadStatus
+          :loaded="source?.source.kind === 'video' ? items.length : (source?.source.loaded_count ?? items.length)"
+          :total="totalCount"
+        />
         <SourceParseControls
           :source-id="sourceId ?? undefined"
           v-if="hasMore || pacedParsing"
@@ -68,17 +107,20 @@ const rows = computed(() => pageItems.value.map((item) => ({ id: item.id, title:
         >
           下载全部
         </UiButton>
-        <UiButton size="compact" :disabled="loading || selectedCount === 0" @click="downloadSelected">
-          下载所选 ({{ selectedCount }})
-        </UiButton>
       </div>
     </header>
 
-    <UiInlineNotice v-if="parse.notice" :tone="parse.notice.tone" :detail="parse.notice.detail">{{ parse.notice.message }}</UiInlineNotice>
-    <UiInlineNotice v-if="activeError" tone="danger" :detail="activeErrorDetail ?? undefined">{{ activeError }}</UiInlineNotice>
+    <UiInlineNotice v-if="parse.notice" :tone="parse.notice.tone" :detail="parse.notice.detail">{{
+      parse.notice.message
+    }}</UiInlineNotice>
+    <UiInlineNotice v-if="activeError" tone="danger" :detail="activeErrorDetail ?? undefined">{{
+      activeError
+    }}</UiInlineNotice>
 
     <div v-if="loadingInitial" class="library-detail-skeleton" role="status" aria-label="正在加载合集内容">
-      <div v-for="index in 6" :key="index" class="library-detail-skeleton-row" aria-hidden="true"><span></span><i></i></div>
+      <div v-for="index in 6" :key="index" class="library-detail-skeleton-row" aria-hidden="true">
+        <span></span><i></i>
+      </div>
     </div>
     <CollectionTree
       v-else-if="source && hasCollectionSections(source)"
@@ -98,7 +140,12 @@ const rows = computed(() => pageItems.value.map((item) => ({ id: item.id, title:
       :fallback-owner="folder.owner_name"
       :selected-ids="parse.activeSelection"
       :disabled="loading"
-      @toggle="(id) => { const item = pageItems.find((item) => item.id === id); if (item) toggleItem(item); }"
+      @toggle="
+        (id) => {
+          const item = pageItems.find((item) => item.id === id);
+          if (item) toggleItem(item);
+        }
+      "
       @toggle-all="toggleCurrentPageSelection"
     />
 
@@ -127,21 +174,31 @@ const rows = computed(() => pageItems.value.map((item) => ({ id: item.id, title:
         </div>
       </template>
       <template #selection>
-        <UiButton
-          v-if="selectedCount > 0"
-          size="compact"
-          variant="ghost"
-          :disabled="loading"
-          @click="clearSelection"
-        >
+        <UiButton v-if="selectedCount > 0" size="compact" variant="ghost" :disabled="loading" @click="clearSelection">
           取消选择
         </UiButton>
+        <UiButton :disabled="loading || selectedCount === 0" @click="downloadSelected"
+          >下载所选 ({{ selectedCount }})</UiButton
+        >
       </template>
     </SelectionActionBar>
   </section>
 </template>
 
 <style scoped>
+.folder-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--color-muted);
+  font-size: var(--font-12);
+}
+
+.folder-breadcrumb strong {
+  color: var(--color-text);
+  font-weight: 500;
+}
+
 .library-pagination-status {
   min-height: 28px;
   display: inline-flex;
@@ -180,14 +237,14 @@ const rows = computed(() => pageItems.value.map((item) => ({ id: item.id, title:
 }
 
 .library-detail-skeleton-row {
-  height: 96px;
+  height: 72px;
   flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 16px;
   padding: 12px 48px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-8);
+  border-bottom: 1px solid var(--color-border);
+  border-radius: 0;
 }
 
 .library-detail-skeleton-row span {
@@ -205,8 +262,16 @@ const rows = computed(() => pageItems.value.map((item) => ({ id: item.id, title:
 }
 
 @media (width <= 700px) {
-  .library-folder-header { flex-wrap: wrap; }
-  .library-folder-title { flex-basis: 100%; }
-  .source-function-toolbar { justify-content: flex-start; }
+  .library-folder-header {
+    flex-wrap: wrap;
+  }
+
+  .library-folder-title {
+    flex-basis: 100%;
+  }
+
+  .source-function-toolbar {
+    justify-content: flex-start;
+  }
 }
 </style>

@@ -16,7 +16,10 @@ const emit = defineEmits<{ options: []; manage: [] }>();
 </script>
 <template>
   <div class="mobile-list-actions">
-    <button
+    <UButton
+      variant="ghost"
+      color="neutral"
+      :ui="{ label: 'contents' }"
       v-if="showSearch !== false"
       type="button"
       class="mobile-icon-button"
@@ -25,8 +28,11 @@ const emit = defineEmits<{ options: []; manage: [] }>();
       @click="searchOpen = !searchOpen"
     >
       <UIcon name="i-tabler-search" />
-    </button>
-    <button
+    </UButton>
+    <UButton
+      variant="ghost"
+      color="neutral"
+      :ui="{ label: 'contents' }"
       v-if="optionsLabel"
       type="button"
       class="mobile-icon-button"
@@ -35,8 +41,11 @@ const emit = defineEmits<{ options: []; manage: [] }>();
       @click="emit('options')"
     >
       <UIcon :name="optionsIcon || 'i-tabler-adjustments-horizontal'" />
-    </button>
-    <button
+    </UButton>
+    <UButton
+      variant="ghost"
+      color="neutral"
+      :ui="{ label: 'contents' }"
       v-if="manageLabel"
       type="button"
       class="mobile-icon-button"
@@ -46,7 +55,7 @@ const emit = defineEmits<{ options: []; manage: [] }>();
       @click="emit('manage')"
     >
       <UIcon :name="managing ? 'i-tabler-check' : 'i-tabler-list-check'" />
-    </button>
+    </UButton>
   </div>
 </template>
 <style scoped>

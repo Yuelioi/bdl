@@ -605,7 +605,6 @@ describe('parse store', () => {
         media_preferences: {
           video: [],
           audio: [],
-          fallback: settings.saved.media_preferences.fallback,
         },
       }),
     )
@@ -639,7 +638,6 @@ describe('parse store', () => {
         media_preferences: {
           video: [],
           audio: [],
-          fallback: settings.saved.media_preferences.fallback,
         },
       }),
     )

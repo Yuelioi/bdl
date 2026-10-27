@@ -1,3 +1,9 @@
+.mobile-transfer-title {
+  margin: 0;
+  font-size: var(--font-16);
+  font-weight: 600;
+  padding: 0.25rem 0;
+}
 .transfer-main {
   display: flex;
   flex-direction: column;

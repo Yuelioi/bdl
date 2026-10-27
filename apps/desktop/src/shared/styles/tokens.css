@@ -5,20 +5,20 @@
   color-scheme: light;
 
   --color-background: oklch(0.97 0.003 260);
-  --color-surface: oklch(0.995 0.002 260);
+  --color-surface: oklch(1 0 0);
   --color-surface-raised: oklch(0.999 0.001 260);
   --color-inset: oklch(0.985 0.003 260);
   --color-control: oklch(0.96 0.004 260);
   --color-panel: oklch(0.955 0.004 260);
   --color-panel-strong: oklch(0.925 0.005 260);
-  --color-border: oklch(0.86 0.006 260);
+  --color-border: oklch(0.92 0.003 260);
   --color-border-strong: oklch(0.72 0.008 260);
   --color-text: oklch(0.25 0.008 260);
   --color-text-strong: oklch(0.17 0.008 260);
   --color-muted: oklch(0.5 0.008 260);
   --color-text-muted: var(--color-muted);
   --color-dimmed: oklch(0.63 0.006 260);
-  --color-accent: oklch(0.68 0.17 8);
+  --color-accent: oklch(0.7 0.18 8);
   --color-accent-strong: oklch(0.54 0.19 8);
   --color-accent-soft: oklch(0.92 0.055 8);
   --color-accent-faint: oklch(0.965 0.022 8);
@@ -35,7 +35,7 @@
   --color-selected-surface: oklch(0.97 0.018 8);
   --color-hover-surface: oklch(0.98 0.003 260);
   --color-progress-track: oklch(0.91 0.004 260);
-  --color-nav: oklch(0.995 0.002 260);
+  --color-nav: oklch(0.98 0.002 260);
   --color-nav-raised: oklch(0.955 0.004 260);
   --color-nav-text: oklch(0.25 0.008 260);
   --color-nav-muted: oklch(0.52 0.007 260);
@@ -86,9 +86,9 @@
 :root[data-theme='dark'] {
   color-scheme: dark;
 
-  --color-background: oklch(0.14 0.004 260);
+  --color-background: oklch(0.205 0.004 260);
   --color-panel: oklch(0.17 0.005 260);
-  --color-surface: oklch(0.205 0.006 260);
+  --color-surface: oklch(0.225 0.005 260);
   --color-inset: oklch(0.155 0.004 260);
   --color-control: oklch(0.18 0.005 260);
   --color-surface-raised: oklch(0.245 0.007 260);
@@ -104,7 +104,7 @@
   --color-accent-soft: oklch(0.29 0.06 8);
   --color-accent-faint: oklch(0.225 0.025 8);
   --color-focus-outline: oklch(0.78 0.12 8);
-  --color-on-accent: oklch(0.16 0.008 260);
+  --color-on-accent: oklch(0.99 0 0);
   --color-danger: oklch(0.7 0.16 27);
   --color-danger-soft: oklch(0.255 0.048 27);
   --color-warning: oklch(0.76 0.125 72);
@@ -116,7 +116,7 @@
   --color-selected-surface: oklch(0.25 0.04 8);
   --color-hover-surface: oklch(0.235 0.008 260);
   --color-progress-track: oklch(0.29 0.008 260);
-  --color-nav: oklch(0.14 0.004 260);
+  --color-nav: oklch(0.215 0.004 260);
   --color-nav-raised: oklch(0.18 0.006 260);
   --color-nav-text: oklch(0.9 0.006 260);
   --color-nav-muted: oklch(0.64 0.008 260);
@@ -130,13 +130,13 @@
 @supports not (color: oklch(0.5 0.1 0)) {
   :root {
     --color-background: #f4f5f7;
-    --color-surface: #fdfdff;
+    --color-surface: #ffffff;
     --color-surface-raised: #feffff;
     --color-inset: #f9fafc;
     --color-control: #f0f2f5;
     --color-panel: #eef0f3;
     --color-panel-strong: #e4e6ea;
-    --color-border: #cfd1d5;
+    --color-border: #e5e6e9;
     --color-border-strong: #a2a5aa;
     --color-text: #1f2226;
     --color-text-strong: #0d1013;
@@ -157,7 +157,7 @@
     --color-selected-surface: #fff0f3;
     --color-hover-surface: #f7f8fa;
     --color-progress-track: #e0e1e4;
-    --color-nav: #fdfdff;
+    --color-nav: #f7f8fa;
     --color-nav-raised: #eef0f3;
     --color-nav-text: #1f2226;
     --color-nav-muted: #67696d;
@@ -166,9 +166,9 @@
   }
 
   :root[data-theme='dark'] {
-    --color-background: #08090b;
+    --color-background: #17181b;
     --color-panel: #0e0f12;
-    --color-surface: #16171a;
+    --color-surface: #202125;
     --color-inset: #0b0c0e;
     --color-control: #121316;
     --color-surface-raised: #1e2124;
@@ -184,7 +184,7 @@
     --color-accent-soft: #441d26;
     --color-accent-faint: #261719;
     --color-focus-outline: #f996a9;
-    --color-on-accent: #0b0d11;
+    --color-on-accent: #ffffff;
     --color-danger: #f27166;
     --color-danger-soft: #371916;
     --color-warning: #e2a34f;
@@ -194,7 +194,7 @@
     --color-selected-surface: #32191e;
     --color-hover-surface: #1c1e22;
     --color-progress-track: #292b2f;
-    --color-nav: #08090b;
+    --color-nav: #1b1c20;
     --color-nav-raised: #101214;
     --color-nav-text: #dcdee2;
     --color-nav-muted: #898c91;

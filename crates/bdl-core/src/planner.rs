@@ -568,6 +568,7 @@ fn plan_part(
                 .map(stream_quality_label)
                 .unwrap_or_else(|| "none".to_owned()),
             video_codec: video.map(stream_codec_label).unwrap_or("none").to_owned(),
+            audio_codec: audio.map(|stream| stream_codec_label(stream).to_owned()),
             container: effective_options.output_extension.clone(),
         },
         scheduled_at: None,
@@ -731,21 +732,37 @@ fn select_video_stream<'a>(
                 || crate::media_preferences::is_sdr(stream.quality)
         })
         .collect::<Vec<_>>();
-    if !options.media_preferences.video.is_empty() {
+    options.media_preferences.validate()?;
+    let codecs = &options.media_preferences.video_codecs;
+    if !options.media_preferences.video.is_empty()
+        && matches!(
+            options.video_quality,
+            StreamPreference::Best | StreamPreference::Sdr
+        )
+    {
         options.media_preferences.validate()?;
         for rule in &options.media_preferences.video {
-            if let Some(stream) = streams
+            let matching = streams
                 .iter()
                 .copied()
                 .filter(|stream| rule.matches(stream))
+                .collect();
+            if let Some(stream) = preferred_codec_streams(matching, codecs)
+                .into_iter()
                 .max_by_key(|stream| stream_selection_rank(stream))
             {
                 return Ok(stream);
             }
         }
-        return preference_fallback(streams, options, "视频", &part.title);
+        return select_stream_by_quality(
+            preferred_codec_streams(streams, codecs),
+            StreamPreference::Best,
+            MissingQualityPolicy::Lower,
+            "视频",
+            &part.title,
+        );
     }
-    let codec_matches = if options.video_codec == StreamCodec::Auto {
+    let codec_matches = if !codecs.is_empty() || options.video_codec == StreamCodec::Auto {
         Vec::new()
     } else {
         streams
@@ -761,7 +778,7 @@ fn select_video_stream<'a>(
     };
 
     select_stream_by_quality(
-        candidates,
+        preferred_codec_streams(candidates, codecs),
         options.video_quality,
         options.missing_quality_policy,
         "视频",
@@ -773,9 +790,14 @@ fn select_audio_stream<'a>(
     part: &'a NormalizedPart,
     options: &DownloadOptions,
 ) -> BdlResult<&'a MediaStream> {
-    if !options.media_preferences.audio.is_empty() {
+    options.media_preferences.validate()?;
+    let codecs = &options.media_preferences.audio_codecs;
+    let streams = streams_by_kind(part, MediaKind::Audio);
+    let streams = preferred_codec_streams(streams, codecs);
+    if !options.media_preferences.audio.is_empty()
+        && options.audio_quality == StreamPreference::Best
+    {
         options.media_preferences.validate()?;
-        let streams = streams_by_kind(part, MediaKind::Audio);
         for quality in &options.media_preferences.audio {
             if let Some(stream) = streams
                 .iter()
@@ -791,10 +813,16 @@ fn select_audio_stream<'a>(
                 return Ok(stream);
             }
         }
-        return preference_fallback(streams, options, "音频", &part.title);
+        return select_stream_by_quality(
+            streams,
+            StreamPreference::Best,
+            MissingQualityPolicy::Lower,
+            "音频",
+            &part.title,
+        );
     }
     select_stream_by_quality(
-        streams_by_kind(part, MediaKind::Audio),
+        streams,
         options.audio_quality,
         options.missing_quality_policy,
         "音频",
@@ -802,33 +830,40 @@ fn select_audio_stream<'a>(
     )
 }
 
+// Resolution/fidelity remains the primary choice. For each quality, retain only
+// the first available codec from the independent encoding order.
+fn preferred_codec_streams<'a>(
+    streams: Vec<&'a MediaStream>,
+    codecs: &[StreamCodec],
+) -> Vec<&'a MediaStream> {
+    if codecs.is_empty() {
+        return streams;
+    }
+    streams
+        .iter()
+        .copied()
+        .filter(|stream| {
+            let rank = codecs
+                .iter()
+                .position(|codec| *codec == stream.codec)
+                .unwrap_or(codecs.len());
+            !streams.iter().any(|other| {
+                other.quality == stream.quality
+                    && codecs
+                        .iter()
+                        .position(|codec| *codec == other.codec)
+                        .unwrap_or(codecs.len())
+                        < rank
+            })
+        })
+        .collect()
+}
+
 fn streams_by_kind(part: &NormalizedPart, kind: MediaKind) -> Vec<&MediaStream> {
     part.streams
         .iter()
         .filter(|stream| stream.kind == kind)
         .collect()
-}
-
-fn preference_fallback<'a>(
-    streams: Vec<&'a MediaStream>,
-    options: &DownloadOptions,
-    label: &str,
-    title: &str,
-) -> BdlResult<&'a MediaStream> {
-    if options.media_preferences.fallback == crate::media_preferences::PreferenceFallback::Best {
-        return select_stream_by_quality(
-            streams,
-            StreamPreference::Best,
-            MissingQualityPolicy::Lower,
-            label,
-            title,
-        );
-    }
-    Err(BdlError::Planning {
-        message: format!(
-            "`{title}` 没有符合{label}偏好的可用轨道，请调整偏好顺序或允许回退到最佳可用。"
-        ),
-    })
 }
 
 fn select_stream_by_quality<'a>(
@@ -1263,11 +1298,5 @@ fn stream_quality_label(stream: &MediaStream) -> String {
 }
 
 fn stream_codec_label(stream: &MediaStream) -> &'static str {
-    match stream.codec {
-        crate::model::StreamCodec::Auto => "auto",
-        crate::model::StreamCodec::Avc => "avc",
-        crate::model::StreamCodec::Hevc => "hevc",
-        crate::model::StreamCodec::Av1 => "av1",
-        crate::model::StreamCodec::Unknown => "unknown",
-    }
+    stream.codec.as_str()
 }

@@ -2,7 +2,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::error::{BdlError, BdlResult};
-use crate::model::{MediaStream, StreamQuality};
+use crate::model::{MediaStream, StreamCodec, StreamQuality};
 use crate::planner::parse_stream_codec;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -11,24 +11,39 @@ pub struct VideoPreference {
     pub codec: String,
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum PreferenceFallback {
-    Error,
-    #[default]
-    Best,
-}
-
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct MediaPreferences {
     pub video: Vec<VideoPreference>,
     pub audio: Vec<String>,
-    pub fallback: PreferenceFallback,
+    pub video_codecs: Vec<StreamCodec>,
+    pub audio_codecs: Vec<StreamCodec>,
 }
 
 impl MediaPreferences {
     pub fn validate(&self) -> BdlResult<()> {
+        for (codecs, allowed, label) in [
+            (
+                &self.video_codecs,
+                &[StreamCodec::Avc, StreamCodec::Hevc, StreamCodec::Av1][..],
+                "视频",
+            ),
+            (
+                &self.audio_codecs,
+                &[StreamCodec::Aac, StreamCodec::Flac, StreamCodec::Eac3][..],
+                "音频",
+            ),
+        ] {
+            if codecs.len() > allowed.len()
+                || codecs.iter().enumerate().any(|(index, codec)| {
+                    !allowed.contains(codec) || codecs[..index].contains(codec)
+                })
+            {
+                return Err(BdlError::Planning {
+                    message: format!("{label}编码优先级包含无效或重复编码。"),
+                });
+            }
+        }
         if self.video.len() > 32 || self.audio.len() > 32 {
             return Err(BdlError::Planning {
                 message: "媒体偏好最多支持 32 条规则。".to_owned(),
@@ -109,6 +124,8 @@ mod tests {
             codec: "hevc".into(),
         });
         settings.media_preferences.audio = vec!["30251".into(), "30280".into()];
+        settings.media_preferences.video_codecs = vec![StreamCodec::Hevc, StreamCodec::Avc];
+        settings.media_preferences.audio_codecs = vec![StreamCodec::Flac, StreamCodec::Aac];
         settings.validate().unwrap();
         let restored: crate::settings::AppSettings =
             serde_json::from_str(&serde_json::to_string(&settings).unwrap()).unwrap();

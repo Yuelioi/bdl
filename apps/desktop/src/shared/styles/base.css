@@ -87,14 +87,14 @@ a:focus-visible,
 input:focus-visible,
 textarea:focus-visible,
 select:focus-visible {
-  outline: 0.125rem solid var(--color-focus-outline);
-  outline-offset: 0.125rem;
+  outline: none;
+  border-color: var(--color-accent);
 }
 
 .panel h2 {
   margin: 0;
   font-size: var(--font-18);
-  font-weight: 760;
+  font-weight: 600;
   line-height: 1.2;
 }
 
@@ -113,7 +113,8 @@ select:focus-visible {
   min-height: 0;
   display: grid;
   gap: var(--space-16);
-  padding: var(--space-md) var(--space-lg) var(--space-lg);
+  padding: var(--space-lg);
+  background: var(--color-surface);
   overflow: hidden;
 }
 
@@ -123,11 +124,11 @@ select:focus-visible {
   display: flex;
   flex-direction: column;
   gap: var(--space-16);
-  padding: var(--space-16);
-  border: 0.0625rem solid var(--color-border);
-  border-radius: var(--radius-8);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
   background: var(--color-surface);
-  box-shadow: var(--shadow-panel);
+  box-shadow: none;
   overflow: hidden;
 }
 

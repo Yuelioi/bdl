@@ -1,59 +1,91 @@
 <script setup lang="ts">
-import { nextTick, ref, useId } from 'vue'
+import { computed, nextTick, ref } from 'vue';
+import UiFormField from './FormField.vue';
 
-import { namingVariables } from '../stores/settings'
-import UiIconButton from './IconButton.vue'
+import { namingVariables } from '../stores/settings';
+import UiIconButton from './IconButton.vue';
 
-const model = defineModel<string>({ required: true })
-const { error, label = '命名模板', variables = namingVariables, multiline = false, disabled = false, helper } = defineProps<{
-  error?: string; label?: string; variables?: readonly { name: string; desc: string }[];
-  multiline?: boolean; disabled?: boolean; helper?: string;
-}>()
+const model = defineModel<string>({ required: true });
+const {
+  error,
+  label = '命名模板',
+  variables = namingVariables,
+  multiline = false,
+  quickVariables = true,
+  disabled = false,
+  helper,
+} = defineProps<{
+  error?: string;
+  label?: string;
+  variables?: readonly { name: string; desc: string }[];
+  multiline?: boolean;
+  quickVariables?: boolean;
+  disabled?: boolean;
+  helper?: string;
+}>();
 
-const inputRef = ref<HTMLInputElement | HTMLTextAreaElement | null>(null)
-const variableMenuOpen = ref(false)
-const fieldId = useId()
-const messageId = `${fieldId}-message`
+const singleInput = ref<{ inputRef: HTMLInputElement } | null>(null);
+const multipleInput = ref<{ textareaRef: HTMLTextAreaElement } | null>(null);
+const inputRef = computed(() => (multiline ? multipleInput.value?.textareaRef : singleInput.value?.inputRef));
+const variableMenuOpen = ref(false);
 
 const insertVariable = async (name: string) => {
-  if (disabled) return
-  const token = `{${name}}`
-  const input = inputRef.value
-  const start = input?.selectionStart ?? model.value.length
-  const end = input?.selectionEnd ?? start
-  model.value = `${model.value.slice(0, start)}${token}${model.value.slice(end)}`
+  if (disabled) return;
+  const token = `{${name}}`;
+  const input = inputRef.value;
+  const start = input?.selectionStart ?? model.value.length;
+  const end = input?.selectionEnd ?? start;
+  model.value = `${model.value.slice(0, start)}${token}${model.value.slice(end)}`;
 
-  await nextTick()
-  const cursor = start + token.length
-  inputRef.value?.focus()
-  inputRef.value?.setSelectionRange(cursor, cursor)
-}
+  await nextTick();
+  const cursor = start + token.length;
+  inputRef.value?.focus();
+  inputRef.value?.setSelectionRange(cursor, cursor);
+};
 </script>
 
 <template>
-  <div class="naming-template-field">
-    <label :for="fieldId">{{ label }}</label>
+  <UiFormField v-slot="{ fieldId, describedBy, invalid }" class="naming-template-field" :label :error :helper>
     <div class="naming-template-control">
-      <textarea
-        v-if="multiline" :id="fieldId" ref="inputRef" v-model="model" rows="4"
-        class="ui-native-control textarea-control" :disabled="disabled"
-        :aria-invalid="Boolean(error) || undefined" :aria-describedby="error || helper ? messageId : undefined" />
-      <input
+      <UTextarea
+        v-if="multiline"
+        :id="fieldId"
+        ref="multipleInput"
+        v-model="model"
+        :rows="4"
+        class="w-full"
+        color="neutral"
+        variant="outline"
+        size="sm"
+        :ui="{ base: 'min-h-28 resize-y text-(length:--font-13)' }"
+        :disabled="disabled"
+        :aria-invalid="invalid || undefined"
+        :aria-describedby="describedBy"
+      />
+      <UInput
         v-else
         :id="fieldId"
-        ref="inputRef"
+        ref="singleInput"
         v-model="model"
-        class="ui-native-control input-control"
+        class="w-full"
+        color="neutral"
+        variant="outline"
+        size="sm"
+        :ui="{ base: 'h-(--height-input) text-(length:--font-13)' }"
         type="text"
         :disabled="disabled"
-        :aria-invalid="Boolean(error) || undefined"
-        :aria-describedby="error || helper ? messageId : undefined"
+        :aria-invalid="invalid || undefined"
+        :aria-describedby="describedBy"
       />
       <UPopover
         v-model:open="variableMenuOpen"
         :content="{ align: 'end', side: 'bottom', sideOffset: 6, collisionPadding: 12 }"
       >
-        <UiIconButton icon="plus" :label="label === '命名模板' ? '插入魔法变量' : label + '：插入变量'" :disabled="disabled" />
+        <UiIconButton
+          icon="plus"
+          :label="label === '命名模板' ? '插入魔法变量' : label + '：插入变量'"
+          :disabled="disabled"
+        />
         <template #content>
           <section class="naming-variable-menu" aria-label="魔法变量">
             <header>
@@ -61,7 +93,10 @@ const insertVariable = async (name: string) => {
               <span class="naming-variable-hint">点击后插入到光标位置</span>
             </header>
             <div class="naming-variable-grid">
-              <button
+              <UButton
+                variant="ghost"
+                color="neutral"
+                :ui="{ label: 'contents' }"
                 v-for="variable in variables"
                 :key="variable.name"
                 type="button"
@@ -71,31 +106,47 @@ const insertVariable = async (name: string) => {
               >
                 <code>{{ '{' + variable.name + '}' }}</code>
                 <span class="naming-variable-description">{{ variable.desc }}</span>
-              </button>
+              </UButton>
             </div>
           </section>
         </template>
       </UPopover>
     </div>
-    <small v-if="error || helper" :id="messageId" :class="{ error: Boolean(error) }" aria-live="polite">{{ error || helper }}</small>
-  </div>
+    <div
+      v-if="
+        quickVariables && variables.some((variable) => ['title', 'part_index', 'part_title'].includes(variable.name))
+      "
+      class="naming-quick-variables"
+    >
+      <UButton
+        v-for="variable in variables.filter((variable) =>
+          ['title', 'part_index', 'part_title'].includes(variable.name),
+        )"
+        :key="variable.name"
+        variant="soft"
+        color="neutral"
+        size="xs"
+        :disabled="disabled"
+        :aria-label="`插入 ${variable.desc}`"
+        @click="insertVariable(variable.name)"
+        >{{ variable.name }}</UButton
+      >
+    </div>
+  </UiFormField>
 </template>
 
 <style scoped>
-.naming-template-field {
-  min-width: 0;
-  display: grid;
-  gap: var(--space-6);
+.naming-quick-variables {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  margin-top: 0.5rem;
 }
 
-.naming-template-field > label {
-  min-height: 1.125rem;
-  display: flex;
-  align-items: center;
-  color: var(--color-muted);
-  font-size: var(--font-13);
-  font-weight: 600;
-  line-height: 1.125rem;
+.naming-quick-variables button {
+  font-size: var(--font-12);
+  font-weight: 400;
+  padding: 0.25rem 0.5rem;
 }
 
 .naming-template-control {
@@ -104,17 +155,6 @@ const insertVariable = async (name: string) => {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--space-6);
-}
-
-.naming-template-field > small {
-  color: var(--color-text-muted);
-  font-size: var(--font-11);
-  font-weight: 500;
-  line-height: 1.45;
-}
-
-.naming-template-field > small.error {
-  color: var(--color-danger);
 }
 
 .naming-variable-menu {
@@ -156,23 +196,9 @@ const insertVariable = async (name: string) => {
   display: grid;
   gap: 0.125rem;
   padding: var(--space-8) var(--space-10);
-  border: 0;
-  border-radius: var(--radius-6);
-  background: transparent;
   color: var(--color-text);
   text-align: left;
   cursor: pointer;
-  transition: background var(--duration-fast) var(--ease-out);
-}
-
-.naming-variable-option:hover,
-.naming-variable-option:focus-visible {
-  background: var(--color-hover-surface);
-  outline: 0;
-}
-
-.naming-variable-option:focus-visible {
-  box-shadow: inset 0 0 0 0.0625rem var(--color-focus-outline);
 }
 
 .naming-variable-option code {

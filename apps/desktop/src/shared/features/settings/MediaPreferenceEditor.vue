@@ -1,133 +1,204 @@
 <script setup lang="ts">
-import type { MediaPreferences, VideoCodecPreference } from '../../api/dto'
-import UiButton from '../../ui/Button.vue'
-import UiSelect from '../../ui/Select.vue'
-import { audioQualityOptions, codecOptions, videoQualityOptions } from './settingsCatalog'
+import { computed } from 'vue';
+import type { MediaPreferences, VideoCodecPreference, AudioCodecPreference } from '../../api/dto';
+import CodecPriorityEditor from './CodecPriorityEditor.vue';
+import UiButton from '../../ui/Button.vue';
+import UiSelect from '../../ui/Select.vue';
+import { audioQualityOptions, audioCodecOptions, codecOptions, videoQualityOptions } from './settingsCatalog';
 
-const model = defineModel<MediaPreferences>({ required: true })
-const { video = true, audio = true, disabled = false } = defineProps<{ video?: boolean; audio?: boolean; disabled?: boolean }>()
-const qualityOptions = [
-  { label: '任意 SDR', value: 'sdr' },
-  ...videoQualityOptions.filter((option) => option.value !== 'best' && option.value !== 'sdr'),
-]
-const encodingOptions = codecOptions.map((option) => option.value === 'auto' ? { ...option, label: '不限编码' } : option)
-const fallbackOptions = [
-  { label: '提示无匹配，不创建任务', value: 'error' },
-  { label: '回退到最佳可用', value: 'best' },
-]
-const updateVideo = (index: number, key: 'quality' | 'codec', value: string) => {
-  const video = model.value.video.map((rule) => ({ ...rule }))
-  const rule = video[index]
-  if (!rule) return
-  if (key === 'codec') rule.codec = value as VideoCodecPreference
-  else rule.quality = value
-  model.value = { ...model.value, video }
-}
-const updateAudio = (index: number, value: string) => {
-  const audio = [...model.value.audio]
-  audio[index] = value
-  model.value = { ...model.value, audio }
-}
+const model = defineModel<MediaPreferences>({ required: true });
+const {
+  video = true,
+  audio = true,
+  videoEncoding = true,
+  audioEncoding = true,
+  disabled = false,
+} = defineProps<{
+  video?: boolean;
+  audio?: boolean;
+  videoEncoding?: boolean;
+  audioEncoding?: boolean;
+  disabled?: boolean;
+}>();
+const qualityOptions = videoQualityOptions;
+const hasCombinationCodecs = computed(() => model.value.video.some((rule) => rule.codec !== 'auto'));
+const videoCodecs = computed({
+  get: () => model.value.video_codecs ?? [],
+  set: (value: string[]) => {
+    model.value = { ...model.value, video_codecs: value as Exclude<VideoCodecPreference, 'auto'>[] };
+  },
+});
+const audioCodecs = computed({
+  get: () => model.value.audio_codecs ?? [],
+  set: (value: string[]) => {
+    model.value = { ...model.value, audio_codecs: value as AudioCodecPreference[] };
+  },
+});
+const encodingOptions = codecOptions.map((option) =>
+  option.value === 'auto' ? { ...option, label: '不限编码' } : option,
+);
+const updateVideoCodec = (index: number, value: string) => {
+  const video = model.value.video.map((rule) => ({ ...rule }));
+  const rule = video[index];
+  if (!rule) return;
+  rule.codec = value as VideoCodecPreference;
+  model.value = { ...model.value, video };
+};
 const move = (kind: 'video' | 'audio', index: number, offset: number) => {
-  const entries = [...model.value[kind]]
-  const destination = index + offset
-  if (destination < 0 || destination >= entries.length) return
-  const entry = entries.splice(index, 1)[0]
-  if (entry === undefined) return
-  entries.splice(destination, 0, entry)
-  model.value = { ...model.value, [kind]: entries }
-}
-const remove = (kind: 'video' | 'audio', index: number) => {
-  model.value = { ...model.value, [kind]: model.value[kind].filter((_, position) => position !== index) }
-}
-const addVideo = () => {
-  model.value = { ...model.value, video: [...model.value.video, { quality: qualityOptions.find((option) => option.value !== 'sdr' && !model.value.video.some((rule) => rule.quality === option.value))?.value ?? '127', codec: 'auto' }] }
-}
-const addAudio = () => {
-  model.value = { ...model.value, audio: [...model.value.audio, 'best'] }
-}
+  const entries = [...model.value[kind]];
+  const destination = index + offset;
+  if (destination < 0 || destination >= entries.length) return;
+  const entry = entries.splice(index, 1)[0];
+  if (entry === undefined) return;
+  entries.splice(destination, 0, entry);
+  model.value = { ...model.value, [kind]: entries };
+};
 </script>
 
 <template>
   <div class="preference-editor">
-    <section v-if="video" class="preference-group">
-      <div class="preference-heading">
-        <div class="preference-heading-copy">
-          <span class="preference-heading-icon" aria-hidden="true">
-            <UIcon name="i-tabler-video" />
-          </span>
-          <div>
-            <h4>画质优先顺序</h4>
-            <p>从上到下匹配画质与编码。</p>
+    <div v-if="video || audio" class="preference-quality-grid" :class="{ paired: video && audio }">
+      <section v-if="video" class="preference-group">
+        <div class="preference-heading">
+          <div class="preference-heading-copy">
+            <span class="preference-heading-icon" aria-hidden="true">
+              <UIcon name="i-tabler-video" />
+            </span>
+            <div>
+              <h4>清晰度优先级</h4>
+              <p v-if="hasCombinationCodecs">此配置还限定了每档画质的编码。</p>
+            </div>
           </div>
         </div>
-        <UiButton variant="secondary" size="compact" :disabled="disabled || model.video.length >= 32" @click="addVideo">
-          <UIcon name="i-tabler-plus" aria-hidden="true" />
-          添加画质
-        </UiButton>
-      </div>
-      <p v-if="!model.video.length" class="preference-empty">尚未自定义，使用上方的视频清晰度和编码设置。</p>
-      <ol v-else class="preference-list" aria-label="画质优先顺序">
-        <li v-for="(rule, index) in model.video" :key="index" class="preference-row">
-          <span class="preference-position" aria-hidden="true">{{ index + 1 }}</span>
-          <UiSelect :model-value="rule.quality" :label="`第 ${index + 1} 优先画质`" :options="qualityOptions" :disabled="disabled" @update:model-value="updateVideo(index, 'quality', $event)" />
-          <UiSelect :model-value="rule.codec" :label="`第 ${index + 1} 优先编码`" :options="encodingOptions" :disabled="disabled" @update:model-value="updateVideo(index, 'codec', $event)" />
-          <div class="preference-actions">
-            <UiButton variant="ghost" size="compact" :disabled="disabled || index === 0" :aria-label="`上移第 ${index + 1} 条视频偏好`" @click="move('video', index, -1)"><UIcon name="i-tabler-arrow-up" /></UiButton>
-            <UiButton variant="ghost" size="compact" :disabled="disabled || index === model.video.length - 1" :aria-label="`下移第 ${index + 1} 条视频偏好`" @click="move('video', index, 1)"><UIcon name="i-tabler-arrow-down" /></UiButton>
-            <UiButton variant="ghost" size="compact" :disabled="disabled" :aria-label="`删除第 ${index + 1} 条视频偏好`" @click="remove('video', index)"><UIcon name="i-tabler-x" /></UiButton>
-          </div>
-        </li>
-      </ol>
-    </section>
+        <ol class="preference-list" aria-label="画质优先顺序">
+          <li
+            v-for="(rule, index) in model.video"
+            :key="index"
+            class="preference-row"
+            :class="{ 'preference-simple-row': !hasCombinationCodecs }"
+          >
+            <span class="preference-position" aria-hidden="true">{{ index + 1 }}</span>
+            <span class="preference-quality">{{
+              qualityOptions.find((option) => option.value === rule.quality)?.label ?? rule.quality
+            }}</span>
+            <UiSelect
+              v-if="hasCombinationCodecs"
+              hide-label
+              :model-value="rule.codec"
+              :label="`第 ${index + 1} 优先编码`"
+              :options="encodingOptions"
+              :disabled="disabled"
+              @update:model-value="updateVideoCodec(index, $event)"
+            />
+            <div class="preference-actions">
+              <UiButton
+                variant="ghost"
+                size="compact"
+                :disabled="disabled || index === 0"
+                :aria-label="`上移第 ${index + 1} 条视频偏好`"
+                @click="move('video', index, -1)"
+                ><UIcon name="i-tabler-arrow-up"
+              /></UiButton>
+              <UiButton
+                variant="ghost"
+                size="compact"
+                :disabled="disabled || index === model.video.length - 1"
+                :aria-label="`下移第 ${index + 1} 条视频偏好`"
+                @click="move('video', index, 1)"
+                ><UIcon name="i-tabler-arrow-down"
+              /></UiButton>
+            </div>
+          </li>
+        </ol>
+      </section>
 
-    <section v-if="audio" class="preference-group">
-      <div class="preference-heading">
-        <div class="preference-heading-copy">
-          <span class="preference-heading-icon" aria-hidden="true">
-            <UIcon name="i-tabler-volume" />
-          </span>
-          <div>
-            <h4>音频优先顺序</h4>
-            <p>从上到下匹配音频质量。</p>
+      <section v-if="audio" class="preference-group">
+        <div class="preference-heading">
+          <div class="preference-heading-copy">
+            <span class="preference-heading-icon" aria-hidden="true">
+              <UIcon name="i-tabler-volume" />
+            </span>
+            <div>
+              <h4>音质优先级</h4>
+            </div>
           </div>
         </div>
-        <UiButton variant="secondary" size="compact" :disabled="disabled || model.audio.length >= 32" @click="addAudio">
-          <UIcon name="i-tabler-plus" aria-hidden="true" />
-          添加音质
-        </UiButton>
-      </div>
-      <p v-if="!model.audio.length" class="preference-empty">尚未自定义，使用上方的音频质量设置。</p>
-      <ol v-else class="preference-list" aria-label="音频优先顺序">
-        <li v-for="(quality, index) in model.audio" :key="index" class="preference-row preference-audio-row">
-          <span class="preference-position" aria-hidden="true">{{ index + 1 }}</span>
-          <UiSelect :model-value="quality" :label="`第 ${index + 1} 优先音质`" :options="audioQualityOptions" :disabled="disabled" @update:model-value="updateAudio(index, $event)" />
-          <div class="preference-actions">
-            <UiButton variant="ghost" size="compact" :disabled="disabled || index === 0" :aria-label="`上移第 ${index + 1} 条音频偏好`" @click="move('audio', index, -1)"><UIcon name="i-tabler-arrow-up" /></UiButton>
-            <UiButton variant="ghost" size="compact" :disabled="disabled || index === model.audio.length - 1" :aria-label="`下移第 ${index + 1} 条音频偏好`" @click="move('audio', index, 1)"><UIcon name="i-tabler-arrow-down" /></UiButton>
-            <UiButton variant="ghost" size="compact" :disabled="disabled" :aria-label="`删除第 ${index + 1} 条音频偏好`" @click="remove('audio', index)"><UIcon name="i-tabler-x" /></UiButton>
-          </div>
-        </li>
-      </ol>
-    </section>
-    <UiSelect v-if="(video && model.video.length) || (audio && model.audio.length)" :model-value="model.fallback" label="所有偏好都不可用时" :options="fallbackOptions" :disabled="disabled" @update:model-value="model = { ...model, fallback: $event as MediaPreferences['fallback'] }" />
+        <ol class="preference-list" aria-label="音频优先顺序">
+          <li v-for="(quality, index) in model.audio" :key="index" class="preference-row preference-audio-row">
+            <span class="preference-position" aria-hidden="true">{{ index + 1 }}</span>
+            <span class="preference-quality">{{
+              audioQualityOptions.find((option) => option.value === quality)?.label ?? quality
+            }}</span>
+            <div class="preference-actions">
+              <UiButton
+                variant="ghost"
+                size="compact"
+                :disabled="disabled || index === 0"
+                :aria-label="`上移第 ${index + 1} 条音频偏好`"
+                @click="move('audio', index, -1)"
+                ><UIcon name="i-tabler-arrow-up"
+              /></UiButton>
+              <UiButton
+                variant="ghost"
+                size="compact"
+                :disabled="disabled || index === model.audio.length - 1"
+                :aria-label="`下移第 ${index + 1} 条音频偏好`"
+                @click="move('audio', index, 1)"
+                ><UIcon name="i-tabler-arrow-down"
+              /></UiButton>
+            </div>
+          </li>
+        </ol>
+      </section>
+    </div>
+    <div
+      v-if="(videoEncoding && videoCodecs.length) || (audioEncoding && audioCodecs.length)"
+      class="preference-codec-grid"
+      :class="{ paired: videoEncoding && videoCodecs.length && audioEncoding && audioCodecs.length }"
+    >
+      <CodecPriorityEditor
+        v-if="videoEncoding && videoCodecs.length"
+        v-model="videoCodecs"
+        label="视频编码"
+        :options="codecOptions.filter((option) => option.value !== 'auto')"
+        :disabled="disabled"
+      />
+      <CodecPriorityEditor
+        v-if="audioEncoding && audioCodecs.length"
+        v-model="audioCodecs"
+        label="音频编码"
+        :options="audioCodecOptions"
+        :disabled="disabled"
+      />
+    </div>
   </div>
 </template>
 
 <style scoped>
 .preference-editor,
+.preference-quality-grid,
+.preference-codec-grid,
 .preference-list {
   display: grid;
   gap: var(--space-12);
 }
 
+.paired {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-16);
+}
+
+.preference-quality-grid:not(.paired) {
+  max-width: 32rem;
+}
+
 .preference-group {
   min-width: 0;
   display: grid;
+  align-content: start;
   gap: var(--space-12);
-  padding: var(--space-12);
-  border-radius: var(--radius-8);
-  background: var(--color-panel);
+  padding-top: var(--space-12);
+  border-top: 1px solid var(--color-border);
 }
 
 .preference-heading {
@@ -166,8 +237,7 @@ const addAudio = () => {
   font-size: var(--font-13);
 }
 
-.preference-heading p,
-.preference-empty {
+.preference-heading p {
   margin: 0;
   color: var(--color-muted);
   font-size: var(--font-12);
@@ -180,12 +250,8 @@ const addAudio = () => {
   gap: 0.125rem;
 }
 
-.preference-empty {
-  padding-top: var(--space-10);
-  border-top: 0.0625rem solid var(--color-border);
-}
-
 .preference-list {
+  gap: var(--space-4);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -196,12 +262,14 @@ const addAudio = () => {
   grid-template-columns: 1.25rem minmax(0, 1fr) minmax(0, 1fr) auto;
   align-items: end;
   gap: var(--space-8);
-  padding: var(--space-10);
-  border-radius: var(--radius-6);
-  background: var(--color-surface);
+  padding-block: var(--space-2);
 }
 
 .preference-audio-row {
+  grid-template-columns: 1.25rem minmax(0, 1fr) auto;
+}
+
+.preference-simple-row {
   grid-template-columns: 1.25rem minmax(0, 1fr) auto;
 }
 
@@ -211,6 +279,13 @@ const addAudio = () => {
   color: var(--color-muted);
   font-size: var(--font-12);
   font-variant-numeric: tabular-nums;
+}
+
+.preference-quality {
+  align-self: center;
+  min-width: 0;
+  padding-block: var(--space-6);
+  font-size: var(--font-13);
 }
 
 .preference-actions {
@@ -224,16 +299,34 @@ const addAudio = () => {
 }
 
 @media (width <= 840px) {
+  .paired {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .preference-heading {
     align-items: flex-start;
   }
 
   .preference-row {
-    grid-template-columns: 1.25rem minmax(0, 1fr);
+    grid-template-columns: 1.25rem repeat(2, minmax(0, 1fr));
   }
 
-  .preference-row > :nth-child(n + 3) {
-    grid-column: 2;
+  .preference-row > .preference-actions {
+    grid-column: 2 / -1;
+    justify-self: end;
+  }
+
+  .preference-audio-row {
+    grid-template-columns: 1.25rem minmax(0, 1fr) auto;
+  }
+
+  .preference-simple-row {
+    grid-template-columns: 1.25rem minmax(0, 1fr) auto;
+  }
+
+  .preference-audio-row > .preference-actions,
+  .preference-simple-row > .preference-actions {
+    grid-column: auto;
   }
 }
 </style>

@@ -2,9 +2,17 @@ import { mount } from '@vue/test-utils';
 import { expect, it } from 'vitest';
 import MediaListRow from './MediaListRow.vue';
 it('toggles card space once while isolating playback, title, actions and disabled rows', async () => {
-  const wrapper = mount(MediaListRow, { props: { title: '视频', selected: true, playable: true },
+  const wrapper = mount(MediaListRow, {
+    props: { title: '视频', selected: true, playable: true },
     slots: { actions: '<button>更多</button>' },
-    global: { stubs: { UiCheckbox: true, UIcon: true, UTooltip: { template: '<div><slot/></div>' } } },
+    global: {
+      stubs: {
+        UButton: { template: '<button><slot/></button>' },
+        UiCheckbox: true,
+        UIcon: true,
+        UTooltip: { template: '<div><slot/></div>' },
+      },
+    },
   });
   await wrapper.get('article').trigger('click');
   expect(wrapper.emitted('toggle')).toHaveLength(1);

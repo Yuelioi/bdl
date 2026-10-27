@@ -113,5 +113,6 @@
 .settings-content {
   height: 100%;
   overflow-y: auto;
-  padding: 0.25rem 0.25rem 0.75rem;
+  padding: 0.25rem var(--space-12) 0.75rem 0.25rem;
+  scrollbar-gutter: stable;
 }

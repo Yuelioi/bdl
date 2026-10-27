@@ -1033,9 +1033,63 @@ fn media_preferences_select_first_complete_combination_and_preserve_refresh_trac
         resource_by_intent(&tasks[0], DownloadResourceIntent::Video).current_urls[0],
         "https://example.invalid/125.m4s"
     );
+    // A manual quality keeps the saved priority list but overrides its first choice.
+    options.video_codec = StreamCodec::Auto;
+    options.video_quality = StreamPreference::Quality(120);
+    options.missing_quality_policy = MissingQualityPolicy::Skip;
+    let tasks = plan_selected_parts(&tree, &[PartId("part:BV1:100".into())], &options).unwrap();
+    assert_eq!(tasks[0].media_selection.video_quality, "120");
+    options.video_quality = StreamPreference::Quality(116);
+    assert!(plan_selected_parts(&tree, &[PartId("part:BV1:100".into())], &options).is_err());
+    options.video_quality = StreamPreference::Best;
+    options.video_codec = StreamCodec::Avc;
     options.media_preferences.video.swap(1, 2);
     let tasks = plan_selected_parts(&tree, &[PartId("part:BV1:100".into())], &options).unwrap();
     assert_eq!(tasks[0].media_selection.video_quality, "120");
+
+    // Independent codec priorities break ties within a quality, never outrank it.
+    let part = fixture_part_mut(&mut tree);
+    part.streams.push(media_stream(
+        MediaKind::Video,
+        StreamQuality::Quality(120),
+        StreamCodec::Avc,
+        "https://example.invalid/4k-avc.m4s",
+    ));
+    options.media_preferences.video = vec![
+        VideoPreference {
+            quality: "120".into(),
+            codec: "auto".into(),
+        },
+        VideoPreference {
+            quality: "80".into(),
+            codec: "auto".into(),
+        },
+    ];
+    options.media_preferences.video_codecs = vec![StreamCodec::Avc, StreamCodec::Av1];
+    let tasks = plan_selected_parts(&tree, &[PartId("part:BV1:100".into())], &options).unwrap();
+    assert_eq!(tasks[0].media_selection.video_quality, "120");
+    assert_eq!(tasks[0].media_selection.video_codec, "avc");
+    options.media_preferences.video_codecs.reverse();
+    let tasks = plan_selected_parts(&tree, &[PartId("part:BV1:100".into())], &options).unwrap();
+    assert_eq!(tasks[0].media_selection.video_codec, "av1");
+    fixture_part_mut(&mut tree)
+        .streams
+        .retain(|stream| stream.codec != StreamCodec::Av1);
+    let tasks = plan_selected_parts(&tree, &[PartId("part:BV1:100".into())], &options).unwrap();
+    assert_eq!(tasks[0].media_selection.video_codec, "avc");
+    options.media_preferences.video = vec![
+        VideoPreference {
+            quality: "125".into(),
+            codec: "auto".into(),
+        },
+        VideoPreference {
+            quality: "120".into(),
+            codec: "auto".into(),
+        },
+    ];
+    let tasks = plan_selected_parts(&tree, &[PartId("part:BV1:100".into())], &options).unwrap();
+    assert_eq!(tasks[0].media_selection.video_quality, "125");
+    assert_eq!(tasks[0].media_selection.video_codec, "hevc");
 }
 
 #[test]
@@ -1069,8 +1123,8 @@ fn media_preferences_sdr_excludes_hdr_and_dolby_and_audio_order_is_independent()
 }
 
 #[test]
-fn media_preferences_no_match_requires_explicit_fallback() {
-    use bdl_core::media_preferences::{PreferenceFallback, VideoPreference};
+fn media_preferences_choose_available_tracks_when_priorities_do_not_match() {
+    use bdl_core::media_preferences::VideoPreference;
     let tree = fixture_tree(true);
     let mut options = DownloadOptions::new(PathBuf::from("downloads"));
     options.media_preferences.video = vec![VideoPreference {
@@ -1078,17 +1132,8 @@ fn media_preferences_no_match_requires_explicit_fallback() {
         codec: "hevc".into(),
     }];
     let selected = [PartId("part:BV1:100".into())];
-    options.media_preferences.fallback = PreferenceFallback::Error;
-    assert!(
-        plan_selected_parts(&tree, &selected, &options)
-            .unwrap_err()
-            .to_string()
-            .contains("视频偏好")
-    );
-    options.media_preferences.fallback = PreferenceFallback::Best;
     assert!(plan_selected_parts(&tree, &selected, &options).is_ok());
     options.media_mode = DownloadMediaMode::AudioOnly;
-    options.media_preferences.fallback = PreferenceFallback::Error;
     assert!(plan_selected_parts(&tree, &selected, &options).is_ok());
 }
 
@@ -1113,6 +1158,58 @@ fn media_preferences_audio_best_and_lower_use_semantic_quality_order() {
     options.audio_quality = StreamPreference::Quality(30280);
     let tasks = plan_selected_parts(&tree, &selected, &options).unwrap();
     assert_eq!(tasks[0].media_selection.audio_quality, "30232");
+
+    let part = fixture_part_mut(&mut tree);
+    part.streams
+        .retain(|stream| stream.kind == MediaKind::Video);
+    for (quality, codec, bandwidth, url) in [
+        (30251, StreamCodec::Flac, 100, "flac"),
+        (30280, StreamCodec::Aac, 999, "aac"),
+        (30280, StreamCodec::Eac3, 100, "eac3"),
+    ] {
+        let mut stream = media_stream(
+            MediaKind::Audio,
+            StreamQuality::Quality(quality),
+            codec,
+            &format!("https://example.invalid/{url}.m4s"),
+        );
+        stream.bandwidth = Some(bandwidth);
+        part.streams.push(stream);
+    }
+    options.audio_quality = StreamPreference::Best;
+    options.media_preferences.audio_codecs =
+        vec![StreamCodec::Eac3, StreamCodec::Aac, StreamCodec::Flac];
+    let tasks = plan_selected_parts(&tree, &selected, &options).unwrap();
+    assert_eq!(tasks[0].media_selection.audio_quality, "30251");
+    assert_eq!(
+        tasks[0].media_selection.audio_codec.as_deref(),
+        Some("flac")
+    );
+    options.media_preferences.audio = vec!["30280".into(), "30251".into()];
+    let tasks = plan_selected_parts(&tree, &selected, &options).unwrap();
+    assert_eq!(
+        tasks[0].media_selection.audio_codec.as_deref(),
+        Some("eac3")
+    );
+    options.media_preferences.audio_codecs.swap(0, 1);
+    let tasks = plan_selected_parts(&tree, &selected, &options).unwrap();
+    assert_eq!(tasks[0].media_selection.audio_codec.as_deref(), Some("aac"));
+    let restored: bdl_core::queue::DownloadTask =
+        serde_json::from_str(&serde_json::to_string(&tasks[0]).unwrap()).unwrap();
+    assert_eq!(restored.media_selection.audio_codec.as_deref(), Some("aac"));
+    options.audio_quality = StreamPreference::Quality(30251);
+    let tasks = plan_selected_parts(&tree, &selected, &options).unwrap();
+    assert_eq!(tasks[0].media_selection.audio_quality, "30251");
+    options.audio_quality = StreamPreference::Quality(30250);
+    options.missing_quality_policy = MissingQualityPolicy::Skip;
+    assert!(plan_selected_parts(&tree, &selected, &options).is_err());
+    options.audio_quality = StreamPreference::Best;
+    options.media_preferences.audio_codecs = vec![StreamCodec::Flac];
+    fixture_part_mut(&mut tree)
+        .streams
+        .retain(|stream| stream.codec != StreamCodec::Flac);
+    let tasks = plan_selected_parts(&tree, &selected, &options).unwrap();
+    assert_eq!(tasks[0].media_selection.audio_codec.as_deref(), Some("aac"));
 }
 
 #[test]

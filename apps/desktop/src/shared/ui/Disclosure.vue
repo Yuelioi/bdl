@@ -1,9 +1,13 @@
 <script setup lang="ts">
-const { title, description, variant = 'section' } = defineProps<{
-  title: string
-  description?: string
-  variant?: 'section' | 'panel'
-}>()
+const {
+  title,
+  description,
+  variant = 'section',
+} = defineProps<{
+  title: string;
+  description?: string;
+  variant?: 'section' | 'panel';
+}>();
 </script>
 
 <template>
@@ -64,7 +68,8 @@ summary::-webkit-details-marker {
 .disclosure-copy strong {
   margin: 0;
   color: var(--color-text);
-  font-size: var(--font-16);
+  font-size: var(--font-14);
+  font-weight: 500;
   line-height: 1.3;
 }
 

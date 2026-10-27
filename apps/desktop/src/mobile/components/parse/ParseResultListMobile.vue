@@ -5,6 +5,7 @@ import MobileSheet from '../MobileSheet.vue';
 import UiButton from '../../../shared/ui/Button.vue';
 import ExternalLinkButton from '../../../shared/ui/ExternalLinkButton.vue';
 import { bilibiliVideoUrl } from '../../../shared/utils/bilibiliLinks';
+import { displayPartDuration, formatDuration } from '../../../shared/utils/duration';
 import { computed, ref } from 'vue';
 import type { NormalizedSourceTree } from '../../../shared/api/dto';
 import UiCheckbox from '../../../shared/ui/Checkbox.vue';
@@ -27,13 +28,14 @@ const entries = computed(() => {
     props.source.groups.flatMap((group) =>
       group.items.flatMap((item) =>
         item.parts.map(
-          (part) =>
+          (part, index) =>
             [
               part.id,
               {
                 url: bilibiliVideoUrl(item),
                 cover: item.cover_url,
-                duration: part.duration_seconds ?? item.duration_seconds,
+                duration: displayPartDuration(part.duration_seconds, item.duration_seconds, item.parts.length),
+                index: item.parts.length > 1 ? `P${index + 1}` : '',
               },
             ] as const,
         ),
@@ -47,7 +49,11 @@ const entries = computed(() => {
   }));
 });
 function toggleCard(event: MouseEvent, id?: string) {
-  if (props.disabled || (event.target instanceof Element && event.target.closest('button, input, a, label, [role="checkbox"]'))) return;
+  if (
+    props.disabled ||
+    (event.target instanceof Element && event.target.closest('button, input, a, label, [role="checkbox"]'))
+  )
+    return;
   if (id) emit('toggle', id);
 }
 </script>
@@ -70,7 +76,10 @@ function toggleCard(event: MouseEvent, id?: string) {
         compact
         @update:model-value="emit('toggle', entry.id)"
       />
-      <button
+      <UButton
+        variant="ghost"
+        color="neutral"
+        :ui="{ base: 'p-0', label: 'contents' }"
         class="mobile-result-content"
         type="button"
         :disabled="disabled"
@@ -78,15 +87,18 @@ function toggleCard(event: MouseEvent, id?: string) {
         :aria-pressed="entry.selected"
         @click="emit('toggle', entry.id)"
       >
-        <MediaArtwork class="result-cover" :src="entry.cover" :duration="entry.duration" />
+        <MediaArtwork class="result-cover" :src="entry.cover" />
+        <span v-if="entry.index" class="result-index">{{ entry.index }}</span>
         <span class="result-copy">
           <strong>{{ entry.title }}</strong>
-          <span class="result-meta">
-            <span v-if="entry.meta" class="result-author"><UIcon name="i-tabler-user" />{{ entry.meta }}</span>
-          </span>
+          <span v-if="!entry.index && entry.meta" class="result-author">{{ entry.meta }}</span>
         </span>
-      </button>
-      <button
+      </UButton>
+      <span class="result-duration">{{ entry.duration == null ? '—' : formatDuration(entry.duration) }}</span>
+      <UButton
+        variant="ghost"
+        color="neutral"
+        :ui="{ base: 'p-0', label: 'contents' }"
         class="result-more mobile-icon-button"
         type="button"
         :aria-label="`${entry.title}：更多操作`"
@@ -96,7 +108,7 @@ function toggleCard(event: MouseEvent, id?: string) {
         "
       >
         <UIcon name="i-tabler-dots" />
-      </button>
+      </UButton>
     </div>
     <slot />
   </MobileListCard>
@@ -118,25 +130,20 @@ function toggleCard(event: MouseEvent, id?: string) {
 </template>
 
 <style scoped>
+.mobile-results {
+  flex: 1;
+  padding: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
 .mobile-result {
   display: flex;
   align-items: center;
-  position: relative;
-  height: var(--mobile-list-row-height);
-  padding: var(--mobile-list-padding) 2.625rem var(--mobile-list-padding) 0.75rem;
-  border: 0;
-  border-bottom: 0.0625rem solid var(--color-border);
-  border-radius: 0;
-  background: transparent;
-  gap: var(--mobile-list-gap);
-}
-
-.mobile-result.selected {
-  background: var(--color-accent-faint);
-}
-
-.mobile-result:last-of-type {
-  border-bottom-color: transparent;
+  min-height: 3rem;
+  padding: 0.125rem 0.5rem;
+  border-bottom: 1px solid var(--color-border);
+  gap: 0.375rem;
 }
 
 .mobile-result-content {
@@ -144,96 +151,69 @@ function toggleCard(event: MouseEvent, id?: string) {
   flex: 1;
   display: flex;
   align-items: center;
-  gap: var(--mobile-list-gap);
+  gap: 0.375rem;
   border: 0;
   background: transparent;
-  padding: 0;
+  padding: 0.125rem 0;
   text-align: left;
   color: var(--color-text);
 }
 
 .result-cover {
   flex-shrink: 0;
-  display: grid;
-  place-items: center;
-  overflow: hidden;
-  background: var(--color-panel);
-  color: var(--color-muted);
-  width: var(--mobile-cover-width);
-  height: var(--mobile-cover-height);
-  border-radius: 0.25rem;
-}
-
-.result-cover img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
+  width: 3.75rem;
+  height: 2.25rem;
+  border-radius: 0.1875rem;
 }
 
 .result-copy {
   min-width: 0;
   flex: 1;
   display: grid;
-  grid-template-rows: repeat(2, var(--mobile-list-line-height));
-  align-items: center;
-  height: var(--mobile-cover-height);
-  align-content: center;
+  gap: 0.125rem;
 }
 
 .result-copy strong {
-  min-width: 0;
   overflow: hidden;
-  display: block;
-  font-weight: var(--mobile-weight-item);
-  font-size: var(--mobile-font-item-title);
-  line-height: var(--mobile-list-line-height);
+  font-weight: 500;
+  font-size: var(--font-13);
+  line-height: 1.25rem;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.result-meta {
-  display: flex;
-  align-items: center;
-  min-width: 0;
-  gap: 0.375rem;
-  color: var(--color-muted);
-  font-size: var(--mobile-font-caption);
-  line-height: min(1.25rem, var(--mobile-list-line-height));
-  font-variant-numeric: tabular-nums;
 }
 
 .result-author {
   min-width: 0;
-  flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  display: flex;
-  align-items: center;
-  gap: 0.3125rem;
-}
-
-.result-author :deep(svg) {
-  width: 0.875rem;
-  height: 0.875rem;
-  flex-shrink: 0;
+  color: var(--color-muted);
+  font-size: var(--font-11);
 }
 
 .result-index {
-  color: var(--color-dimmed);
+  flex-shrink: 0;
+  min-width: 1.25rem;
+  color: var(--color-muted);
+  font-size: var(--font-11);
+  font-variant-numeric: tabular-nums;
+}
+
+.result-duration {
+  flex-shrink: 0;
+  color: var(--color-muted);
+  font-size: var(--font-12);
+  font-variant-numeric: tabular-nums;
 }
 
 .result-more {
-  position: absolute;
-  right: 0.75rem;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 1.875rem;
-  height: 1.875rem;
+  width: 1.75rem;
+  height: 1.75rem;
+  flex-shrink: 0;
 }
 
 .result-more :deep(svg) {
-  width: 1.125rem;
-  height: 1.125rem;
+  width: 1rem;
+  height: 1rem;
 }
 </style>

@@ -12,8 +12,7 @@ use bdl_core::fetcher::{BandwidthLimiter, FetchCancelToken};
 use bdl_core::ids::{PartId, SourceId};
 use bdl_core::input::{ClassifiedInput, classify_input};
 use bdl_core::model::{
-    MediaKind, MediaStream, NormalizedPart, NormalizedSourceTree, SourceKind, StreamCodec,
-    StreamQuality,
+    MediaKind, MediaStream, NormalizedPart, NormalizedSourceTree, SourceKind, StreamQuality,
 };
 use bdl_core::naming::DuplicateNamingStrategy;
 use bdl_core::queue::{
@@ -1052,6 +1051,15 @@ impl AppState {
 
     pub async fn refresh_task_media_urls(&self, task_id: &str) -> BdlResult<DownloadTask> {
         let task = self.task_snapshot(task_id)?;
+        let needs_audio = task
+            .resources
+            .iter()
+            .any(|resource| resource.intent == DownloadResourceIntent::Audio);
+        if needs_audio && task.media_selection.audio_codec.is_none() {
+            return Err(BdlError::Planning {
+                message: "此旧任务未记录音频编码，无法刷新下载地址，请重新创建任务。".to_owned(),
+            });
+        }
         let refresh_ids = task_media_refresh_ids(&task)?;
         let refreshed = self
             .resolve_media_input_with_streams(refresh_ids.input, Some(refresh_ids.cid))
@@ -1067,10 +1075,6 @@ impl AppState {
             .resources
             .iter()
             .any(|resource| resource.intent == DownloadResourceIntent::Video);
-        let needs_audio = task
-            .resources
-            .iter()
-            .any(|resource| resource.intent == DownloadResourceIntent::Audio);
         let video = if needs_video {
             Some(
                 select_task_stream(
@@ -1092,7 +1096,7 @@ impl AppState {
                     part,
                     MediaKind::Audio,
                     &task.media_selection.audio_quality,
-                    None,
+                    task.media_selection.audio_codec.as_deref(),
                 )
                 .ok_or_else(|| BdlError::Planning {
                     message: format!("刷新下载地址失败：`{}` 缺少音频流。", part.title),
@@ -2068,6 +2072,11 @@ fn select_task_stream<'a>(
         })
         .unwrap_or_default();
     let candidates = if codec_matches.is_empty() {
+        if kind == MediaKind::Audio
+            && codec_label.is_some_and(|label| !matches!(label, "auto" | "none" | "unknown"))
+        {
+            return None;
+        }
         streams
     } else {
         codec_matches
@@ -2107,13 +2116,7 @@ fn stream_quality_rank(quality: StreamQuality) -> u32 {
 }
 
 fn stream_codec_label(stream: &MediaStream) -> &'static str {
-    match stream.codec {
-        StreamCodec::Auto => "auto",
-        StreamCodec::Avc => "avc",
-        StreamCodec::Hevc => "hevc",
-        StreamCodec::Av1 => "av1",
-        StreamCodec::Unknown => "unknown",
-    }
+    stream.codec.as_str()
 }
 
 fn source_kind_name(kind: SourceKind) -> &'static str {
@@ -2798,6 +2801,11 @@ mod tests {
         assert_eq!(retried_task.resources[0].status, ResourceStatus::Completed);
         assert_eq!(retried_task.resources[1].status, ResourceStatus::Pending);
 
+        let old_refresh = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(state.refresh_task_media_urls("task:refresh"))
+            .unwrap_err();
+        assert!(old_refresh.to_string().contains("重新创建任务"));
         let video = media_stream(MediaKind::Video, "https://cdn.example/new-video.m4s");
         let audio = media_stream(MediaKind::Audio, "https://cdn.example/new-audio.m4s");
         let refreshed_task = state
@@ -3415,6 +3423,29 @@ mod tests {
             .expect("matching stream should be selected");
 
         assert_eq!(selected.urls, ["https://cdn.example/video-64-hevc.m4s"]);
+        part.streams = vec![
+            profiled_media_stream(
+                MediaKind::Audio,
+                StreamQuality::Quality(30280),
+                StreamCodec::Aac,
+                999,
+                "https://cdn.example/aac.m4s",
+            ),
+            profiled_media_stream(
+                MediaKind::Audio,
+                StreamQuality::Quality(30280),
+                StreamCodec::Eac3,
+                100,
+                "https://cdn.example/eac3.m4s",
+            ),
+        ];
+        assert_eq!(
+            select_task_stream(&part, MediaKind::Audio, "30280", Some("eac3"))
+                .unwrap()
+                .codec,
+            StreamCodec::Eac3
+        );
+        assert!(select_task_stream(&part, MediaKind::Audio, "30280", Some("flac")).is_none());
     }
 
     #[test]

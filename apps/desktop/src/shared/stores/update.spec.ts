@@ -119,6 +119,7 @@ describe('update preferences', () => {
       { id: 'github', kind: 'github', label: 'GitHub', delivery: { mode: 'file', authenticationRequired: false, url: 'https://github.com/Yuelioi/bdl/releases/download/v1.2.4/BDL.exe' } },
       { id: 'mirror', kind: 'external_link', label: '加速', delivery: { mode: 'file', authenticationRequired: false, url: 'https://mirror.test/https://github.com/Yuelioi/bdl/releases/download/v1.2.4/BDL.exe' } },
       { id: 'quark', kind: 'cloud_drive', label: '夸克', delivery: { mode: 'browser', authenticationRequired: false, url: 'https://pan.quark.cn/s/test' } },
+      { id: 'fast', kind: 'external_link', label: 'GHFast', delivery: { mode: 'file', authenticationRequired: false, url: 'https://fast.test/github.com/Yuelioi/bdl/releases/download/v1.2.4/BDL.exe' } },
     ],
   }
   it('uses site mirror for signed checks and forwards saved network proxy', async () => {
@@ -126,7 +127,10 @@ describe('update preferences', () => {
     vi.mocked(checkMirror).mockResolvedValue(null)
     useSettingsStore().saved.proxy_url = 'http://127.0.0.1:7890'
     const update = useUpdateStore()
-    update.setSource('mirror')
+    await update.loadSources()
+    const mirrors = update.sourceOptions.filter(option => option.value.startsWith('official:'))
+    expect(mirrors.map(option => option.value)).toEqual(['official:https://mirror.test/{url}', 'official:https://fast.test/{path}'])
+    update.setSource(mirrors[0]!.value)
     await update.checkForUpdate()
     expect(checkMirror).toHaveBeenCalledWith('https://mirror.test/{url}', 'http://127.0.0.1:7890')
     expect(check).not.toHaveBeenCalled()
@@ -135,6 +139,28 @@ describe('update preferences', () => {
       site.sources[1]!.delivery.url,
       { template: 'https://mirror.test/{url}', officialUrl: site.sources[0]!.delivery.url },
     )
+    update.setSource(mirrors[1]!.value)
+    await update.checkForUpdate()
+    await update.install()
+    expect(openUpdateDownload).toHaveBeenLastCalledWith(site.sources[3]!.delivery.url, {
+      template: 'https://fast.test/{path}', officialUrl: site.sources[0]!.delivery.url,
+    })
+    vi.mocked(distributionUpdate).mockResolvedValue({ ...site, sources: site.sources.filter(source => source.id !== 'fast') })
+    await update.checkForUpdate()
+    expect(update.hasUpdate).toBe(false)
+    expect(update.error).toContain('不再提供所选加速源')
+    expect(update.source).toBe(mirrors[1]!.value)
+    update.setSource('mirror')
+    await update.checkForUpdate()
+    expect(update.error).toContain('请填写自定义加速地址')
+    expect(update.hasUpdate).toBe(false)
+    update.setSource('mirror', 'https://custom.test/{url}')
+    await update.checkForUpdate()
+    expect(checkMirror).toHaveBeenLastCalledWith('https://custom.test/{url}', 'http://127.0.0.1:7890')
+    const restored = useUpdateStore(createPinia())
+    await restored.initialize()
+    expect(restored.source).toBe('mirror')
+    expect(restored.customMirror).toBe('https://custom.test/{url}')
   })
   it('opens Quark manually and invalidates previous installation on source change', async () => {
     vi.mocked(distributionUpdate).mockResolvedValue(site)

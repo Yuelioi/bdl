@@ -38,7 +38,7 @@ pnpm --dir apps/desktop build
 ## UI 约定
 
 - 使用 `apps/desktop/src/shared/ui/` 的本地组件封装和 Tabler 图标；桌面与移动专用界面分别维护在 `src/desktop/`、`src/mobile/`，共用逻辑放入 `src/shared/`。
-- 遵守 `flightdeck/knowledge/bdl-downloader/design-system.md` 中的视觉与交互约束。
+- 遵守 [界面设计规范](docs/UI_DESIGN.md) 中的字号、控件、触控热区、信息密度和视觉检查约束。
 - 覆盖默认、悬停、焦点、选中、加载、空、错误和窄窗口状态。
 - 关键功能不能只在 hover 中出现；尊重 `prefers-reduced-motion`。
 

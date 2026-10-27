@@ -4,6 +4,7 @@ import { beforeEach, expect, it, vi } from 'vitest';
 import ClipboardMonitor from './ClipboardMonitor.vue';
 import { useSettingsStore } from '../stores/settings';
 import { useClipboardStore } from '../stores/clipboard';
+import { useUiStore } from '../stores/ui';
 import { readClipboardText } from '../utils/clipboard';
 vi.mock('../utils/clipboard', () => ({ readClipboardText: vi.fn() }));
 beforeEach(() => {
@@ -15,11 +16,16 @@ const mountMonitor = () => mount(ClipboardMonitor, { global: { stubs: {
   UiDialog: { props: ['modelValue'], template: '<div v-if="modelValue"><slot/><slot name="footer"/></div>' },
   UiButton: { template: '<button><slot/></button>' },
 } } });
-it('reads only when enabled, ignores non-links, deduplicates and adds only after confirmation', async () => {
+it('reads only when enabled, stays quiet on failure, ignores non-links and adds only after confirmation', async () => {
   const wrapper = mountMonitor();
   expect(readClipboardText).not.toHaveBeenCalled();
-  vi.mocked(readClipboardText).mockResolvedValue('无关文字');
+  const toast = vi.spyOn(useUiStore(), 'pushToast');
+  vi.mocked(readClipboardText).mockRejectedValue(new Error('clipboard unavailable'));
   useSettingsStore().saved.clipboard_monitor_enabled = true;
+  await flushPromises();
+  expect(toast).not.toHaveBeenCalled();
+  vi.mocked(readClipboardText).mockResolvedValue('无关文字');
+  window.dispatchEvent(new Event('focus'));
   await flushPromises();
   expect(wrapper.findAll('button')).toHaveLength(0);
   vi.mocked(readClipboardText).mockResolvedValue('分享 https://www.bilibili.com/video/BV1xx411c7mD');

@@ -60,7 +60,10 @@
   position: relative;
   min-width: 0;
   display: grid;
-  gap: var(--mobile-list-gap);
+  gap: 0.75rem;
+  align-items: center;
+  text-align: left;
+  white-space: normal;
   background: transparent;
   cursor: pointer;
   transition:
@@ -69,8 +72,8 @@
   border: 0;
   border-bottom: 0.0625rem solid var(--color-border);
   border-radius: 0;
-  padding: var(--mobile-list-padding) 0.75rem;
-  grid-template-columns: var(--mobile-cover-width) minmax(0, 1fr);
+  padding: 0.75rem 0;
+  grid-template-columns: var(--mobile-cover-width) minmax(0, 1fr) 1rem;
 }
 .library-card:hover,
 .library-card:focus-visible {
@@ -78,8 +81,8 @@
   background: var(--color-panel);
 }
 .library-card:focus-visible {
-  outline: 0.125rem solid var(--color-focus-outline);
-  outline-offset: 0.125rem;
+  outline: none;
+  border-color: var(--color-accent);
 }
 .library-card:hover .library-card-copy h3,
 .library-card:focus-visible .library-card-copy h3 {

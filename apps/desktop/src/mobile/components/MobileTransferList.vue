@@ -2,9 +2,10 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import type { TaskActionKind, TransferTaskView } from '../../shared/stores/transferView';
 import { calculateVirtualWindow } from '../../shared/utils/virtualWindow';
-import { formatDuration } from '../../shared/utils/duration';
 import UiCheckbox from '../../shared/ui/Checkbox.vue';
 import UiButton from '../../shared/ui/Button.vue';
+import UiIconButton from '../../shared/ui/IconButton.vue';
+import UiProgressBar from '../../shared/ui/ProgressBar.vue';
 import MobileSheet from './MobileSheet.vue';
 import MediaArtwork from './MediaArtwork.vue';
 import MobileListCard from './MobileListCard.vue';
@@ -59,7 +60,7 @@ const offset = ref(0);
 const height = ref(600);
 const listCard = ref<InstanceType<typeof MobileListCard>>();
 const scroller = computed(() => listCard.value?.element);
-const rowHeight = ref(62);
+const rowHeight = ref(64);
 let paddingTop = 0;
 let paddingBottom = 0;
 // Measure rendered rows and the card's content viewport, including after rotation.
@@ -140,24 +141,16 @@ const artworkActionLabel = (view: TransferTaskView) =>
   view.primaryAction === 'open_file' ? '播放' : view.primaryActionLabel;
 const artworkActionIcon = (view: TransferTaskView) =>
   view.primaryAction === 'open_file' ? 'play' : view.primaryActionIcon;
+const hasProgress = (view: TransferTaskView) =>
+  ['downloading', 'paused'].includes(view.statusBadge) && view.stageProgressLabel !== '';
 const taskMetaLabel = (view: TransferTaskView) =>
   view.isCompleted
-    ? [rowHeight.value < 62 ? view.statusLabel : '', view.subtitle || view.shortLocation].filter(Boolean).join(' · ')
-    : view.statusLabel;
-const taskMetaValue = (view: TransferTaskView) => {
-  if (!view.isCompleted) {
-    return [view.speedLabel === '--' ? '' : view.speedLabel, view.stageProgressLabel ?? view.progressLabel]
-      .filter(Boolean)
-      .join(' · ');
-  }
-  const duration = artwork.value.get(view.id)?.duration;
-  return [
-    rowHeight.value < 62 && duration != null && duration > 0 ? formatDuration(duration) : '',
-    view.sizeLabel === '--' ? '' : view.sizeLabel,
-  ]
-    .filter(Boolean)
-    .join(' · ');
-};
+    ? [view.statusLabel, view.subtitle || view.shortLocation].filter(Boolean).join(' · ')
+    : hasProgress(view)
+      ? `${view.statusLabel} · ${view.progressLabel}`
+      : view.statusLabel;
+const taskMetaValue = (view: TransferTaskView) =>
+  view.isCompleted ? (view.sizeLabel === '--' ? '' : view.sizeLabel) : view.speedLabel === '--' ? '' : view.speedLabel;
 </script>
 <template>
   <MobileListCard ref="listCard" class="mobile-task-list" role="list" aria-label="传输任务" @scroll="onScroll">
@@ -169,7 +162,7 @@ const taskMetaValue = (view: TransferTaskView) => {
           v-for="view in visible"
           :key="view.id"
           class="mobile-task"
-          :class="{ selected: selected.has(view.id), managing, compact: rowHeight < 62 }"
+          :class="{ selected: selected.has(view.id), managing }"
           role="listitem"
           tabindex="0"
           @click="clickTask(view, $event)"
@@ -194,36 +187,33 @@ const taskMetaValue = (view: TransferTaskView) => {
             <MediaArtwork
               class="task-artwork"
               :src="artwork.get(view.id)?.src"
-              :duration="rowHeight < 62 ? undefined : artwork.get(view.id)?.duration"
+              :duration="artwork.get(view.id)?.duration"
             />
-            <button
-              v-if="view.primaryAction !== 'none'"
-              type="button"
-              class="task-playback-action"
-              :aria-label="artworkActionLabel(view)"
-              :disabled="loading"
-              @click="emit('taskAction', view.id, view.primaryAction)"
-            >
-              <UIcon :name="`i-tabler-${artworkActionIcon(view)}`" />
-            </button>
-            <span
-              v-if="view.isCompleted"
-              class="task-status-badge"
-              :class="{ issue: view.statusBadge === 'warning' }"
-              >{{ view.statusLabel }}</span
-            >
           </div>
+
           <div class="task-heading">
             <span class="task-title">{{ view.displayTitle }}</span>
-            <button
-              class="mobile-icon-button"
-              type="button"
-              :aria-label="`${view.displayTitle}：更多操作`"
+          </div>
+          <div class="task-row-actions">
+            <UiIconButton
+              v-if="view.primaryAction !== 'none'"
+              :icon="artworkActionIcon(view)"
+              :label="artworkActionLabel(view)"
+              variant="ghost"
+              size="compact"
+              :disabled="loading"
+              @click="emit('taskAction', view.id, view.primaryAction)"
+            /><UiIconButton
+              icon="dots"
+              :label="`${view.displayTitle}：更多操作`"
+              variant="ghost"
+              size="compact"
               :disabled="loading"
               @click="openActions(view)"
-            >
-              <UIcon name="i-tabler-menu-2" />
-            </button>
+            />
+          </div>
+          <div v-if="hasProgress(view)" class="task-row-progress">
+            <UiProgressBar :value="view.progressValue" />
           </div>
           <div class="task-meta">
             <span :class="{ issue: view.statusBadge === 'error' }">{{ taskMetaLabel(view) }}</span>
@@ -257,99 +247,53 @@ const taskMetaValue = (view: TransferTaskView) => {
   </MobileSheet>
 </template>
 <style scoped>
+.mobile-task-list {
+  flex: 1;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
 .mobile-task-list > div,
 .mobile-task-list > div > div {
   width: 100%;
-  max-width: 100%;
-  overflow-x: hidden;
+  min-width: 0;
 }
 
 .mobile-task {
   position: relative;
-  border-bottom: 0.0625rem solid var(--color-border);
-  height: var(--mobile-list-row-height);
+  height: 4rem;
+  min-width: 0;
   display: grid;
-  grid-template-columns: var(--mobile-cover-width) minmax(0, 1fr);
-  grid-template-rows: repeat(2, var(--mobile-list-line-height));
+  grid-template-columns: 4rem minmax(0, 1fr) auto;
+  grid-template-rows: 1.25rem 1.125rem;
   align-content: center;
-  gap: 0 var(--mobile-list-gap);
-  padding: var(--mobile-list-padding) 0.75rem;
-  background: var(--mobile-card);
-  transition: background var(--duration-fast) var(--ease-out);
-}
-
-.mobile-task.selected {
-  background: var(--color-accent-faint);
-}
-
-.mobile-task:last-child {
-  border-bottom-color: transparent;
+  gap: 0.25rem 0.625rem;
+  padding: 0.5rem;
+  border: 1px solid transparent;
+  border-bottom-color: var(--color-border);
+  background: var(--color-surface);
 }
 
 .mobile-task.managing {
-  grid-template-columns: 1.375rem var(--mobile-cover-width) minmax(0, 1fr);
+  grid-template-columns: 1.25rem 4rem minmax(0, 1fr) auto;
+}
+
+.mobile-task:focus-visible {
+  outline: none;
+  border-color: var(--color-accent);
 }
 
 .task-select {
   grid-column: 1;
   grid-row: 1 / -1;
-  place-self: center;
-}
-
-.task-heading {
-  display: flex;
-  align-items: center;
-  min-height: var(--mobile-list-line-height);
-  gap: 0;
-}
-
-.task-title {
-  flex: 1;
-  min-width: 0;
-  border: 0;
-  padding: 0;
-  text-align: left;
-  color: var(--color-text);
-  background: transparent;
-  font-weight: var(--mobile-weight-item);
-  line-height: var(--mobile-list-line-height);
-  display: -webkit-box;
-  -webkit-line-clamp: 1;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  padding-right: 0.3125rem;
-  font-size: var(--mobile-font-item-title);
-}
-
-.task-meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.625rem;
-  font-size: var(--mobile-font-caption);
-  color: var(--color-muted);
-}
-
-.task-meta > span:first-child {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.task-meta > span:last-child {
-  flex-shrink: 0;
-}
-
-.issue {
-  color: var(--color-danger);
+  align-self: center;
 }
 
 .task-artwork-wrap {
-  position: relative;
-  width: var(--mobile-cover-width);
-  height: var(--mobile-cover-height);
+  width: 4rem;
+  height: 2.5rem;
   grid-column: 1;
   grid-row: 1 / -1;
   align-self: center;
@@ -360,94 +304,97 @@ const taskMetaValue = (view: TransferTaskView) => {
   height: 100%;
 }
 
-.task-playback-action {
-  position: absolute;
-  z-index: 1;
-  left: 0.3125rem;
-  top: calc((var(--mobile-cover-height) - 1.5rem) / 2);
-  width: 1.5rem;
-  height: 1.5rem;
-  display: grid;
-  place-items: center;
-  border: 0;
-  border-radius: 50%;
-  background: rgb(17 24 39 / 72%);
-  color: #fff;
-}
-
-.task-status-badge {
-  position: absolute;
-  top: 0.1875rem;
-  right: 0.1875rem;
-  padding: 0.0625rem 0.25rem;
-  border-radius: 0.1875rem;
-  background: rgb(17 24 39 / 72%);
-  color: #fff;
-  font-size: var(--mobile-font-micro);
-  font-weight: var(--mobile-weight-item);
-  line-height: 1.4;
-}
-
-.task-status-badge.issue {
-  background: var(--color-danger);
-  color: var(--color-on-accent);
-}
-
-.task-playback-action svg {
-  width: 0.9375rem;
-  height: 0.9375rem;
+.managing .task-artwork-wrap {
+  grid-column: 2;
 }
 
 .task-heading,
 .task-meta {
-  grid-column: 2;
   min-width: 0;
-  padding-right: 1.75rem;
-}
-
-.mobile-task.managing .task-artwork-wrap {
-  width: var(--mobile-cover-width);
   grid-column: 2;
 }
 
-.mobile-task.managing .task-heading,
-.mobile-task.managing .task-meta {
+.task-heading {
+  grid-row: 1;
+  display: flex;
+  align-items: center;
+}
+
+.task-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-text);
+  font-size: var(--font-13);
+  font-weight: 400;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.task-row-actions {
+  grid-column: 3;
+  grid-row: 1;
+  align-self: center;
+  display: flex;
+  align-items: center;
+  gap: 0.125rem;
+}
+
+.task-row-progress {
+  position: absolute;
+  right: 0.5rem;
+  bottom: 0.25rem;
+  left: calc(0.5rem + 4rem + 0.625rem);
+}
+
+.task-row-progress :deep(.progress-track) {
+  height: 0.125rem;
+}
+
+.task-meta {
+  grid-column: 2 / -1;
+  grid-row: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  color: var(--color-muted);
+  font-size: var(--font-12);
+  font-variant-numeric: tabular-nums;
+}
+
+.task-meta > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-meta > span:first-child {
+  min-width: 0;
+  flex: 1;
+}
+
+.task-meta > span:last-child {
+  flex-shrink: 0;
+}
+
+.task-meta .issue {
+  color: var(--color-danger);
+}
+
+.managing .task-heading {
   grid-column: 3;
 }
 
-.task-heading > .mobile-icon-button {
-  position: absolute;
-  right: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 1.75rem;
-  flex-basis: 1.75rem;
-  height: 1.75rem;
-  margin: 0;
+.managing .task-meta {
+  grid-column: 3 / -1;
 }
 
-.task-heading > .mobile-icon-button svg {
-  width: 1.0625rem;
-  height: 1.0625rem;
+.managing .task-row-actions {
+  grid-column: 4;
 }
 
-/* In compact rows, metadata carries status/duration so artwork remains actionable. */
-.mobile-task.compact .task-status-badge {
-  display: none;
-}
-
-.mobile-task.compact .task-playback-action {
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  background: transparent;
-}
-
-.mobile-task.compact .task-playback-action svg {
-  width: 1.5rem;
-  height: 1.5rem;
-  padding: 0.3125rem;
-  border-radius: 50%;
-  background: rgb(17 24 39 / 72%);
+.managing .task-row-progress {
+  left: calc(0.5rem + 1.25rem + 4rem + 1.25rem);
 }
 </style>

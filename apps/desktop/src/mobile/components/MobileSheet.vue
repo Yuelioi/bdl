@@ -31,7 +31,7 @@ const railLayout = inject(mobileRailLayoutKey, ref(false));
   width: 100%;
   max-width: 100%;
   max-height: 85vh;
-  border-radius: 1.25rem 1.25rem 0 0;
+  border-radius: 0.75rem 0.75rem 0 0;
   padding-bottom: var(--bdl-layout-safe-area-bottom);
 }
 
@@ -47,7 +47,7 @@ const railLayout = inject(mobileRailLayoutKey, ref(false));
 }
 
 .bdl-mobile-sheet .mobile-sheet-body > .ui-button {
-  min-height: 2.75rem;
+  min-height: 2.25rem;
 }
 
 .bdl-mobile-sheet[data-state='open'] {

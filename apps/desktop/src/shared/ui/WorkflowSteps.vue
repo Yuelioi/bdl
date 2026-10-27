@@ -1,19 +1,22 @@
 <script setup lang="ts">
 export interface WorkflowStep {
-  value: string
-  label: string
-  description?: string
-  disabled?: boolean
-  complete?: boolean
+  value: string;
+  label: string;
+  description?: string;
+  disabled?: boolean;
+  complete?: boolean;
 }
 
-const model = defineModel<string>({ required: true })
-defineProps<{ steps: WorkflowStep[] }>()
+const model = defineModel<string>({ required: true });
+defineProps<{ steps: WorkflowStep[] }>();
 </script>
 
 <template>
   <nav class="flex min-w-0 items-stretch border-b border-(--color-border)" aria-label="操作阶段">
-    <button
+    <UButton
+      variant="ghost"
+      color="neutral"
+      :ui="{ base: 'p-0', label: 'contents' }"
       v-for="(step, index) in steps"
       :key="step.value"
       type="button"
@@ -38,13 +41,15 @@ defineProps<{ steps: WorkflowStep[] }>()
       </span>
       <span class="grid min-w-0 gap-px">
         <strong class="truncate text-[0.8125rem] font-bold text-current">{{ step.label }}</strong>
-        <small v-if="step.description" class="truncate text-[0.6875rem] text-(--color-muted)">{{ step.description }}</small>
+        <small v-if="step.description" class="truncate text-[0.6875rem] text-(--color-muted)">{{
+          step.description
+        }}</small>
       </span>
       <span
         v-if="model === step.value"
         class="absolute right-3 bottom-[-0.0625rem] left-3 h-0.5 rounded-full bg-(--color-accent)"
         aria-hidden="true"
       ></span>
-    </button>
+    </UButton>
   </nav>
 </template>

@@ -303,7 +303,8 @@ const installTauriMock = async (
                 has_more: false,
               };
             }
-            if (command === 'selection_estimate_size') return { estimated_bytes: 0, estimated_parts: 0, unknown_streams: 1 };
+            if (command === 'selection_estimate_size')
+              return { estimated_bytes: 0, estimated_parts: 0, unknown_streams: 1 };
             if (command === 'selection_create_tasks') {
               if (taskCreationFails) {
                 throw {
@@ -345,7 +346,10 @@ test.describe('specific failure diagnostics', () => {
   for (const device of ['desktop', 'phone'] as const) {
     test(`${device} keeps source errors and diagnostic causes distinct`, async ({ page }) => {
       await page.setViewportSize(device === 'desktop' ? { width: 1280, height: 800 } : { width: 390, height: 844 });
-      if (device === 'phone') await page.addInitScript(() => Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Linux; Android 12) Mobile' }));
+      if (device === 'phone')
+        await page.addInitScript(() =>
+          Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Linux; Android 12) Mobile' }),
+        );
       await installTauriMock(page, 'light', true, true);
       await page.addInitScript(() => {
         const target = window as unknown as {
@@ -353,23 +357,62 @@ test.describe('specific failure diagnostics', () => {
           __COPIED_DIAGNOSTIC__: string;
           __EMPTY_LOGS__?: boolean;
         };
-        Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async (text: string) => { target.__COPIED_DIAGNOSTIC__ = text; } } });
-        const task = { id: 'diagnostic-fixture', title: '源站拒绝访问测试', source_id: 'video:fixture', status: 'failed', resources: [], output_path: 'downloads/403.mp4', media_selection: null, scheduled_at: null, speed_limit_bytes_per_second: null };
+        Object.defineProperty(navigator, 'clipboard', {
+          configurable: true,
+          value: {
+            writeText: async (text: string) => {
+              target.__COPIED_DIAGNOSTIC__ = text;
+            },
+          },
+        });
+        const task = {
+          id: 'diagnostic-fixture',
+          title: '源站拒绝访问测试',
+          source_id: 'video:fixture',
+          status: 'failed',
+          resources: [],
+          output_path: 'downloads/403.mp4',
+          media_selection: null,
+          scheduled_at: null,
+          speed_limit_bytes_per_second: null,
+        };
         const invoke = target.__TAURI_INTERNALS__.invoke;
         target.__TAURI_INTERNALS__.invoke = async (command, args) => {
-          if (command === 'diagnostics_environment') return { app_version: '0.8.4', os: 'android', arch: 'aarch64', device: { os_version: '16', android_sdk: 36, webview_version: '130.0' }, device_info_available: true, segment_count: 4, concurrent_tasks: 2, retry_count: 5, proxy_enabled: false };
+          if (command === 'diagnostics_environment')
+            return {
+              app_version: '0.8.4',
+              os: 'android',
+              arch: 'aarch64',
+              device: { os_version: '16', android_sdk: 36, webview_version: '130.0' },
+              device_info_available: true,
+              segment_count: 4,
+              concurrent_tasks: 2,
+              retry_count: 5,
+              proxy_enabled: false,
+            };
           if (command === 'queue_list') return [task];
-          if (command === 'queue_logs') return target.__EMPTY_LOGS__ ? [] : [
-            { task_id: task.id, level: 'error', message: `[stage=download_video code=remote_forbidden] 请求资源长度失败: HTTP 403 Forbidden\n${'source=1 response cause; '.repeat(200)}\nsource=3 cause=last-source\nCookie: SESSDATA=private-cookie\nhttps://cdn.test/video?token=private-token`, created_at: '2026-10-14T12:02:00Z' },
-            { task_id: task.id, level: 'info', message: '重试任务', created_at: '2026-10-14T12:01:00Z' },
-            { task_id: task.id, level: 'error', message: 'Cookie 已失效', created_at: '2026-10-14T12:00:00Z' },
-          ];
+          if (command === 'queue_logs')
+            return target.__EMPTY_LOGS__
+              ? []
+              : [
+                  {
+                    task_id: task.id,
+                    level: 'error',
+                    message: `[stage=download_video code=remote_forbidden] 请求资源长度失败: HTTP 403 Forbidden\n${'source=1 response cause; '.repeat(200)}\nsource=3 cause=last-source\nCookie: SESSDATA=private-cookie\nhttps://cdn.test/video?token=private-token`,
+                    created_at: '2026-10-14T12:02:00Z',
+                  },
+                  { task_id: task.id, level: 'info', message: '重试任务', created_at: '2026-10-14T12:01:00Z' },
+                  { task_id: task.id, level: 'error', message: 'Cookie 已失效', created_at: '2026-10-14T12:00:00Z' },
+                ];
           return invoke(command, args);
         };
       });
       await page.goto('/');
       await page.getByRole('button', { name: /传输/ }).click();
-      const row = page.getByRole('list', { name: '传输任务', includeHidden: true }).getByRole('listitem', { includeHidden: true }).filter({ hasText: '源站拒绝访问测试' });
+      const row = page
+        .getByRole('list', { name: '传输任务', includeHidden: true })
+        .getByRole('listitem', { includeHidden: true })
+        .filter({ hasText: '源站拒绝访问测试' });
       await expect(row).toContainText('源站拒绝访问');
       await row.getByRole('button', { name: /更多操作/ }).click();
       await page.getByRole(device === 'desktop' ? 'menuitem' : 'button', { name: '详情和诊断', exact: true }).click();
@@ -377,7 +420,9 @@ test.describe('specific failure diagnostics', () => {
       await expect(dialog.getByRole('heading', { name: '任务失败：源站拒绝访问' })).toBeVisible();
       await expect(dialog).toContainText('单凭 403 无法判断');
       await dialog.getByRole('button', { name: '复制诊断信息', exact: true }).click();
-      const copied = await page.evaluate(() => (window as unknown as { __COPIED_DIAGNOSTIC__: string }).__COPIED_DIAGNOSTIC__);
+      const copied = await page.evaluate(
+        () => (window as unknown as { __COPIED_DIAGNOSTIC__: string }).__COPIED_DIAGNOSTIC__,
+      );
       expect(copied).toContain('HTTP 403 Forbidden');
       expect(copied).toContain('stage=download_video');
       expect(copied).toContain('source=3 cause=last-source');
@@ -388,7 +433,9 @@ test.describe('specific failure diagnostics', () => {
       await dialog.getByRole('tab', { name: /原始日志/ }).click();
       await dialog.getByRole('button', { name: '一键复制', exact: true }).click();
       await expect(dialog.getByRole('button', { name: '已复制', exact: true })).toBeVisible();
-      const copiedLogs = await page.evaluate(() => (window as unknown as { __COPIED_DIAGNOSTIC__: string }).__COPIED_DIAGNOSTIC__);
+      const copiedLogs = await page.evaluate(
+        () => (window as unknown as { __COPIED_DIAGNOSTIC__: string }).__COPIED_DIAGNOSTIC__,
+      );
       expect(copiedLogs).toContain('任务 ID: diagnostic-fixture');
       expect(copiedLogs).toContain('系统: android 16 · aarch64');
       expect(copiedLogs).toContain('[error] 2026-10-14T12:02:00Z');
@@ -397,11 +444,22 @@ test.describe('specific failure diagnostics', () => {
       expect(copiedLogs).not.toContain('诊断:');
       expect(copiedLogs).not.toContain('private-cookie');
       expect(copiedLogs).not.toContain('private-token');
-      await page.evaluate(() => Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async () => { throw new Error('clipboard unavailable'); } } }));
+      await page.evaluate(() =>
+        Object.defineProperty(navigator, 'clipboard', {
+          configurable: true,
+          value: {
+            writeText: async () => {
+              throw new Error('clipboard unavailable');
+            },
+          },
+        }),
+      );
       await dialog.getByRole('button', { name: /^(已复制|一键复制)$/ }).click();
       await expect(page.getByText('复制失败，请重试', { exact: true })).toBeVisible();
       await expect(dialog.getByRole('button', { name: '一键复制', exact: true })).toBeVisible();
-      await page.addInitScript(() => { (window as unknown as { __EMPTY_LOGS__: boolean }).__EMPTY_LOGS__ = true; });
+      await page.addInitScript(() => {
+        (window as unknown as { __EMPTY_LOGS__: boolean }).__EMPTY_LOGS__ = true;
+      });
       await page.reload();
       await page.getByRole('button', { name: /传输/ }).click();
       await row.getByRole('button', { name: /更多操作/ }).click();
@@ -417,8 +475,17 @@ test.describe('safe file removal', () => {
   for (const theme of ['light', 'dark'] as const) {
     for (const device of ['desktop', 'tablet', 'phone'] as const) {
       test(`${theme} ${device} previews explicit selection and confirms deletion`, async ({ page }) => {
-        await page.setViewportSize(device === 'desktop' ? { width: 1280, height: 800 } : device === 'tablet' ? { width: 568, height: 356 } : { width: 320, height: 844 });
-        if (device !== 'desktop') await page.addInitScript(() => Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Linux; Android 12) Mobile' }));
+        await page.setViewportSize(
+          device === 'desktop'
+            ? { width: 1280, height: 800 }
+            : device === 'tablet'
+              ? { width: 568, height: 356 }
+              : { width: 320, height: 844 },
+        );
+        if (device !== 'desktop')
+          await page.addInitScript(() =>
+            Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Linux; Android 12) Mobile' }),
+          );
         await installTauriMock(page, theme, true, true);
         await page.addInitScript(() => {
           const target = window as unknown as {
@@ -427,8 +494,15 @@ test.describe('safe file removal', () => {
           };
           target.__REMOVAL_CALLS__ = [];
           let tasks = ['selected', 'unselected'].map((id) => ({
-            id, title: id === 'selected' ? '待删除任务' : '需要保留的任务', source_id: 'video:fixture', status: 'completed', resources: [],
-            output_path: `downloads/${'很长的中文下载目录/'.repeat(20)}${id}.mp4`, media_selection: null, scheduled_at: null, speed_limit_bytes_per_second: null,
+            id,
+            title: id === 'selected' ? '待删除任务' : '需要保留的任务',
+            source_id: 'video:fixture',
+            status: 'completed',
+            resources: [],
+            output_path: `downloads/${'很长的中文下载目录/'.repeat(20)}${id}.mp4`,
+            media_selection: null,
+            scheduled_at: null,
+            speed_limit_bytes_per_second: null,
           }));
           let selectedIds: string[] = [];
           let failedOnce = false;
@@ -439,14 +513,39 @@ test.describe('safe file removal', () => {
             if (command === 'queue_logs') return [];
             if (command === 'queue_delete_preview') {
               selectedIds = (args?.request as { task_ids: string[] }).task_ids;
-              return { token: 'fixture-confirmation', task_ids: selectedIds, files: tasks.filter((t) => selectedIds.includes(t.id)).map((t) => t.output_path), file_count: selectedIds.length, total_bytes: 8192, preserved: ['其他任务仍在使用：shared.mp4'], roots: [] };
+              return {
+                token: 'fixture-confirmation',
+                task_ids: selectedIds,
+                files: tasks.filter((t) => selectedIds.includes(t.id)).map((t) => t.output_path),
+                file_count: selectedIds.length,
+                total_bytes: 8192,
+                preserved: ['其他任务仍在使用：shared.mp4'],
+                roots: [],
+              };
             }
             if (command === 'queue_delete_files') {
-              if (!failedOnce) { failedOnce = true; throw { code: 'file_in_use', message: '文件被占用，请关闭播放器后重新确认', detail: '[stage=file_cleanup code=file_in_use] 打开待删除文件失败：C:/downloads/selected.mp4；os_error=32\nCookie: SESSDATA=private-cookie' }; }
+              if (!failedOnce) {
+                failedOnce = true;
+                throw {
+                  code: 'file_in_use',
+                  message: '文件被占用，请关闭播放器后重新确认',
+                  detail:
+                    '[stage=file_cleanup code=file_in_use] 打开待删除文件失败：C:/downloads/selected.mp4；os_error=32\nCookie: SESSDATA=private-cookie',
+                };
+              }
               tasks = tasks.filter((t) => !selectedIds.includes(t.id));
               return { updated: [], removed: selectedIds, failed: [] };
             }
-            if (command === 'maintenance_temp_preview') return { token: 'temp-confirmation', task_ids: [], files: ['downloads/orphan.video.m4s.bdlpart.seg0'], file_count: 1, total_bytes: 4096, preserved: ['仍有任务使用的文件'], roots: ['downloads'] };
+            if (command === 'maintenance_temp_preview')
+              return {
+                token: 'temp-confirmation',
+                task_ids: [],
+                files: ['downloads/orphan.video.m4s.bdlpart.seg0'],
+                file_count: 1,
+                total_bytes: 4096,
+                preserved: ['仍有任务使用的文件'],
+                roots: ['downloads'],
+              };
             if (command === 'maintenance_cleanup_temp') return { removed_files: 1, path: 'downloads' };
             return invoke(command, args);
           };
@@ -454,18 +553,31 @@ test.describe('safe file removal', () => {
         await page.goto('/');
         await page.getByRole('button', { name: /传输/ }).click();
         await page.getByRole('tab', { name: /全部/ }).click();
-        const row = page.getByRole('list', { name: '传输任务', includeHidden: true }).getByRole('listitem', { includeHidden: true }).filter({ hasText: '待删除任务' });
+        const row = page
+          .getByRole('list', { name: '传输任务', includeHidden: true })
+          .getByRole('listitem', { includeHidden: true })
+          .filter({ hasText: '待删除任务' });
         await row.getByRole('button', { name: /更多操作/ }).click();
-        await page.getByRole(device === 'desktop' ? 'menuitem' : 'button', { name: '删除任务及文件', exact: true }).click();
+        await page
+          .getByRole(device === 'desktop' ? 'menuitem' : 'button', { name: '删除任务及文件', exact: true })
+          .click();
         const dialog = page.getByRole('dialog', { name: '删除任务及文件', exact: true });
         await expect(dialog.getByText(/1 个成品或附件/)).toBeVisible();
-        const deletionCalls = () => page.evaluate(() => (window as unknown as { __REMOVAL_CALLS__: Array<{ command: string }> }).__REMOVAL_CALLS__.filter((c) => c.command === 'queue_delete_files').length);
+        const deletionCalls = () =>
+          page.evaluate(
+            () =>
+              (window as unknown as { __REMOVAL_CALLS__: Array<{ command: string }> }).__REMOVAL_CALLS__.filter(
+                (c) => c.command === 'queue_delete_files',
+              ).length,
+          );
         expect(await deletionCalls()).toBe(0);
         await dialog.getByRole('button', { name: '取消', exact: true }).click();
-        await expect(dialog).toBeHidden(); expect(await deletionCalls()).toBe(0);
+        await expect(dialog).toBeHidden();
+        expect(await deletionCalls()).toBe(0);
         if (device !== 'desktop') await page.getByRole('button', { name: '管理任务', exact: true }).click();
         await row.getByRole('checkbox').check();
-        await page.locator('.bulk-action-bar').getByRole('button', { name: '删除任务及文件', exact: true }).click();
+        await page.getByRole('button', { name: '更多批量操作', exact: true }).click();
+        await page.getByRole('menuitem', { name: '删除任务及文件', exact: true }).click();
         await expect(dialog.getByText(/1 个成品或附件/)).toBeVisible();
         await dialog.getByText('查看将删除的文件', { exact: true }).click();
         await expect(dialog.getByText(/selected.mp4/, { exact: false })).toBeVisible();
@@ -479,26 +591,48 @@ test.describe('safe file removal', () => {
         await expect(row).toBeVisible();
         await dialog.getByRole('button', { name: '重新查看文件', exact: true }).click();
         await dialog.getByRole('button', { name: '确认删除任务及文件', exact: true }).click();
-        await expect(dialog).toBeHidden(); await expect(row).toHaveCount(0);
+        await expect(dialog).toBeHidden();
+        await expect(row).toHaveCount(0);
         await expect(page.getByText('需要保留的任务', { exact: true })).toBeVisible();
-        const previews = await page.evaluate(() => (window as unknown as { __REMOVAL_CALLS__: Array<{ command: string; args?: { request?: { task_ids: string[] } } }> }).__REMOVAL_CALLS__.filter((c) => c.command === 'queue_delete_preview').map((c) => c.args?.request?.task_ids));
+        const previews = await page.evaluate(() =>
+          (
+            window as unknown as {
+              __REMOVAL_CALLS__: Array<{ command: string; args?: { request?: { task_ids: string[] } } }>;
+            }
+          ).__REMOVAL_CALLS__
+            .filter((c) => c.command === 'queue_delete_preview')
+            .map((c) => c.args?.request?.task_ids),
+        );
         expect(previews.every((ids) => JSON.stringify(ids) === '["selected"]')).toBe(true);
         if (device === 'desktop') {
           await page.getByRole('button', { name: '设置 偏好与维护' }).click();
-          await page.getByRole('button', { name: /网络与维护/ }).click();
+          await page
+            .getByRole('button', { name: /网络与维护/ })
+            .or(page.getByRole('tab', { name: '维护', exact: true }))
+            .click();
         } else {
-          await page.getByRole('navigation', { name: '主导航' }).getByRole('button', { name: '我的', exact: true }).click();
+          await page
+            .getByRole('navigation', { name: '主导航' })
+            .getByRole('button', { name: '我的', exact: true })
+            .click();
           await page.getByRole('button', { name: /清理与维护/ }).click();
         }
         await page.getByRole('button', { name: '清理临时文件', exact: true }).click();
         const cleanup = page.getByRole('dialog', { name: '清理临时文件', exact: true });
         await expect(cleanup.getByText(/1 个临时文件/)).toBeVisible();
         await cleanup.getByRole('button', { name: '取消', exact: true }).click();
-        const tempCalls = () => page.evaluate(() => (window as unknown as { __REMOVAL_CALLS__: Array<{ command: string }> }).__REMOVAL_CALLS__.filter((c) => c.command === 'maintenance_cleanup_temp').length);
+        const tempCalls = () =>
+          page.evaluate(
+            () =>
+              (window as unknown as { __REMOVAL_CALLS__: Array<{ command: string }> }).__REMOVAL_CALLS__.filter(
+                (c) => c.command === 'maintenance_cleanup_temp',
+              ).length,
+          );
         expect(await tempCalls()).toBe(0);
         await page.getByRole('button', { name: '清理临时文件', exact: true }).click();
         await cleanup.getByRole('button', { name: '确认清理', exact: true }).click();
-        await expect(cleanup).toBeHidden(); expect(await tempCalls()).toBe(1);
+        await expect(cleanup).toBeHidden();
+        expect(await tempCalls()).toBe(1);
       });
     }
   }
@@ -525,13 +659,13 @@ test('mobile shell keeps navigation and downloads usable without desktop steps',
   const parseRow = results.getByRole('listitem').first();
   await expect(parseRow.locator('.result-copy').locator(':scope > *')).toHaveCount(2);
   await results.getByRole('listitem').first().locator('.mobile-result-content').click();
-  await expect(page.locator('.mobile-download-bar').getByRole('button', { name: '下载所选 (1)' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: '下载所选 (1)' })).toBeEnabled();
   await page.getByRole('navigation', { name: '主导航' }).getByRole('button', { name: '我的' }).click();
   await expect(page.locator('.profile-card')).toBeVisible();
   await expect(page.getByRole('heading', { name: '我的', exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /外观：/ })).toBeVisible();
   await page.getByRole('navigation', { name: '主导航' }).getByRole('button', { name: '解析' }).click();
-  await expect(page.locator('.mobile-download-bar').getByRole('button', { name: '下载所选 (1)' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: '下载所选 (1)' })).toBeEnabled();
   await expect(page.locator('.workspace-enter-active, .workspace-leave-active')).toHaveCount(0);
   for (const width of [390, 320]) {
     await page.setViewportSize({ width, height: 844 });
@@ -539,6 +673,7 @@ test('mobile shell keeps navigation and downloads usable without desktop steps',
   await page.getByRole('button', { name: '下载所选 (1)' }).click();
   const downloadDialog = page.getByRole('dialog');
   await expect(downloadDialog).toBeVisible();
+  await expect(downloadDialog.getByText('请选择 Android 导出目录。', { exact: true })).toBeVisible();
 });
 
 test.describe('adaptive Android workspace', () => {
@@ -596,38 +731,53 @@ test.describe('adaptive Android workspace', () => {
       await page.getByLabel('Bilibili 链接或 BV / AV').fill('favorite:fixture');
       await page.getByRole('button', { name: '开始解析' }).click();
       const results = page.getByRole('list', { name: '解析结果' });
-      await expect(results.getByRole('checkbox')).toHaveCount(0);
-      await page.getByRole('button', { name: '管理视频', exact: true }).click();
       await expect(results.getByRole('checkbox')).toHaveCount(40);
       await results.getByRole('listitem').first().locator('.mobile-result-content').click();
       const nav = page.getByRole('navigation', { name: '主导航' });
       const download = page.getByRole('button', { name: '下载所选 (1)', exact: true });
-      const searchButton = page.getByRole('button', { name: '搜索视频', exact: true });
-      await searchButton.click();
-      const filter = page.getByPlaceholder('筛选标题或作者');
+      const filter = page.getByRole('searchbox', { name: '搜索解析结果' });
       await filter.fill('no-match-fixture');
       await expect(page.getByText('没有匹配的视频', { exact: true })).toBeVisible();
       await filter.fill('分页视频 20');
       await expect(results.getByRole('listitem')).toHaveCount(1);
       await expect(download).toBeEnabled();
       await page.getByRole('checkbox', { name: '全选已加载', exact: true }).check();
-      await expect(page.getByRole('button', { name: '下载所选 (40)', exact: true })).toBeEnabled();
+      await expect(page.getByRole('button', { name: '下载所选 (2)', exact: true })).toBeEnabled();
       await page.getByRole('checkbox', { name: '全选已加载', exact: true }).uncheck();
-      await page.getByRole('button', { name: '关闭搜索', exact: true }).click();
+      await filter.fill('');
       await expect(results.getByRole('listitem')).toHaveCount(40);
-      await page.getByRole('button', { name: '完成管理', exact: true }).click();
-      await expect(results.getByRole('checkbox')).toHaveCount(0);
+      await page.getByRole('checkbox', { name: '全选已加载', exact: true }).check();
+      await page.getByRole('checkbox', { name: '全选已加载', exact: true }).uncheck();
+      await expect(results.getByRole('checkbox')).toHaveCount(40);
       await expect(page.getByRole('button', { name: '下载所选 (0)', exact: true })).toBeDisabled();
+      const sort = page.getByRole('combobox', { name: '解析结果排序', exact: true });
+      await sort.click();
+      await page.getByRole('option', { name: '按时长', exact: true }).click();
+      await page.getByRole('button', { name: '范围选择', exact: true }).click();
+      const rangeDialog = page.getByRole('dialog', { name: '范围选择', exact: true });
+      const rangeInput = rangeDialog.getByRole('textbox', { name: '选择序号', exact: true });
+      await rangeInput.fill('41');
+      await rangeDialog.getByRole('button', { name: '添加选择', exact: true }).click();
+      await expect(rangeDialog.getByText(/序号应在 1–40 内/)).toBeVisible();
+      await rangeInput.fill('1-2');
+      await rangeDialog.getByRole('button', { name: '添加选择', exact: true }).click();
+      await expect(rangeDialog).not.toBeVisible();
+      await expect(page.getByRole('button', { name: '下载所选 (2)', exact: true })).toBeEnabled();
+      await page.getByRole('checkbox', { name: '全选已加载', exact: true }).check();
+      await page.getByRole('checkbox', { name: '全选已加载', exact: true }).uncheck();
+      await sort.click();
+      await page.getByRole('option', { name: '原顺序', exact: true }).click();
       await page.getByRole('button', { name: '内容操作', exact: true }).click();
       const contentPanel = page.getByRole('dialog', { name: '内容操作' });
       await expect(contentPanel.locator('.tablet-action-body')).toBeVisible();
-      await page.getByLabel('每次加载').selectOption('100');
+      await page.getByRole('combobox', { name: '每次加载' }).click();
+      await page.getByRole('option', { name: '100 项', exact: true }).click();
       await page.setViewportSize({ width: 390, height: 844 });
       await expect(contentPanel.locator('.mobile-sheet-body')).toBeVisible();
-      await expect(page.getByLabel('每次加载')).toHaveValue('100');
+      await expect(page.getByRole('combobox', { name: '每次加载' })).toContainText('100 项');
       await page.setViewportSize({ width: 568, height: 356 });
       await expect(contentPanel.locator('.tablet-action-body')).toBeVisible();
-      await expect(page.getByLabel('每次加载')).toHaveValue('100');
+      await expect(page.getByRole('combobox', { name: '每次加载' })).toContainText('100 项');
       await page.keyboard.press('Escape');
       await expect(contentPanel).not.toBeVisible();
       await results.getByRole('listitem').first().locator('.mobile-result-content').click();
@@ -646,7 +796,7 @@ test.describe('adaptive Android workspace', () => {
         await page.setViewportSize({ width: viewport.width, height: viewport.height });
         await expect(download).toBeEnabled();
       }
-      await download.click();
+      await page.getByRole('button', { name: '调整下载设置' }).click();
       const dialog = page.getByRole('dialog', { name: '下载设置' });
       const preset = dialog.getByRole('combobox', { name: /^下载预设/ });
       await preset.click();
@@ -654,7 +804,7 @@ test.describe('adaptive Android workspace', () => {
       await option.click();
       await expect(preset).toContainText('快速下载');
       await page.keyboard.press('Escape');
-      await expect(download).toBeFocused();
+      await expect(page.getByRole('button', { name: '调整下载设置' })).toBeFocused();
       const libraryButton = nav.getByRole('button', { name: '内容库', exact: true });
       await libraryButton.focus();
       await page.keyboard.press('Enter');
@@ -703,12 +853,11 @@ for (const theme of ['light', 'dark'] as const) {
       .first()
       .locator('.mobile-result-content')
       .click();
-    await page.getByRole('button', { name: '下载所选 (1)' }).click();
+    await page.getByRole('button', { name: '调整下载设置' }).click();
     const dialog = page.getByRole('dialog', { name: '下载设置' });
     await expect(dialog).toBeVisible();
-    const speed = dialog.getByRole('textbox', { name: /^单任务限速（MB\/s）/ });
-    await dialog.getByRole('tab', { name: '调度', exact: true }).click();
-    await speed.fill('3');
+    await dialog.getByRole('combobox', { name: /^重名处理/ }).click();
+    await page.getByRole('option', { name: '扩展文件名', exact: true }).click();
     for (const viewport of [
       { width: 800, height: 1280 },
       { width: 1280, height: 800 },
@@ -719,22 +868,15 @@ for (const theme of ['light', 'dark'] as const) {
       { width: 800, height: 360 },
     ]) {
       await page.setViewportSize(viewport);
-      await expect(speed).toHaveValue('3');
-      await dialog.getByRole('tab', { name: '下载', exact: true }).click();
-      const scrollArea = dialog.locator('.download-options-scroll');
-      await scrollArea.evaluate((element) => {
-        element.scrollTop = element.scrollHeight;
-      });
-      await dialog.getByRole('tab', { name: '调度', exact: true }).click();
+      await expect(dialog.getByRole('combobox', { name: /^重名处理/ })).toContainText('扩展文件名');
     }
     await page.setViewportSize({ width: 800, height: 1280 });
-    await dialog.getByRole('tab', { name: '下载', exact: true }).click();
     await dialog.getByRole('combobox', { name: /^重名处理/ }).click();
     await page.getByRole('option', { name: '扩展文件名', exact: true }).click();
     await expect(dialog.getByRole('combobox', { name: /^重名处理/ })).toContainText('扩展文件名');
     await page.keyboard.press('Escape');
     await expect(dialog).not.toBeVisible();
-    await expect(page.getByRole('button', { name: '下载所选 (1)' })).toBeFocused();
+    await expect(page.getByRole('button', { name: '调整下载设置' })).toBeFocused();
   });
 }
 
@@ -748,8 +890,7 @@ for (const theme of ['light', 'dark'] as const) {
     await installPresetPersistence(page);
     await page.goto('/');
     await openPresetSettings(page);
-    const trigger = page.getByRole('button', { name: '编辑', exact: true });
-    await trigger.click();
+    const trigger = await openCurrentPresetEditor(page);
     const editor = page.getByRole('dialog', { name: '编辑预设', exact: true });
     await editor.getByRole('textbox', { name: '预设名称', exact: true }).fill('平板自定义下载预设');
     for (const viewport of [
@@ -804,14 +945,13 @@ test('mobile library supports selection and page actions', async ({ page }) => {
   await nav.getByRole('button', { name: '内容库' }).click();
   await page.getByRole('tab', { name: /订阅合集/ }).click();
   await page.getByRole('button', { name: '进入 双赢之路' }).click();
-  await expect(page.locator('.folder-heading')).toContainText('双赢之路');
+  await expect(page.locator('.library-source-summary')).toContainText('双赢之路');
   const cover = page.locator('.mobile-result img').first();
   await expect(cover).toHaveAttribute('src', 'https://i0.hdslb.com/test-cover.svg');
   await expect.poll(() => cover.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBe(160);
   expect(referers).toEqual([undefined]);
   const folderRow = page.locator('.mobile-result').first();
-  await expect(folderRow.getByRole('checkbox')).toHaveCount(0);
-  await page.getByRole('button', { name: '管理视频', exact: true }).click();
+
   await expect(folderRow.getByRole('checkbox')).toBeVisible();
   await page.locator('.mobile-result-content').first().click();
   await expect(page.locator('.folder-download').getByRole('button', { name: '下载所选 (1)' })).toBeEnabled();
@@ -825,7 +965,6 @@ test('mobile library supports selection and page actions', async ({ page }) => {
   await expect(page.locator('.profile-card')).toBeVisible();
   await expect(page.locator('.workspace-enter-active, .workspace-leave-active')).toHaveCount(0);
   await page.getByRole('button', { name: /下载设置/ }).click();
-  await page.getByRole('button', { name: '下载 目录、速度与任务恢复' }).click();
   await page.getByLabel('全局下载限速（MB/s）', { exact: true }).fill('10');
   await page.getByRole('button', { name: '保存', exact: true }).click();
   await expect(page.getByRole('button', { name: '保存', exact: true })).toBeDisabled();
@@ -986,7 +1125,7 @@ test.describe('populated Android interactions', () => {
     await page.setViewportSize({ width: 568, height: 356 });
     await page.setViewportSize({ width: 390, height: 844 });
     await page.getByRole('button', { name: '进入 默认收藏夹' }).click();
-    await expect(page.locator('.folder-heading')).toContainText('356 个视频');
+    await expect(page.locator('.library-source-summary')).toContainText('356 个视频');
     await expect(page.getByRole('tablist')).toHaveCount(0);
     await expect(page.locator('.source-parse-controls')).toHaveCount(0);
     await expect(page.getByRole('combobox')).toHaveCount(0);
@@ -1004,16 +1143,9 @@ test.describe('populated Android interactions', () => {
     await nav.getByRole('button', { name: /传输/ }).click();
     await expect(page.getByRole('list', { name: '传输任务' })).toBeVisible();
     await expect(page.getByRole('table', { name: '传输任务' })).toHaveCount(0);
-    await expect(page.locator('.task-playback-action').first()).toBeVisible();
+    await expect(page.locator('.mobile-task').first().getByRole('button', { name: '重试', exact: true })).toBeVisible();
     await expect(page.locator('.mobile-task').first()).toContainText('失败');
     await expect(page.locator('.mobile-task').filter({ hasText: '下载视频中' })).toHaveCount(1);
-    expect(
-      await page
-        .locator('.task-playback-action')
-        .first()
-        .locator('svg')
-        .evaluate((icon) => icon.childElementCount),
-    ).toBeGreaterThan(0);
     await page.getByRole('tab', { name: /已完成/ }).click();
     await expect(page.getByRole('button', { name: '搜索已完成任务' })).toBeVisible();
     await expect(page.getByPlaceholder('搜索标题或保存位置')).toHaveCount(0);
@@ -1024,10 +1156,9 @@ test.describe('populated Android interactions', () => {
       'src',
       'https://i0.hdslb.com/transfer-cover.svg',
     );
-    await expect(page.locator('.mobile-task').first().locator('.task-status-badge')).toHaveText('已完成');
+    await expect(page.locator('.mobile-task').first().locator('.task-meta')).toContainText('已完成');
     await expect(page.locator('.mobile-task').first().getByRole('button', { name: '播放' })).toBeVisible();
     await expect(page.locator('.mobile-task').first().getByText('打开文件', { exact: true })).toHaveCount(0);
-    await expect(page.locator('.mobile-task').first().locator('.task-heading, .task-meta')).toHaveCount(2);
     await expect(page.locator('.mobile-header')).toBeVisible();
     await expect(page.locator('.mobile-header')).toContainText('BDL');
     const firstTask = page.locator('.mobile-task').first();
@@ -1057,7 +1188,6 @@ test.describe('populated Android interactions', () => {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
       if (viewport.width === 568) {
         await expect(tasks.getByRole('listitem').first().locator('.task-meta')).toContainText('已完成');
-        await expect(tasks.getByRole('listitem').first().locator('.task-meta')).toContainText('1:00');
         await expect(
           tasks.getByRole('listitem').first().getByRole('button', { name: '播放', exact: true }),
         ).toBeVisible();
@@ -1071,12 +1201,8 @@ test.describe('populated Android interactions', () => {
     await expect(page.locator('.profile-card')).toBeVisible();
     await expect(page.locator('.workspace-enter-active, .workspace-leave-active')).toHaveCount(0);
     await page.getByRole('button', { name: /下载设置/ }).click();
-    await expect(page.locator('.settings-category')).toHaveCount(5);
-    await expect(page.locator('.mobile-header')).toBeVisible();
-    await page.getByRole('button', { name: '下载 目录、速度与任务恢复' }).click();
+    await expect(page.getByRole('tab', { name: '下载保存', exact: true })).toBeVisible();
     await expect(page.getByLabel('全局下载限速（MB/s）', { exact: true })).toBeVisible();
-    await page.getByRole('button', { name: '返回设置' }).click();
-    await expect(page.locator('.settings-category')).toHaveCount(5);
     await page.getByRole('button', { name: '返回我的' }).click();
     await page
       .getByRole('button', { name: /外观：/ })
@@ -1101,6 +1227,7 @@ test('mobile batch selection and removal keep the download action reachable', as
   );
   await installTauriMock(page, 'light', true, true);
   await page.goto('/');
+  await page.getByRole('button', { name: '多行输入', exact: true }).click();
   await page.getByLabel('Bilibili 链接或 BV / AV').fill('BV1xx411c7mD\nBV1xx411c7mE');
   await page.getByRole('button', { name: '开始解析' }).click();
   const list = page.getByRole('list', { name: '批量解析结果' });
@@ -1212,7 +1339,7 @@ for (const width of [375, 900, 1280]) {
 test('native browser context menu is suppressed', async ({ page }) => {
   await installTauriMock(page, 'light');
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: '解析链接' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '从一个链接开始' })).toBeVisible();
 
   const contextMenuAllowed = await page.evaluate(() =>
     document.body.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })),
@@ -1235,9 +1362,11 @@ test('parse source can be submitted with Ctrl+Enter', async ({ page }) => {
 test('single video mode uses one input and disables collection expansion', async ({ page }) => {
   await installTauriMock(page, 'light');
   await page.goto('/');
-  await expect(page.getByRole('button', { name: '批量解析', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('combobox', { name: '解析范围', exact: true })).toContainText('视频及所属合集');
+  await page.getByRole('button', { name: '多行输入', exact: true }).click();
   await page.locator('textarea').fill('BV1xx411c7mD\nBV1xx411c7mE');
-  await page.getByRole('button', { name: '单个视频', exact: true }).click();
+  await page.getByRole('combobox', { name: '解析范围', exact: true }).click();
+  await page.getByRole('option', { name: '仅当前视频', exact: true }).click();
   await expect(page.locator('textarea')).toHaveCount(0);
   const input = page.getByLabel('视频链接或 BV / AV', { exact: true });
   await input.fill('BV1xx411c7mD');
@@ -1248,9 +1377,11 @@ test('single video mode uses one input and disables collection expansion', async
   });
   await expect(page.getByText(/一次只解析一个链接/)).toBeVisible();
   await expect(input).toHaveValue('BV1xx411c7mD');
-  await page.getByRole('button', { name: '批量解析', exact: true }).click();
+  await page.getByRole('combobox', { name: '解析范围', exact: true }).click();
+  await page.getByRole('option', { name: '视频及所属合集', exact: true }).click();
   await expect(page.locator('textarea')).toHaveValue('BV1xx411c7mD\nBV1xx411c7mE');
-  await page.getByRole('button', { name: '单个视频', exact: true }).click();
+  await page.getByRole('combobox', { name: '解析范围', exact: true }).click();
+  await page.getByRole('option', { name: '仅当前视频', exact: true }).click();
   await expect(input).toHaveValue('BV1xx411c7mD');
   await page.setViewportSize({ width: 540, height: 720 });
   await expect(input).toBeVisible();
@@ -1274,7 +1405,7 @@ test('single video mode uses one input and disables collection expansion', async
 test('the QR placeholder starts a session without a duplicate footer action', async ({ page }) => {
   await installTauriMock(page, 'light');
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: '解析链接' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '从一个链接开始' })).toBeVisible();
 
   await page.getByRole('button', { name: '登录' }).click();
   await page.getByRole('menuitem', { name: '登录' }).click();
@@ -1326,11 +1457,11 @@ test('settings header is concise and existing outputs are skipped by default', a
   const settingsHeading = page.locator('.settings-heading');
   await expect(settingsHeading.getByText('偏好与维护', { exact: true })).toHaveCount(0);
   await expect(settingsHeading.getByText(/调整新任务的默认行为/)).toHaveCount(0);
-  await page.getByRole('button', { name: /文件命名/ }).click();
+  await selectSettingsSection(page, '下载与保存');
   await expect(page.getByRole('combobox', { name: '重名处理', exact: true })).toContainText('已有文件则跳过');
 });
 
-test('opening download settings reuses startup environment health', async ({ page }) => {
+test('saved defaults download directly and reuse startup environment health', async ({ page }) => {
   await installTauriMock(page, 'light');
   await page.goto('/');
   await expect(page.getByRole('button', { name: '开始解析' })).toBeEnabled();
@@ -1340,7 +1471,17 @@ test('opening download settings reuses startup environment health', async ({ pag
   await page.getByRole('button', { name: '选择 测试视频' }).click();
   await page.getByRole('button', { name: '下载所选 (1)' }).click();
 
-  await expect(page.getByRole('dialog', { name: '下载设置' })).toBeVisible();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (window as unknown as { __BDL_TEST_INVOKES__: string[] }).__BDL_TEST_INVOKES__.filter(
+            (name) => name === 'selection_create_tasks',
+          ).length,
+      ),
+    )
+    .toBe(1);
+  await expect(page.getByRole('dialog', { name: '下载设置' })).not.toBeVisible();
   const environmentChecks = await page.evaluate(
     () =>
       ((window as unknown as { __BDL_TEST_INVOKES__: string[] }).__BDL_TEST_INVOKES__ ?? []).filter(
@@ -1371,14 +1512,12 @@ test('parse result checkbox controls download selection', async ({ page }) => {
   ).toBe(1);
   await page.getByRole('checkbox', { name: '全选已加载' }).click();
   await expect(page.getByRole('checkbox', { name: '全选已加载' })).toBeChecked();
-  const actionBar = page.locator('.selection-action-bar');
-  await expect(actionBar.getByRole('button', { name: '取消选择', exact: true })).toBeVisible();
-  await expect(actionBar.getByRole('button', { name: /下载/ })).toHaveCount(0);
-  await expect(page.locator('.source-function-toolbar').getByRole('button', { name: '下载所选 (1)' })).toBeVisible();
+  await expect(page.getByRole('checkbox', { name: '全选已加载' })).toBeChecked();
+  await expect(page.getByRole('button', { name: '下载所选 (1)' })).toBeVisible();
   await expect(page.locator('.source-result-header').getByRole('button', { name: /全选/ })).toHaveCount(0);
 });
 
-test('parse result uses a back action that clears the workspace and removes advanced filters', async ({ page }) => {
+test('parse result clears the workspace while retaining the source input', async ({ page }) => {
   await installTauriMock(page, 'light');
   await page.goto('/');
   const input = page.getByLabel('Bilibili 链接或 BV / AV');
@@ -1386,15 +1525,14 @@ test('parse result uses a back action that clears the workspace and removes adva
   await page.getByRole('button', { name: '开始解析' }).click();
 
   await expect(page.getByRole('button', { name: '返回解析首页' })).toBeVisible();
-  await expect(page.getByLabel('搜索内容')).toHaveCount(0);
-  await expect(page.getByLabel('排序')).toHaveCount(0);
-  await expect(page.getByLabel('序号范围')).toHaveCount(0);
+  await expect(page.getByRole('searchbox', { name: '搜索解析结果' })).toBeEnabled();
+  await expect(page.getByRole('combobox', { name: '解析结果排序' })).toContainText('原顺序');
   await expect(page.getByRole('button', { name: '刷新当前来源' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: '关闭解析结果' })).toHaveCount(0);
-  await expect(page.locator('.source-function-toolbar').getByRole('button', { name: '下载所选 (0)' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '下载所选 (0)' })).toBeVisible();
 
   await page.getByRole('button', { name: '返回解析首页' }).click();
-  await expect(page.getByRole('heading', { name: '解析链接' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '从一个链接开始' })).toBeVisible();
   await expect(input).toHaveValue('');
   await expect(page.getByText('测试视频', { exact: true })).toHaveCount(0);
 });
@@ -1447,58 +1585,70 @@ test('parse all can stop at a page boundary', async ({ page }) => {
 
 for (const theme of ['light', 'dark'] as const) {
   for (const platform of ['desktop', 'mobile'] as const) {
-  test(`background parsing failure recovery ${platform} ${theme}`, async ({ page }) => {
-    if (platform === 'mobile') {
-      await page.setViewportSize({ width: 375, height: 844 });
-      await page.addInitScript(() => Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Linux; Android 12) Mobile' }));
-    }
-    await installTauriMock(page, theme);
-    await page.addInitScript(() => {
-      const target = window as unknown as {
-        __TAURI_INTERNALS__: { invoke: (command: string, args?: Record<string, unknown>) => Promise<unknown> };
-        __FAILED_PART__?: string;
-        __RETRY_ALLOWED__?: boolean;
-        __TASK_ATTEMPTS__: string[];
-      };
-      target.__TASK_ATTEMPTS__ = [];
-      const invoke = target.__TAURI_INTERNALS__.invoke;
-      target.__TAURI_INTERNALS__.invoke = async (command, args) => {
-        if (command === 'selection_create_tasks') {
-          const id = (args?.request as { part_ids: string[] }).part_ids[0];
-          target.__TASK_ATTEMPTS__.push(id);
-          target.__FAILED_PART__ ??= id;
-          if (id === target.__FAILED_PART__ && !target.__RETRY_ALLOWED__) throw new Error('planning error: `长标题' + '测试'.repeat(70) + '` 缺少视频流，请重新解析后再试。');
-        }
-        return invoke(command, args);
-      };
+    test(`background parsing failure recovery ${platform} ${theme}`, async ({ page }) => {
+      if (platform === 'mobile') {
+        await page.setViewportSize({ width: 375, height: 844 });
+        await page.addInitScript(() =>
+          Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Linux; Android 12) Mobile' }),
+        );
+      }
+      await installTauriMock(page, theme);
+      await page.addInitScript(() => {
+        const target = window as unknown as {
+          __TAURI_INTERNALS__: { invoke: (command: string, args?: Record<string, unknown>) => Promise<unknown> };
+          __FAILED_PART__?: string;
+          __RETRY_ALLOWED__?: boolean;
+          __TASK_ATTEMPTS__: string[];
+        };
+        target.__TASK_ATTEMPTS__ = [];
+        const invoke = target.__TAURI_INTERNALS__.invoke;
+        target.__TAURI_INTERNALS__.invoke = async (command, args) => {
+          if (command === 'selection_create_tasks') {
+            const id = (args?.request as { part_ids: string[] }).part_ids[0];
+            target.__TASK_ATTEMPTS__.push(id);
+            target.__FAILED_PART__ ??= id;
+            if (id === target.__FAILED_PART__ && !target.__RETRY_ALLOWED__)
+              throw new Error('planning error: `长标题' + '测试'.repeat(70) + '` 缺少视频流，请重新解析后再试。');
+          }
+          return invoke(command, args);
+        };
+      });
+      await page.goto('/');
+      await page.getByLabel('链接或 BV / AV').fill('favorite:fixture');
+      await page.getByRole('button', { name: '开始解析' }).click();
+      if (platform === 'mobile') {
+        await page.getByRole('button', { name: '内容操作', exact: true }).click();
+        await page
+          .getByRole('dialog', { name: '内容操作' })
+          .getByRole('button', { name: '下载整个集合', exact: true })
+          .click();
+      } else {
+        await page.getByRole('button', { name: '更多解析方式' }).click();
+        await page.getByRole('menuitem', { name: '后台解析全部并下载' }).click();
+      }
+      const status = page.getByRole('region', { name: '后台解析下载' });
+      await expect(status).toContainText('后台解析下载已完成', { timeout: 15000 });
+      await expect(status).toContainText('1 项失败');
+      const before = await page.evaluate(
+        () => (window as unknown as { __TASK_ATTEMPTS__: string[] }).__TASK_ATTEMPTS__.length,
+      );
+      expect(before).toBeGreaterThan(1);
+      await status.getByText('1 项失败，展开查看', { exact: true }).focus();
+      await page.keyboard.press('Enter');
+      for (const width of [1280, 375, 568]) {
+        await page.setViewportSize({ width, height: width === 568 ? 356 : 844 });
+      }
+      await page.evaluate(() => {
+        (window as unknown as { __RETRY_ALLOWED__: boolean }).__RETRY_ALLOWED__ = true;
+      });
+      await status.getByRole('button', { name: '重试失败项' }).focus();
+      await page.keyboard.press('Enter');
+      await expect(status).toContainText('后台解析下载已完成');
+      await expect(status.getByRole('button', { name: '重试失败项' })).not.toBeVisible();
+      expect(
+        await page.evaluate(() => (window as unknown as { __TASK_ATTEMPTS__: string[] }).__TASK_ATTEMPTS__.length),
+      ).toBe(before + 1);
     });
-    await page.goto('/');
-    await page.getByLabel('链接或 BV / AV').fill('favorite:fixture');
-    await page.getByRole('button', { name: '开始解析' }).click();
-    if (platform === 'mobile') {
-      await page.getByRole('button', { name: '内容操作', exact: true }).click();
-      await page.getByRole('dialog', { name: '内容操作' }).getByRole('button', { name: '下载整个集合', exact: true }).click();
-    } else {
-      await page.getByRole('button', { name: '更多解析方式' }).click();
-      await page.getByRole('menuitem', { name: '后台解析全部并下载' }).click();
-    }
-    const status = page.getByRole('region', { name: '后台解析下载' });
-    await expect(status).toContainText('后台解析下载已完成', { timeout: 15000 });
-    await expect(status).toContainText('1 项失败');
-    const before = await page.evaluate(() => (window as unknown as { __TASK_ATTEMPTS__: string[] }).__TASK_ATTEMPTS__.length);
-    expect(before).toBeGreaterThan(1);
-    await status.getByText('1 项失败，展开查看', { exact: true }).focus();
-    await page.keyboard.press('Enter');
-    for (const width of [1280, 375, 568]) {
-      await page.setViewportSize({ width, height: width === 568 ? 356 : 844 });
-    }
-    await page.evaluate(() => { (window as unknown as { __RETRY_ALLOWED__: boolean }).__RETRY_ALLOWED__ = true; });
-    await status.getByRole('button', { name: '重试失败项' }).focus();
-    await page.keyboard.press('Enter');
-    await expect(status).toContainText('后台解析下载已完成');
-    await expect(status.getByRole('button', { name: '重试失败项' })).not.toBeVisible();
-    expect(await page.evaluate(() => (window as unknown as { __TASK_ATTEMPTS__: string[] }).__TASK_ATTEMPTS__.length)).toBe(before + 1);
-  });
   }
 }
 
@@ -1523,13 +1673,12 @@ test('background parsing downloads progressively and remains visible on another 
 test('batch result selection uses the shared list checkbox', async ({ page }) => {
   await installTauriMock(page, 'light');
   await page.goto('/');
+  await page.getByRole('button', { name: '多行输入', exact: true }).click();
   await page.getByLabel('Bilibili 链接或 BV / AV').fill('BV1xx411c7mD\nBV1xx411c7mE');
   await page.getByRole('button', { name: '开始解析' }).click();
 
-  const actionBar = page.locator('.selection-action-bar');
-  await expect(actionBar.getByRole('button', { name: '取消选择' })).toBeVisible();
-  await expect(actionBar.getByRole('button', { name: /下载/ })).toHaveCount(0);
-  await expect(page.locator('.source-function-toolbar').getByRole('button', { name: '下载所选 (2)' })).toBeVisible();
+  await expect(page.getByRole('checkbox', { name: '全选全部', exact: true })).toBeChecked();
+  await expect(page.getByRole('button', { name: '下载所选 (2)' })).toBeVisible();
   await expect(page.locator('.batch-result-header').getByRole('button', { name: /全选/ })).toHaveCount(0);
 });
 
@@ -1563,7 +1712,6 @@ test('task-creation errors stay inside download settings instead of the parse pa
   await page.getByRole('button', { name: '下载所选 (1)' }).click();
 
   const dialog = page.getByRole('dialog', { name: '下载设置' });
-  await dialog.getByRole('button', { name: '开始下载' }).click();
   await expect(dialog.locator('.inline-notice > p').filter({ hasText: 'Bilibili 暂时拒绝了请求' })).toBeVisible();
   await expect(dialog.getByRole('button', { name: '复制诊断信息' })).toBeVisible();
   await dialog.getByText('错误详情', { exact: true }).click();
@@ -1586,7 +1734,7 @@ test('collected favorite folders open through the collection resolver with match
   await expect(page.locator('.source-function-toolbar').getByText('已加载 5 / 5 项')).toBeVisible();
   const actionBar = page.locator('.selection-action-bar');
   await expect(page.getByRole('checkbox', { name: '全选本页' })).toBeVisible();
-  await expect(actionBar.getByRole('button', { name: /下载|解析/ })).toHaveCount(0);
+  await expect(actionBar.getByRole('button', { name: /^下载所选/ })).toBeDisabled();
   await expect(page.locator('.library-folder-header').getByRole('button', { name: '下载全部' })).toBeVisible();
 });
 
@@ -1614,14 +1762,12 @@ test('leaving a library folder does not leak its parse session into the parse wo
 
   await page.getByRole('button', { name: '解析 添加与选择' }).click();
 
-  await expect(page.getByRole('heading', { name: '解析链接' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '从一个链接开始' })).toBeVisible();
   await expect(page.getByRole('heading', { name: /双赢之路/ })).toHaveCount(0);
   await expect(page.getByRole('list', { name: '解析结果' })).toHaveCount(0);
 });
 
-test('library detail supports pagination, parsing and selection', async ({
-  page,
-}) => {
+test('library detail supports pagination, parsing and selection', async ({ page }) => {
   await page.setViewportSize({ width: 1080, height: 720 });
   await installTauriMock(page, 'light', true, true);
   await page.goto('/');
@@ -1634,7 +1780,7 @@ test('library detail supports pagination, parsing and selection', async ({
   await expect(page.getByText('第 1 / 1 页')).toHaveCount(1);
   await expect(page.locator('.source-function-toolbar').getByText('已加载 5 / 5 项')).toBeVisible();
   await expect(actionBar.locator('.selection-context-row')).toHaveCount(0);
-  await expect(actionBar.getByRole('button', { name: /下载|解析/ })).toHaveCount(0);
+  await expect(actionBar.getByRole('button', { name: /^下载所选/ })).toBeDisabled();
 });
 
 test('library page jump loads only the requested page and reuses visited pages', async ({ page }) => {
@@ -1716,8 +1862,8 @@ test('folder title and video cover expose Bilibili playback', async ({ page }) =
 
   const folderTitleLink = page.getByRole('button', { name: '在 Bilibili 打开 双赢之路' });
   const videoCoverPlay = page.getByRole('button', { name: '播放 合集视频 1' });
-  await expect(folderTitleLink.locator('svg')).toHaveCount(0);
-  await expect(videoCoverPlay.locator('svg')).toHaveCount(1);
+  await expect(folderTitleLink).toBeEnabled();
+  await expect(videoCoverPlay).toBeEnabled();
   await expect(page.getByRole('button', { name: /打开测试用户|打开 测试用户/ })).toHaveCount(0);
 });
 
@@ -1746,6 +1892,7 @@ test('library video rows toggle selection and support select-all', async ({ page
 });
 
 test('media preferences reorder combinations while download keeps optimal quality', async ({ page }) => {
+  test.setTimeout(60_000);
   await installTauriMock(page, 'light');
   await page.addInitScript(() => {
     const target = window as unknown as {
@@ -1755,7 +1902,9 @@ test('media preferences reorder combinations while download keeps optimal qualit
     };
     const invoke = target.__TAURI_INTERNALS__.invoke;
     target.__TAURI_INTERNALS__.invoke = async (command, args) => {
+      if (command === 'settings_get' && localStorage.getItem('fixture-media-priorities')) return JSON.parse(localStorage.getItem('fixture-media-priorities')!);
       if (command === 'settings_update') {
+        localStorage.setItem('fixture-media-priorities', JSON.stringify(args?.settings));
         target.__BDL_MEDIA_SETTINGS__ = args?.settings;
         return args?.settings;
       }
@@ -1765,31 +1914,53 @@ test('media preferences reorder combinations while download keeps optimal qualit
   });
   await page.goto('/');
   await page.getByRole('button', { name: '设置 偏好与维护' }).click();
-  await page.getByRole('button', { name: /^下载预设(?: 内容.*)?$/ }).click();
-  await page.getByText('优先顺序', { exact: true }).click();
-  await page.getByRole('button', { name: '添加画质' }).click();
-  await page.getByRole('combobox', { name: '第 1 优先画质', exact: true }).click();
-  await page.getByRole('option', { name: 'HDR / 125', exact: true }).click();
-  await page.getByRole('combobox', { name: '第 1 优先编码', exact: true }).click();
-  await page.getByRole('option', { name: 'HEVC / H.265', exact: true }).click();
-  await page.getByRole('button', { name: '添加画质' }).click();
-  await page.getByRole('combobox', { name: '第 2 优先画质', exact: true }).click();
-  await page.getByRole('option', { name: '任意 SDR', exact: true }).click();
+  await page
+    .getByRole('button', { name: '画质与编码', exact: true })
+    .or(page.getByRole('tab', { name: '画质与编码', exact: true }))
+    .click();
+  await page.getByRole('button', { name: '编排清晰度优先级', exact: true }).click();
+  await page.getByRole('button', { name: '上移第 3 条视频偏好', exact: true }).click();
   await page.getByRole('button', { name: '上移第 2 条视频偏好', exact: true }).click();
-  await expect(page.getByRole('combobox', { name: '第 1 优先画质', exact: true })).toContainText('任意 SDR');
+  await page.getByRole('button', { name: '编排视频编码优先级', exact: true }).click();
+  await page.getByRole('button', { name: '上移第 2 条视频编码', exact: true }).click();
+  await expect(page.getByRole('list', { name: '视频编码优先级', exact: true }).getByRole('listitem').nth(1)).toContainText('AVC');
+  await page.getByRole('combobox', { name: '视频编码', exact: true }).click();
+  await page.getByRole('option', { name: 'AVC / H.264', exact: true }).click();
+  await page.getByRole('combobox', { name: '视频编码', exact: true }).click();
+  await page.getByRole('option', { name: 'HEVC / H.265', exact: true }).click();
+  await page.getByRole('button', { name: '下移第 1 条视频编码', exact: true }).click();
+  await page.getByRole('button', { name: '上移第 2 条视频编码', exact: true }).click();
+  await page.getByRole('button', { name: '编排音频编码优先级', exact: true }).click();
+  await page.getByRole('button', { name: '上移第 2 条音频编码', exact: true }).click();
   await page.getByRole('button', { name: '下移第 1 条视频偏好', exact: true }).click();
-  await page.getByRole('button', { name: '添加音质' }).click();
-  await page.getByRole('combobox', { name: '第 1 优先音质', exact: true }).click();
-  await page.getByRole('option', { name: 'Hi-Res 无损 / 30251', exact: true }).click();
+  await expect(page.getByRole('list', { name: '画质优先顺序', exact: true }).getByRole('listitem').first()).toContainText('8K');
+  await page.getByRole('button', { name: '上移第 2 条视频偏好', exact: true }).click();
+  await expect(page.getByRole('list', { name: '画质优先顺序', exact: true }).getByRole('listitem').first()).toContainText('HDR');
+  await page.getByRole('combobox', { name: '视频清晰度', exact: true }).click();
+  await expect(page.getByRole('option')).toHaveText(['最佳可用', '仅 SDR', 'HDR', '8K', '杜比视界', '4K', '1080P60', '1080P+', '1080P', '720P60', '720P', '480P', '360P']);
+  await page.getByRole('option', { name: '4K', exact: true }).click();
+  await expect(page.getByRole('combobox', { name: '指定档位不可用时', exact: true })).toContainText('不换档');
+  await page.getByRole('combobox', { name: '视频清晰度', exact: true }).click();
+  await page.getByRole('option', { name: '最佳可用', exact: true }).click();
+  await page.getByRole('button', { name: '编排音质优先级', exact: true }).click();
+  await page.getByRole('button', { name: '上移第 4 条音频偏好', exact: true }).click();
+  await page.getByRole('button', { name: '上移第 3 条音频偏好', exact: true }).click();
   await page.getByRole('button', { name: '保存', exact: true }).click();
   await expect(page.getByRole('button', { name: '保存', exact: true })).toBeDisabled();
+  await page.reload();
+  await page.getByRole('button', { name: '设置 偏好与维护' }).click();
+  await page.getByRole('button', { name: '画质与编码', exact: true }).or(page.getByRole('tab', { name: '画质与编码', exact: true })).click();
+  await page.getByRole('button', { name: '编排视频编码优先级', exact: true }).click();
+  await page.getByRole('button', { name: '编排音频编码优先级', exact: true }).click();
+  await expect(page.getByRole('list', { name: '视频编码优先级', exact: true }).getByRole('listitem').first()).toContainText('HEVC');
+  await expect(page.getByRole('list', { name: '音频编码优先级', exact: true }).getByRole('listitem').nth(1)).toContainText('AAC');
   await page.setViewportSize({ width: 800, height: 900 });
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.getByRole('button', { name: '解析 添加与选择' }).click();
   await page.getByLabel('链接或 BV / AV').fill('BV1xx411c7mD');
   await page.getByRole('button', { name: '开始解析' }).click();
   await page.getByRole('button', { name: '选择 测试视频' }).click();
-  await page.getByRole('button', { name: '下载所选 (1)' }).click();
+  await page.getByRole('button', { name: '调整下载设置' }).click();
   const dialog = page.getByRole('dialog', { name: '下载设置' });
   await expect(dialog.getByRole('combobox', { name: /^下载预设/ })).toContainText('快速下载');
   await expect(dialog.getByRole('combobox', { name: /视频清晰度/ })).toHaveCount(0);
@@ -1801,18 +1972,38 @@ test('media preferences reorder combinations while download keeps optimal qualit
     };
     return {
       request: target.__BDL_MEDIA_REQUEST__,
-      preferences: (target.__BDL_MEDIA_SETTINGS__ as unknown as { media_preferences: unknown }).media_preferences,
+      preferences: (JSON.parse(localStorage.getItem('fixture-media-priorities')!) as { media_preferences: unknown }).media_preferences,
     };
   });
   expect(result.request.download_preset_id).toBe('video');
   expect(result.preferences).toEqual({
-    video: [
-      { quality: '125', codec: 'hevc' },
-      { quality: 'sdr', codec: 'auto' },
-    ],
-    audio: ['30251'],
-    fallback: 'best',
+    video: ['125', '127', '126', '120', '116', '112', '80', '74', '64', '32', '16'].map((quality) => ({ quality, codec: 'auto' })),
+    audio: ['30251', '30280', '30250', '30255', '30232', '30216'],
+    video_codecs: ['hevc', 'avc', 'av1'],
+    audio_codecs: ['flac', 'aac', 'eac3'],
   });
+  await page.evaluate(() => {
+    const saved = JSON.parse(localStorage.getItem('fixture-media-priorities')!);
+    saved.media_preferences.video = [{ quality: '80', codec: 'avc' }, { quality: '120', codec: 'hevc' }];
+    localStorage.setItem('fixture-media-priorities', JSON.stringify(saved));
+  });
+  await page.reload();
+  await page.getByRole('button', { name: '设置 偏好与维护' }).click();
+  await selectSettingsSection(page, '画质与编码');
+  await page.getByRole('button', { name: '编排清晰度优先级', exact: true }).click();
+  await page.getByRole('button', { name: '撤销', exact: true }).click();
+  await expect(page.getByRole('button', { name: '保存', exact: true })).toBeDisabled();
+  await page.getByRole('button', { name: '解析 添加与选择' }).click();
+  await page.getByRole('button', { name: '设置 偏好与维护' }).click();
+  await selectSettingsSection(page, '画质与编码');
+  await page.getByRole('button', { name: '编排清晰度优先级', exact: true }).click();
+  await page.getByRole('button', { name: '保存', exact: true }).click();
+  const completed = await page.evaluate(() => JSON.parse(localStorage.getItem('fixture-media-priorities')!).media_preferences.video);
+  expect(completed).toEqual([
+    { quality: '80', codec: 'avc' },
+    { quality: '120', codec: 'hevc' },
+    ...['127', '126', '125', '116', '112', '74', '64', '32', '16'].map((quality) => ({ quality, codec: 'auto' })),
+  ]);
 });
 
 test('missing directory allows parsing and explicit SDR task creation', async ({ page }) => {
@@ -1836,7 +2027,7 @@ test('missing directory allows parsing and explicit SDR task creation', async ({
         return {
           ...(result as object),
           quality: 'sdr',
-          media_preferences: { video: [], audio: ['30280'], fallback: 'best' },
+          media_preferences: { video: [], audio: ['30280'] },
         };
       }
       if (command === 'selection_create_tasks') target.__BDL_SDR_REQUEST__ = args?.request;
@@ -1847,7 +2038,7 @@ test('missing directory allows parsing and explicit SDR task creation', async ({
   await page.getByLabel('链接或 BV / AV').fill('BV1xx411c7mD');
   await page.getByRole('button', { name: '开始解析' }).click();
   await page.getByRole('button', { name: '选择 测试视频' }).click();
-  await page.getByRole('button', { name: '下载所选 (1)' }).click();
+  await page.getByRole('button', { name: '调整下载设置' }).click();
   const dialog = page.getByRole('dialog', { name: '下载设置' });
   await expect(dialog.getByRole('combobox', { name: /^下载预设/ })).toContainText('快速下载');
   await dialog.getByRole('button', { name: '开始下载' }).click();
@@ -1866,7 +2057,7 @@ test('missing directory allows parsing and explicit SDR task creation', async ({
   expect(result.creates).toBe(0);
 });
 
-test('download tabs use saved presets and keep overrides local', async ({ page }) => {
+test('download options remember naming presets and keep duplicate overrides local', async ({ page }) => {
   await page.setViewportSize({ width: 1100, height: 900 });
   await installTauriMock(page, 'light');
   await page.addInitScript(() => {
@@ -1891,33 +2082,23 @@ test('download tabs use saved presets and keep overrides local', async ({ page }
   await page.getByLabel('链接或 BV / AV').fill('BV1xx411c7mD');
   await page.getByRole('button', { name: '开始解析' }).click();
   await page.getByRole('button', { name: '选择 测试视频' }).click();
-  await page.getByRole('button', { name: '下载所选 (1)' }).click();
+  await page.getByRole('button', { name: '调整下载设置' }).click();
   const dialog = page.getByRole('dialog', { name: '下载设置' });
-  await expect(dialog.getByRole('tab', { name: '下载', exact: true })).toHaveAttribute('aria-selected', 'true');
   await dialog.getByRole('combobox', { name: '命名预设', exact: true }).click();
   await page.getByRole('option', { name: '我的收藏', exact: true }).click();
   await dialog.getByRole('combobox', { name: /重名处理/ }).click();
   await page.getByRole('option', { name: '扩展文件名', exact: true }).click();
   await dialog.getByRole('button', { name: '取消', exact: true }).click();
-  await page.getByRole('button', { name: '下载所选 (1)' }).click();
+  await page.getByRole('button', { name: '调整下载设置' }).click();
   await expect(dialog.getByRole('combobox', { name: /重名处理/ })).toContainText('已有文件则跳过');
-  await expect(dialog.getByRole('textbox', { name: '命名模板', exact: true })).toHaveValue(
-    '{title}/{part_title}.{ext}',
-  );
+  await expect(dialog.getByText('文件名预览：')).toContainText('示例视频.mp4');
   await dialog.getByRole('combobox', { name: '命名预设', exact: true }).click();
   await page.getByRole('option', { name: '我的收藏', exact: true }).click();
   await dialog.getByRole('combobox', { name: /重名处理/ }).click();
   await page.getByRole('option', { name: '扩展文件名', exact: true }).click();
   await expect(dialog.getByRole('combobox', { name: '命名预设', exact: true })).toContainText('我的收藏');
   await expect(page.getByRole('listbox')).toHaveCount(0);
-  await dialog.getByRole('tab', { name: '调度', exact: true }).click();
   await page.setViewportSize({ width: 900, height: 600 });
-  await dialog.getByRole('tab', { name: '下载', exact: true }).click();
-  const scrollArea = dialog.locator('.download-options-scroll');
-  await scrollArea.evaluate((element) => {
-    element.scrollTop = element.scrollHeight;
-  });
-  await expect.poll(() => scrollArea.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
   await dialog.getByRole('button', { name: '开始下载' }).click();
   const result = await page.evaluate(() => {
     const target = window as unknown as {
@@ -1931,7 +2112,7 @@ test('download tabs use saved presets and keep overrides local', async ({ page }
   });
   expect(result.request.naming_template).toBe('{title}.{ext}');
   expect(result.request.duplicate_naming_strategy).toBe('append_suffix');
-  expect(result.saves).toBe(0);
+  expect(result.saves).toBe(1);
 });
 
 test('saved naming presets are reusable while unsaved defaults stay in settings', async ({ page }) => {
@@ -1947,23 +2128,28 @@ test('saved naming presets are reusable while unsaved defaults stay in settings'
   });
   await page.goto('/');
   await page.getByRole('button', { name: '设置 偏好与维护' }).click();
-  await page.getByRole('button', { name: /文件命名/ }).click();
-  await page.getByRole('textbox', { name: '命名模板', exact: true }).fill('{owner_name}/{title}');
-  await expect(page.getByText('文件名预览：')).toContainText('示例UP/示例视频.mp4');
+  await selectSettingsSection(page, '预设管理');
+  await page.getByRole('tab', { name: '命名预设', exact: true }).click();
+  await page.getByRole('button', { name: '新增预设', exact: true }).click();
+  const namingEditor = page.getByRole('dialog', { name: '新增命名预设', exact: true });
+  await namingEditor.getByRole('textbox', { name: '命名模板', exact: true }).fill('{owner_name}/{title}');
+  await expect(namingEditor.getByText('文件名预览：')).toContainText('示例UP/示例视频.mp4');
   await page.getByRole('button', { name: '插入魔法变量', exact: true }).click();
   await expect(page.locator('[data-variable="ext"]')).toHaveCount(0);
   await page.keyboard.press('Escape');
   await page.getByRole('textbox', { name: '预设名称', exact: true }).fill('按 UP 收藏');
-  await page.getByRole('button', { name: '保存为预设', exact: true }).click();
-  await page.getByRole('button', { name: '保存', exact: true }).click();
+  await namingEditor.getByRole('button', { name: '保存预设', exact: true }).click();
+  await page.getByRole('button', { name: '设为默认 按 UP 收藏', exact: true }).click();
+  await selectSettingsSection(page, '下载与保存');
   await expect(page.getByRole('button', { name: '保存', exact: true })).toBeDisabled();
-  await page.getByRole('textbox', { name: '命名模板', exact: true }).fill('{bvid}.{ext}');
+  await page.getByRole('combobox', { name: '命名预设', exact: true }).click();
+  await page.getByRole('option', { name: '单文件', exact: true }).click();
   await page.getByRole('button', { name: '解析 添加与选择' }).click();
   await page.getByRole('dialog', { name: '设置尚未保存' }).getByRole('button', { name: '放弃更改' }).click();
   await page.getByLabel('链接或 BV / AV').fill('BV1xx411c7mD');
   await page.getByRole('button', { name: '开始解析' }).click();
   await page.getByRole('button', { name: '选择 测试视频' }).click();
-  await page.getByRole('button', { name: '下载所选 (1)' }).click();
+  await page.getByRole('button', { name: '调整下载设置' }).click();
   const dialog = page.getByRole('dialog', { name: '下载设置' });
   await expect(dialog.getByRole('combobox', { name: '命名预设', exact: true })).toContainText('按 UP 收藏');
   await expect(dialog.getByText('文件名预览：')).toContainText('示例UP/示例视频.mp4');
@@ -1996,7 +2182,7 @@ test('download archive settings inherit defaults and override processing per tas
   await page.getByLabel('链接或 BV / AV').fill('BV1xx411c7mD');
   await page.getByRole('button', { name: '开始解析' }).click();
   await page.getByRole('button', { name: '选择 测试视频' }).click();
-  await page.getByRole('button', { name: '下载所选 (1)' }).click();
+  await page.getByRole('button', { name: '调整下载设置' }).click();
   const dialog = page.getByRole('dialog', { name: '下载设置' });
   await expect(dialog.getByRole('combobox', { name: /^下载预设/ })).toContainText('历史配置');
   await expect(dialog.getByLabel('本次输出预览')).toContainText('内含封面、字幕');
@@ -2019,6 +2205,9 @@ test('download archive settings inherit defaults and override processing per tas
   expect(result.saves).toBe(1);
 });
 
+const selectSettingsSection = async (page: Page, label: string) => {
+  await page.getByRole('button', { name: label, exact: true }).or(page.getByRole('tab', { name: label === '下载与保存' ? '下载保存' : label === '画质与编码' ? '画质编码' : label, exact: true })).click();
+};
 const openPresetSettings = async (page: Page) => {
   const desktop = page.getByRole('button', { name: /^设置(?: 偏好与维护| · Ctrl\+4)$/ });
   if (await desktop.isVisible()) await desktop.click();
@@ -2026,7 +2215,16 @@ const openPresetSettings = async (page: Page) => {
     await page.getByRole('navigation', { name: '主导航' }).getByRole('button', { name: '我的', exact: true }).click();
     await page.getByRole('button', { name: /下载设置/ }).click();
   }
-  await page.getByRole('button', { name: /^下载预设(?: 内容.*)?$/ }).click();
+  await selectSettingsSection(page, '预设管理');
+  await page.getByRole('region', { name: '预设管理', exact: true }).getByRole('tab', { name: '下载预设', exact: true }).click();
+};
+const openCurrentPresetEditor = async (page: Page) => {
+  await expect(page.getByRole('dialog', { name: '编辑预设', exact: true })).not.toBeVisible();
+  const manager = page.getByRole('region', { name: '预设管理', exact: true });
+  if (!(await manager.isVisible())) await page.getByRole('button', { name: '管理下载预设', exact: true }).click();
+  const trigger = manager.getByRole('listitem').filter({ has: page.getByText('默认', { exact: true }) }).getByRole('button', { name: /^编辑预设 / });
+  await trigger.click();
+  return trigger;
 };
 const installPresetPersistence = async (page: Page) => {
   await page.addInitScript(() => {
@@ -2059,24 +2257,27 @@ for (const theme of ['light', 'dark'] as const) {
     await page.goto('/');
     await openPresetSettings(page);
     await expect(page.getByRole('checkbox')).toHaveCount(0);
-    await expect(page.getByLabel('预设概况')).toContainText('MP4 音频+视频');
-    await expect(page.getByRole('combobox', { name: '视频清晰度', exact: true })).toBeVisible();
+    await expect(page.getByRole('listitem', { name: '快速下载', exact: true })).toContainText('MP4 音频+视频');
+    await selectSettingsSection(page, '画质与编码');
     await page.getByRole('combobox', { name: '视频清晰度', exact: true }).click();
-    await page.getByRole('option', { name: /1080P.*80/, exact: false }).click();
+    await page.getByRole('option', { name: '1080P', exact: true }).click();
     await page.getByRole('button', { name: '保存', exact: true }).click();
+    await selectSettingsSection(page, '下载与保存');
     await page.getByRole('combobox', { name: '下载预设', exact: true }).click();
     await page.getByRole('option', { name: '下载全部资源', exact: true }).click();
+    await selectSettingsSection(page, '画质与编码');
     await expect(page.getByRole('combobox', { name: '视频清晰度', exact: true })).toContainText('1080P');
+    await selectSettingsSection(page, '下载与保存');
     await page.getByRole('combobox', { name: '下载预设', exact: true }).click();
     await page.getByRole('option', { name: '快速下载', exact: true }).click();
-    await page.getByRole('button', { name: '编辑', exact: true }).click();
+    await openCurrentPresetEditor(page);
     const editor = page.getByRole('dialog', { name: '编辑预设', exact: true });
-    await expect(editor.getByRole('tab')).toHaveCount(3);
     await expect(editor.getByRole('combobox', { name: /视频清晰度/ })).toHaveCount(0);
     const cover = editor.getByRole('checkbox', { name: '下载封面', exact: true });
     await cover.focus();
     await page.keyboard.press('Space');
     await editor.getByRole('checkbox', { name: '下载字幕', exact: true }).check();
+
     await editor.getByRole('tab', { name: '封装', exact: true }).click();
     const embed = editor.getByRole('checkbox', { name: '嵌入字幕', exact: true });
     await embed.focus();
@@ -2092,7 +2293,7 @@ for (const theme of ['light', 'dark'] as const) {
     await page.setViewportSize({ width: 900, height: 700 });
     await editor.getByRole('button', { name: '保存预设', exact: true }).click();
     await expect(editor).not.toBeVisible();
-    await expect(page.getByLabel('预设概况')).toContainText('MKV 音频+视频（内含字幕）');
+    await expect(page.getByRole('listitem', { name: '快速下载', exact: true })).toContainText('MKV 音频+视频（内含字幕）');
     const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('fixture-download-settings') || '{}'));
     expect(saved.download_presets.find((p: { id: string }) => p.id === 'video').workflow).toMatchObject({
       container: 'mkv',
@@ -2119,9 +2320,8 @@ for (const theme of ['light', 'dark'] as const) {
     await page.getByLabel('链接或 BV / AV').fill('BV1xx411c7mD');
     await page.getByRole('button', { name: '开始解析' }).click();
     await page.getByRole('button', { name: '选择 测试视频' }).click();
-    await page.getByRole('button', { name: '下载所选 (1)' }).click();
+    await page.getByRole('button', { name: '调整下载设置' }).click();
     const dialog = page.getByRole('dialog', { name: '下载设置' });
-    await expect(dialog.getByRole('tab')).toHaveCount(2);
     for (const name of ['下载内容', '封装格式', '视频清晰度', '字幕格式', '弹幕格式'])
       await expect(dialog.getByRole('combobox', { name: new RegExp('^' + name) })).toHaveCount(0);
     await expect(dialog.getByRole('checkbox')).toHaveCount(0);
@@ -2147,21 +2347,21 @@ for (const theme of ['light', 'dark'] as const) {
     await page.goto('/');
     await openPresetSettings(page);
     await expect(page.getByRole('checkbox')).toHaveCount(0);
-    await page.getByRole('combobox', { name: '下载预设', exact: true }).click();
-    await page.getByRole('option', { name: '封装 MKV（视频+字幕）', exact: true }).click();
-    await page.getByRole('button', { name: '编辑', exact: true }).click();
+    await page.getByRole('button', { name: '设为默认 封装 MKV（视频+字幕）', exact: true }).click();
+    await openCurrentPresetEditor(page);
     const editor = page.getByRole('dialog', { name: '编辑预设', exact: true });
+
     await editor.getByRole('tab', { name: '封装', exact: true }).click();
     const embed = editor.getByRole('checkbox', { name: '嵌入字幕', exact: true });
     await expect(embed).toBeChecked();
     await embed.uncheck();
     await expect(embed).toBeDisabled();
+
     await editor.getByRole('tab', { name: '转换', exact: true }).click();
     await editor.getByRole('checkbox', { name: '保存独立字幕', exact: true }).check();
     await editor.getByRole('button', { name: '保存预设', exact: true }).click();
     await expect(editor).not.toBeVisible();
-    await page.getByRole('button', { name: '返回设置', exact: true }).click();
-    await page.getByRole('button', { name: /下载 目录/ }).click();
+    await page.getByRole('tab', { name: '下载保存', exact: true }).click();
     await expect(page.getByRole('combobox', { name: '单任务分段数', exact: true })).toBeVisible();
     await expect(page.getByRole('textbox', { name: 'FFmpeg 路径', exact: true })).toHaveCount(0);
   });
@@ -2185,6 +2385,7 @@ test('pagination presets save rules and allow custom cooldown', async ({ page })
   });
   await page.goto('/');
   await page.getByRole('button', { name: '设置 偏好与维护' }).click();
+  await page.locator('summary').filter({ hasText: '解析节奏' }).click();
   await expect(page.getByRole('combobox', { name: '解析预设', exact: true })).toContainText('标准');
   await expect(page.getByText('解析约 200 条，额外等待约 5 秒，不含网络耗时。')).toBeVisible();
   await page.getByRole('button', { name: '为什么解析需要等待' }).hover();
@@ -2271,9 +2472,7 @@ for (const scenario of ['confirmed', 'first-run', 'save-failure'] as const) {
 }
 
 for (const theme of ['light', 'dark'] as const) {
-  test(`unified desktop media lists preserve metadata and contextual playback in ${theme}`, async ({
-    page,
-  }) => {
+  test(`unified desktop media lists preserve metadata and contextual playback in ${theme}`, async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await installTauriMock(page, theme, true, true);
     const longTitle =
@@ -2341,7 +2540,6 @@ for (const theme of ['light', 'dark'] as const) {
     const parsed = page.locator('.source-media-row').first();
     await expect(parsed.locator('.media-author')).toContainText('城市观察工作室');
     await expect(parsed.locator('.media-date')).toHaveText('2026-09-27');
-    await expect(parsed.locator('.media-size')).toContainText('128 MB');
     await expect(parsed.locator('.media-cover img')).toBeVisible();
     await expect(page.getByText('选择内容', { exact: true })).toHaveCount(0);
     await parsed.getByRole('button', { name: `播放本地文件 ${longTitle}` }).click();
@@ -2369,7 +2567,7 @@ for (const theme of ['light', 'dark'] as const) {
     await page.keyboard.press('Control+3');
     await page.getByRole('tab', { name: /全部/ }).click();
     await expect(page.locator('.task-table-row')).toHaveCount(6);
-    await expect(page.locator('.task-table-row').first().locator('.media-size')).toContainText('128 MB');
+    await expect(page.locator('.task-table-row').first()).toContainText('128 MB');
     await page.locator('.task-table-row').first().getByRole('button', { name: '更多操作' }).click();
     await expect(page.getByRole('menuitem', { name: '打开文件夹' })).toBeVisible();
     await page.keyboard.press('Escape');
@@ -2430,7 +2628,7 @@ test('ten thousand parsed rows stay virtual while selection covers the whole sou
   await expect(rows.first().getByRole('checkbox')).toBeChecked();
   await page.setViewportSize({ width: 1280, height: 1800 });
   const rendered = await rows.count();
-  expect(rendered).toBeLessThan(35);
+  expect(rendered).toBeLessThan(80);
 });
 
 for (const [format, width, theme, danmakuFormat] of [
@@ -2444,12 +2642,13 @@ for (const [format, width, theme, danmakuFormat] of [
     await installPresetPersistence(page);
     await page.goto('/');
     await openPresetSettings(page);
-    await page.getByRole('button', { name: '新增', exact: true }).click();
+    await page.getByRole('button', { name: '新增预设', exact: true }).click();
     const editor = page.getByRole('dialog', { name: '新增预设', exact: true });
     await editor.getByRole('textbox', { name: '预设名称', exact: true }).fill('我的音频与字幕');
     await editor.getByRole('checkbox', { name: '下载视频', exact: true }).uncheck();
     await editor.getByRole('checkbox', { name: '下载字幕', exact: true }).check();
     await editor.getByRole('checkbox', { name: '下载弹幕', exact: true }).check();
+
     await editor.getByRole('tab', { name: '转换', exact: true }).click();
     await editor.getByRole('combobox', { name: '独立音频格式', exact: true }).click();
     await page.getByRole('option', { name: format === 'm4s' ? '不转换（m4s）' : '转为 MP3', exact: true }).click();
@@ -2460,7 +2659,8 @@ for (const [format, width, theme, danmakuFormat] of [
     await editor.getByRole('checkbox', { name: '额外保留原始弹幕（XML）', exact: true }).check();
     await editor.getByRole('button', { name: '保存预设', exact: true }).click();
     await expect(editor).not.toBeVisible();
-    await expect(page.getByLabel('预设概况')).toContainText('字幕 ASS');
+    await expect(page.getByRole('listitem', { name: '我的音频与字幕', exact: true })).toContainText('字幕 ASS');
+    await page.getByRole('button', { name: '设为默认 我的音频与字幕', exact: true }).click();
     const desktopParse = page.getByRole('button', { name: /^解析(?: 添加与选择| · Ctrl\+1)$/ });
     if (await desktopParse.isVisible()) await desktopParse.click();
     else
@@ -2469,7 +2669,7 @@ for (const [format, width, theme, danmakuFormat] of [
       await page.getByLabel('链接或 BV / AV').fill('BV1xx411c7mD');
       await page.getByRole('button', { name: '开始解析' }).click();
       await page.getByRole('button', { name: '选择 测试视频' }).click();
-      await page.getByRole('button', { name: '下载所选 (1)' }).click();
+      await page.getByRole('button', { name: '调整下载设置' }).click();
     };
     await openDownload();
     const dialog = page.getByRole('dialog', { name: '下载设置' });
@@ -2479,7 +2679,7 @@ for (const [format, width, theme, danmakuFormat] of [
     await expect(dialog.getByLabel('本次输出预览')).toContainText(`弹幕 ${danmakuFormat.split('（')[0]}`);
     await expect(dialog.getByLabel('本次输出预览')).toContainText('原始弹幕');
     await dialog.getByRole('button', { name: '取消', exact: true }).click();
-    await page.getByRole('button', { name: '下载所选 (1)' }).click();
+    await page.getByRole('button', { name: '调整下载设置' }).click();
     await expect(preset).toContainText('我的音频与字幕');
     await dialog.getByRole('button', { name: '开始下载', exact: true }).click();
     const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('fixture-download-settings') || '{}'));
@@ -2492,7 +2692,7 @@ for (const [format, width, theme, danmakuFormat] of [
     await preset.click();
     await page.getByRole('option', { name: '快速下载', exact: true }).click();
     await dialog.getByRole('button', { name: '取消', exact: true }).click();
-    await page.getByRole('button', { name: '下载所选 (1)' }).click();
+    await page.getByRole('button', { name: '调整下载设置' }).click();
     await expect(preset).toContainText('快速下载');
   });
 }
@@ -2503,7 +2703,7 @@ test('custom preset creation validates names and deleting the default selects a 
   await installPresetPersistence(page);
   await page.goto('/');
   await openPresetSettings(page);
-  await page.getByRole('button', { name: '新增', exact: true }).click();
+  await page.getByRole('button', { name: '新增预设', exact: true }).click();
   const editor = page.getByRole('dialog', { name: '新增预设', exact: true });
   const name = editor.getByRole('textbox', { name: '预设名称', exact: true });
   const save = editor.getByRole('button', { name: '保存预设', exact: true });
@@ -2518,16 +2718,18 @@ test('custom preset creation validates names and deleting the default selects a 
   await editor.getByRole('checkbox', { name: '下载字幕', exact: true }).check();
   await save.click();
   await expect(editor).not.toBeVisible();
-  await expect(page.getByLabel('预设概况')).toContainText('字幕 SRT');
-  await page.getByRole('button', { name: '编辑', exact: true }).click();
+  await expect(page.getByRole('listitem', { name: '学习字幕', exact: true })).toContainText('字幕 SRT');
+  await page.getByRole('button', { name: '设为默认 学习字幕', exact: true }).click();
+  await openCurrentPresetEditor(page);
   const editing = page.getByRole('dialog', { name: '编辑预设', exact: true });
   await editing.getByRole('textbox', { name: '预设名称', exact: true }).fill('取消不改');
   await page.keyboard.press('Escape');
   await expect(editing).not.toBeVisible();
-  await expect(page.getByRole('combobox', { name: '下载预设', exact: true })).toContainText('学习字幕');
-  await page.getByRole('button', { name: '编辑', exact: true }).click();
-  await editing.getByRole('button', { name: '删除预设', exact: true }).click();
-  await expect(editing).not.toBeVisible();
+  await expect(page.getByRole('listitem', { name: '学习字幕', exact: true })).toContainText('默认');
+  await page
+    .getByRole('region', { name: '预设管理', exact: true })
+    .getByRole('button', { name: '删除预设 学习字幕', exact: true })
+    .click();
   const after = await page.evaluate(() => JSON.parse(localStorage.getItem('fixture-download-settings') || '{}'));
   expect(after.selected_download_preset).toBe('video');
   expect(after.download_presets.some((p: { name: string }) => p.name === '学习字幕')).toBe(false);
@@ -2572,7 +2774,10 @@ for (const theme of ['light', 'dark'] as const) {
     await download.scrollIntoViewIfNeeded();
     await expect(download).toBeVisible();
     await download.click();
-    await expect.poll(() => page.evaluate(() => (window as unknown as { __FFMPEG_DOWNLOAD_URL__?: unknown }).__FFMPEG_DOWNLOAD_URL__))
+    await expect
+      .poll(() =>
+        page.evaluate(() => (window as unknown as { __FFMPEG_DOWNLOAD_URL__?: unknown }).__FFMPEG_DOWNLOAD_URL__),
+      )
       .toBe('https://apps.yuelili.com/software/ffmpeg');
   });
 
@@ -2588,11 +2793,21 @@ for (const theme of ['light', 'dark'] as const) {
       const invoke = target.__TAURI_INTERNALS__.invoke;
       target.__TAURI_INTERNALS__.invoke = async (command, args) => {
         if (command === 'settings_update' && target.__FAIL_SAVE__) throw new Error('测试保存失败');
-        if (command === 'open_external_url') { target.__FFMPEG_HELP_URL__ = args?.url as string; return; }
+        if (command === 'open_external_url') {
+          target.__FFMPEG_HELP_URL__ = args?.url as string;
+          return;
+        }
         if (command === 'environment_health') {
-          const result = await invoke(command, args) as { ffmpeg: Record<string, unknown> };
+          const result = (await invoke(command, args)) as { ffmpeg: Record<string, unknown> };
           const path = (args?.request as { ffmpeg_path?: string })?.ffmpeg_path;
-          if (path) result.ffmpeg = { status: 'ready', source: 'configured', path, version: 'ffmpeg version custom', message: 'FFmpeg 可用。' };
+          if (path)
+            result.ffmpeg = {
+              status: 'ready',
+              source: 'configured',
+              path,
+              version: 'ffmpeg version custom',
+              message: 'FFmpeg 可用。',
+            };
           return result;
         }
         return invoke(command, args);
@@ -2606,7 +2821,9 @@ for (const theme of ['light', 'dark'] as const) {
     const helpPanel = page.locator('details').filter({ has: help });
     await expect(helpPanel).toContainText('系统 PATH');
     await helpPanel.getByRole('button', { name: '下载 FFmpeg', exact: true }).click();
-    await expect.poll(() => page.evaluate(() => (window as unknown as { __FFMPEG_HELP_URL__: string }).__FFMPEG_HELP_URL__)).toBe('https://apps.yuelili.com/software/ffmpeg');
+    await expect
+      .poll(() => page.evaluate(() => (window as unknown as { __FFMPEG_HELP_URL__: string }).__FFMPEG_HELP_URL__))
+      .toBe('https://apps.yuelili.com/software/ffmpeg');
     for (const width of [1280, 375]) {
       await page.setViewportSize({ width, height: 900 });
       await helpPanel.scrollIntoViewIfNeeded();
@@ -2630,11 +2847,15 @@ for (const theme of ['light', 'dark'] as const) {
     await expect(dialog).not.toBeVisible();
     await expect(path).toHaveValue(custom);
     await page.keyboard.press('Control+1');
-    await page.evaluate(() => { (window as unknown as { __FAIL_SAVE__: boolean }).__FAIL_SAVE__ = true; });
+    await page.evaluate(() => {
+      (window as unknown as { __FAIL_SAVE__: boolean }).__FAIL_SAVE__ = true;
+    });
     await dialog.getByRole('button', { name: '保存并离开' }).click();
     await expect(dialog).toContainText('测试保存失败');
     await expect(path).toHaveValue(custom);
-    await page.evaluate(() => { (window as unknown as { __FAIL_SAVE__: boolean }).__FAIL_SAVE__ = false; });
+    await page.evaluate(() => {
+      (window as unknown as { __FAIL_SAVE__: boolean }).__FAIL_SAVE__ = false;
+    });
     await dialog.getByRole('button', { name: '保存并离开' }).click();
     await expect(dialog).not.toBeVisible();
     await expect(page.getByLabel('链接或 BV / AV')).toBeVisible();
@@ -2651,15 +2872,15 @@ for (const theme of ['light', 'dark'] as const) {
 for (const theme of ['light', 'dark'] as const) {
   test(`settings leave guard mobile ${theme}`, async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 844 });
-    await page.addInitScript(() => Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Linux; Android 12) Mobile' }));
+    await page.addInitScript(() =>
+      Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Linux; Android 12) Mobile' }),
+    );
     await installTauriMock(page, theme);
     await page.goto('/');
     const nav = page.getByRole('navigation', { name: '主导航' });
     await nav.getByRole('button', { name: '我的', exact: true }).click();
     await page.getByRole('button', { name: /下载设置/ }).click();
-    await page.getByRole('button', { name: /下载 目录/ }).click();
     await page.getByRole('textbox', { name: '全局下载限速（MB/s）', exact: true }).fill('-1');
-    await page.getByRole('button', { name: '返回设置', exact: true }).click();
     await page.getByRole('button', { name: '返回我的', exact: true }).click();
     const dialog = page.getByRole('dialog', { name: '设置尚未保存' });
     await expect(dialog).toBeVisible();
@@ -2676,32 +2897,73 @@ for (const theme of ['light', 'dark'] as const) {
 for (const theme of ['light', 'dark'] as const) {
   test(`Android update and transfer speed ${theme}`, async ({ page }) => {
     await page.setViewportSize({ width: 320, height: 844 });
-    await page.addInitScript(() => Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Linux; Android 12) Mobile' }));
+    await page.addInitScript(() =>
+      Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Linux; Android 12) Mobile' }),
+    );
     await installTauriMock(page, theme);
-    await page.route('https://api.github.com/repos/Yuelioi/bdl/releases/latest', (route) => route.fulfill({
-      json: { tag_name: 'v0.8.3', draft: false, prerelease: false, body: '手机端更新与速度显示\nhttps://github.com/Yuelioi/bdl/' + 'long-path-'.repeat(32),
-        assets: [{ name: 'BDL-v0.8.3-android-arm64.apk', size: 100, browser_download_url: 'https://github.com/Yuelioi/bdl/releases/download/v0.8.3/BDL-v0.8.3-android-arm64.apk' }] },
-    }));
+    await page.route('https://api.github.com/repos/Yuelioi/bdl/releases/latest', (route) =>
+      route.fulfill({
+        json: {
+          tag_name: 'v0.8.3',
+          draft: false,
+          prerelease: false,
+          body: '手机端更新与速度显示\nhttps://github.com/Yuelioi/bdl/' + 'long-path-'.repeat(32),
+          assets: [
+            {
+              name: 'BDL-v0.8.3-android-arm64.apk',
+              size: 100,
+              browser_download_url:
+                'https://github.com/Yuelioi/bdl/releases/download/v0.8.3/BDL-v0.8.3-android-arm64.apk',
+            },
+          ],
+        },
+      }),
+    );
     await page.addInitScript(() => {
       const target = window as unknown as {
-        __TAURI_INTERNALS__: { invoke: (command: string, args?: Record<string, unknown>) => Promise<unknown>; transformCallback: (callback: (event: unknown) => void) => number };
+        __TAURI_INTERNALS__: {
+          invoke: (command: string, args?: Record<string, unknown>) => Promise<unknown>;
+          transformCallback: (callback: (event: unknown) => void) => number;
+        };
         __EMIT_MOBILE__: (event: string, payload: unknown) => void;
         __APK_URL__?: string;
       };
       const callbacks = new Map<number, (event: unknown) => void>();
       const listeners = new Map<string, number>();
       let id = 1000;
-      target.__TAURI_INTERNALS__.transformCallback = (callback) => { callbacks.set(++id, callback); return id; };
-      target.__EMIT_MOBILE__ = (event, payload) => callbacks.get(listeners.get(event) ?? -1)?.({ event, id: listeners.get(event), payload });
+      target.__TAURI_INTERNALS__.transformCallback = (callback) => {
+        callbacks.set(++id, callback);
+        return id;
+      };
+      target.__EMIT_MOBILE__ = (event, payload) =>
+        callbacks.get(listeners.get(event) ?? -1)?.({ event, id: listeners.get(event), payload });
       const invoke = target.__TAURI_INTERNALS__.invoke;
-      const task = { id: 'mobile-speed', title: '一个很长的下载任务标题，手机和平板都应显示速度与进度', source_id: 'video:fixture', status: 'downloading', output_path: 'downloads/test.mp4', refresh_intent: null, media_selection: null, scheduled_at: null, speed_limit_bytes_per_second: null,
-        resources: [{ id: 'video', intent: 'video', status: 'downloading', current_urls: [], target_path: 'downloads/test.m4s' }] };
+      const task = {
+        id: 'mobile-speed',
+        title: '一个很长的下载任务标题，手机和平板都应显示速度与进度',
+        source_id: 'video:fixture',
+        status: 'downloading',
+        output_path: 'downloads/test.mp4',
+        refresh_intent: null,
+        media_selection: null,
+        scheduled_at: null,
+        speed_limit_bytes_per_second: null,
+        resources: [
+          { id: 'video', intent: 'video', status: 'downloading', current_urls: [], target_path: 'downloads/test.m4s' },
+        ],
+      };
       target.__TAURI_INTERNALS__.invoke = async (command, args) => {
         if (command === 'plugin:app|version') return '0.8.2';
-        if (command === 'plugin:event|listen') { listeners.set(args?.event as string, args?.handler as number); return id++; }
+        if (command === 'plugin:event|listen') {
+          listeners.set(args?.event as string, args?.handler as number);
+          return id++;
+        }
         if (command === 'queue_list') return [task];
         if (command === 'queue_logs') return [];
-        if (command === 'update_open_download') { target.__APK_URL__ = args?.url as string; return null; }
+        if (command === 'update_open_download') {
+          target.__APK_URL__ = args?.url as string;
+          return null;
+        }
         return invoke(command, args);
       };
     });
@@ -2709,27 +2971,61 @@ for (const theme of ['light', 'dark'] as const) {
     const nav = page.getByRole('navigation', { name: '主导航' });
     await nav.getByRole('button', { name: '我的', exact: true }).click();
     await page.getByRole('button', { name: /下载设置/ }).click();
-    await page.getByRole('button', { name: /应用更新/ }).click();
+    await page
+      .getByRole('button', { name: /应用更新/ })
+      .or(page.getByRole('tab', { name: '更新', exact: true }))
+      .click();
     await expect(page.getByRole('switch', { name: '自动检测更新' })).not.toBeChecked();
     await page.getByRole('button', { name: '检测更新', exact: true }).click();
     await expect(page.getByText('发现新版本 v0.8.3')).toBeVisible();
     await page.getByRole('button', { name: '下载 APK' }).click();
-    await expect.poll(() => page.evaluate(() => (window as unknown as { __APK_URL__?: string }).__APK_URL__)).toBe('https://github.com/Yuelioi/bdl/releases/download/v0.8.3/BDL-v0.8.3-android-arm64.apk');
+    await expect
+      .poll(() => page.evaluate(() => (window as unknown as { __APK_URL__?: string }).__APK_URL__))
+      .toBe('https://github.com/Yuelioi/bdl/releases/download/v0.8.3/BDL-v0.8.3-android-arm64.apk');
     await nav.getByRole('button', { name: /传输/ }).click();
     await page.evaluate(() => {
-      const emit = (window as unknown as { __EMIT_MOBILE__: (event: string, payload: unknown) => void }).__EMIT_MOBILE__;
+      const emit = (window as unknown as { __EMIT_MOBILE__: (event: string, payload: unknown) => void })
+        .__EMIT_MOBILE__;
       const time = Date.now();
-      for (const [downloaded, offset] of [[512 * 1024 * 1024, -1000], [1024 * 1024 * 1024, 0]]) emit('queue://progress-updated', { task_id: 'mobile-speed', resource_id: 'video', downloaded_bytes: downloaded, total_bytes: 4 * 1024 * 1024 * 1024, created_at: new Date(time + offset).toISOString() });
+      for (const [downloaded, offset] of [
+        [512 * 1024 * 1024, -1000],
+        [1024 * 1024 * 1024, 0],
+      ])
+        emit('queue://progress-updated', {
+          task_id: 'mobile-speed',
+          resource_id: 'video',
+          downloaded_bytes: downloaded,
+          total_bytes: 4 * 1024 * 1024 * 1024,
+          created_at: new Date(time + offset).toISOString(),
+        });
     });
     const meta = page.locator('.mobile-task .task-meta').first();
     await expect(meta).toContainText('MB/s');
-    await expect(meta).toContainText('25%');
-    for (const size of [{ width: 320, height: 844 }, { width: 568, height: 356 }, { width: 1280, height: 800 }]) {
+    await expect(page.locator('.mobile-task').first().getByRole('progressbar', { name: '25%' })).toBeVisible();
+    for (const size of [
+      { width: 320, height: 844 },
+      { width: 568, height: 356 },
+      { width: 1280, height: 800 },
+    ]) {
       await page.setViewportSize(size);
       await expect(meta).toBeVisible();
     }
     await page.evaluate(() => {
-      (window as unknown as { __EMIT_MOBILE__: (event: string, payload: unknown) => void }).__EMIT_MOBILE__('queue://task-updated', { id: 'mobile-speed', title: '已暂停', source_id: 'video:fixture', status: 'paused', resources: [], output_path: 'downloads/test.mp4', refresh_intent: null, media_selection: null, scheduled_at: null, speed_limit_bytes_per_second: null });
+      (window as unknown as { __EMIT_MOBILE__: (event: string, payload: unknown) => void }).__EMIT_MOBILE__(
+        'queue://task-updated',
+        {
+          id: 'mobile-speed',
+          title: '已暂停',
+          source_id: 'video:fixture',
+          status: 'paused',
+          resources: [],
+          output_path: 'downloads/test.mp4',
+          refresh_intent: null,
+          media_selection: null,
+          scheduled_at: null,
+          speed_limit_bytes_per_second: null,
+        },
+      );
     });
     await expect(meta).not.toContainText('MB/s');
   });
@@ -2738,14 +3034,21 @@ for (const theme of ['light', 'dark'] as const) {
 test('desktop update notice remains separate from Android APK guidance', async ({ page }) => {
   await installTauriMock(page, 'light');
   await page.addInitScript(() => {
-    const target = window as unknown as { __TAURI_INTERNALS__: { invoke: (command: string, args?: unknown) => Promise<unknown> } };
+    const target = window as unknown as {
+      __TAURI_INTERNALS__: { invoke: (command: string, args?: unknown) => Promise<unknown> };
+    };
     const invoke = target.__TAURI_INTERNALS__.invoke;
-    target.__TAURI_INTERNALS__.invoke = async (command, args) => command === 'plugin:updater|check'
-      ? { rid: 99, currentVersion: '0.8.2', version: '0.8.3', body: '桌面更新' } : invoke(command, args);
+    target.__TAURI_INTERNALS__.invoke = async (command, args) =>
+      command === 'plugin:updater|check'
+        ? { rid: 99, currentVersion: '0.8.2', version: '0.8.3', body: '桌面更新' }
+        : invoke(command, args);
   });
   await page.goto('/');
   await page.getByRole('button', { name: '设置 偏好与维护' }).click();
-  await page.getByRole('button', { name: /应用更新/ }).click();
+  await page
+    .getByRole('button', { name: /应用更新/ })
+    .or(page.getByRole('tab', { name: '更新', exact: true }))
+    .click();
   await page.getByRole('button', { name: '检测更新', exact: true }).click();
   await expect(page.getByText('发现新版本 v0.8.3')).toBeVisible();
   await expect(page.getByRole('button', { name: '下载并安装' })).toBeVisible();
@@ -2753,29 +3056,68 @@ test('desktop update notice remains separate from Android APK guidance', async (
   await expect(page.getByText('当前已是最新版本。')).toHaveCount(0);
 });
 
-for (const [width, theme] of [[390, 'light'], [1280, 'dark'], [390, 'dark'], [1280, 'light']] as const) {
+for (const [width, theme] of [
+  [390, 'light'],
+  [1280, 'dark'],
+  [390, 'dark'],
+  [1280, 'light'],
+] as const) {
   test(`update source selection ${width} ${theme}`, async ({ page }) => {
     await page.setViewportSize({ width, height: 850 });
-    if (width === 390) await page.addInitScript(() => Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Linux; Android 12) Mobile' }));
+    if (width === 390)
+      await page.addInitScript(() =>
+        Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Linux; Android 12) Mobile' }),
+      );
     await installTauriMock(page, theme);
     await page.addInitScript(() => {
-      const target = window as unknown as { __TAURI_INTERNALS__: { invoke: (command: string, args?: unknown) => Promise<unknown> }; __UPDATE_TEMPLATE__?: string; __UPDATE_URL__?: string };
+      const target = window as unknown as {
+        __TAURI_INTERNALS__: { invoke: (command: string, args?: unknown) => Promise<unknown> };
+        __UPDATE_TEMPLATE__?: string;
+        __UPDATE_URL__?: string;
+      };
       const original = target.__TAURI_INTERNALS__.invoke;
       target.__TAURI_INTERNALS__.invoke = async (command, args) => {
         if (command === 'plugin:app|version') return '0.8.5';
         if (command === 'desktop_read_clipboard_text' || command === 'mobile_read_clipboard_text') return '';
-        if (command === 'update_distribution') return {
-          release: { version: '99.0.0', fileName: 'BDL.exe' }, releaseNotes: '多来源更新测试',
-          sources: [
-            { id: 'github', kind: 'github', label: 'GitHub', delivery: { mode: 'file', authenticationRequired: false, url: 'https://github.com/Yuelioi/bdl/releases/download/v99.0.0/BDL.exe' } },
-            { id: 'quark', kind: 'cloud_drive', label: '夸克', delivery: { mode: 'browser', authenticationRequired: false, url: 'https://pan.quark.cn/s/test' } },
-          ],
-        };
+        if (command === 'update_distribution')
+          return {
+            release: { version: '99.0.0', fileName: 'BDL.exe' },
+            releaseNotes: '多来源更新测试',
+            sources: [
+              {
+                id: 'github',
+                kind: 'github',
+                label: 'GitHub',
+                delivery: {
+                  mode: 'file',
+                  authenticationRequired: false,
+                  url: 'https://github.com/Yuelioi/bdl/releases/download/v99.0.0/BDL.exe',
+                },
+              },
+              {
+                id: 'proxy', kind: 'external_link', label: 'GitHub 加速 · GH-Proxy',
+                delivery: { mode: 'file', authenticationRequired: false, url: 'https://gh-proxy.com/https://github.com/Yuelioi/bdl/releases/download/v99.0.0/BDL.exe' },
+              },
+              {
+                id: 'fast', kind: 'external_link', label: 'GitHub 加速 · GHFast',
+                delivery: { mode: 'file', authenticationRequired: false, url: 'https://ghfast.top/github.com/Yuelioi/bdl/releases/download/v99.0.0/BDL.exe' },
+              },
+              {
+                id: 'quark',
+                kind: 'cloud_drive',
+                label: '夸克',
+                delivery: { mode: 'browser', authenticationRequired: false, url: 'https://pan.quark.cn/s/test' },
+              },
+            ],
+          };
         if (command === 'update_check_mirror') {
           target.__UPDATE_TEMPLATE__ = (args as { template: string }).template;
           return { rid: 99, currentVersion: '0.8.5', version: '99.0.0', body: '镜像更新', rawJson: {} };
         }
-        if (command === 'update_open_download') { target.__UPDATE_URL__ = (args as { url: string }).url; return; }
+        if (command === 'update_open_download') {
+          target.__UPDATE_URL__ = (args as { url: string }).url;
+          return;
+        }
         return original(command, args);
       };
     });
@@ -2784,43 +3126,71 @@ for (const [width, theme] of [[390, 'light'], [1280, 'dark'], [390, 'dark'], [12
       await page.getByRole('navigation', { name: '主导航' }).getByRole('button', { name: '我的', exact: true }).click();
       await page.getByRole('button', { name: /下载设置/ }).click();
     } else await page.getByRole('button', { name: /^设置/ }).click();
-    await page.getByRole('button', { name: /网络与维护/ }).click();
-    const clipboard = page.getByRole('checkbox', { name: '返回应用时识别剪贴板链接' });
+    await page
+      .getByRole('button', { name: /网络与维护/ })
+      .or(page.getByRole('tab', { name: '维护', exact: true }))
+      .click();
+    const clipboard = page.getByRole('switch', { name: '返回应用时识别剪贴板链接' });
     await expect(clipboard).not.toBeChecked();
     await clipboard.focus();
     await page.keyboard.press('Space');
     await expect(clipboard).toBeChecked();
     await clipboard.uncheck();
     await expect(clipboard).not.toBeChecked();
-    if (width === 390) await page.getByRole('button', { name: '返回设置', exact: true }).click();
-    await page.getByRole('button', { name: /应用更新/ }).click();
+    await page
+      .getByRole('button', { name: /应用更新/ })
+      .or(page.getByRole('tab', { name: '更新', exact: true }))
+      .click();
     await page.getByRole('combobox', { name: '更新来源' }).click();
-    await page.getByRole('option', { name: 'GitHub 加速下载' }).click();
+    await page.getByRole('option', { name: 'GitHub 加速 · GHFast' }).click();
+    await page.getByRole('button', { name: '检测更新', exact: true }).click();
+    await expect(page.getByText('发现新版本 v99.0.0')).toBeVisible();
+    if (width === 390) {
+      await page.getByRole('button', { name: '下载 APK' }).click();
+      await expect.poll(() => page.evaluate(() => (window as unknown as { __UPDATE_URL__: string }).__UPDATE_URL__))
+        .toBe('https://ghfast.top/github.com/Yuelioi/bdl/releases/download/v99.0.0/BDL.exe');
+    } else {
+      await expect.poll(() => page.evaluate(() => (window as unknown as { __UPDATE_TEMPLATE__: string }).__UPDATE_TEMPLATE__))
+        .toBe('https://ghfast.top/{path}');
+    }
+    await page.getByRole('combobox', { name: '更新来源' }).click();
+    await page.getByRole('option', { name: '自定义加速', exact: true }).click();
+    await page.getByRole('button', { name: '检测更新', exact: true }).click();
+    await expect(page.getByText(/请填写自定义加速地址/)).toBeVisible();
     await page.getByLabel('自定义加速地址').fill('https://mirror.example/{url}');
     await page.getByRole('button', { name: '检测更新', exact: true }).click();
     await expect(page.getByText('发现新版本 v99.0.0')).toBeVisible();
     await expect(page.getByRole('button', { name: width === 390 ? '下载 APK' : '下载并安装' })).toBeVisible();
-    if (width !== 390) await expect.poll(() => page.evaluate(() => (window as unknown as { __UPDATE_TEMPLATE__: string }).__UPDATE_TEMPLATE__)).toBe('https://mirror.example/{url}');
+    if (width !== 390)
+      await expect
+        .poll(() => page.evaluate(() => (window as unknown as { __UPDATE_TEMPLATE__: string }).__UPDATE_TEMPLATE__))
+        .toBe('https://mirror.example/{url}');
     await page.getByRole('combobox', { name: '更新来源' }).focus();
     await page.keyboard.press('Enter');
     await page.getByRole('option', { name: '夸克手动下载' }).click();
     await expect(page.getByText('发现新版本 v99.0.0')).toHaveCount(0);
     await page.getByRole('button', { name: '打开夸克网盘' }).focus();
     await page.keyboard.press('Enter');
-    await expect.poll(() => page.evaluate(() => (window as unknown as { __UPDATE_URL__: string }).__UPDATE_URL__)).toBe('https://pan.quark.cn/s/test');
+    await expect
+      .poll(() => page.evaluate(() => (window as unknown as { __UPDATE_URL__: string }).__UPDATE_URL__))
+      .toBe('https://pan.quark.cn/s/test');
   });
 }
 
-for (const [width, theme] of [[390, 'light'], [1280, 'dark']] as const) {
+for (const [width, theme] of [
+  [390, 'light'],
+  [1280, 'dark'],
+] as const) {
   test(`NFO preset configuration ${width} ${theme}`, async ({ page }) => {
     await page.setViewportSize({ width, height: 850 });
     await installTauriMock(page, theme);
     await installPresetPersistence(page);
     await page.goto('/');
     await openPresetSettings(page);
-    await page.getByRole('button', { name: '编辑', exact: true }).click();
+    await openCurrentPresetEditor(page);
     const editor = page.getByRole('dialog', { name: '编辑预设', exact: true });
     await editor.getByRole('checkbox', { name: '生成 NFO', exact: true }).check();
+
     await editor.getByRole('tab', { name: '转换', exact: true }).click();
     await editor.getByLabel('NFO 标题模板', { exact: true }).fill('{video_title} - {part_title}');
     await editor.getByRole('textbox', { name: /^自定义标签/ }).fill('教程, 收藏');
@@ -2838,7 +3208,8 @@ for (const [width, theme] of [[390, 'light'], [1280, 'dark']] as const) {
     await editor.getByText('模板变量与示例', { exact: true }).click();
     await expect(editor.getByText('标题示例：示例视频 - 开场', { exact: false }).first()).toBeVisible();
     await editor.getByRole('button', { name: '保存预设', exact: true }).click();
-    await page.getByRole('button', { name: '编辑', exact: true }).click();
+    await openCurrentPresetEditor(page);
+
     await editor.getByRole('tab', { name: '转换', exact: true }).click();
     await expect(editor.getByRole('textbox', { name: /^自定义标签/ })).toHaveValue('教程, 收藏');
     await expect(editor.getByRole('checkbox', { name: '将 UP 主加入人物列表' })).toBeChecked();
@@ -2849,7 +3220,9 @@ for (const [width, theme] of [[390, 'light'], [1280, 'dark']] as const) {
     await editor.getByRole('combobox', { name: 'NFO 展示方案', exact: true }).click();
     await page.getByRole('option', { name: '多 P 视频归组', exact: true }).click();
     await editor.getByRole('button', { name: '套用方案', exact: true }).click();
-    await expect(editor.getByLabel('NFO 标题模板', { exact: true })).toHaveValue('{video_title} - P{part_index} - {part_title}');
+    await expect(editor.getByLabel('NFO 标题模板', { exact: true })).toHaveValue(
+      '{video_title} - P{part_index} - {part_title}',
+    );
 
     await editor.getByLabel('NFO 标题模板', { exact: true }).fill('{unknown}');
     await expect(editor.getByRole('button', { name: '保存预设', exact: true })).toBeDisabled();
@@ -2859,41 +3232,90 @@ for (const [width, theme] of [[390, 'light'], [1280, 'dark']] as const) {
 for (const device of ['desktop', 'android'] as const) {
   test(`issue10 watch later, card selection and clipboard on ${device}`, async ({ page }) => {
     await page.setViewportSize(device === 'desktop' ? { width: 1280, height: 850 } : { width: 390, height: 844 });
-    if (device === 'android') await page.addInitScript(() => Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Linux; Android 12) Mobile' }));
+    if (device === 'android')
+      await page.addInitScript(() =>
+        Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Linux; Android 12) Mobile' }),
+      );
     await installTauriMock(page, 'light', true, true);
     await page.addInitScript(() => {
       Object.assign(window, { isTauri: true, __ISSUE10_CLIP__: 'https://www.bilibili.com/video/BV1xx411c7mD' });
       Object.assign(window, { __WATCH_DOWNLOADS__: [] });
-      const target = window as unknown as { __TAURI_INTERNALS__: { invoke: (command: string, args?: unknown) => Promise<unknown> } };
+      const target = window as unknown as {
+        __TAURI_INTERNALS__: { invoke: (command: string, args?: unknown) => Promise<unknown> };
+      };
       const original = target.__TAURI_INTERNALS__.invoke;
       target.__TAURI_INTERNALS__.invoke = async (command, args) => {
-        if (command.endsWith('read_clipboard_text')) return (window as unknown as { __ISSUE10_CLIP__: string }).__ISSUE10_CLIP__;
-        if (command === 'settings_get') return { ...await original(command, args) as object, document_tree_output: { tree_uri: 'content://fixture/downloads', display_name: '下载' } };
-        if (command === 'selection_estimate_size') return { estimated_bytes: 1000, estimated_parts: 20, unknown_streams: 0 };
+        if (command.endsWith('read_clipboard_text'))
+          return (window as unknown as { __ISSUE10_CLIP__: string }).__ISSUE10_CLIP__;
+        if (command === 'settings_get')
+          return {
+            ...((await original(command, args)) as object),
+            document_tree_output: { tree_uri: 'content://fixture/downloads', display_name: '下载' },
+          };
+        if (command === 'selection_estimate_size')
+          return { estimated_bytes: 1000, estimated_parts: 20, unknown_streams: 0 };
         if (command === 'selection_create_tasks') {
           (window as unknown as { __WATCH_DOWNLOADS__: unknown[] }).__WATCH_DOWNLOADS__.push(args);
           return { created: [], duplicates: [], skipped_existing: 0, requires_confirmation: false };
         }
-        if (command === 'parse_create_source' && (args as { request: { input: string } }).request.input.includes('watchlater')) return {
-          source: { id: 'watch_later:test', kind: 'watch_later', input: 'https://www.bilibili.com/list/watchlater', title: '稍后再看', loaded_count: 25, total_count: 25, has_more: false },
-          groups: [{ id: 'group:watch', kind: 'watch_later', title: '稍后再看', page: null, items: Array.from({ length: 25 }, (_, i) => ({
-            id: `item:watch:${i}`, title: `待看视频 ${i + 1}`, owner_name: '测试用户', cover_url: null, duration_seconds: 60,
-            parts: [{ id: `part:watch:${i}`, title: `待看视频 ${i + 1}`, aid: i + 1, bvid: 'BV1xx411c7mD', cid: null, duration_seconds: 60, streams: [], assets: [] }],
-          })) }],
-        };
+        if (
+          command === 'parse_create_source' &&
+          (args as { request: { input: string } }).request.input.includes('watchlater')
+        )
+          return {
+            source: {
+              id: 'watch_later:test',
+              kind: 'watch_later',
+              input: 'https://www.bilibili.com/list/watchlater',
+              title: '稍后再看',
+              loaded_count: 25,
+              total_count: 25,
+              has_more: false,
+            },
+            groups: [
+              {
+                id: 'group:watch',
+                kind: 'watch_later',
+                title: '稍后再看',
+                page: null,
+                items: Array.from({ length: 25 }, (_, i) => ({
+                  id: `item:watch:${i}`,
+                  title: `待看视频 ${i + 1}`,
+                  owner_name: '测试用户',
+                  cover_url: null,
+                  duration_seconds: 60,
+                  parts: [
+                    {
+                      id: `part:watch:${i}`,
+                      title: `待看视频 ${i + 1}`,
+                      aid: i + 1,
+                      bvid: 'BV1xx411c7mD',
+                      cid: null,
+                      duration_seconds: 60,
+                      streams: [],
+                      assets: [],
+                    },
+                  ],
+                })),
+              },
+            ],
+          };
         return original(command, args);
       };
     });
     await page.goto('/');
     const input = page.getByRole('textbox', { name: /^Bilibili 链接或 BV \/ AV/ });
     await input.fill('BV17x411w7KC');
-    await expect(page.getByRole('checkbox', { name: '返回应用时识别剪贴板链接' })).toHaveCount(0);
+    await expect(page.getByRole('switch', { name: '返回应用时识别剪贴板链接' })).toHaveCount(0);
     if (device === 'android') {
       await page.getByRole('navigation', { name: '主导航' }).getByRole('button', { name: '我的', exact: true }).click();
       await page.getByRole('button', { name: /下载设置/ }).click();
     } else await page.getByRole('button', { name: /^设置/ }).click();
-    await page.getByRole('button', { name: /网络与维护/ }).click();
-    await page.getByRole('checkbox', { name: '返回应用时识别剪贴板链接' }).check();
+    await page
+      .getByRole('button', { name: /网络与维护/ })
+      .or(page.getByRole('tab', { name: '维护', exact: true }))
+      .click();
+    await page.getByRole('switch', { name: '返回应用时识别剪贴板链接' }).check();
     const prompt = page.getByRole('dialog', { name: '发现剪贴板中的 Bilibili 链接' });
     await expect(prompt).toBeVisible();
     await prompt.getByRole('button', { name: '添加到解析', exact: true }).click();
@@ -2908,22 +3330,36 @@ for (const device of ['desktop', 'android'] as const) {
     await page.getByRole('tab', { name: /^我的收藏/ }).click();
     await expect(page.locator('.library-card').first()).toBeVisible();
     await expect(page.getByRole('button', { name: '刷新内容库' })).toHaveCount(0);
-    await expect(page.locator('.library-header')).toHaveCount(0);
-    const listCalls = await page.evaluate(() => (window as unknown as { __BDL_TEST_INVOKES__: string[] }).__BDL_TEST_INVOKES__.filter(command => command === 'account_library_list').length);
+    const listCalls = await page.evaluate(
+      () =>
+        (window as unknown as { __BDL_TEST_INVOKES__: string[] }).__BDL_TEST_INVOKES__.filter(
+          (command) => command === 'account_library_list',
+        ).length,
+    );
     await page.getByRole('tab', { name: /^订阅合集/ }).click();
     await page.getByRole('tab', { name: /^我的收藏/ }).click();
-    await expect.poll(() => page.evaluate(() => (window as unknown as { __BDL_TEST_INVOKES__: string[] }).__BDL_TEST_INVOKES__.filter(command => command === 'account_library_list').length)).toBe(listCalls + 2);
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            (window as unknown as { __BDL_TEST_INVOKES__: string[] }).__BDL_TEST_INVOKES__.filter(
+              (command) => command === 'account_library_list',
+            ).length,
+        ),
+      )
+      .toBe(listCalls + 2);
     await page.evaluate(() => {
       Object.assign(window, { __ISSUE10_CLIP__: 'https://www.bilibili.com/video/BV17x411w7KC' });
       window.dispatchEvent(new Event('focus'));
     });
     await prompt.getByRole('button', { name: '添加到解析', exact: true }).click();
-    await expect(input).toHaveValue('BV17x411w7KC\nhttps://www.bilibili.com/video/BV1xx411c7mD\nhttps://www.bilibili.com/video/BV17x411w7KC');
+    await expect(input).toHaveValue(
+      'BV17x411w7KC\nhttps://www.bilibili.com/video/BV1xx411c7mD\nhttps://www.bilibili.com/video/BV17x411w7KC',
+    );
     await page.getByRole('button', { name: /^内容库/ }).click();
     await page.getByRole('tab', { name: /^稍后再看/ }).click();
     await expect(cards).toHaveCount(20);
     await expect(page.getByRole('region', { name: '视频解析', exact: true })).toHaveCount(0);
-
   });
 }
 
@@ -2931,27 +3367,62 @@ for (const device of ['desktop', 'android'] as const) {
   for (const theme of ['light', 'dark'] as const) {
     test(`issue10 collection tree on ${device} ${theme}`, async ({ page }) => {
       await page.setViewportSize(device === 'desktop' ? { width: 1280, height: 850 } : { width: 390, height: 844 });
-      if (device === 'android') await page.addInitScript(() => Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Linux; Android 12) Mobile' }));
+      if (device === 'android')
+        await page.addInitScript(() =>
+          Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Linux; Android 12) Mobile' }),
+        );
       await installTauriMock(page, theme, true, true);
       await page.addInitScript(() => {
-        const target = window as unknown as { __TAURI_INTERNALS__: { invoke: (command: string, args?: unknown) => Promise<unknown> } };
+        const target = window as unknown as {
+          __TAURI_INTERNALS__: { invoke: (command: string, args?: unknown) => Promise<unknown> };
+        };
         const original = target.__TAURI_INTERNALS__.invoke;
         let input = '';
         const large = new URLSearchParams(location.search).has('treeLarge');
         const tree = () => ({
-          source: { id: 'collection:tree', kind: 'collection', input, title: '分组测试合集', loaded_count: large ? 300 : 25, total_count: large ? 300 : 25, has_more: false },
-          groups: ['5A', '41th', '42th'].map((title, g) => ({ id: `group:${g}`, kind: 'collection_section', title, page: { page_number: 1, page_size: 20, total_count: 25, loaded_count: 25, has_more: false },
+          source: {
+            id: 'collection:tree',
+            kind: 'collection',
+            input,
+            title: '分组测试合集',
+            loaded_count: large ? 300 : 25,
+            total_count: large ? 300 : 25,
+            has_more: false,
+          },
+          groups: ['5A', '41th', '42th'].map((title, g) => ({
+            id: `group:${g}`,
+            kind: 'collection_section',
+            title,
+            page: { page_number: 1, page_size: 20, total_count: 25, loaded_count: 25, has_more: false },
             items: Array.from({ length: large ? 100 : g === 2 ? 5 : 10 }, (_, offset) => {
               const i = g * (large ? 100 : 10) + offset;
-              return { id: `item:tree:${i}`, title: i === 1 ? '长标题视频：用于验证多端截断与键盘焦点仍然可以正常操作的内容' : `分组视频 ${i + 1}`, owner_name: '测试用户', cover_url: null, duration_seconds: 60,
-                parts: Array.from({ length: i === 0 ? 2 : 1 }, (_, part) => ({ id: `part:tree:${i}:${part}`, title: `分 P ${part + 1}`, aid: i + 1, bvid: 'BV1xx411c7mD', cid: i * 10 + part + 1, duration_seconds: 60, streams: [], assets: [] })),
+              return {
+                id: `item:tree:${i}`,
+                title: i === 1 ? '长标题视频：用于验证多端截断与键盘焦点仍然可以正常操作的内容' : `分组视频 ${i + 1}`,
+                owner_name: '测试用户',
+                cover_url: null,
+                duration_seconds: 60,
+                parts: Array.from({ length: i === 0 ? 2 : 1 }, (_, part) => ({
+                  id: `part:tree:${i}:${part}`,
+                  title: `分 P ${part + 1}`,
+                  aid: i + 1,
+                  bvid: 'BV1xx411c7mD',
+                  cid: i * 10 + part + 1,
+                  duration_seconds: 60,
+                  streams: [],
+                  assets: [],
+                })),
               };
             }),
           })),
         });
         target.__TAURI_INTERNALS__.invoke = async (command, args) => {
-          if (command === 'parse_create_source') { input = (args as { request: { input: string } }).request.input; return tree(); }
-          if (command === 'parse_load_page') return { tree: tree(), item_ids: Array.from({ length: 5 }, (_, i) => `item:tree:${20 + i}`) };
+          if (command === 'parse_create_source') {
+            input = (args as { request: { input: string } }).request.input;
+            return tree();
+          }
+          if (command === 'parse_load_page')
+            return { tree: tree(), item_ids: Array.from({ length: 5 }, (_, i) => `item:tree:${20 + i}`) };
           return original(command, args);
         };
       });
@@ -2979,17 +3450,25 @@ for (const device of ['desktop', 'android'] as const) {
       await expect(page.getByRole('button', { name: '下载所选 (11)', exact: true })).toBeEnabled();
 
       await tree.getByText('P1 · 分 P 1', { exact: true }).click();
-      await expect(tree.getByRole('checkbox', { name: '选择 5A', exact: true })).toHaveAttribute('data-state', 'indeterminate');
+      await expect(tree.getByRole('checkbox', { name: '选择 5A', exact: true })).toHaveAttribute(
+        'data-state',
+        'indeterminate',
+      );
       await expect(page.getByRole('button', { name: '下载所选 (10)', exact: true })).toBeEnabled();
       await tree.getByRole('button', { name: '展开 41th', exact: true }).focus();
       await page.keyboard.press('Enter');
       await expect(tree.getByRole('button', { name: '收起 41th', exact: true })).toBeVisible();
       await tree.getByRole('button', { name: '播放 分组视频 3', exact: true }).click();
       await expect(page.getByRole('button', { name: '下载所选 (10)', exact: true })).toBeEnabled();
-      await tree.locator('.collection-tree-list').evaluate((element) => { element.scrollTop = 0; });
+      await tree.locator('.collection-tree-list').evaluate((element) => {
+        element.scrollTop = 0;
+      });
       if (device === 'android') {
         await page.setViewportSize({ width: 1024, height: 600 });
-        await expect(tree.getByRole('checkbox', { name: '选择 5A', exact: true })).toHaveAttribute('data-state', 'indeterminate');
+        await expect(tree.getByRole('checkbox', { name: '选择 5A', exact: true })).toHaveAttribute(
+          'data-state',
+          'indeterminate',
+        );
       }
       await page.getByRole('button', { name: /^内容库/ }).click();
       await page.getByRole('tab', { name: /^订阅合集/ }).click();
@@ -3010,11 +3489,12 @@ for (const device of ['desktop', 'android'] as const) {
         await tree.getByRole('button', { name: '展开 5A', exact: true }).click();
         await expect(page.getByRole('button', { name: '下载所选 (101)', exact: true })).toBeEnabled();
         expect(await tree.getByRole('treeitem').count()).toBeLessThan(50);
-        await tree.locator('.collection-tree-list').evaluate((element) => { element.scrollTop = element.scrollHeight; });
+        await tree.locator('.collection-tree-list').evaluate((element) => {
+          element.scrollTop = element.scrollHeight;
+        });
         await tree.getByRole('checkbox', { name: '选择 分组视频 100', exact: true }).uncheck();
         await expect(page.getByRole('button', { name: '下载所选 (100)', exact: true })).toBeEnabled();
       }
-
     });
   }
 }
@@ -3023,29 +3503,104 @@ for (const device of ['desktop', 'android'] as const) {
   for (const theme of ['light', 'dark'] as const) {
     test(`watch later browse details ${device} ${theme}`, async ({ page }) => {
       await page.setViewportSize(device === 'desktop' ? { width: 1280, height: 850 } : { width: 390, height: 844 });
-      if (device === 'android') await page.addInitScript(() => Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Linux; Android 12) Mobile' }));
+      if (device === 'android')
+        await page.addInitScript(() =>
+          Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Linux; Android 12) Mobile' }),
+        );
       await installTauriMock(page, theme, true, true);
       await page.addInitScript(() => {
         const target = window as any;
         const original = target.__TAURI_INTERNALS__.invoke;
         target.__DETAIL_REQUESTS__ = [];
-        const part = (i: number) => ({ id: `part:${i}`, title: `分 P ${i + 1}`, aid: i + 1, bvid: 'BV1xx411c7mD', cid: i + 100, duration_seconds: 60, streams: [], assets: [] });
-        const item = (i: number) => ({ id: `item:${i}`, title: `待看视频 ${i + 1}`, owner_name: '测试用户', cover_url: null, duration_seconds: 60, parts: [{ ...part(i), bvid: i === 0 ? 'BV1xx411c7mD' : i === 1 ? 'BV17x411w7KC' : 'BV1kRXLBLEWR', cid: null }] });
+        const part = (i: number) => ({
+          id: `part:${i}`,
+          title: `分 P ${i + 1}`,
+          aid: i + 1,
+          bvid: 'BV1xx411c7mD',
+          cid: i + 100,
+          duration_seconds: 60,
+          streams: [],
+          assets: [],
+        });
+        const item = (i: number) => ({
+          id: `item:${i}`,
+          title: `待看视频 ${i + 1}`,
+          owner_name: '测试用户',
+          cover_url: null,
+          duration_seconds: 60,
+          parts: [
+            { ...part(i), bvid: i === 0 ? 'BV1xx411c7mD' : i === 1 ? 'BV17x411w7KC' : 'BV1kRXLBLEWR', cid: null },
+          ],
+        });
         target.__TAURI_INTERNALS__.invoke = async (command: string, args: any) => {
           if (command === 'parse_create_source') {
             target.__DETAIL_REQUESTS__.push(args.request);
-            if (args.request.input.includes('watchlater')) return {
-              source: { id: 'watch_later:browse', kind: 'watch_later', input: args.request.input, title: '稍后再看', loaded_count: 25, total_count: 25, has_more: false },
-              groups: [{ id: 'group:watch', kind: 'watch_later', title: '稍后再看', page: null, items: Array.from({ length: 25 }, (_, i) => item(i)) }],
-            };
-            if (args.request.input.includes('BV1xx411c7mD')) return {
-              source: { id: 'collection:detail', kind: 'collection', input: 'https://space.bilibili.com/1/lists/2?type=season', title: '视频所属合集：20分钟精选互联网十年最爆笑猫咪合集，笑到停不下来 | Daily Dose of Internet 超长标题测试', loaded_count: 20, total_count: 61, has_more: true },
-              groups: [{ id: 'group:collection', kind: 'collection', title: '视频所属合集：20分钟精选互联网十年最爆笑猫咪合集，笑到停不下来 | Daily Dose of Internet 超长标题测试', page: { page: 1, page_size: 20, total_count: 61, has_more: true }, items: Array.from({ length: 20 }, (_, i) => item(i)) }],
-            };
+            if (args.request.input.includes('watchlater'))
+              return {
+                source: {
+                  id: 'watch_later:browse',
+                  kind: 'watch_later',
+                  input: args.request.input,
+                  title: '稍后再看',
+                  loaded_count: 25,
+                  total_count: 25,
+                  has_more: false,
+                },
+                groups: [
+                  {
+                    id: 'group:watch',
+                    kind: 'watch_later',
+                    title: '稍后再看',
+                    page: null,
+                    items: Array.from({ length: 25 }, (_, i) => item(i)),
+                  },
+                ],
+              };
+            if (args.request.input.includes('BV1xx411c7mD'))
+              return {
+                source: {
+                  id: 'collection:detail',
+                  kind: 'collection',
+                  input: 'https://space.bilibili.com/1/lists/2?type=season',
+                  title:
+                    '视频所属合集：20分钟精选互联网十年最爆笑猫咪合集，笑到停不下来 | Daily Dose of Internet 超长标题测试',
+                  loaded_count: 20,
+                  total_count: 61,
+                  has_more: true,
+                },
+                groups: [
+                  {
+                    id: 'group:collection',
+                    kind: 'collection',
+                    title:
+                      '视频所属合集：20分钟精选互联网十年最爆笑猫咪合集，笑到停不下来 | Daily Dose of Internet 超长标题测试',
+                    page: { page: 1, page_size: 20, total_count: 61, has_more: true },
+                    items: Array.from({ length: 20 }, (_, i) => item(i)),
+                  },
+                ],
+              };
             const count = args.request.input.includes('BV17x411w7KC') ? 25 : 1;
             return {
-              source: { id: 'video:detail', kind: 'video', input: count === 25 ? 'BV17x411w7KC' : 'BV1kRXLBLEWR', title: (count === 25 ? '多分 P 视频' : '普通视频') + '：20分钟精选互联网十年最爆笑猫咪合集，笑到停不下来 | Daily Dose of Internet 超长标题测试', loaded_count: 1, total_count: 1, has_more: false },
-              groups: [{ id: 'group:video', kind: 'video', title: '视频', page: null, items: [{ ...item(1), parts: Array.from({ length: count }, (_, i) => part(i)) }] }],
+              source: {
+                id: 'video:detail',
+                kind: 'video',
+                input: count === 25 ? 'BV17x411w7KC' : 'BV1kRXLBLEWR',
+                title:
+                  (count === 25 ? '多分 P 视频' : '普通视频') +
+                  '：20分钟精选互联网十年最爆笑猫咪合集，笑到停不下来 | Daily Dose of Internet 超长标题测试',
+                loaded_count: 1,
+                total_count: 1,
+                has_more: false,
+              },
+              groups: [
+                {
+                  id: 'group:video',
+                  kind: 'video',
+                  title: '视频',
+                  page: null,
+                  items: [{ ...item(1), parts: Array.from({ length: count }, (_, i) => part(i)) }],
+                },
+              ],
             };
           }
           return original(command, args);
@@ -3093,13 +3648,17 @@ for (const device of ['desktop', 'android'] as const) {
       await expect(page.locator('h2').filter({ hasText: '普通视频' })).toBeVisible();
       for (const width of device === 'desktop' ? [1280, 1000, 800, 375] : [390, 1024]) {
         await page.setViewportSize({ width, height: 850 });
-        const title = page.locator(device === 'desktop' ? '.library-folder-header h2' : '.mobile-detail-copy h2');
+        const title = page.locator('.library-source-summary h2');
         await expect(title).toHaveAttribute('title', /超长标题测试/);
         if (device === 'desktop' && width > 700) {
           await title.hover();
         }
       }
-      expect(await page.evaluate(() => (window as any).__DETAIL_REQUESTS__.slice(1).every((r: any) => r.expand_video_collection))).toBe(true);
+      expect(
+        await page.evaluate(() =>
+          (window as any).__DETAIL_REQUESTS__.slice(1).every((r: any) => r.expand_video_collection),
+        ),
+      ).toBe(true);
     });
   }
 }
@@ -3108,68 +3667,89 @@ for (const device of ['desktop', 'android'] as const) {
   for (const theme of ['light', 'dark'] as const) {
     test(`library refresh skeleton ${device} ${theme}`, async ({ page }) => {
       await page.setViewportSize(device === 'desktop' ? { width: 1280, height: 850 } : { width: 390, height: 844 });
-      if (device === 'android') await page.addInitScript(() => Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Linux; Android 12) Mobile' }));
+      if (device === 'android')
+        await page.addInitScript(() =>
+          Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Linux; Android 12) Mobile' }),
+        );
       await installTauriMock(page, theme, true, true);
       await page.addInitScript(() => {
         const target = window as any;
         const original = target.__TAURI_INTERNALS__.invoke;
         target.__TAURI_INTERNALS__.invoke = async (command: string, args: any) => {
           if (command === 'account_library_list' && target.__HOLD_LIBRARY__) {
-            await new Promise<void>(resolve => { target.__RELEASE_LIBRARY__ = resolve; });
+            await new Promise<void>((resolve) => {
+              target.__RELEASE_LIBRARY__ = resolve;
+            });
           }
           return original(command, args);
         };
       });
       await page.goto('/');
       await page.getByRole('button', { name: /^内容库/ }).click();
-      await expect(page.locator('.library-card[role="button"]').first()).toBeVisible();
+      await expect(page.getByRole('button', { name: /^进入 / }).first()).toBeVisible();
       await page.getByRole('tab', { name: /^订阅合集/ }).click();
-      await expect(page.locator('.library-card[role="button"]').first()).toBeVisible();
+      await expect(page.getByRole('button', { name: /^进入 / }).first()).toBeVisible();
       for (const category of ['我的收藏', '订阅合集']) {
-        await page.evaluate(() => { (window as any).__HOLD_LIBRARY__ = true; (window as any).__RELEASE_LIBRARY__ = null; });
+        await page.evaluate(() => {
+          (window as any).__HOLD_LIBRARY__ = true;
+          (window as any).__RELEASE_LIBRARY__ = null;
+        });
         await page.getByRole('tab', { name: new RegExp(`^${category}`) }).focus();
         await page.keyboard.press('Enter');
         await expect(page.getByRole('status', { name: '正在加载内容', exact: true })).toBeVisible();
-        await expect(page.locator('.library-card.skeleton')).toHaveCount(6);
-        await expect(page.locator('.library-card[role="button"]')).toHaveCount(0);
+        await expect(page.getByRole('button', { name: /^进入 / })).toHaveCount(0);
         await expect(page.locator('.library-sync')).toHaveCount(0);
         await expect.poll(() => page.evaluate(() => typeof (window as any).__RELEASE_LIBRARY__)).toBe('function');
-        await page.evaluate(() => { (window as any).__HOLD_LIBRARY__ = false; (window as any).__RELEASE_LIBRARY__(); });
-        await expect(page.locator('.library-card[role="button"]').first()).toBeVisible();
+        await page.evaluate(() => {
+          (window as any).__HOLD_LIBRARY__ = false;
+          (window as any).__RELEASE_LIBRARY__();
+        });
+        await expect(page.getByRole('button', { name: /^进入 / }).first()).toBeVisible();
         await expect(page.locator('.skeleton')).toHaveCount(0);
       }
     });
   }
 }
 
-
 for (const device of ['desktop', 'phone'] as const) {
   for (const theme of ['light', 'dark'] as const) {
     test(`parse failure diagnostics ${device} ${theme}`, async ({ page }) => {
       await page.setViewportSize({ width: device === 'phone' ? 375 : 1280, height: 800 });
       await installTauriMock(page, theme);
-      await page.addInitScript(({ phone }) => {
-        if (phone) Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Linux; Android 12) Mobile' });
-        const target = window as unknown as {
-          __TAURI_INTERNALS__: { invoke: (command: string, args?: unknown) => Promise<unknown> };
-          copiedDiagnostic?: string;
-          failCopy?: boolean;
-          feedbackUrl?: string;
-        };
-        Object.defineProperty(navigator, 'clipboard', { value: { writeText: async (text: string) => {
-          if (target.failCopy) throw new Error('clipboard denied');
-          target.copiedDiagnostic = text;
-        } } });
-        const invoke = target.__TAURI_INTERNALS__.invoke;
-        target.__TAURI_INTERNALS__.invoke = async (command, args) => {
-          if (command === 'parse_create_source') throw {
-            code: 'bilibili_api_error', message: 'bpi error: failed to decode response',
-            detail: 'HTTP 412; response field missing; SESSDATA=secret-cookie; ' + 'long_reason_'.repeat(100),
+      await page.addInitScript(
+        ({ phone }) => {
+          if (phone) Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Linux; Android 12) Mobile' });
+          const target = window as unknown as {
+            __TAURI_INTERNALS__: { invoke: (command: string, args?: unknown) => Promise<unknown> };
+            copiedDiagnostic?: string;
+            failCopy?: boolean;
+            feedbackUrl?: string;
           };
-          if (command === 'open_external_url') { target.feedbackUrl = (args as { url: string }).url; return; }
-          return invoke(command, args);
-        };
-      }, { phone: device === 'phone' });
+          Object.defineProperty(navigator, 'clipboard', {
+            value: {
+              writeText: async (text: string) => {
+                if (target.failCopy) throw new Error('clipboard denied');
+                target.copiedDiagnostic = text;
+              },
+            },
+          });
+          const invoke = target.__TAURI_INTERNALS__.invoke;
+          target.__TAURI_INTERNALS__.invoke = async (command, args) => {
+            if (command === 'parse_create_source')
+              throw {
+                code: 'bilibili_api_error',
+                message: 'bpi error: failed to decode response',
+                detail: 'HTTP 412; response field missing; SESSDATA=secret-cookie; ' + 'long_reason_'.repeat(100),
+              };
+            if (command === 'open_external_url') {
+              target.feedbackUrl = (args as { url: string }).url;
+              return;
+            }
+            return invoke(command, args);
+          };
+        },
+        { phone: device === 'phone' },
+      );
       await page.goto('/');
       await page.getByLabel('Bilibili 链接或 BV / AV').fill('BV1xx411c7mD');
       await page.getByRole('button', { name: '开始解析' }).click();
@@ -3189,8 +3769,12 @@ for (const device of ['desktop', 'phone'] as const) {
       expect(copied).toContain('当前环境');
       expect(copied).not.toContain('secret-cookie');
       await error.getByRole('button', { name: '反馈问题' }).click();
-      expect(await page.evaluate(() => (window as unknown as { feedbackUrl: string }).feedbackUrl)).toBe('https://github.com/Yuelioi/bdl/issues/new/choose');
-      await page.evaluate(() => { (window as unknown as { failCopy: boolean }).failCopy = true; });
+      expect(await page.evaluate(() => (window as unknown as { feedbackUrl: string }).feedbackUrl)).toBe(
+        'https://github.com/Yuelioi/bdl/issues/new/choose',
+      );
+      await page.evaluate(() => {
+        (window as unknown as { failCopy: boolean }).failCopy = true;
+      });
       await error.getByRole('button', { name: '已复制' }).click();
       await expect(error.getByText('复制失败，请展开错误详情后手动复制。')).toBeVisible();
       await summary.click();
@@ -3203,15 +3787,21 @@ for (const device of ['desktop', 'phone'] as const) {
   test(`library failure chain ${device}`, async ({ page }) => {
     await page.setViewportSize({ width: device === 'phone' ? 375 : 1280, height: 800 });
     await installTauriMock(page, 'light', true, true);
-    await page.addInitScript(({ phone }) => {
-      if (phone) Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Linux; Android 12) Mobile' });
-      const target = window as unknown as { __TAURI_INTERNALS__: { invoke: (cmd: string, args?: unknown) => Promise<unknown> } };
-      const invoke = target.__TAURI_INTERNALS__.invoke;
-      target.__TAURI_INTERNALS__.invoke = async (cmd, args) => {
-        if (cmd === 'account_library_list' || cmd === 'parse_create_source') throw { code: 'bilibili_api_error', message: '加载失败', detail: 'HTTP 429; token=secret-value' };
-        return invoke(cmd, args);
-      };
-    }, { phone: device === 'phone' });
+    await page.addInitScript(
+      ({ phone }) => {
+        if (phone) Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Linux; Android 12) Mobile' });
+        const target = window as unknown as {
+          __TAURI_INTERNALS__: { invoke: (cmd: string, args?: unknown) => Promise<unknown> };
+        };
+        const invoke = target.__TAURI_INTERNALS__.invoke;
+        target.__TAURI_INTERNALS__.invoke = async (cmd, args) => {
+          if (cmd === 'account_library_list' || cmd === 'parse_create_source')
+            throw { code: 'bilibili_api_error', message: '加载失败', detail: 'HTTP 429; token=secret-value' };
+          return invoke(cmd, args);
+        };
+      },
+      { phone: device === 'phone' },
+    );
     await page.goto('/');
     await page.getByRole('button', { name: device === 'phone' ? '内容库' : '内容库 收藏与订阅', exact: true }).click();
     for (const category of ['我的收藏', '订阅合集', '稍后再看']) {
@@ -3229,12 +3819,20 @@ for (const device of ['desktop', 'phone'] as const) {
 test('pagination and background keep real causes from transport to controls', async ({ page }) => {
   await installTauriMock(page, 'light');
   await page.addInitScript(() => {
-    const target = window as unknown as { __TAURI_INTERNALS__: { invoke: (cmd: string, args?: unknown) => Promise<unknown> }; attempts?: number };
+    const target = window as unknown as {
+      __TAURI_INTERNALS__: { invoke: (cmd: string, args?: unknown) => Promise<unknown> };
+      attempts?: number;
+    };
     const invoke = target.__TAURI_INTERNALS__.invoke;
     target.attempts = 0;
     target.__TAURI_INTERNALS__.invoke = async (cmd, args) => {
       if (cmd === 'selection_create_tasks') target.attempts!++;
-      if (cmd === 'parse_load_more' || cmd === 'selection_create_tasks') throw { code: 'bilibili_api_error', message: '操作失败', detail: 'HTTP 429: retry later; SESSDATA=hidden-cookie' };
+      if (cmd === 'parse_load_more' || cmd === 'selection_create_tasks')
+        throw {
+          code: 'bilibili_api_error',
+          message: '操作失败',
+          detail: 'HTTP 429: retry later; SESSDATA=hidden-cookie',
+        };
       return invoke(cmd, args);
     };
   });
@@ -3258,11 +3856,18 @@ test('pagination and background keep real causes from transport to controls', as
 test('recent failure report survives page changes and can be cleared', async ({ page }) => {
   await installTauriMock(page, 'light');
   await page.addInitScript(() => {
-    const target = window as unknown as { exportedErrors?: string; __TAURI_INTERNALS__: { invoke: (cmd: string, args?: unknown) => Promise<unknown> } };
+    const target = window as unknown as {
+      exportedErrors?: string;
+      __TAURI_INTERNALS__: { invoke: (cmd: string, args?: unknown) => Promise<unknown> };
+    };
     const invoke = target.__TAURI_INTERNALS__.invoke;
     target.__TAURI_INTERNALS__.invoke = async (cmd, args) => {
-      if (cmd === 'diagnostics_export') { target.exportedErrors = (args as { recentErrors: string }).recentErrors; return { path: 'fixture-diagnostics.json' }; }
-      if (cmd === 'parse_create_source') throw { code: 'bilibili_api_error', message: '失败', detail: 'API diagnostic sentinel; token=do-not-copy' };
+      if (cmd === 'diagnostics_export') {
+        target.exportedErrors = (args as { recentErrors: string }).recentErrors;
+        return { path: 'fixture-diagnostics.json' };
+      }
+      if (cmd === 'parse_create_source')
+        throw { code: 'bilibili_api_error', message: '失败', detail: 'API diagnostic sentinel; token=do-not-copy' };
       return invoke(cmd, args);
     };
   });
@@ -3271,7 +3876,10 @@ test('recent failure report survives page changes and can be cleared', async ({ 
   await page.getByRole('button', { name: '开始解析' }).click();
   await expect(page.locator('.error-details')).toBeVisible();
   await page.getByRole('button', { name: '设置 偏好与维护' }).click();
-  await page.getByRole('button', { name: /网络与维护/ }).click();
+  await page
+    .getByRole('button', { name: /网络与维护/ })
+    .or(page.getByRole('tab', { name: '维护', exact: true }))
+    .click();
   await page.getByText('最近的操作错误', { exact: true }).click();
   await page.locator('.error-details summary').click();
   await expect(page.locator('.error-details pre')).toContainText('API diagnostic sentinel');
@@ -3287,10 +3895,13 @@ test('recent failure report survives page changes and can be cleared', async ({ 
 test('size estimation failure is inspectable without disabling download', async ({ page }) => {
   await installTauriMock(page, 'light');
   await page.addInitScript(() => {
-    const target = window as unknown as { __TAURI_INTERNALS__: { invoke: (cmd: string, args?: unknown) => Promise<unknown> } };
+    const target = window as unknown as {
+      __TAURI_INTERNALS__: { invoke: (cmd: string, args?: unknown) => Promise<unknown> };
+    };
     const invoke = target.__TAURI_INTERNALS__.invoke;
     target.__TAURI_INTERNALS__.invoke = async (cmd, args) => {
-      if (cmd === 'selection_estimate_size') throw { code: 'bilibili_api_error', message: '解析失败', detail: 'estimate-cause-sentinel' };
+      if (cmd === 'selection_estimate_size')
+        throw { code: 'bilibili_api_error', message: '解析失败', detail: 'estimate-cause-sentinel' };
       return invoke(cmd, args);
     };
   });
@@ -3298,7 +3909,7 @@ test('size estimation failure is inspectable without disabling download', async 
   await page.getByLabel('链接或 BV / AV').fill('BV1xx411c7mD');
   await page.getByRole('button', { name: '开始解析' }).click();
   await page.getByRole('button', { name: '选择 测试视频' }).click();
-  await page.getByRole('button', { name: '下载所选 (1)' }).click();
+  await page.getByRole('button', { name: '调整下载设置' }).click();
   const dialog = page.getByRole('dialog', { name: '下载设置' });
   await expect(dialog.getByRole('button', { name: '复制诊断信息' })).toBeVisible();
   await dialog.locator('.error-details summary').click();

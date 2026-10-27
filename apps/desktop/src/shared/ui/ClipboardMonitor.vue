@@ -16,7 +16,6 @@ const seen = new Set<string>();
 let generation = 0;
 let reading = false;
 let disposed = false;
-let errorShown = false;
 async function check() {
   if (disposed || reading || !settings.saved.clipboard_monitor_enabled || document.visibilityState !== 'visible' || !document.hasFocus()) return;
   const request = generation;
@@ -31,10 +30,7 @@ async function check() {
     links.value = found;
     open.value = true;
   } catch {
-    if (!disposed && request === generation && !errorShown) {
-      errorShown = true;
-      ui.pushToast('无法自动读取剪贴板，可以使用“粘贴链接”或手动粘贴。', 'warning');
-    }
+    // Automatic detection is optional; only an explicit paste action reports read failures.
   } finally { reading = false; }
 }
 function add() {
@@ -46,7 +42,6 @@ watch(() => settings.saved.clipboard_monitor_enabled, () => {
   generation++;
   open.value = false;
   links.value = [];
-  errorShown = false;
   void check();
 });
 onMounted(() => {

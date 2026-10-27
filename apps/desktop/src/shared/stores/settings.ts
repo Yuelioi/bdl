@@ -1,7 +1,7 @@
 import { open } from '@tauri-apps/plugin-dialog'
 import { defineStore } from 'pinia'
 
-import type { DocumentTreeDirectory, EnvironmentHealthSnapshot, SettingsSnapshot, MediaPreferences, NamingPreset } from '../api/dto'
+import type { DocumentTreeDirectory, EnvironmentHealthSnapshot, SettingsSnapshot, MediaPreferences, NamingPreset, DownloadPreset } from '../api/dto'
 import {
   diagnosticsExport,
   environmentCreateDownloadDirectory,
@@ -40,6 +40,11 @@ export const namingTemplatePresets = [
   { label: '单文件', value: '{title}' },
   { label: '合集/列表', value: '{collection_title}/{index} - {title}' },
   { label: '番剧/课程', value: '{series_title}/{episode_index} - {episode_title}' },
+]
+
+export const builtinNamingPresets = (): NamingPreset[] => [
+  ...namingTemplatePresets.map((preset, index) => ({ id: `builtin-${index}`, name: preset.label, template: preset.value })),
+  { id: 'direct', name: '直接保存到下载目录', template: '{title} - P{part_index} - {part_title}' },
 ]
 
 export const namingVariables = [
@@ -96,7 +101,7 @@ const defaultSettings = (): SettingsSnapshot => ({
   duplicate_naming_strategy: 'skip_existing',
   audio_quality: 'best',
   codec: 'auto',
-  media_preferences: { video: [], audio: [], fallback: 'best' },
+  media_preferences: { video: [], audio: [], video_codecs: [], audio_codecs: [] },
   missing_quality_policy: 'lower',
   ffmpeg_path: null,
   retain_raw_streams: false,
@@ -152,7 +157,7 @@ interface EnvironmentCheckOverrides {
   ffmpegPath?: string | null
 }
 
-type AppPreferences = Pick<SettingsSnapshot, 'clipboard_monitor_enabled' | 'usage_notice_acknowledged' | 'auto_check_updates' | 'theme_preference' | 'selected_download_preset' | 'download_presets'>
+type AppPreferences = Pick<SettingsSnapshot, 'clipboard_monitor_enabled' | 'usage_notice_acknowledged' | 'auto_check_updates' | 'theme_preference' | 'selected_download_preset' | 'download_presets' | 'naming_template'>
 type DownloadPreferences = Pick<SettingsSnapshot, 'media_mode' | 'audio_output_format' | 'subtitle_format' | 'danmaku_format' | 'archive_mode' | 'archive_assets' | 'embed_cover' | 'embed_subtitles' | 'output_extension' | 'retain_raw_streams'>
 const settingsWrites = new WeakMap<object, Promise<unknown>>()
 const enqueueSettingsWrite = <T>(store: object, write: () => Promise<T>): Promise<T> => {
@@ -272,6 +277,82 @@ export const useSettingsStore = defineStore('settings', {
     },
     save() {
       return enqueueSettingsWrite(this, () => this.saveDraft())
+    },
+    persistDownloadPreset(preset: DownloadPreset, creating: boolean, applyOnSave: boolean): Promise<boolean> {
+      return enqueueSettingsWrite(this, async () => {
+        await this.ensureLoaded()
+        if (!this.loaded) return false
+        if (!creating && !this.saved.download_presets.some((item) => item.id === preset.id)) return false
+        const items = creating ? [...this.saved.download_presets, preset] : this.saved.download_presets.map((item) => item.id === preset.id ? preset : item)
+        const selected = applyOnSave ? preset.id : this.saved.selected_download_preset
+        if (downloadPresetsError(items, selected)) return false
+        try {
+          const updated = normalizeSettings(await settingsUpdate({ ...cloneSettings(this.saved), download_presets: items, selected_download_preset: selected }))
+          this.saved = cloneSettings(updated)
+          this.draft.download_presets = cloneDownloadPresets(creating ? [...this.draft.download_presets, preset] : this.draft.download_presets.map((item) => item.id === preset.id ? preset : item))
+          if (applyOnSave) this.draft.selected_download_preset = preset.id
+          return true
+        } catch (error) {
+          useUiStore().pushToast(`预设保存失败：${errorMessage(error)}`, 'warning')
+          return false
+        }
+      })
+    },
+    deleteDownloadPreset(id: string): Promise<boolean> {
+      return enqueueSettingsWrite(this, async () => {
+        await this.ensureLoaded()
+        if (!this.loaded || this.saved.download_presets.length <= 1 || !this.saved.download_presets.some((item) => item.id === id)) return false
+        const items = this.saved.download_presets.filter((item) => item.id !== id)
+        const selected = this.saved.selected_download_preset === id ? items[0].id : this.saved.selected_download_preset
+        try {
+          const updated = normalizeSettings(await settingsUpdate({ ...cloneSettings(this.saved), download_presets: items, selected_download_preset: selected }))
+          this.saved = cloneSettings(updated)
+          this.draft.download_presets = this.draft.download_presets.filter((item) => item.id !== id)
+          if (this.draft.selected_download_preset === id) this.draft.selected_download_preset = selected
+          return true
+        } catch (error) {
+          useUiStore().pushToast(`预设删除失败：${errorMessage(error)}`, 'warning')
+          return false
+        }
+      })
+    },
+    persistNamingPreset(preset: NamingPreset, creating: boolean): Promise<boolean> {
+      return enqueueSettingsWrite(this, async () => {
+        await this.ensureLoaded()
+        if (!this.loaded) return false
+        if (!preset.name.trim() || [...preset.name].length > 40 || validateNamingTemplate(preset.template)) return false
+        if (creating && (this.saved.naming_presets.length >= 32 || this.draft.naming_presets.length >= 32)) return false
+        if ([...this.saved.naming_presets, ...this.draft.naming_presets].some((item) => item.id !== preset.id && item.name.trim() === preset.name)) return false
+        if (!creating && !this.saved.naming_presets.some((item) => item.id === preset.id)) return false
+        const previous = this.saved.naming_presets.find((item) => item.id === preset.id)
+        const items = creating ? [...this.saved.naming_presets, { ...preset }] : this.saved.naming_presets.map((item) => item.id === preset.id ? { ...preset } : item)
+        const namingTemplate = !creating && previous?.template === this.saved.naming_template ? preset.template : this.saved.naming_template
+        try {
+          const updated = normalizeSettings(await settingsUpdate({ ...cloneSettings(this.saved), naming_presets: items, naming_template: namingTemplate }))
+          this.saved = cloneSettings(updated)
+          this.draft.naming_presets = creating ? [...this.draft.naming_presets, { ...preset }] : this.draft.naming_presets.map((item) => item.id === preset.id ? { ...preset } : item)
+          if (!creating && previous?.template === this.draft.naming_template) this.draft.naming_template = preset.template
+          return true
+        } catch (error) {
+          useUiStore().pushToast(`预设保存失败：${errorMessage(error)}`, 'warning')
+          return false
+        }
+      })
+    },
+    deleteNamingPreset(id: string): Promise<boolean> {
+      return enqueueSettingsWrite(this, async () => {
+        await this.ensureLoaded()
+        if (!this.loaded || !this.saved.naming_presets.some((item) => item.id === id)) return false
+        try {
+          const updated = normalizeSettings(await settingsUpdate({ ...cloneSettings(this.saved), naming_presets: this.saved.naming_presets.filter((item) => item.id !== id) }))
+          this.saved = cloneSettings(updated)
+          this.draft.naming_presets = this.draft.naming_presets.filter((item) => item.id !== id)
+          return true
+        } catch (error) {
+          useUiStore().pushToast(`预设删除失败：${errorMessage(error)}`, 'warning')
+          return false
+        }
+      })
     },
     async saveDraft() {
       const ui = useUiStore()
@@ -803,5 +884,6 @@ export const cloneMediaPreferences = (value?: MediaPreferences): MediaPreference
     ? videoQualityOptions.filter((option) => /^\d+$/.test(option.value)).map((option) => ({ quality: option.value, codec: rule.codec }))
     : [{ ...rule }]),
   audio: [...(value?.audio ?? [])],
-  fallback: value?.fallback === 'error' ? 'error' : 'best',
+  video_codecs: [...(value?.video_codecs ?? [])],
+  audio_codecs: [...(value?.audio_codecs ?? [])],
 })

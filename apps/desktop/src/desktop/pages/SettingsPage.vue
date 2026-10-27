@@ -5,9 +5,11 @@ import UiInlineNotice from '../../shared/ui/InlineNotice.vue';
 import SettingsDownloadSection from '../../shared/features/settings/SettingsDownloadSection.vue';
 import SettingsMaintenanceSection from '../../shared/features/settings/SettingsMaintenanceSection.vue';
 import SettingsMediaSection from '../../shared/features/settings/SettingsMediaSection.vue';
-import SettingsNamingSection from '../../shared/features/settings/SettingsNamingSection.vue';
+import PresetManager from '../../shared/features/settings/PresetManager.vue';
 import SettingsUpdateSection from '../../shared/features/settings/SettingsUpdateSection.vue';
 import SettingsSectionNav from '../components/settings/SettingsSectionNav.vue';
+import { useUiStore } from '../../shared/stores/ui';
+const ui = useUiStore();
 import { useSettingsPage } from '../../shared/features/settings/useSettingsPage';
 const {
   settingsLeaveOpen,
@@ -44,8 +46,8 @@ const {
         <div class="settings-heading-copy">
           <h2>设置</h2>
         </div>
-        <div class="settings-actions">
-          <span v-if="settingsFormChanged" class="dirty-indicator">未保存</span>
+        <div v-if="activeSettingsSection !== 'settings-presets' || settingsFormChanged" class="settings-actions">
+          <span v-if="settingsFormChanged" class="dirty-indicator">有未保存的修改</span>
           <UiButton variant="ghost" :disabled="settings.loading || settings.saving" @click="restoreAllDefaults">
             <UIcon name="i-tabler-refresh" class="size-4" aria-hidden="true" />
             恢复默认
@@ -106,7 +108,10 @@ const {
 
           <SettingsMediaSection v-else-if="activeSettingsSection === 'settings-media'" :form="settingsForm" />
 
-          <SettingsNamingSection v-else-if="activeSettingsSection === 'settings-naming'" :form="settingsForm" />
+          <PresetManager
+            v-else-if="activeSettingsSection === 'settings-presets'"
+            v-model:kind="ui.settingsPresetKind"
+          />
 
           <SettingsUpdateSection v-else-if="activeSettingsSection === 'settings-update'" />
 

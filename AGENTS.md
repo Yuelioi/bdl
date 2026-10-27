@@ -2,6 +2,8 @@
 
 Use the installed Flightdeck skill for durable repository work; recover from `flightdeck/deck.md`. Keep `/flightdeck/` in `.gitignore`; these records are local-only. If the workspace is absent in a fresh checkout, do not assume local knowledge or support scripts are available.
 
+For interface redesign and shared component changes, follow [UI design guidelines](docs/UI_DESIGN.md) for typography, control sizes, touch targets, density, and visual verification.
+
 ## Windows 构建、缓存与大数据存放
 
 - Rust 构建、检查和 Tauri 打包先经 `scripts/cargo-target.mjs` 解析全局根；本机输出为 `D:\coding\rust\target\bdl\`，Rust 二进制及 Tauri bundle 位于其 `release` 子目录。交付包保留在 `D:\coding\bdl\releases\<版本>\`，复制/上传入口使用实际解析路径。

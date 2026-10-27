@@ -1,23 +1,28 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed } from 'vue';
 
 const { value, max = 100 } = defineProps<{
-  value: number
-  max?: number
-}>()
+  value: number;
+  max?: number;
+}>();
 
 const percent = computed(() => {
   if (max <= 0) {
-    return 0
+    return 0;
   }
-  return Math.min(100, Math.max(0, (value / max) * 100))
-})
+  return Math.min(100, Math.max(0, (value / max) * 100));
+});
 </script>
 
 <template>
-  <div class="progress-track" role="progressbar" :aria-valuenow="percent" aria-valuemin="0" aria-valuemax="100">
-    <span :style="{ width: `${percent}%` }" />
-  </div>
+  <UProgress
+    class="progress-track"
+    :model-value="percent"
+    :max="100"
+    size="xs"
+    color="primary"
+    :ui="{ base: 'h-full bg-(--color-progress-track)', indicator: 'bg-(--color-accent)' }"
+  />
 </template>
 
 <style scoped>
@@ -27,12 +32,5 @@ const percent = computed(() => {
   overflow: hidden;
   border-radius: 62.4375rem;
   background: var(--color-progress-track);
-}
-
-.progress-track span {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: var(--color-accent);
 }
 </style>

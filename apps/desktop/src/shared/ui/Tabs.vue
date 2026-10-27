@@ -32,14 +32,17 @@ const items = computed(() =>
     size="sm"
     :content="false"
     :ui="{
-      root: 'w-full',
-      list: 'mb-0 min-h-9 items-stretch gap-5 overflow-x-auto overflow-y-hidden border-b border-(--color-border) bg-transparent p-0',
-      indicator: 'hidden',
+      root: stretch ? 'w-full overflow-hidden' : 'w-full overflow-x-auto overflow-y-hidden',
+      list: [
+        'mb-0 min-h-9 items-stretch border-(--color-border) bg-transparent p-0',
+        stretch ? 'gap-0' : 'gap-5',
+      ].join(' '),
       trigger: [
-        'relative rounded-none px-1 py-0 text-[0.8125rem]',
+        'rounded-none border-0 px-1 py-0 text-[0.8125rem] focus-visible:bg-(--color-hover-surface) focus-visible:outline-none',
         stretch ? 'min-w-0 flex-1 justify-center' : 'min-w-fit grow-0 justify-start',
       ].join(' '),
-      trailingBadge: 'min-w-5 bg-(--color-panel) px-1.5 text-[0.6875rem] tabular-nums text-(--color-muted) ring-0',
+      trailingBadge:
+        'min-w-0 rounded-none bg-transparent px-0 text-[0.75rem] font-normal tabular-nums text-(--color-muted) ring-0',
     }"
     @update:model-value="(value: string | number) => (model = String(value))"
   />
@@ -58,25 +61,11 @@ const items = computed(() =>
 
 .ui-tabs :deep([data-slot='trigger'][data-state='active']) {
   color: var(--color-accent-strong);
-  font-weight: 700;
-}
-
-.ui-tabs :deep([data-slot='trigger'][data-state='active']::after) {
-  position: absolute;
-  right: 0.25rem;
-  bottom: 0;
-  left: 0.25rem;
-  height: 0.125rem;
-  border-radius: 62.4375rem 62.4375rem 0 0;
-  background: var(--color-accent);
-  content: '';
+  font-weight: 500;
 }
 
 .ui-tabs :deep([data-slot='trigger'][data-state='inactive']:hover:not(:disabled)) {
   color: var(--color-text);
 }
 
-.ui-tabs :deep([data-slot='trigger']:focus-visible) {
-  outline-offset: -0.1875rem;
-}
 </style>

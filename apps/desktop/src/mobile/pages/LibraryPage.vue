@@ -1,13 +1,9 @@
 <script setup lang="ts">
-import ErrorDetails from "../../shared/ui/ErrorDetails.vue";
-import { ref } from 'vue';
+import ErrorDetails from '../../shared/ui/ErrorDetails.vue';
 import { coverUrl } from '../../shared/utils/coverUrl';
 import UiButton from '../../shared/ui/Button.vue';
 import UiEmptyState from '../../shared/ui/EmptyState.vue';
 import MobileListCard from '../components/MobileListCard.vue';
-import MobileListHeader from '../components/MobileListHeader.vue';
-import MobileListActions from '../components/MobileListActions.vue';
-import MobileListSearch from '../components/MobileListSearch.vue';
 import UiPagination from '../components/MobilePagination.vue';
 import UiTabs from '../components/MobileTabs.vue';
 import LibraryFolderDetail from '../components/library/LibraryFolderDetail.vue';
@@ -31,24 +27,20 @@ const {
   closeFolder,
   openDownloadSettings,
 } = useLibraryPage();
-const searchOpen = ref(false);
 </script>
 <template>
   <section class="mobile-page" aria-label="账号内容库">
     <section class="library-panel">
-      <MobileListHeader v-if="!detailFolder" class="library-topbar">
-        <UiTabs v-model="categoryFilter" :tabs="categoryTabs" />
-        <template #actions>
-          <MobileListActions
-            v-if="account.profile.logged_in"
-            v-model:search-open="searchOpen"
-            search-label="搜索内容库"
-            :disabled="library.loading || detailLoading"
-          />
-        </template>
-      </MobileListHeader>
+      <header v-if="!detailFolder" class="library-header">
+        <div>
+          <h2>内容库</h2>
+          <p v-if="account.profile.logged_in">{{ account.profile.name || 'Bilibili 用户' }}</p>
+        </div>
+      </header>
+      <UiTabs v-if="!detailFolder" v-model="categoryFilter" :tabs="categoryTabs" />
 
       <LibraryFolderDetail
+        :category-label="activeCategory.label"
         v-if="detailFolder"
         :folder="detailFolder"
         :loading-initial="detailLoading"
@@ -59,12 +51,16 @@ const searchOpen = ref(false);
       <section v-else class="library-content" aria-labelledby="library-heading" :aria-busy="library.loading">
         <h1 id="library-heading" class="sr-only">{{ activeCategory.label }}</h1>
 
-        <MobileListSearch
+        <UInput
           v-if="account.profile.logged_in"
           v-model="query"
-          v-model:open="searchOpen"
-          label="搜索当前分类"
+          class="w-full"
+          type="search"
+          aria-label="搜索当前分类"
+          icon="i-tabler-search"
           placeholder="搜索标题或创建者"
+          color="neutral"
+          size="sm"
         />
 
         <UiEmptyState
@@ -98,16 +94,15 @@ const searchOpen = ref(false);
 
         <MobileListCard v-else-if="visibleItems.length" aria-label="内容集合"
           ><div class="library-grid">
-            <article
+            <UButton
+              variant="ghost"
+              color="neutral"
+              :ui="{ label: 'contents' }"
               v-for="item in visibleItems"
               :key="item.media_id"
               class="library-card"
-              role="button"
-              tabindex="0"
               :aria-label="`进入 ${item.title}`"
               @click="openFolder(item)"
-              @keydown.enter="openFolder(item)"
-              @keydown.space.prevent="openFolder(item)"
             >
               <div class="library-cover">
                 <img
@@ -126,12 +121,14 @@ const searchOpen = ref(false);
                 <h3 :title="item.title">{{ item.title }}</h3>
                 <div class="library-card-meta">
                   <span class="library-owner">{{ item.owner_name || '我的收藏夹' }}</span>
-                  <span class="library-count">{{ item.kind === 'watch_later' ? '进入查看' : `${item.media_count} 个视频` }}</span>
+                  <span class="library-count">{{
+                    item.kind === 'watch_later' ? '进入查看' : `${item.media_count} 个视频`
+                  }}</span>
                 </div>
               </div>
-            </article>
-          </div></MobileListCard
-        >
+              <UIcon name="i-tabler-chevron-right" class="library-entry-chevron" aria-hidden="true" />
+            </UButton></div
+        ></MobileListCard>
 
         <UiEmptyState
           v-else-if="page"

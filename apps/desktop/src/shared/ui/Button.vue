@@ -1,23 +1,28 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed } from 'vue';
 
-const { variant = 'primary', size = 'default', type = 'button', disabled = false } = defineProps<{
-  variant?: 'primary' | 'secondary' | 'ghost' | 'danger'
-  size?: 'default' | 'compact'
-  type?: 'button' | 'submit' | 'reset'
-  disabled?: boolean
-}>()
+const {
+  variant = 'primary',
+  size = 'default',
+  type = 'button',
+  disabled = false,
+} = defineProps<{
+  variant?: 'primary' | 'secondary' | 'ghost' | 'danger';
+  size?: 'default' | 'compact';
+  type?: 'button' | 'submit' | 'reset';
+  disabled?: boolean;
+}>();
 
-const color = computed(() => (variant === 'danger' ? 'error' : variant === 'primary' ? 'primary' : 'neutral'))
+const color = computed(() => (variant === 'danger' ? 'error' : variant === 'primary' ? 'primary' : 'neutral'));
 const uiVariant = computed(() => {
   if (variant === 'primary' || variant === 'danger') {
-    return 'solid'
+    return 'solid';
   }
 
-  return variant === 'secondary' ? 'soft' : 'ghost'
-})
-const toneClass = computed(() => `variant-${variant}`)
-const sizeClass = computed(() => `size-${size}`)
+  return variant === 'secondary' ? 'soft' : 'ghost';
+});
+const toneClass = computed(() => `variant-${variant}`);
+const sizeClass = computed(() => `size-${size}`);
 </script>
 
 <template>
@@ -28,12 +33,13 @@ const sizeClass = computed(() => `size-${size}`)
 
 <style scoped>
 .ui-button {
+  border-radius: var(--radius-6);
   min-width: 4.75rem;
   min-height: var(--height-button);
   justify-content: center;
   gap: var(--space-6);
   font-size: var(--font-13);
-  font-weight: 650;
+  font-weight: 500;
   white-space: nowrap;
 }
 

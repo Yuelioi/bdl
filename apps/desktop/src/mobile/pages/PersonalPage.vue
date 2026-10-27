@@ -13,7 +13,6 @@ const ui = useUiStore();
 const queue = useQueueStore();
 const account = useAccountStore();
 const accountOpen = ref(false);
-const maintenance = ref(false);
 const avatarFailed = ref(false);
 watch(
   () => account.profile.avatar_url,
@@ -22,7 +21,7 @@ watch(
   },
 );
 const showSettings = (cache = false) => {
-  maintenance.value = cache;
+  ui.settingsSection = cache ? 'settings-maintenance' : 'settings-download';
   ui.mobilePersonalPage = 'settings';
 };
 const showTasks = (filter: QueueFilter) => {
@@ -39,22 +38,27 @@ const stats = [
   <div class="personal-workspace">
     <SettingsPage
       v-if="ui.mobilePersonalPage === 'settings'"
-      :initial-section="maintenance ? 'settings-maintenance' : undefined"
       @back="ui.mobilePersonalPage = 'home'"
     />
     <section v-else-if="ui.mobilePersonalPage === 'about'" class="personal-about">
-      <button
+      <UButton
+        variant="ghost"
+        color="neutral"
+        :ui="{ label: 'contents' }"
         class="personal-back mobile-icon-button"
         type="button"
         aria-label="返回我的"
         @click="ui.mobilePersonalPage = 'home'"
       >
-        <UIcon name="i-tabler-arrow-left" /></button
+        <UIcon name="i-tabler-arrow-left" /></UButton
       ><AboutPage />
     </section>
     <section v-else class="mobile-page personal-page">
       <section class="profile-card">
-        <button
+        <UButton
+          variant="ghost"
+          color="neutral"
+          :ui="{ label: 'contents' }"
           class="profile-account"
           type="button"
           aria-label="账号管理"
@@ -74,35 +78,60 @@ const stats = [
             }}</strong
             ><span>{{ account.profile.logged_in ? '已登录 · 本地下载管理' : '连接你的收藏与订阅' }}</span></span
           ><UIcon name="i-tabler-chevron-right" class="row-chevron" />
-        </button>
+        </UButton>
         <div class="profile-stats">
-          <button v-for="stat in stats" :key="stat.filter" type="button" @click="showTasks(stat.filter)">
+          <UButton
+            variant="ghost"
+            color="neutral"
+            :ui="{ label: 'contents' }"
+            v-for="stat in stats"
+            :key="stat.filter"
+            type="button"
+            @click="showTasks(stat.filter)"
+          >
             <strong>{{ queue.countByFilter(stat.filter) }}</strong>
             <span>{{ stat.label }}</span>
-          </button>
+          </UButton>
         </div>
       </section>
       <h2>常用功能</h2>
       <section class="personal-group">
-        <button class="personal-row" type="button" @click="showSettings()">
+        <UButton
+          variant="ghost"
+          color="neutral"
+          :ui="{ label: 'contents' }"
+          class="personal-row"
+          type="button"
+          @click="showSettings()"
+        >
           <span class="row-icon"><UIcon name="i-tabler-settings" /></span
           ><span class="row-copy"><strong>下载设置</strong><span>目录、并发与恢复</span></span
           ><UIcon name="i-tabler-chevron-right" class="row-chevron" />
-        </button>
+        </UButton>
         <div class="personal-row">
           <span class="row-icon"><UIcon name="i-tabler-palette" /></span
           ><span class="row-copy"><strong>外观</strong><span>主题与深色模式</span></span
           ><AppearanceMenu />
         </div>
-        <button class="personal-row" type="button" @click="showSettings(true)">
+        <UButton
+          variant="ghost"
+          color="neutral"
+          :ui="{ label: 'contents' }"
+          class="personal-row"
+          type="button"
+          @click="showSettings(true)"
+        >
           <span class="row-icon"><UIcon name="i-tabler-trash" /></span
           ><span class="row-copy"><strong>清理与维护</strong><span>缓存、临时文件与诊断</span></span
           ><UIcon name="i-tabler-chevron-right" class="row-chevron" />
-        </button>
+        </UButton>
       </section>
       <h2>账号与应用</h2>
       <section class="personal-group">
-        <button
+        <UButton
+          variant="ghost"
+          color="neutral"
+          :ui="{ label: 'contents' }"
           class="personal-row"
           type="button"
           @click="account.profile.logged_in ? (accountOpen = true) : ui.openLoginDialog()"
@@ -110,12 +139,19 @@ const stats = [
           <span class="row-icon"><UIcon name="i-tabler-user" /></span
           ><span class="row-copy"><strong>账号管理</strong><span>登录状态与账号信息</span></span
           ><UIcon name="i-tabler-chevron-right" class="row-chevron" />
-        </button>
-        <button class="personal-row" type="button" @click="ui.mobilePersonalPage = 'about'">
+        </UButton>
+        <UButton
+          variant="ghost"
+          color="neutral"
+          :ui="{ label: 'contents' }"
+          class="personal-row"
+          type="button"
+          @click="ui.mobilePersonalPage = 'about'"
+        >
           <span class="row-icon"><UIcon name="i-tabler-info-circle" /></span
           ><span class="row-copy"><strong>关于 BDL</strong><span>版本与项目链接</span></span
           ><UIcon name="i-tabler-chevron-right" class="row-chevron" />
-        </button>
+        </UButton>
       </section>
     </section>
     <MobileSheet v-model="accountOpen" title="账号管理" :description="account.profile.name || undefined"
@@ -147,7 +183,7 @@ const stats = [
 
 .profile-card {
   background: var(--mobile-card);
-  border-radius: 0.75rem;
+  border-radius: var(--radius-6);
   padding: 0.625rem 0.75rem 0.4375rem;
   box-shadow: var(--mobile-card-shadow);
 }
@@ -250,7 +286,7 @@ h2 {
 .personal-group {
   padding: 0 0.75rem;
   background: var(--mobile-card);
-  border-radius: 0.75rem;
+  border-radius: var(--radius-6);
   box-shadow: var(--mobile-card-shadow);
 }
 
@@ -259,7 +295,7 @@ h2 {
   display: flex;
   align-items: center;
   gap: 0.5625rem;
-  min-height: 3.625rem;
+  min-height: 3.25rem;
   border: 0;
   border-bottom: 0.0625rem solid var(--color-border);
   background: transparent;
@@ -275,11 +311,11 @@ h2 {
 .row-icon {
   display: grid;
   place-items: center;
-  width: 2.125rem;
-  height: 2.125rem;
+  width: 1.5rem;
+  height: 1.5rem;
   color: var(--color-accent-strong);
-  background: var(--color-accent-faint);
-  border-radius: 0.5625rem;
+  background: transparent;
+  border-radius: 0;
   flex-shrink: 0;
 }
 
@@ -311,8 +347,8 @@ h2 {
 }
 
 .personal-row :deep(.ui-icon-button) {
-  width: 2.125rem;
-  height: 2.125rem;
+  width: 1.5rem;
+  height: 1.5rem;
   min-width: 2.125rem;
   min-height: 2.125rem;
   border-color: var(--mobile-card-border);

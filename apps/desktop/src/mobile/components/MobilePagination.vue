@@ -18,7 +18,10 @@ const selectTarget = (event: FocusEvent) => {
 </script>
 <template>
   <nav class="mobile-pagination" :aria-label="label">
-    <button
+    <UButton
+      variant="ghost"
+      color="neutral"
+      :ui="{ base: 'p-0', label: 'contents' }"
       class="page-step page-step-previous"
       type="button"
       :disabled="disabled || page <= 1"
@@ -26,10 +29,15 @@ const selectTarget = (event: FocusEvent) => {
       @click="emit('update:page', page - 1)"
     >
       <UIcon name="i-tabler-chevron-left" aria-hidden="true" />
-    </button>
+    </UButton>
     <form class="page-position" @submit.prevent="commitTarget">
       <div class="page-current">
-        <input
+        <UInput
+          class="page-target"
+          color="neutral"
+          variant="outline"
+          size="xs"
+          :ui="{ base: 'h-6 px-0 py-0 text-center text-(length:--font-13) tabular-nums' }"
           v-model="targetPage"
           type="text"
           inputmode="numeric"
@@ -42,7 +50,10 @@ const selectTarget = (event: FocusEvent) => {
         <span aria-hidden="true">/ {{ pageCount }}</span>
       </div>
     </form>
-    <button
+    <UButton
+      variant="ghost"
+      color="neutral"
+      :ui="{ base: 'p-0', label: 'contents' }"
       class="page-step page-step-next"
       type="button"
       :disabled="disabled || page >= pageCount"
@@ -50,7 +61,7 @@ const selectTarget = (event: FocusEvent) => {
       @click="emit('update:page', page + 1)"
     >
       <UIcon name="i-tabler-chevron-right" aria-hidden="true" />
-    </button>
+    </UButton>
   </nav>
 </template>
 <style scoped>
@@ -65,7 +76,7 @@ const selectTarget = (event: FocusEvent) => {
   flex-shrink: 0;
   padding: 0 0.125rem;
   border: 0;
-  background: var(--mobile-page-bg);
+  background: transparent;
 }
 
 .page-step {
@@ -110,8 +121,7 @@ const selectTarget = (event: FocusEvent) => {
   align-items: center;
   justify-content: center;
   border: 0;
-  border-radius: 0.375rem;
-  background: var(--color-inset);
+  background: transparent;
   color: var(--color-text);
 }
 
@@ -124,27 +134,8 @@ const selectTarget = (event: FocusEvent) => {
   white-space: nowrap;
 }
 
-.page-current input {
-  width: 1.375rem;
-  height: 1.5rem;
-  border: 0;
-  border-radius: 0.25rem;
-  outline: 0;
-  background: transparent;
-  color: var(--color-text-strong);
-  font: inherit;
-  font-size: var(--mobile-font-item-title);
-  font-variant-numeric: tabular-nums;
-  text-align: center;
-}
-
-.page-current input:focus-visible {
-  background: var(--mobile-card);
-  box-shadow: inset 0 0 0 0.0625rem var(--color-accent);
-}
-
-.page-current input:disabled {
-  color: var(--color-dimmed);
+.page-target {
+  width: 2.25rem;
 }
 
 @media (hover: hover) {

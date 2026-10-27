@@ -120,7 +120,6 @@ const mediaPreferencesForTaskRequest = (
   const preferences: SettingsSnapshot['media_preferences'] = {
     video: source.video.map((rule) => ({ ...rule })),
     audio: [...source.audio],
-    fallback: source.fallback,
   }
   if (
     (options.quality !== undefined && options.quality !== 'best') ||

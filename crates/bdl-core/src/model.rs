@@ -120,7 +120,51 @@ pub enum StreamCodec {
     Avc,
     Hevc,
     Av1,
+    Aac,
+    Flac,
+    Eac3,
     Unknown,
+}
+
+impl StreamCodec {
+    pub fn from_source(value: &str) -> Self {
+        let lower = value.trim().to_ascii_lowercase();
+        if lower.is_empty() {
+            Self::Auto
+        } else if lower.contains("av01") || lower.contains("av1") {
+            Self::Av1
+        } else if lower.contains("hev")
+            || lower.contains("hvc")
+            || lower.contains("h265")
+            || lower.starts_with("dvhe")
+            || lower.starts_with("dvh1")
+        {
+            Self::Hevc
+        } else if lower.contains("avc") || lower.contains("h264") {
+            Self::Avc
+        } else if lower.starts_with("mp4a") || lower == "aac" {
+            Self::Aac
+        } else if lower == "flac" {
+            Self::Flac
+        } else if matches!(lower.as_str(), "ec-3" | "eac3" | "e-ac-3") {
+            Self::Eac3
+        } else {
+            Self::Unknown
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Avc => "avc",
+            Self::Hevc => "hevc",
+            Self::Av1 => "av1",
+            Self::Aac => "aac",
+            Self::Flac => "flac",
+            Self::Eac3 => "eac3",
+            Self::Unknown => "unknown",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

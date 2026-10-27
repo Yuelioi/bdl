@@ -2,11 +2,11 @@ import type { SelectOption } from '../../ui/Select.vue';
 import type { SettingsSection } from './settingsSections';
 
 export const settingsSections = [
-  { id: 'settings-download', label: '下载', description: '目录、速度与任务恢复', icon: 'i-tabler-download' },
-  { id: 'settings-media', label: '下载预设', description: '内容、转换与输出流程', icon: 'i-tabler-adjustments' },
-  { id: 'settings-naming', label: '文件命名', description: '模板与重名处理', icon: 'i-tabler-file-text' },
-  { id: 'settings-update', label: '应用更新', description: '版本检测与安装', icon: 'i-tabler-refresh' },
-  { id: 'settings-maintenance', label: '网络与维护', description: '代理、日志与数据', icon: 'i-tabler-tool' },
+  { id: 'settings-download', label: '下载与保存', compactLabel: '下载保存', description: '默认下载方式、目录与任务行为', icon: 'i-tabler-download' },
+  { id: 'settings-media', label: '画质与编码', compactLabel: '画质编码', description: '清晰度、音质与编码优先级', icon: 'i-tabler-adjustments' },
+  { id: 'settings-presets', label: '预设管理', compactLabel: '预设管理', description: '下载预设与命名预设', icon: 'i-tabler-list-details' },
+  { id: 'settings-update', label: '应用更新', compactLabel: '更新', description: '版本检测与安装', icon: 'i-tabler-refresh' },
+  { id: 'settings-maintenance', label: '网络与维护', compactLabel: '维护', description: '代理、日志与数据', icon: 'i-tabler-tool' },
 ] as const satisfies readonly SettingsSection[];
 
 const options = <T extends readonly SelectOption[]>(items: T): T => items;
@@ -24,28 +24,29 @@ export const retryCountOptions = options([
   { label: '5', value: '5' },
 ]);
 export const videoQualityOptions = options([
-  { label: '最优画质', value: 'best' },
-  { label: 'SDR / 普通动态范围', value: 'sdr' },
-  { label: '8K / 127', value: '127' },
-  { label: '杜比视界 / 126', value: '126' },
-  { label: 'HDR / 125', value: '125' },
-  { label: '4K / 120', value: '120' },
-  { label: '1080P60 / 116', value: '116' },
-  { label: '1080P+ / 112', value: '112' },
-  { label: '1080P / 80', value: '80' },
-  { label: '720P60 / 74', value: '74' },
-  { label: '720P / 64', value: '64' },
-  { label: '480P / 32', value: '32' },
-  { label: '360P / 16', value: '16' },
+  { label: '最佳可用', value: 'best' },
+  { label: '仅 SDR', value: 'sdr' },
+  { label: '8K', value: '127' },
+  { label: '杜比视界', value: '126' },
+  { label: 'HDR', value: '125' },
+  { label: '4K', value: '120' },
+  { label: '1080P60', value: '116' },
+  { label: '1080P+', value: '112' },
+  { label: '1080P', value: '80' },
+  { label: '720P60', value: '74' },
+  { label: '720P', value: '64' },
+  { label: '480P', value: '32' },
+  { label: '360P', value: '16' },
 ]);
+export const videoQualityLevels = videoQualityOptions.filter((option) => !['best', 'sdr'].includes(option.value));
 export const audioQualityOptions = options([
   { label: '最佳可用', value: 'best' },
-  { label: 'Hi-Res 无损 / 30251', value: '30251' },
-  { label: '杜比全景声 / 30250', value: '30250' },
-  { label: 'Dolby Audio / 30255', value: '30255' },
-  { label: '高音质 / 30280', value: '30280' },
-  { label: '中音质 / 30232', value: '30232' },
-  { label: '低音质 / 30216', value: '30216' },
+  { label: 'Hi-Res 无损', value: '30251' },
+  { label: '杜比全景声', value: '30250' },
+  { label: 'Dolby Audio', value: '30255' },
+  { label: '高音质', value: '30280' },
+  { label: '中音质', value: '30232' },
+  { label: '低音质', value: '30216' },
 ]);
 export const outputFormatOptions = options([
   { label: 'MP4', value: 'mp4' },
@@ -61,6 +62,11 @@ export const codecOptions = options([
   { label: 'AVC / H.264', value: 'avc' },
   { label: 'HEVC / H.265', value: 'hevc' },
   { label: 'AV1', value: 'av1' },
+]);
+export const audioCodecOptions = options([
+  { label: 'AAC', value: 'aac' },
+  { label: 'FLAC', value: 'flac' },
+  { label: 'E-AC-3 / Dolby', value: 'eac3' },
 ]);
 export const missingQualityOptions = options([
   { label: '选择接近的可用质量', value: 'lower' },

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-defineEmits<{ openLink: [url: string] }>()
+defineEmits<{ openLink: [url: string] }>();
 
 const links = [
   {
@@ -14,7 +14,7 @@ const links = [
     url: 'https://space.bilibili.com/4279370',
     icon: 'i-tabler-brand-bilibili',
   },
-]
+];
 </script>
 
 <template>
@@ -42,19 +42,28 @@ const links = [
     <section class="usage-copy">
       <strong>使用责任与免责声明</strong>
       <p>
-        BDL 不提供或托管视频内容。你应自行确认下载、保存、转换和使用内容具有合法授权，并遵守所在地法律法规、Bilibili 平台规则及内容权利人的要求。因具体使用方式产生的版权、账号、数据或其他风险由使用者自行承担。
+        BDL 不提供或托管视频内容。你应自行确认下载、保存、转换和使用内容具有合法授权，并遵守所在地法律法规、Bilibili
+        平台规则及内容权利人的要求。因具体使用方式产生的版权、账号、数据或其他风险由使用者自行承担。
       </p>
     </section>
 
     <section class="usage-links" aria-label="作者与项目链接">
-      <button v-for="link in links" :key="link.url" type="button" @click="$emit('openLink', link.url)">
-        <UIcon :name="link.icon" aria-hidden="true" />
-        <span>
+      <UButton
+        variant="ghost"
+        color="neutral"
+        :ui="{ base: 'p-0', label: 'contents' }"
+        v-for="link in links"
+        :key="link.url"
+        type="button"
+        @click="$emit('openLink', link.url)"
+      >
+        <UIcon :name="link.icon" class="usage-link-icon" aria-hidden="true" />
+        <span class="usage-link-copy">
           <strong>{{ link.label }}</strong>
           <small>{{ link.value }}</small>
         </span>
         <UIcon name="i-tabler-external-link" class="usage-link-arrow" aria-hidden="true" />
-      </button>
+      </UButton>
     </section>
   </div>
 </template>
@@ -143,24 +152,13 @@ const links = [
   cursor: pointer;
 }
 
-.usage-links button:hover,
-.usage-links button:focus-visible {
-  border-color: var(--color-border-strong);
-  background: var(--color-hover-surface);
-  outline: 0;
-}
-
-.usage-links button:focus-visible {
-  box-shadow: inset 0 0 0 0.0625rem var(--color-focus-outline);
-}
-
-.usage-links button > svg {
+.usage-link-icon {
   width: 1.125rem;
   height: 1.125rem;
   color: var(--color-accent-strong);
 }
 
-.usage-links button > span {
+.usage-link-copy {
   min-width: 0;
   display: grid;
   gap: 0.0625rem;

@@ -14,7 +14,7 @@ export const createWorkflow = (): DownloadWorkflow => ({
   subtitles: { enabled: false, save: true, embed: false, format: 'srt', retain_original: false },
   danmaku: { enabled: false, save: true, embed: false, format: 'xml', retain_original: false },
   nfo: false, nfo_options: createNfoOptions(), merge_media: true, container: 'mp4', quality: 'best', audio_quality: 'best', codec: 'auto',
-  media_preferences: { video: [], audio: [], fallback: 'best' }, missing_quality_policy: 'lower',
+  media_preferences: { video: [], audio: [] }, missing_quality_policy: 'lower',
 })
 
 export const legacyBuiltinDownloadPresets = (): DownloadPreset[] => {

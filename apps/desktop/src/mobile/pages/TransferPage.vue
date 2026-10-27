@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import { computed, inject, ref } from 'vue';
-import { mobileRailLayoutKey } from '../app/layout';
+import { computed, ref } from 'vue';
 import MobileSheet from '../components/MobileSheet.vue';
 import UiButton from '../../shared/ui/Button.vue';
 import UiDialog from '../../shared/ui/Dialog.vue';
@@ -66,7 +65,6 @@ const { managing, toggleManaging, select } = useMobileListSelection(() =>
   queue.setVisibleTaskSelection(queue.selectedTaskIds, false),
 );
 const toolsOpen = ref(false);
-const railLayout = inject(mobileRailLayoutKey, ref(false));
 const searchOpen = ref(false);
 const visibleSelectedCount = computed(() => {
   const visibleIds = new Set(taskViews.value.map((view) => view.id));
@@ -85,9 +83,8 @@ const beginManaging = (taskId: string) => {
         {{ queue.notice.message }}
       </UiInlineNotice>
 
-      <h1 class="sr-only">传输</h1>
       <MobileListHeader class="transfer-toolbar">
-        <UiTabs v-model="queueFilter" :tabs="tabs" :stack-counts="!railLayout" />
+        <h2 class="mobile-transfer-title">传输</h2>
         <template #actions>
           <MobileListActions
             v-model:search-open="searchOpen"
@@ -101,6 +98,7 @@ const beginManaging = (taskId: string) => {
           />
         </template>
       </MobileListHeader>
+      <UiTabs v-model="queueFilter" :tabs="tabs" :stack-counts="false" />
       <MobileListSearch
         v-if="queue.activeFilter === 'completed'"
         v-model="completedSearch"

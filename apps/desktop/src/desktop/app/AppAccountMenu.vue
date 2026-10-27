@@ -49,7 +49,10 @@ watch(
 </script>
 <template>
   <div class="account-menu" :class="{ 'mobile-account': isMobile }">
-    <button
+    <UButton
+      variant="ghost"
+      color="neutral"
+      :ui="{ label: 'contents' }"
       v-if="isMobile && !account.profile.logged_in"
       class="account-button account-button-login"
       type="button"
@@ -58,17 +61,17 @@ watch(
     >
       <UIcon name="i-tabler-user" aria-hidden="true" />
       <span class="account-name">登录</span>
-    </button>
+    </UButton>
     <UDropdownMenu
       v-else
       :items="accountMenuItems"
       :content="{ align: 'end', sideOffset: 6, collisionPadding: 12 }"
       :ui="{ content: 'min-w-36' }"
     >
-      <button class="account-button" type="button">
+      <UButton variant="ghost" color="neutral" :ui="{ label: 'contents' }" class="account-button" type="button">
         <span class="account-avatar" aria-hidden="true">
           <img
-referrerpolicy="no-referrer"
+            referrerpolicy="no-referrer"
             v-if="account.profile.avatar_url && !avatarLoadFailed"
             :src="account.profile.avatar_url"
             alt=""
@@ -78,7 +81,7 @@ referrerpolicy="no-referrer"
         </span>
         <span class="account-name">{{ account.displayName }}</span>
         <UIcon name="i-tabler-chevron-down" class="account-chevron" aria-hidden="true" />
-      </button>
+      </UButton>
     </UDropdownMenu>
   </div>
 </template>
@@ -93,7 +96,7 @@ referrerpolicy="no-referrer"
   display: inline-flex;
   align-items: center;
   gap: var(--space-8);
-  border: 1px solid var(--color-border);
+  border: 1px solid transparent;
   border-radius: var(--radius-6);
   background: var(--color-surface);
   color: var(--color-nav-text);
@@ -152,8 +155,6 @@ referrerpolicy="no-referrer"
   color: var(--color-accent-strong);
   padding: 0 var(--space-10);
 }
-
-
 
 .mobile-account .account-chevron {
   display: none;

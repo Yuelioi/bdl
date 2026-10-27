@@ -2,7 +2,7 @@
   min-width: 0;
   display: grid;
   align-content: start;
-  gap: var(--space-16);
+  gap: 1.25rem;
 }
 
 .settings-inline-grid,
@@ -13,10 +13,30 @@
 }
 
 .settings-toggle-list {
+  display: grid;
+  gap: 0;
+}
+.settings-toggle-row {
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-8) var(--space-lg);
-  padding: var(--space-4) 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: 3.5rem;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text);
+  font-size: var(--font-13);
+}
+.settings-toggle-row:last-child {
+  border-bottom: 0;
+}
+.settings-toggle-row > span {
+  display: grid;
+  gap: 0.25rem;
+}
+.settings-toggle-row small {
+  color: var(--color-muted);
+  font-size: var(--font-12);
 }
 
 .archive-option-grid {
@@ -148,4 +168,66 @@
 
 .mobile-layout-rail .settings-inline-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@media (width >= 900px) {
+  .settings-content .ui-form-field:not(.ui-form-field-label-hidden) {
+    display: grid;
+    grid-template-columns: 9rem minmax(0, 1fr);
+    align-items: center;
+    gap: 0.5rem 0.75rem;
+  }
+  .settings-content .field-control {
+    margin-top: 0;
+    min-width: 0;
+  }
+}
+
+@media (width <= 600px) {
+  .platform-mobile .settings-download-options {
+    gap: 0;
+  }
+  .platform-mobile .settings-download-options .ui-form-field {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 7rem;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 2.75rem;
+    border-bottom: 1px solid var(--color-border);
+    padding-block: 0.25rem;
+  }
+  .platform-mobile .settings-download-options .field-control {
+    margin-top: 0;
+    min-width: 0;
+  }
+  .platform-mobile .settings-download-options .field-label label {
+    color: var(--color-text);
+    font-weight: 400;
+  }
+  .platform-mobile .settings-download-options input,
+  .platform-mobile .settings-download-options .ui-select {
+    --height-input: 1.875rem;
+  }
+  .platform-mobile .settings-block {
+    gap: 1rem;
+  }
+  .platform-mobile .settings-card {
+    gap: 0.625rem;
+    padding-bottom: 1rem;
+  }
+}
+
+@media (width <= 600px) {
+  .platform-mobile .settings-quality-options {
+    gap: 0.5rem;
+  }
+  .platform-mobile .settings-quality-options .ui-form-field {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 11rem;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .platform-mobile .settings-quality-options .field-control {
+    margin-top: 0;
+  }
 }

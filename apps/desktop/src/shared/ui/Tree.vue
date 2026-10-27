@@ -1,47 +1,47 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, useTemplateRef, watch } from 'vue'
-import { calculateVirtualWindow } from '../utils/virtualWindow'
+import { computed, nextTick, ref, useTemplateRef, watch } from 'vue';
+import { calculateVirtualWindow } from '../utils/virtualWindow';
 
-const TREE_ROW_STRIDE = 38
+const TREE_ROW_STRIDE = 38;
 
 export interface TreeNode {
-  id: string
-  label: string
-  meta?: string
-  partIds?: string[]
-  children?: TreeNode[]
+  id: string;
+  label: string;
+  meta?: string;
+  partIds?: string[];
+  children?: TreeNode[];
 }
 
 const props = defineProps<{
-  nodes: TreeNode[]
-  selectedIds?: string[]
-}>()
+  nodes: TreeNode[];
+  selectedIds?: string[];
+}>();
 
 const emit = defineEmits<{
-  toggle: [id: string]
-}>()
+  toggle: [id: string];
+}>();
 
 interface FlatTreeNode {
-  id: string
-  label: string
-  meta?: string
-  depth: number
-  hasChildren: boolean
-  checkState: 'checked' | 'mixed' | 'empty'
+  id: string;
+  label: string;
+  meta?: string;
+  depth: number;
+  hasChildren: boolean;
+  checkState: 'checked' | 'mixed' | 'empty';
 }
 
-const selectedSet = computed(() => new Set(props.selectedIds ?? []))
-const activeIndex = ref(0)
-const listElement = useTemplateRef<HTMLElement>('tree-list')
-const scrollOffset = ref(0)
-const viewportSize = ref(600)
+const selectedSet = computed(() => new Set(props.selectedIds ?? []));
+const activeIndex = ref(0);
+const listElement = useTemplateRef<HTMLElement>('tree-list');
+const scrollOffset = ref(0);
+const viewportSize = ref(600);
 
 const flatNodes = computed(() => {
-  const rows: FlatTreeNode[] = []
+  const rows: FlatTreeNode[] = [];
 
   const visit = (node: TreeNode, depth: number) => {
-    const partIds = partIdsForNode(node)
-    const selectedCount = partIds.filter((id) => selectedSet.value.has(id)).length
+    const partIds = partIdsForNode(node);
+    const selectedCount = partIds.filter((id) => selectedSet.value.has(id)).length;
     rows.push({
       id: node.id,
       label: node.label,
@@ -50,86 +50,86 @@ const flatNodes = computed(() => {
       hasChildren: Boolean(node.children?.length),
       checkState:
         partIds.length > 0 && selectedCount === partIds.length ? 'checked' : selectedCount > 0 ? 'mixed' : 'empty',
-    })
-    node.children?.forEach((child) => visit(child, depth + 1))
-  }
+    });
+    node.children?.forEach((child) => visit(child, depth + 1));
+  };
 
-  props.nodes.forEach((node) => visit(node, 0))
-  return rows
-})
+  props.nodes.forEach((node) => visit(node, 0));
+  return rows;
+});
 
 const partIdsForNode = (node: TreeNode): string[] => {
   if (node.partIds?.length) {
-    return node.partIds
+    return node.partIds;
   }
 
-  return node.children?.flatMap(partIdsForNode) ?? []
-}
+  return node.children?.flatMap(partIdsForNode) ?? [];
+};
 
 const treeWindow = computed(() =>
   calculateVirtualWindow(flatNodes.value.length, scrollOffset.value, viewportSize.value, TREE_ROW_STRIDE),
-)
+);
 const renderedNodes = computed(() =>
   flatNodes.value.slice(treeWindow.value.start, treeWindow.value.end).map((node, offset) => ({
     node,
     index: treeWindow.value.start + offset,
   })),
-)
+);
 
 const updateViewport = (event: Event) => {
-  const element = event.currentTarget as HTMLElement
-  scrollOffset.value = element.scrollTop
-  viewportSize.value = element.clientHeight
-}
+  const element = event.currentTarget as HTMLElement;
+  scrollOffset.value = element.scrollTop;
+  viewportSize.value = element.clientHeight;
+};
 
 watch(
   () => flatNodes.value.length,
   (length) => {
-    activeIndex.value = Math.min(activeIndex.value, Math.max(0, length - 1))
+    activeIndex.value = Math.min(activeIndex.value, Math.max(0, length - 1));
   },
-)
+);
 
 const focusRow = async (index: number) => {
-  if (flatNodes.value.length === 0) return
-  const nextIndex = Math.min(Math.max(index, 0), flatNodes.value.length - 1)
-  activeIndex.value = nextIndex
-  const element = listElement.value
+  if (flatNodes.value.length === 0) return;
+  const nextIndex = Math.min(Math.max(index, 0), flatNodes.value.length - 1);
+  activeIndex.value = nextIndex;
+  const element = listElement.value;
   if (element && (nextIndex < treeWindow.value.start || nextIndex >= treeWindow.value.end)) {
-    element.scrollTop = nextIndex * TREE_ROW_STRIDE
-    scrollOffset.value = element.scrollTop
+    element.scrollTop = nextIndex * TREE_ROW_STRIDE;
+    scrollOffset.value = element.scrollTop;
   }
-  await nextTick()
-  listElement.value?.querySelector<HTMLElement>(`[data-tree-index="${nextIndex}"]`)?.focus()
-}
+  await nextTick();
+  listElement.value?.querySelector<HTMLElement>(`[data-tree-index="${nextIndex}"]`)?.focus();
+};
 
 const handleKeydown = (event: KeyboardEvent, node: FlatTreeNode, index: number) => {
   if (event.key === 'Enter' || event.key === ' ') {
-    event.preventDefault()
-    emit('toggle', node.id)
-    return
+    event.preventDefault();
+    emit('toggle', node.id);
+    return;
   }
 
-  let nextIndex: number | null = null
-  if (event.key === 'ArrowDown') nextIndex = index + 1
-  if (event.key === 'ArrowUp') nextIndex = index - 1
-  if (event.key === 'Home') nextIndex = 0
-  if (event.key === 'End') nextIndex = flatNodes.value.length - 1
+  let nextIndex: number | null = null;
+  if (event.key === 'ArrowDown') nextIndex = index + 1;
+  if (event.key === 'ArrowUp') nextIndex = index - 1;
+  if (event.key === 'Home') nextIndex = 0;
+  if (event.key === 'End') nextIndex = flatNodes.value.length - 1;
   if (event.key === 'ArrowRight' && node.hasChildren && flatNodes.value[index + 1]?.depth > node.depth) {
-    nextIndex = index + 1
+    nextIndex = index + 1;
   }
   if (event.key === 'ArrowLeft' && node.depth > 0) {
     for (let parentIndex = index - 1; parentIndex >= 0; parentIndex -= 1) {
       if (flatNodes.value[parentIndex]?.depth === node.depth - 1) {
-        nextIndex = parentIndex
-        break
+        nextIndex = parentIndex;
+        break;
       }
     }
   }
 
-  if (nextIndex === null) return
-  event.preventDefault()
-  void focusRow(nextIndex)
-}
+  if (nextIndex === null) return;
+  event.preventDefault();
+  void focusRow(nextIndex);
+};
 </script>
 
 <template>
@@ -201,13 +201,13 @@ const handleKeydown = (event: KeyboardEvent, node: FlatTreeNode, index: number) 
 }
 
 .tree-row:focus-visible {
-  outline: 2px solid var(--color-focus-outline);
-  outline-offset: 2px;
+  outline: none;
+  border-color: var(--color-accent);
 }
 
 .tree-row.selected {
   border-color: color-mix(in oklab, var(--color-accent) 62%, var(--color-border));
-  background: color-mix(in oklab, var(--color-accent-faint) 38%, var(--color-surface));
+  background: var(--color-surface);
 }
 
 .tree-row.partial {

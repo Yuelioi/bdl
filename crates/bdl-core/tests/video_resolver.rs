@@ -246,7 +246,7 @@ async fn video_resolver_maps_dash_streams_when_requested() -> Result<(), BdlErro
         .find(|stream| stream.kind == MediaKind::Audio)
         .expect("audio stream should exist");
     assert_eq!(audio.quality, StreamQuality::Quality(30280));
-    assert_eq!(audio.codec, StreamCodec::Unknown);
+    assert_eq!(audio.codec, StreamCodec::Aac);
     assert_eq!(audio.bandwidth, Some(192_000));
 
     Ok(())

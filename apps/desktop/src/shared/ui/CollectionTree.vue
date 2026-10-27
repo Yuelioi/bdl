@@ -48,10 +48,10 @@ const flattened = computed(() => {
 });
 const visibleNodes = computed(() => {
   const visit = (items: CollectionTreeNode[]): CollectionTreeNode[] =>
-    items.flatMap(item => [item, ...(expanded.value.includes(item.id) ? visit(item.children ?? []) : [])]);
+    items.flatMap((item) => [item, ...(expanded.value.includes(item.id) ? visit(item.children ?? []) : [])]);
   return visit(nodes.value);
 });
-const estimateSize = (index: number) => ['video', 'part'].includes(visibleNodes.value[index]?.kind ?? '') ? 96 : 36;
+const estimateSize = (index: number) => (['video', 'part'].includes(visibleNodes.value[index]?.kind ?? '') ? 96 : 36);
 const selectedNodes = computed(() =>
   flattened.value.filter((node) => treeSelection(node.partIds, selected.value) === true),
 );
@@ -130,27 +130,52 @@ function expand(event: Event, node: CollectionTreeNode) {
           @play="play(item)"
         >
           <template v-if="item.children?.length" #facts>
-            <button
-class="tree-expand" type="button"
+            <UButton
+              variant="ghost"
+              color="neutral"
+              :ui="{ base: 'p-0', label: 'contents' }"
+              class="tree-expand"
+              type="button"
               :aria-label="`${opened ? '收起' : '展开'} ${item.label}`"
-              :aria-expanded="opened" :disabled="disabled" @click.stop="handleToggle()" @keydown.stop>
+              :aria-expanded="opened"
+              :disabled="disabled"
+              @click.stop="handleToggle()"
+              @keydown.stop
+            >
               <UIcon :name="opened ? 'i-tabler-chevron-down' : 'i-tabler-chevron-right'" />
-            </button>
+            </UButton>
           </template>
         </MediaListRow>
         <div v-else class="tree-category">
           <UiCheckbox
-:key="item.id" :model-value="treeSelection(item.partIds, selected)"
-            :label="`选择 ${item.label}`" :disabled="disabled || !item.partIds.length" compact
-            @click.stop @keydown.stop @update:model-value="toggle(item)" />
-          <button
-v-if="item.children?.length" class="tree-expand" type="button"
+            :key="item.id"
+            :model-value="treeSelection(item.partIds, selected)"
+            :label="`选择 ${item.label}`"
+            :disabled="disabled || !item.partIds.length"
+            compact
+            @click.stop
+            @keydown.stop
+            @update:model-value="toggle(item)"
+          />
+          <UButton
+            variant="ghost"
+            color="neutral"
+            :ui="{ base: 'p-0', label: 'contents' }"
+            v-if="item.children?.length"
+            class="tree-expand"
+            type="button"
             :aria-label="`${opened ? '收起' : '展开'} ${item.label}`"
-            :aria-expanded="opened" :disabled="disabled" @click.stop="handleToggle()" @keydown.stop>
+            :aria-expanded="opened"
+            :disabled="disabled"
+            @click.stop="handleToggle()"
+            @keydown.stop
+          >
             <UIcon :name="opened ? 'i-tabler-chevron-down' : 'i-tabler-chevron-right'" />
-          </button>
+          </UButton>
           <strong class="tree-title" :title="item.label">{{ item.label }}</strong>
-          <span v-if="item.kind === 'group'" class="tree-count">{{ item.partIds.length ? item.meta : '尚未加载' }}</span>
+          <span v-if="item.kind === 'group'" class="tree-count">{{
+            item.partIds.length ? item.meta : '尚未加载'
+          }}</span>
         </div>
       </template>
     </UTree>
@@ -197,14 +222,15 @@ v-if="item.children?.length" class="tree-expand" type="button"
   width: 1.75rem;
   height: 2rem;
   flex-shrink: 0;
-  border: 0;
+  border: 1px solid transparent;
   color: inherit;
   background: transparent;
   cursor: pointer;
 }
 
 .tree-expand:focus-visible {
-  outline: 2px solid var(--color-focus-outline);
+  outline: none;
+  border-color: var(--color-accent);
 }
 
 .tree-title {

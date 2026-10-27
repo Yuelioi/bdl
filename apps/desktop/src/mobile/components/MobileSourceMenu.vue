@@ -16,14 +16,29 @@ const run = (action: 'load' | 'all' | 'downloadAll' | 'stop') => {
 </script>
 <template>
   <MobileSheet v-model="open" title="内容操作" description="分批加载内容，或将整个集合加入下载。">
-    <label class="batch-setting"
-      ><span>每次加载</span
-      ><select v-model="batch" :disabled="busy || parsing">
-        <option value="20">20 项</option>
-        <option value="50">50 项</option>
-        <option value="100">100 项</option>
-      </select></label
+    <UFormField
+      label="每次加载"
+      orientation="horizontal"
+      class="batch-setting"
+      :ui="{ root: 'flex items-center justify-between gap-4', container: 'mt-0' }"
     >
+      <USelect
+        v-model="batch"
+        :disabled="busy || parsing"
+        :items="[
+          { label: '20 项', value: '20' },
+          { label: '50 项', value: '50' },
+          { label: '100 项', value: '100' },
+        ]"
+        value-key="value"
+        label-key="label"
+        color="neutral"
+        variant="outline"
+        size="sm"
+        :portal="true"
+        :content="{ position: 'popper', align: 'end', sideOffset: 4, collisionPadding: 12 }"
+      />
+    </UFormField>
     <UiButton v-if="parsing" variant="secondary" :disabled="stopping" @click="run('stop')">{{
       stopping ? '正在停止…' : '停止加载'
     }}</UiButton>
@@ -44,15 +59,5 @@ const run = (action: 'load' | 'all' | 'downloadAll' | 'stop') => {
   justify-content: space-between;
   gap: 1rem;
   font-size: var(--mobile-font-item-title);
-}
-
-select {
-  min-height: 2.75rem;
-  min-width: 6.25rem;
-  border: 0.0625rem solid var(--color-border);
-  border-radius: 0.625rem;
-  background: var(--color-surface);
-  color: var(--color-text);
-  padding: 0 0.75rem;
 }
 </style>

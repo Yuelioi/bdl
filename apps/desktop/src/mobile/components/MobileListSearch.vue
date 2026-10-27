@@ -4,62 +4,39 @@ const open = defineModel<boolean>('open', { required: true });
 defineProps<{ label: string; placeholder: string; disabled?: boolean }>();
 </script>
 <template>
-  <label v-if="open" class="mobile-list-search">
-    <span class="sr-only">{{ label }}</span
-    ><UIcon name="i-tabler-search" />
-    <input v-model="query" type="search" :placeholder="placeholder" :disabled="disabled" />
-    <button
-      type="button"
-      aria-label="关闭搜索"
-      @click="
-        query = '';
-        open = false;
-      "
-    >
-      <UIcon name="i-tabler-x" />
-    </button>
-  </label>
+  <UInput
+    v-if="open"
+    v-model="query"
+    class="mobile-list-search"
+    type="search"
+    :aria-label="label"
+    icon="i-tabler-search"
+    :placeholder="placeholder"
+    :disabled="disabled"
+    color="neutral"
+    variant="outline"
+    size="sm"
+    :ui="{ base: 'min-h-[2.125rem] text-(length:--font-13)', leadingIcon: 'size-4' }"
+  >
+    <template #trailing>
+      <UButton
+        variant="ghost"
+        color="neutral"
+        size="xs"
+        icon="i-tabler-x"
+        aria-label="关闭搜索"
+        @click="
+          query = '';
+          open = false;
+        "
+      />
+    </template>
+  </UInput>
 </template>
 <style scoped>
 .mobile-list-search {
-  height: 2.125rem;
-  flex-shrink: 0;
-  display: grid;
-  grid-template-columns: 1.125rem minmax(0, 1fr) 1.875rem;
-  align-items: center;
-  gap: 0.375rem;
-  padding-left: 0.625rem;
-  border: 0.0625rem solid var(--color-border);
-  border-radius: 0.5625rem;
-  background: var(--color-inset);
-}
-
-.mobile-list-search:focus-within {
-  border-color: var(--color-accent);
-  outline: 0.125rem solid var(--color-focus-outline);
-  outline-offset: -0.125rem;
-}
-
-.mobile-list-search > :deep(svg) {
-  color: var(--color-muted);
-}
-
-.mobile-list-search input {
+  width: 100%;
   min-width: 0;
-  border: 0;
-  outline: 0;
-  background: transparent;
-  color: var(--color-text);
-  font-size: var(--mobile-font-item-title);
-}
-
-.mobile-list-search button {
-  width: 1.875rem;
-  height: 1.875rem;
-  display: grid;
-  place-items: center;
-  border: 0;
-  background: transparent;
-  color: var(--color-muted);
+  flex-shrink: 0;
 }
 </style>

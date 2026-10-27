@@ -8,9 +8,11 @@ import SelectionActionBar from '../../../shared/ui/SelectionActionBar.vue';
 import SourceMediaList from './SourceMediaList.vue';
 
 import SourceLoadStatus from './SourceLoadStatus.vue';
+import ParseSourceSummary from '../../../shared/features/parse/ParseSourceSummary.vue';
+import ParseResultFilters from '../../../shared/features/parse/ParseResultFilters.vue';
 import SourceParseControls from './SourceParseControls.vue';
 import { useParseResultWorkspace } from '../../../shared/features/parse/useParseResultWorkspace';
-const { embedded = false } = defineProps<{ embedded?: boolean }>();
+const { embedded = false, inlineDownload = false } = defineProps<{ embedded?: boolean; inlineDownload?: boolean }>();
 const emit = defineEmits<{ download: [] }>();
 const {
   parse,
@@ -20,12 +22,16 @@ const {
   selectedCount,
   totalPartCount,
   tableRows,
+  query,
+  sort,
+  selectRange,
   sourceRequestLoading,
   pacedParsing,
   pacedWaiting,
   pacedStopping,
   activeLoading,
-  activeError, activeErrorDetail,
+  activeError,
+  activeErrorDetail,
   hasMore,
   canCreateTasks,
   createTaskLabel,
@@ -46,29 +52,29 @@ const {
     class="min-h-0 overflow-hidden"
     :class="embedded ? 'flex flex-1 flex-col gap-3' : 'panel'"
   >
-    <div
-      class="source-result-header grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-3 border-b border-(--color-border) pb-3 max-[840px]:grid-cols-1"
-    >
-      <div class="flex min-w-0 items-center gap-3">
-        <button
+    <div class="source-result-header flex min-w-0 flex-wrap items-center gap-3 border-b border-(--color-border) pb-4">
+      <div class="flex min-w-0 flex-1 items-center gap-3">
+        <UButton
+          variant="ghost"
+          color="neutral"
+          :ui="{ base: 'p-0', label: 'contents' }"
           type="button"
-          class="grid size-8 shrink-0 place-items-center rounded-md text-(--color-muted) hover:bg-(--color-panel) hover:text-(--color-text) disabled:cursor-not-allowed disabled:opacity-55"
+          class="order-last ml-auto grid size-7 shrink-0 place-items-center rounded-md text-(--color-muted) hover:bg-(--color-panel) hover:text-(--color-text) disabled:cursor-not-allowed disabled:opacity-55"
           aria-label="返回解析首页"
           :disabled="activeLoading"
           @click="returnToSource"
         >
           <UIcon name="i-tabler-arrow-left" class="size-4" aria-hidden="true" />
-        </button>
-        <div class="flex min-w-0 items-center gap-2">
-          <strong class="source-title truncate text-sm text-(--color-text)" :title="activeSource.source.title">
-            {{ activeSource.source.title }}
-          </strong>
-
-        </div>
+        </UButton>
+        <ParseSourceSummary :source="activeSource" />
       </div>
 
       <div class="source-function-toolbar flex flex-wrap items-center justify-end gap-2 max-[840px]:justify-start">
-        <SourceLoadStatus :loaded="activeSource.source.loaded_count" :total="activeSource.source.total_count" />
+        <SourceLoadStatus
+          v-if="hasMore || pacedParsing"
+          :loaded="activeSource.source.loaded_count"
+          :total="activeSource.source.total_count"
+        />
         <SourceParseControls
           :source-id="activeSource.source.id"
           v-if="hasMore || pacedParsing"
@@ -84,7 +90,7 @@ const {
           @stop="stopParsing"
         />
         <UiButton
-          v-if="!hasMore"
+          v-if="!hasMore && !inlineDownload"
           size="compact"
           variant="secondary"
           :disabled="activeLoading || totalPartCount === 0"
@@ -92,19 +98,31 @@ const {
         >
           下载全部
         </UiButton>
-        <UiButton size="compact" :disabled="!canCreateTasks" @click="emit('download')">{{ createTaskLabel }}</UiButton>
+        <UiButton v-if="!inlineDownload" size="compact" :disabled="!canCreateTasks" @click="emit('download')">{{
+          createTaskLabel
+        }}</UiButton>
       </div>
     </div>
 
+    <ParseResultFilters
+      v-model:query="query"
+      v-model:sort="sort"
+      :loaded="tableRows.length"
+      :grouped="hasCollectionSections(activeSource)"
+      :disabled="activeLoading"
+      :apply-range="selectRange"
+    />
     <CollectionTree
       v-if="hasCollectionSections(activeSource)"
       :source="activeSource"
       :selected-ids="selectedIds"
       :disabled="activeLoading"
+      :query="query"
       @toggle="parse.togglePartIds(activeSource.source.id, $event)"
     />
     <SourceMediaList
       v-else-if="tableRows.length"
+      compact
       class="min-h-0 flex-1"
       :rows="tableRows"
       :source="activeSource"
@@ -122,9 +140,11 @@ const {
       compact
       embedded
     />
-    <UiInlineNotice v-if="activeError" tone="danger" :detail="activeErrorDetail ?? undefined">{{ activeError }}</UiInlineNotice>
+    <UiInlineNotice v-if="activeError" tone="danger" :detail="activeErrorDetail ?? undefined">{{
+      activeError
+    }}</UiInlineNotice>
 
-    <SelectionActionBar :selected-count="selectedCount" :total-count="totalPartCount">
+    <SelectionActionBar v-if="!inlineDownload" :selected-count="selectedCount" :total-count="totalPartCount">
       <template #selection>
         <UiButton
           v-if="selectedCount > 0"

@@ -1,7 +1,7 @@
-import { shallowMount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { shallowMount } from '@vue/test-utils';
+import { describe, expect, it } from 'vitest';
 
-import WorkflowSteps from './WorkflowSteps.vue'
+import WorkflowSteps from './WorkflowSteps.vue';
 
 describe('WorkflowSteps', () => {
   it('moves to an available workflow step', async () => {
@@ -14,11 +14,11 @@ describe('WorkflowSteps', () => {
         ],
         'onUpdate:modelValue': (value: string) => wrapper.setProps({ modelValue: value }),
       },
-      global: { stubs: { UIcon: true } },
-    })
+      global: { stubs: { UIcon: true, UButton: { template: '<button><slot /></button>' } } },
+    });
 
-    await wrapper.findAll('button')[1].trigger('click')
+    await wrapper.findAll('button')[1].trigger('click');
 
-    expect(wrapper.emitted('update:modelValue')?.[0]).toEqual(['content'])
-  })
-})
+    expect(wrapper.emitted('update:modelValue')?.[0]).toEqual(['content']);
+  });
+});

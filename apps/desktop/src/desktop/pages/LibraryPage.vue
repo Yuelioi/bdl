@@ -1,18 +1,53 @@
 <script setup lang="ts">
-import ErrorDetails from "../../shared/ui/ErrorDetails.vue";
-import { coverUrl } from "../../shared/utils/coverUrl";
-import UiButton from '../../shared/ui/Button.vue'
-import UiEmptyState from '../../shared/ui/EmptyState.vue'
-import UiPagination from '../../shared/ui/Pagination.vue'
-import UiTabs from '../../shared/ui/Tabs.vue'
-import LibraryFolderDetail from '../components/library/LibraryFolderDetail.vue'
-import ParseDownloadPlanner from '../../shared/features/parse/ParseDownloadPlanner.vue'
-import { useLibraryPage } from "../../shared/features/library/useLibraryPage";
-const { account, library, ui, query, failedCoverIds, detailFolder, detailLoading, activeCategory, categoryFilter, categoryTabs, page, visibleItems, load, openFolder, closeFolder, openDownloadSettings } = useLibraryPage();
+import ErrorDetails from '../../shared/ui/ErrorDetails.vue';
+import { coverUrl } from '../../shared/utils/coverUrl';
+import UiButton from '../../shared/ui/Button.vue';
+import UiEmptyState from '../../shared/ui/EmptyState.vue';
+import UiPagination from '../../shared/ui/Pagination.vue';
+import UiTabs from '../../shared/ui/Tabs.vue';
+import LibraryFolderDetail from '../components/library/LibraryFolderDetail.vue';
+import ParseDownloadPlanner from '../../shared/features/parse/ParseDownloadPlanner.vue';
+import { useLibraryPage } from '../../shared/features/library/useLibraryPage';
+const {
+  account,
+  library,
+  ui,
+  query,
+  failedCoverIds,
+  detailFolder,
+  detailLoading,
+  activeCategory,
+  categoryFilter,
+  categoryTabs,
+  page,
+  visibleItems,
+  load,
+  openFolder,
+  closeFolder,
+  openDownloadSettings,
+} = useLibraryPage();
 </script>
 <template>
   <section class="page-grid grid-cols-1" aria-label="账号内容库">
     <section class="panel library-panel">
+      <header v-if="!detailFolder" class="library-page-heading">
+        <div>
+          <h2>内容库</h2>
+          <p v-if="account.profile.logged_in">{{ account.profile.name || 'Bilibili 用户' }}</p>
+        </div>
+        <UInput
+          v-if="account.profile.logged_in"
+          v-model="query"
+          class="library-search"
+          type="search"
+          aria-label="搜索当前分类"
+          icon="i-tabler-search"
+          placeholder="搜索标题或创建者"
+          color="neutral"
+          variant="outline"
+          size="sm"
+        />
+      </header>
       <div v-if="!detailFolder" class="shrink-0">
         <UiTabs v-model="categoryFilter" :tabs="categoryTabs" />
       </div>
@@ -20,20 +55,13 @@ const { account, library, ui, query, failedCoverIds, detailFolder, detailLoading
       <LibraryFolderDetail
         v-if="detailFolder"
         :folder="detailFolder"
+        :category-label="activeCategory.label"
         :loading-initial="detailLoading"
         @back="closeFolder"
         @download="openDownloadSettings"
       />
 
       <section v-else class="library-content" :aria-label="activeCategory.label" :aria-busy="library.loading">
-        <div v-if="account.profile.logged_in" class="library-toolbar">
-          <label class="library-search">
-            <span class="sr-only">搜索当前分类</span>
-            <UIcon name="i-tabler-search" aria-hidden="true" />
-            <input v-model="query" type="search" placeholder="搜索标题或创建者" />
-          </label>
-        </div>
-
         <UiEmptyState
           v-if="!account.profile.logged_in"
           title="登录后连接你的内容库"
@@ -64,20 +92,19 @@ const { account, library, ui, query, failedCoverIds, detailFolder, detailLoading
         </div>
 
         <div v-else-if="visibleItems.length" class="library-grid">
-          <article
+          <UButton
             v-for="item in visibleItems"
             :key="item.media_id"
             class="library-card"
-            role="button"
-            tabindex="0"
+            variant="ghost"
+            color="neutral"
+            :ui="{ label: 'contents' }"
             :aria-label="`进入 ${item.title}`"
             @click="openFolder(item)"
-            @keydown.enter="openFolder(item)"
-            @keydown.space.prevent="openFolder(item)"
           >
             <div class="library-cover">
               <img
-referrerpolicy="no-referrer"
+                referrerpolicy="no-referrer"
                 v-if="item.cover_url && !failedCoverIds.includes(item.media_id)"
                 :src="coverUrl(item.cover_url) ?? undefined"
                 alt=""
@@ -92,11 +119,16 @@ referrerpolicy="no-referrer"
             <div class="library-card-copy">
               <h3 :title="item.title">{{ item.title }}</h3>
               <div class="library-card-meta">
-                <span class="library-owner" :title="item.owner_name || '我的收藏夹'">{{ item.owner_name || '我的收藏夹' }}</span>
-                <span class="library-count">{{ item.kind === 'watch_later' ? '进入查看' : `${item.media_count} 个视频` }}</span>
+                <span class="library-owner" :title="item.owner_name || '我的收藏夹'">{{
+                  item.owner_name || '我的收藏夹'
+                }}</span>
+                <span class="library-count">{{
+                  item.kind === 'watch_later' ? '进入查看' : `${item.media_count} 个视频`
+                }}</span>
               </div>
             </div>
-          </article>
+            <UIcon name="i-tabler-chevron-right" class="library-chevron" aria-hidden="true" />
+          </UButton>
         </div>
 
         <UiEmptyState

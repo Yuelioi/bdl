@@ -1,38 +1,38 @@
-import { readFileSync, readdirSync } from 'node:fs'
-import { createRequire } from 'node:module'
-import { extname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { readFileSync, readdirSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { extname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-import vue from '@vitejs/plugin-vue'
-import ui from '@nuxt/ui/vite'
-import { defineConfig, type Plugin } from 'vite'
+import vue from '@vitejs/plugin-vue';
+import ui from '@nuxt/ui/vite';
+import { defineConfig, type Plugin } from 'vite';
 
 type IconData = {
-  body: string
-  width?: number
-  height?: number
-  left?: number
-  top?: number
-  rotate?: number
-  hFlip?: boolean
-  vFlip?: boolean
-}
+  body: string;
+  width?: number;
+  height?: number;
+  left?: number;
+  top?: number;
+  rotate?: number;
+  hFlip?: boolean;
+  vFlip?: boolean;
+};
 
-type IconAlias = Omit<IconData, 'body'> & { parent: string }
+type IconAlias = Omit<IconData, 'body'> & { parent: string };
 
 type IconCollection = {
-  prefix: string
-  width?: number
-  height?: number
-  icons: Record<string, IconData>
-  aliases?: Record<string, IconAlias>
-}
+  prefix: string;
+  width?: number;
+  height?: number;
+  icons: Record<string, IconData>;
+  aliases?: Record<string, IconAlias>;
+};
 
-const virtualIconBundleId = 'virtual:bdl-icon-bundle'
-const resolvedVirtualIconBundleId = `\0${virtualIconBundleId}`
-const sourceDir = fileURLToPath(new URL('./src', import.meta.url))
-const require = createRequire(import.meta.url)
-const tablerCollectionPath = require.resolve('@iconify-json/tabler/icons.json')
+const virtualIconBundleId = 'virtual:bdl-icon-bundle';
+const resolvedVirtualIconBundleId = `\0${virtualIconBundleId}`;
+const sourceDir = fileURLToPath(new URL('./src', import.meta.url));
+const require = createRequire(import.meta.url);
+const tablerCollectionPath = require.resolve('@iconify-json/tabler/icons.json');
 
 const nuxtUiIcons = {
   arrowDown: 'i-tabler-arrow-down',
@@ -77,54 +77,54 @@ const nuxtUiIcons = {
   tip: 'i-tabler-bulb',
   upload: 'i-tabler-upload',
   warning: 'i-tabler-alert-triangle',
-} as const
+} as const;
 
 const collectSourceFiles = (directory: string): string[] =>
   readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
-    const path = join(directory, entry.name)
-    if (entry.isDirectory()) return collectSourceFiles(path)
-    return extname(entry.name) === '.ts' || extname(entry.name) === '.vue' ? [path] : []
-  })
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) return collectSourceFiles(path);
+    return extname(entry.name) === '.ts' || extname(entry.name) === '.vue' ? [path] : [];
+  });
 
 const buildLocalIconCollection = (sourceFiles: string[]): IconCollection => {
-  const collection = JSON.parse(readFileSync(tablerCollectionPath, 'utf8')) as IconCollection
-  const validNames = new Set([...Object.keys(collection.icons), ...Object.keys(collection.aliases ?? {})])
-  const selectedNames = new Set<string>()
+  const collection = JSON.parse(readFileSync(tablerCollectionPath, 'utf8')) as IconCollection;
+  const validNames = new Set([...Object.keys(collection.icons), ...Object.keys(collection.aliases ?? {})]);
+  const selectedNames = new Set<string>();
 
-  for (const icon of Object.values(nuxtUiIcons)) selectedNames.add(icon.replace(/^i-tabler-/, ''))
+  for (const icon of Object.values(nuxtUiIcons)) selectedNames.add(icon.replace(/^i-tabler-/, ''));
 
   for (const file of sourceFiles) {
-    const source = readFileSync(file, 'utf8')
+    const source = readFileSync(file, 'utf8');
 
-    for (const match of source.matchAll(/\bi-tabler-([a-z0-9-]+)\b/g)) selectedNames.add(match[1])
+    for (const match of source.matchAll(/\bi-tabler-([a-z0-9-]+)\b/g)) selectedNames.add(match[1]);
 
     for (const match of source.matchAll(/(['"`])([a-z0-9][a-z0-9-]*)\1/g)) {
-      if (validNames.has(match[2])) selectedNames.add(match[2])
+      if (validNames.has(match[2])) selectedNames.add(match[2]);
     }
   }
 
-  const icons: Record<string, IconData> = {}
-  const aliases: Record<string, IconAlias> = {}
-  const added = new Set<string>()
+  const icons: Record<string, IconData> = {};
+  const aliases: Record<string, IconAlias> = {};
+  const added = new Set<string>();
 
   const addIcon = (name: string) => {
-    if (added.has(name)) return
-    added.add(name)
+    if (added.has(name)) return;
+    added.add(name);
 
-    const icon = collection.icons[name]
+    const icon = collection.icons[name];
     if (icon) {
-      icons[name] = icon
-      return
+      icons[name] = icon;
+      return;
     }
 
-    const alias = collection.aliases?.[name]
+    const alias = collection.aliases?.[name];
     if (alias) {
-      aliases[name] = alias
-      addIcon(alias.parent)
+      aliases[name] = alias;
+      addIcon(alias.parent);
     }
-  }
+  };
 
-  for (const name of selectedNames) addIcon(name)
+  for (const name of selectedNames) addIcon(name);
 
   return {
     prefix: collection.prefix,
@@ -132,21 +132,21 @@ const buildLocalIconCollection = (sourceFiles: string[]): IconCollection => {
     height: collection.height,
     icons,
     ...(Object.keys(aliases).length > 0 ? { aliases } : {}),
-  }
-}
+  };
+};
 
 const localIconBundle = (): Plugin => ({
   name: 'bdl:local-icon-bundle',
   resolveId(id) {
-    if (id === virtualIconBundleId) return resolvedVirtualIconBundleId
+    if (id === virtualIconBundleId) return resolvedVirtualIconBundleId;
   },
   load(id) {
-    if (id !== resolvedVirtualIconBundleId) return
-    const sourceFiles = collectSourceFiles(sourceDir)
-    for (const file of sourceFiles) this.addWatchFile(file)
-    return `export default ${JSON.stringify(buildLocalIconCollection(sourceFiles))}`
+    if (id !== resolvedVirtualIconBundleId) return;
+    const sourceFiles = collectSourceFiles(sourceDir);
+    for (const file of sourceFiles) this.addWatchFile(file);
+    return `export default ${JSON.stringify(buildLocalIconCollection(sourceFiles))}`;
   },
-})
+});
 
 export default defineConfig({
   plugins: [
@@ -157,6 +157,53 @@ export default defineConfig({
         icons: nuxtUiIcons,
         dropdownMenu: { slots: { item: 'items-center' } },
         contextMenu: { slots: { item: 'items-center' } },
+        input: {
+          slots: { base: 'bdl-field' },
+          variants: { variant: { outline: 'border border-(--color-border) ring-0' } },
+          compoundVariants: [
+            {
+              variant: ['outline', 'subtle'],
+              class: 'ring-0 focus-visible:ring-0 focus-visible:outline-none focus-visible:border-(--color-accent)',
+            },
+          ],
+        },
+        textarea: {
+          slots: { base: 'bdl-field' },
+          variants: { variant: { outline: 'border border-(--color-border) ring-0' } },
+          compoundVariants: [
+            {
+              variant: ['outline', 'subtle'],
+              class: 'ring-0 focus-visible:ring-0 focus-visible:outline-none focus-visible:border-(--color-accent)',
+            },
+          ],
+        },
+        select: {
+          slots: { base: 'bdl-field' },
+          variants: { variant: { outline: 'border border-(--color-border) ring-0' } },
+          compoundVariants: [
+            {
+              variant: ['outline', 'subtle'],
+              class: 'ring-0 focus-visible:ring-0 focus-visible:outline-none focus-visible:border-(--color-accent)',
+            },
+          ],
+        },
+        button: {
+          slots: {
+            base: 'border border-transparent outline-none focus-visible:outline-none focus-visible:ring-0 focus-visible:border-(--color-accent)',
+          },
+          compoundVariants: [
+            {
+              variant: ['solid', 'outline', 'soft', 'subtle', 'ghost', 'link'],
+              class: 'focus-visible:outline-none focus-visible:ring-0',
+            },
+          ],
+        },
+        tabs: {
+          slots: {
+            trigger:
+              'border border-transparent focus-visible:outline-none focus-visible:ring-0 focus-visible:border-(--color-accent)',
+          },
+        },
       },
       theme: {
         colors: ['primary', 'success', 'warning', 'error', 'neutral'],
@@ -169,7 +216,9 @@ export default defineConfig({
   ],
   server: {
     host: '127.0.0.1',
+    // Avoid cold-start 504s for Nuxt UI's #imports by transforming modules on request.
+    preTransformRequests: false,
     port: 5173,
     strictPort: true,
   },
-})
+});

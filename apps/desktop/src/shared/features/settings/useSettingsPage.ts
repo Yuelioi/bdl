@@ -52,7 +52,10 @@ export function useSettingsPage() {
     updater.setAutoCheck(false);
     updater.setSource('github', '');
   };
-  const activeSettingsSection = ref<SettingsSectionId>('settings-download');
+  const activeSettingsSection = computed<SettingsSectionId>({
+    get: () => ui.settingsSection,
+    set: (value) => { ui.settingsSection = value; },
+  });
   const availableSettingsSections = computed(() =>
     updater.supported ? settingsSections : settingsSections.filter((section) => section.id !== 'settings-update'),
   );

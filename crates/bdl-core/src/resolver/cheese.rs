@@ -573,23 +573,7 @@ fn default_stream_headers() -> Vec<HeaderPair> {
 }
 
 fn stream_codec(codecs: &str) -> StreamCodec {
-    let lower = codecs.to_ascii_lowercase();
-    if lower.trim().is_empty() {
-        StreamCodec::Auto
-    } else if lower.contains("av01") || lower.contains("av1") {
-        StreamCodec::Av1
-    } else if lower.contains("hev")
-        || lower.contains("hvc")
-        || lower.contains("h265")
-        || lower.starts_with("dvhe")
-        || lower.starts_with("dvh1")
-    {
-        StreamCodec::Hevc
-    } else if lower.contains("avc") || lower.contains("h264") {
-        StreamCodec::Avc
-    } else {
-        StreamCodec::Unknown
-    }
+    StreamCodec::from_source(codecs)
 }
 
 fn media_kind_label(kind: MediaKind) -> &'static str {

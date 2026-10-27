@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { onMounted } from 'vue';
 import SettingsCard from './SettingsCard.vue';
 import { useUpdateStore } from '../../stores/update';
 import UiButton from '../../ui/Button.vue';
@@ -6,22 +7,24 @@ import UiInlineNotice from '../../ui/InlineNotice.vue';
 import UiTextField from '../../ui/TextField.vue';
 
 const update = useUpdateStore();
-const sources = [
-  { label: 'GitHub 下载', value: 'github' },
-  { label: 'GitHub 加速下载', value: 'mirror' },
-  { label: '夸克手动下载', value: 'quark' },
-];
+onMounted(() => { void update.loadSources(); });
 </script>
 
 <template>
   <div class="grid gap-5">
     <SettingsCard aria-label="更新来源">
       <UFormField label="更新来源">
-        <USelect :model-value="update.source" :items="sources" class="w-full" :disabled="update.checking || update.installing" @update:model-value="(value: string) => update.setSource(value as typeof update.source)" />
+        <USelect :model-value="update.source" :items="update.sourceOptions" class="w-full" :loading="update.loadingSources" :disabled="update.loadingSources || update.checking || update.installing" @update:model-value="(value: string) => update.setSource(value as typeof update.source)" />
       </UFormField>
+      <UiInlineNotice v-if="update.sourcesError" tone="danger">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <span>无法读取软件站下载来源：{{ update.sourcesError }}</span>
+          <UiButton variant="secondary" :disabled="update.loadingSources || update.checking" @click="update.loadSources">重试</UiButton>
+        </div>
+      </UiInlineNotice>
       <UiTextField
         v-if="update.source === 'mirror'" label="自定义加速地址" :model-value="update.customMirror"
-        placeholder="https://你的加速站/" helper="留空使用软件站提供的加速源。也支持 {url}（完整链接）或 {path}（不含 https:// 的链接）模板。"
+        placeholder="https://你的加速站/" helper="支持地址前缀、{url}（完整链接）或 {path}（不含 https:// 的链接）模板。"
         :disabled="update.checking || update.installing" @update:model-value="value => update.setSource('mirror', value)" />
       <div v-if="update.source === 'quark'" class="grid justify-items-start gap-3">
         <p class="m-0 text-xs leading-5 text-(--color-muted)">打开夸克目录后，按版本与系统选择安装包，下载后手动安装。</p>
@@ -49,7 +52,7 @@ const sources = [
         </div>
         <UiButton
           variant="secondary"
-          :disabled="update.checking || update.installing"
+          :disabled="update.loadingSources || update.checking || update.installing"
           @click="update.checkForUpdate(false)"
         >
           {{ update.checking ? '检测中' : '检测更新' }}

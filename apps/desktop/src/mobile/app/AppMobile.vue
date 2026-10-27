@@ -4,6 +4,7 @@ import { mobileRailLayoutKey } from './layout';
 import { useUiStore } from '../../shared/stores/ui';
 import { useNavigationStatus } from '../../shared/features/navigation';
 import { isAndroidPlatform } from '../../shared/platform/environment';
+import appIcon from '../../../src-tauri/icons/128x128.png';
 
 // Keep legacy query syntax in JS: CSS minification rewrites it to range syntax.
 const railQuery = window.matchMedia(
@@ -42,8 +43,8 @@ onUnmounted(() => {
 
 const navItems = [
   { value: 'parse', label: '解析', icon: 'i-tabler-link' },
-  { value: 'library', label: '内容库', icon: 'i-tabler-books' },
-  { value: 'transfer', label: '传输', icon: 'i-tabler-bolt' },
+  { value: 'library', label: '内容库', icon: 'i-tabler-folder' },
+  { value: 'transfer', label: '传输', icon: 'i-tabler-transfer' },
   { value: 'settings', label: '我的', icon: 'i-tabler-user' },
 ] as const;
 const ui = useUiStore();
@@ -55,13 +56,20 @@ const { transferBadgeCount } = useNavigationStatus();
     class="app-mobile platform-mobile"
     :class="{ 'mobile-layout-rail': railLayout, 'mobile-layout-compact': compactLayout }"
   >
-    <header class="mobile-header" aria-label="BDL">
-      <span class="mobile-mark" aria-hidden="true"><i></i><i></i></span>
+    <header
+      v-if="ui.activeTab !== 'settings' || ui.mobilePersonalPage === 'home'"
+      class="mobile-header"
+      aria-label="BDL"
+    >
+      <img class="mobile-mark" :src="appIcon" alt="" />
       <strong class="mobile-brand-name">BDL</strong>
     </header>
     <slot />
     <nav class="mobile-navigation" aria-label="主导航">
-      <button
+      <UButton
+        variant="ghost"
+        color="neutral"
+        :ui="{ label: 'contents' }"
         v-for="item in navItems"
         :key="item.value"
         class="mobile-nav-item"
@@ -78,7 +86,7 @@ const { transferBadgeCount } = useNavigationStatus();
         <span v-if="item.value === 'transfer' && transferBadgeCount > 0" class="mobile-nav-badge">
           {{ transferBadgeCount > 99 ? '99+' : transferBadgeCount }}
         </span>
-      </button>
+      </UButton>
     </nav>
   </main>
 </template>
@@ -103,39 +111,27 @@ const { transferBadgeCount } = useNavigationStatus();
   display: flex;
   align-items: center;
   gap: 0.5625rem;
-  min-height: calc(3rem + var(--bdl-layout-safe-area-top));
+  min-height: calc(2.75rem + var(--bdl-layout-safe-area-top));
   padding: var(--bdl-layout-safe-area-top) 0.75rem 0;
   border-bottom: 0.0625rem solid var(--mobile-card-border);
   background: var(--color-nav);
 }
 
 .mobile-mark {
-  width: 2rem;
-  height: 2rem;
+  width: 1.5rem;
+  height: 1.5rem;
   display: flex;
   align-items: flex-end;
   justify-content: center;
   gap: 0.1875rem;
-  padding: 0.4375rem;
-  border-radius: 0.625rem;
-  background: var(--color-accent);
-}
-
-.mobile-mark i {
-  width: 0.3125rem;
-  height: 0.625rem;
-  border-radius: 0.0625rem;
-  background: var(--color-on-accent);
-}
-
-.mobile-mark i:last-child {
-  height: 1rem;
+  padding: 0;
+  border-radius: 0.375rem;
 }
 
 .mobile-brand-name {
   color: var(--color-text);
-  font-size: 1.3125rem;
-  font-weight: 800;
+  font-size: 1rem;
+  font-weight: 600;
   letter-spacing: -0.02em;
   line-height: 1;
 }
@@ -158,10 +154,10 @@ const { transferBadgeCount } = useNavigationStatus();
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  border: 0;
+  border: 1px solid transparent;
   background: transparent;
   color: var(--color-muted);
-  font-weight: 650;
+  font-weight: 500;
   min-height: 3rem;
   margin-inline: 0.125rem;
   border-radius: 0.75rem;
@@ -195,8 +191,8 @@ const { transferBadgeCount } = useNavigationStatus();
 }
 
 .mobile-nav-item:focus-visible {
-  outline: 0.125rem solid var(--color-accent);
-  outline-offset: -0.125rem;
+  outline: none;
+  border-color: var(--color-accent);
 }
 
 .app-mobile.mobile-layout-rail {
@@ -221,7 +217,7 @@ const { transferBadgeCount } = useNavigationStatus();
 .mobile-layout-rail .mobile-mark {
   width: 1.75rem;
   height: 1.75rem;
-  padding: 0.3125rem;
+  padding: 0;
   border-radius: 0.5rem;
 }
 
@@ -266,17 +262,8 @@ const { transferBadgeCount } = useNavigationStatus();
 .mobile-layout-compact .mobile-mark {
   width: 1.375rem;
   height: 1.375rem;
-  padding: 0.25rem;
+  padding: 0;
   border-radius: 0.375rem;
-}
-
-.mobile-layout-compact .mobile-mark i {
-  width: 0.25rem;
-  height: 0.5rem;
-}
-
-.mobile-layout-compact .mobile-mark i:last-child {
-  height: 0.8125rem;
 }
 
 .mobile-layout-compact .mobile-brand-name {

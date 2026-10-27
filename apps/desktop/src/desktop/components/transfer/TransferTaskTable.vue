@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue';
 import type { TaskActionKind, TransferTaskView } from '../../../shared/stores/transferView';
-import MediaListRow from '../../../shared/ui/MediaListRow.vue';
+import { coverUrl } from '../../../shared/utils/coverUrl';
 import UiCheckbox from '../../../shared/ui/Checkbox.vue';
 import UiIconButton from '../../../shared/ui/IconButton.vue';
 import UiProgressBar from '../../../shared/ui/ProgressBar.vue';
@@ -9,7 +9,7 @@ import UiStatusBadge from '../../../shared/ui/StatusBadge.vue';
 import TaskActionMenu from '../../../shared/ui/TaskActionMenu.vue';
 import { calculateVirtualWindow } from '../../../shared/utils/virtualWindow';
 
-const ROW_STRIDE = 104;
+const ROW_STRIDE = 64;
 const props = withDefaults(
   defineProps<{
     views: TransferTaskView[];
@@ -72,61 +72,100 @@ watch(
 const canPlay = (view: TransferTaskView) =>
   view.primaryAction === 'open_file' || (!view.isCompleted && Boolean(view.sourceUrl));
 const play = (view: TransferTaskView) => emit('taskAction', view.id, view.isCompleted ? 'open_file' : 'open_source');
+const hasProgress = (view: TransferTaskView) =>
+  ['downloading', 'paused'].includes(view.statusBadge) && view.stageProgressLabel !== '';
+const openDirectory = (view: TransferTaskView) => view.secondaryActions.find((action) => action.kind === 'open_dir');
 </script>
 
 <template>
   <section class="transfer-table" aria-label="传输任务">
-    <div class="transfer-selection-bar">
+    <div class="transfer-columns transfer-selection-bar">
       <UiCheckbox
         :model-value="selection"
         label="选择当前筛选任务"
+        compact
         :disabled="!views.length || loading"
         @update:model-value="emit('toggleVisibleSelection', visibleIds, selection !== true)"
       />
-      <span>{{ views.length }} 项</span>
+      <span>文件</span><span>进度</span><span>状态</span><span class="speed-column">速度</span
+      ><span class="actions-label">操作</span>
     </div>
     <div ref="scrollElement" class="transfer-scroll" @scroll="updateViewport">
       <div class="virtual-task-list" role="list" aria-label="传输任务" :style="{ height: `${taskWindow.totalSize}px` }">
-        <MediaListRow
+        <article
           v-for="row in renderedViews"
           :key="row.view.id"
-          class="task-table-row"
+          class="transfer-columns task-table-row"
           :class="{ inspected: selectedTaskId === row.view.id }"
           :style="{ transform: `translateY(${row.index * ROW_STRIDE}px)` }"
           :aria-posinset="row.index + 1"
           :aria-setsize="views.length"
-          :title="row.view.displayTitle"
-          :cover="row.view.coverUrl"
-          secondary-icon="i-tabler-video"
-          :secondary="row.view.mediaLabel || row.view.subtitle || '下载任务'"
-          :duration="row.view.durationSeconds"
-          :size-label="row.view.sizeLabel"
-          :selected="selected.has(row.view.id)"
-          :disabled="loading"
-          :playable="canPlay(row.view)"
-          :playback-label="
-            row.view.isCompleted ? `播放本地文件 ${row.view.displayTitle}` : `播放 ${row.view.displayTitle}`
-          "
-          @toggle="emit('toggleTaskSelection', row.view.id)"
-          @play="play(row.view)"
+          role="listitem"
           @contextmenu.prevent="emit('openContextMenu', row.view.id, $event)"
         >
-          <template #detail>
-            <div class="task-detail-line">
-              <UiStatusBadge :status="row.view.statusBadge">{{ row.view.statusLabel }}</UiStatusBadge>
-              <template v-if="!row.view.isCompleted">
-                <UiProgressBar :value="row.view.progressValue" />
-                <span>{{ row.view.progressLabel }}</span>
-                <span v-if="row.view.speedLabel !== '--'">{{ row.view.speedLabel }}</span>
-                <span v-if="row.view.etaLabel !== '--'">剩余 {{ row.view.etaLabel }}</span>
-              </template>
-              <span v-else class="task-location" :title="row.view.fullLocation">{{ row.view.fullLocation }}</span>
-              <span v-if="row.view.issueLabel !== '-'" class="task-issue" :title="row.view.issueLabel">{{
-                row.view.issueLabel
+          <UiCheckbox
+            :model-value="selected.has(row.view.id)"
+            :label="`选择 ${row.view.displayTitle}`"
+            compact
+            :disabled="loading"
+            @update:model-value="emit('toggleTaskSelection', row.view.id)"
+          />
+          <div class="task-file">
+            <UButton
+              class="task-cover"
+              variant="ghost"
+              color="neutral"
+              :ui="{ base: 'p-0', label: 'contents' }"
+              :aria-label="
+                row.view.isCompleted ? `播放本地文件 ${row.view.displayTitle}` : `播放 ${row.view.displayTitle}`
+              "
+              :disabled="!canPlay(row.view) || loading"
+              @click="play(row.view)"
+            >
+              <img
+                v-if="row.view.coverUrl"
+                :src="coverUrl(row.view.coverUrl) ?? undefined"
+                alt=""
+                referrerpolicy="no-referrer"
+                loading="lazy"
+              /><UIcon v-else name="i-tabler-video" aria-hidden="true" />
+            </UButton>
+            <div class="task-file-copy">
+              <UButton
+                variant="link"
+                color="neutral"
+                class="task-file-title"
+                :ui="{ base: 'p-0', label: 'truncate' }"
+                :title="row.view.displayTitle"
+                :aria-label="`选择 ${row.view.displayTitle}`"
+                :aria-pressed="selected.has(row.view.id)"
+                :disabled="loading"
+                @click="emit('toggleTaskSelection', row.view.id)"
+                >{{ row.view.displayTitle }}</UButton
+              >
+              <span class="task-subtitle" :title="row.view.isCompleted ? row.view.fullLocation : row.view.mediaLabel">{{
+                row.view.isCompleted ? row.view.shortLocation : row.view.mediaLabel || row.view.subtitle
               }}</span>
             </div>
-          </template>
-          <template #actions>
+          </div>
+          <div class="task-progress">
+            <template v-if="hasProgress(row.view)"
+              ><div class="progress-value">
+                <UiProgressBar :value="row.view.progressValue" /><span>{{ row.view.progressLabel }}</span>
+              </div>
+              <small v-if="row.view.sizeLabel !== '--'">{{ row.view.sizeLabel }}</small></template
+            >
+            <span v-else>{{ row.view.isCompleted ? row.view.sizeLabel : '—' }}</span>
+          </div>
+          <div class="task-state">
+            <UiStatusBadge :status="row.view.statusBadge">{{ row.view.statusLabel }}</UiStatusBadge
+            ><span v-if="row.view.issueLabel !== '-'" class="task-issue" :title="row.view.issueLabel">{{
+              row.view.issueLabel
+            }}</span
+            ><small class="compact-speed" v-if="row.view.speedLabel !== '--'">{{ row.view.speedLabel }}</small>
+          </div>
+          <span class="task-speed speed-column">{{ row.view.speedLabel === '--' ? '—' : row.view.speedLabel }}</span>
+          <div class="task-actions">
             <UiIconButton
               v-if="row.view.primaryAction !== 'none' && row.view.primaryAction !== 'open_file'"
               :icon="row.view.primaryActionIcon"
@@ -136,6 +175,15 @@ const play = (view: TransferTaskView) => emit('taskAction', view.id, view.isComp
               :disabled="loading"
               @click="emit('taskAction', row.view.id, row.view.primaryAction)"
             />
+            <UiIconButton
+              v-else-if="row.view.isCompleted && openDirectory(row.view)"
+              icon="folder"
+              label="打开所在目录"
+              variant="ghost"
+              size="compact"
+              :disabled="loading"
+              @click="emit('taskAction', row.view.id, 'open_dir')"
+            />
             <TaskActionMenu
               :view="row.view"
               :disabled="loading"
@@ -144,13 +192,12 @@ const play = (view: TransferTaskView) => emit('taskAction', view.id, view.isComp
               @inspect="emit('inspectTask', row.view.id)"
               @action="(action) => emit('taskAction', row.view.id, action)"
             />
-          </template>
-        </MediaListRow>
+          </div>
+        </article>
       </div>
     </div>
   </section>
 </template>
-
 <style scoped>
 .transfer-table {
   min-width: 0;
@@ -160,15 +207,24 @@ const play = (view: TransferTaskView) => emit('taskAction', view.id, view.isComp
   flex-direction: column;
 }
 
+.transfer-columns {
+  display: grid;
+  grid-template-columns: 1.25rem minmax(0, 2.5fr) minmax(7rem, 1.1fr) minmax(5.5rem, 0.8fr) 5.25rem 4rem;
+  align-items: center;
+  gap: 0.75rem;
+}
+
 .transfer-selection-bar {
   flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: 32px;
-  padding: 0 14px 8px;
+  min-height: 2rem;
+  padding: 0 0.25rem;
   color: var(--color-muted);
+  background: var(--color-inset);
   font-size: var(--font-12);
+}
+
+.actions-label {
+  text-align: center;
 }
 
 .transfer-scroll {
@@ -176,7 +232,6 @@ const play = (view: TransferTaskView) => emit('taskAction', view.id, view.isComp
   min-height: 0;
   overflow: auto;
   scrollbar-gutter: stable;
-  padding-right: 4px;
 }
 
 .virtual-task-list {
@@ -187,38 +242,154 @@ const play = (view: TransferTaskView) => emit('taskAction', view.id, view.isComp
 .task-table-row {
   position: absolute;
   inset: 0 0 auto;
-  height: 96px;
+  height: 64px;
+  padding: 0 0.25rem;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
 }
 
+.task-table-row:hover,
 .task-table-row.inspected {
-  outline: 1px solid var(--color-accent);
-  outline-offset: -1px;
+  background: var(--color-hover-surface);
 }
 
-.task-detail-line {
+.task-file {
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 0.625rem;
+}
+
+.task-cover {
+  width: 3rem;
+  height: 1.875rem;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: var(--radius-4);
+  background: var(--color-inset);
+  color: var(--color-muted);
+}
+
+.task-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.task-file-copy {
+  min-width: 0;
+  display: grid;
+  gap: 0.125rem;
+}
+
+.task-file-title {
+  min-width: 0;
+  display: block;
+  overflow: hidden;
+  font-size: var(--font-13);
+  font-weight: 400;
+  line-height: 1.25rem;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-text);
+}
+
+.task-subtitle {
+  min-width: 0;
+  overflow: hidden;
   font-size: var(--font-11);
   color: var(--color-muted);
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.task-detail-line :deep(.progress-track) {
-  width: 60px;
-  min-width: 30px;
-  height: 4px;
-}
-
-.task-location,
-.task-issue {
+.task-progress {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  display: grid;
+  gap: 0.125rem;
+  color: var(--color-muted);
+  font-size: var(--font-12);
+  font-variant-numeric: tabular-nums;
+}
+
+.progress-value {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+.progress-value > span {
+  min-width: 2.25rem;
+  text-align: right;
+}
+
+.task-progress :deep(.progress-track) {
+  min-width: 1rem;
+  height: 0.3125rem;
+  flex: 1;
+}
+
+.task-progress small {
+  font-size: var(--font-11);
+}
+
+.task-state {
+  min-width: 0;
+  display: grid;
+  justify-items: start;
+  gap: 0.125rem;
+}
+
+.task-state :deep(.status-badge) {
+  padding: 0;
+  background: transparent;
+  font-weight: 400;
 }
 
 .task-issue {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: var(--font-11);
   color: var(--color-danger);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-speed {
+  color: var(--color-muted);
+  font-size: var(--font-12);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.task-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0;
+}
+
+.compact-speed {
+  display: none;
+}
+
+@media (width <= 920px) {
+  .transfer-columns {
+    grid-template-columns: 1.25rem minmax(0, 2fr) minmax(5rem, 1fr) 5rem 4rem;
+    gap: 0.5rem;
+  }
+
+  .speed-column {
+    display: none;
+  }
+
+  .compact-speed {
+    display: block;
+    color: var(--color-muted);
+    font-size: var(--font-11);
+  }
 }
 </style>

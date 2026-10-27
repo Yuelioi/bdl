@@ -20,6 +20,7 @@ const props = defineProps<{
   fallbackOwner?: string | null;
   selectionLabel?: string;
   label?: string;
+  compact?: boolean;
 }>();
 const emit = defineEmits<{ toggle: [id: string]; toggleAll: [] }>();
 const queue = useQueueStore();
@@ -36,12 +37,12 @@ const selection = computed<boolean | 'indeterminate'>(() => {
   return count === 0 ? false : count === allIds.value.length ? true : 'indeterminate';
 });
 const media = computed(() => sourceMediaByPart(props.source, props.fallbackOwner));
-const ROW_STRIDE = 104;
+const rowStride = computed(() => (props.compact ? 48 : 72));
 const scrollElement = ref<HTMLElement | null>(null);
 const scrollOffset = ref(0);
 const viewportSize = ref(600);
 const listWindow = computed(() =>
-  calculateVirtualWindow(props.rows.length, scrollOffset.value, viewportSize.value, ROW_STRIDE),
+  calculateVirtualWindow(props.rows.length, scrollOffset.value, viewportSize.value, rowStride.value),
 );
 let observer: ResizeObserver | undefined;
 onMounted(() => {
@@ -64,6 +65,14 @@ watch(
     if (scrollElement.value) scrollElement.value.scrollTop = 0;
   },
 );
+const partIndices = computed(
+  () =>
+    new Map(
+      props.source.groups.flatMap((group) =>
+        group.items.flatMap((item) => item.parts.map((part, index) => [part.id, `P${index + 1}`] as const)),
+      ),
+    ),
+);
 const entries = computed(() =>
   props.rows.slice(listWindow.value.start, listWindow.value.end).map((row, offset) => {
     const details = media.value.get(row.partIds[0] ?? '');
@@ -72,6 +81,7 @@ const entries = computed(() =>
     return {
       ...row,
       index: listWindow.value.start + offset,
+      partIndex: props.compact ? partIndices.value.get(row.partIds[0] ?? '') : undefined,
       details,
       completed,
       selected: props.selectedRowIds
@@ -107,7 +117,7 @@ async function play(entry: (typeof entries.value)[number]) {
 </script>
 
 <template>
-  <section class="source-media-list" :aria-label="label || '解析结果'">
+  <section class="source-media-list" :class="{ compact }" :aria-label="label || '解析结果'">
     <div class="source-list-toolbar">
       <UiCheckbox
         :model-value="selection"
@@ -115,7 +125,7 @@ async function play(entry: (typeof entries.value)[number]) {
         :disabled="disabled || !rows.length"
         @update:model-value="emit('toggleAll')"
       />
-      <span>{{ rows.length }} 项</span>
+      <span v-if="selectedIds.length" class="selected-count">已选 {{ selectedIds.length }} 项</span>
     </div>
     <div
       ref="scrollElement"
@@ -138,11 +148,13 @@ async function play(entry: (typeof entries.value)[number]) {
         :aria-posinset="entry.index + 1"
         :aria-setsize="rows.length"
         :title="entry.title"
+        :compact="compact"
+        :index="entry.partIndex"
         :cover="entry.details?.cover"
         :secondary="entry.details?.secondary || entry.meta"
         :published="entry.details?.published"
         :duration="entry.details?.duration"
-        :size-label="entry.size"
+        :size-label="compact ? null : entry.size"
         :selected="entry.selected"
         :disabled="disabled"
         :playable="Boolean(entry.completed || entry.details?.url)"
@@ -150,14 +162,14 @@ async function play(entry: (typeof entries.value)[number]) {
         @toggle="!disabled && emit('toggle', entry.id)"
         @play="play(entry)"
       >
-        <template v-if="entry.completed" #detail><span class="downloaded-label">已下载</span></template>
+        <template v-if="entry.completed && !compact" #detail><span class="downloaded-label">已下载</span></template>
         <template v-if="$slots.actions" #actions><slot name="actions" :row="entry" /></template>
       </MediaListRow>
       <div
         v-if="listWindow.virtualized"
         class="source-list-spacer"
         aria-hidden="true"
-        :style="{ height: `${(rows.length - listWindow.end) * ROW_STRIDE}px` }"
+        :style="{ height: `${(rows.length - listWindow.end) * rowStride}px` }"
       />
     </div>
   </section>
@@ -172,37 +184,37 @@ async function play(entry: (typeof entries.value)[number]) {
 }
 
 .source-list-toolbar {
-  min-height: 32px;
+  min-height: 2rem;
   display: flex;
   flex-shrink: 0;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 0 14px 8px;
+  gap: 1rem;
+  padding: 0.125rem 0.125rem 0.375rem;
   color: var(--color-muted);
   font-size: var(--font-12);
 }
 
+.selected-count {
+  color: var(--color-accent-strong);
+}
+
 .source-list-body {
   min-height: 0;
+  flex: 1;
   overflow: auto;
   display: flex;
   flex-direction: column;
   scrollbar-gutter: stable;
-  padding-right: 4px;
 }
 
 .source-media-row {
   flex-shrink: 0;
-  margin-bottom: 8px;
+  margin: 0;
+  height: 72px;
 }
 
-.source-media-row:last-child {
-  margin-bottom: 0;
-}
-
-.source-media-row.is-virtual {
-  height: 96px;
+.compact .source-media-row {
+  height: 48px;
 }
 
 .source-list-spacer {

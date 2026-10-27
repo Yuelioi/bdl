@@ -78,14 +78,10 @@ try {
   const pageErrors = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
 
-  await page.waitForFunction(
-    () => {
-      const root = document.querySelector('#app');
-      return Boolean(root && root.children.length > 0 && document.body.innerText.trim().length > 20);
-    },
-    undefined,
-    { timeout: 15_000 },
-  );
+  // A nonempty root can still be an error/partial page. Verify the application's primary action.
+  // First-run notices can make the underlying page inert, so mounting is checked independently.
+  await page.getByRole('button', { name: '开始解析', exact: true, includeHidden: true })
+    .waitFor({ state: 'attached', timeout: 15_000 });
 
   const rendered = await page.evaluate(() => ({
     readyState: document.readyState,

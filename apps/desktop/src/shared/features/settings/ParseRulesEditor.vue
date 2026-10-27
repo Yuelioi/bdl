@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import SettingsCard from './SettingsCard.vue';
+import UiDisclosure from '../../ui/Disclosure.vue';
 import { computed, ref } from 'vue';
 import type { ParseRules } from '../../api/dto';
 import UiSelect from '../../ui/Select.vue';
@@ -75,7 +75,7 @@ const estimatedWait = computed(() => {
 </script>
 
 <template>
-  <SettingsCard aria-label="解析节奏">
+  <UiDisclosure class="settings-parse-rules" title="解析节奏" description="分批数量、等待与休息">
     <div class="flex items-center gap-1">
       <h3 class="m-0 text-sm font-bold">解析节奏</h3>
       <UTooltip
@@ -123,5 +123,12 @@ const estimatedWait = computed(() => {
       </div>
     </div>
     <p class="m-0 text-xs text-(--color-muted)">解析约 200 条，额外等待约 {{ estimatedWait }} 秒，不含网络耗时。</p>
-  </SettingsCard>
+  </UiDisclosure>
 </template>
+
+<style scoped>
+.settings-parse-rules {
+  padding-top: 0;
+  border-top: 0;
+}
+</style>

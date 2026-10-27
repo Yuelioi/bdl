@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { FEEDBACK_AUTO_DISMISS_MS } from './feedback'
+import type { SettingsSectionId } from '../features/settings/settingsSections'
 
 export type AppTab = 'parse' | 'library' | 'transfer' | 'settings' | 'about'
 type NavigationGuard = (leave: () => void) => void
@@ -27,8 +28,16 @@ export const useUiStore = defineStore('ui', {
     loginDialogOpen: false,
     environmentDialogOpen: false,
     settingsNavigationGuard: null as NavigationGuard | null,
+    settingsSection: 'settings-download' as SettingsSectionId,
+    settingsPresetKind: 'download' as 'download' | 'naming',
   }),
   actions: {
+    openPresetSettings(kind: 'download' | 'naming') {
+      this.settingsSection = 'settings-presets'
+      this.settingsPresetKind = kind
+      this.mobilePersonalPage = 'settings'
+      this.setTab('settings')
+    },
     setTab(tab: AppTab) {
       if (tab === this.activeTab) return
       const leave = () => { this.activeTab = tab }

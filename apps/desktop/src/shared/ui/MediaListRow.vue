@@ -15,6 +15,8 @@ const props = defineProps<{
   selected?: boolean;
   indeterminate?: boolean;
   flat?: boolean;
+  compact?: boolean;
+  index?: string;
   disabled?: boolean;
   playable?: boolean;
   playbackLabel?: string;
@@ -28,7 +30,11 @@ watch(
   },
 );
 function toggleCard(event: MouseEvent) {
-  if (props.disabled || (event.target instanceof Element && event.target.closest('button, input, a, label, [role="checkbox"]'))) return;
+  if (
+    props.disabled ||
+    (event.target instanceof Element && event.target.closest('button, input, a, label, [role="checkbox"]'))
+  )
+    return;
   emit('toggle');
 }
 </script>
@@ -36,7 +42,7 @@ function toggleCard(event: MouseEvent) {
 <template>
   <article
     class="media-list-row"
-    :class="{ 'is-selected': selected, 'media-list-row-flat': flat }"
+    :class="{ 'is-selected': selected, 'media-list-row-flat': flat, 'media-list-row-compact': compact }"
     :data-selected="Boolean(selected)"
     role="listitem"
     @click="toggleCard($event)"
@@ -60,7 +66,10 @@ function toggleCard(event: MouseEvent) {
         @error="failed = true"
       />
       <UIcon v-else-if="!playable" name="i-tabler-video" class="cover-placeholder" aria-hidden="true" />
-      <button
+      <UButton
+        variant="ghost"
+        color="neutral"
+        :ui="{ base: 'p-0', label: 'contents' }"
         v-if="playable"
         class="media-play"
         type="button"
@@ -69,8 +78,9 @@ function toggleCard(event: MouseEvent) {
         @click.stop="emit('play')"
       >
         <UIcon name="i-tabler-player-play" class="media-play-icon" aria-hidden="true" />
-      </button>
+      </UButton>
     </div>
+    <span v-if="index" class="media-index">{{ index }}</span>
     <div class="media-copy">
       <UTooltip
         :text="title"
@@ -80,7 +90,10 @@ function toggleCard(event: MouseEvent) {
           text: 'whitespace-normal overflow-visible',
         }"
       >
-        <button
+        <UButton
+          variant="ghost"
+          color="neutral"
+          :ui="{ base: 'p-0', label: 'contents' }"
           class="media-title"
           type="button"
           :aria-label="`${selected ? '取消选择' : '选择'} ${title}`"
@@ -89,7 +102,7 @@ function toggleCard(event: MouseEvent) {
           @click="emit('toggle')"
         >
           {{ title }}
-        </button>
+        </UButton>
       </UTooltip>
       <div v-if="secondary || published" class="media-metadata">
         <span v-if="secondary" class="media-author" :title="secondary"
@@ -99,7 +112,6 @@ function toggleCard(event: MouseEvent) {
         >
         <span v-if="published" class="media-date" :title="`发布于 ${published}`">{{ published }}</span>
       </div>
-      <slot name="detail" />
     </div>
     <div class="media-facts">
       <span v-if="duration && duration > 0" class="media-duration" aria-label="时长"
@@ -108,6 +120,7 @@ function toggleCard(event: MouseEvent) {
       <span v-if="sizeLabel && sizeLabel !== '--'" class="media-size" aria-label="大小"
         ><UIcon name="i-tabler-file" aria-hidden="true" />{{ sizeLabel }}</span
       >
+      <slot name="detail" />
       <slot name="facts" />
     </div>
     <div v-if="$slots.actions" class="media-actions" @click.stop @keydown.stop><slot name="actions" /></div>
@@ -117,39 +130,29 @@ function toggleCard(event: MouseEvent) {
 <style scoped>
 .media-list-row {
   min-width: 0;
-  min-height: 6rem;
+  min-height: 4.5rem;
   display: grid;
-  grid-template-columns: 1.5rem 7.75rem minmax(0, 1fr) auto;
+  grid-template-columns: 1.25rem 4rem minmax(0, 1fr) auto;
   align-items: center;
-  gap: 0.875rem;
-  padding: 0.6875rem 0.875rem;
-  border: 0.0625rem solid var(--color-border);
-  border-radius: var(--radius-8);
+  gap: 0.75rem;
+  padding: 0.625rem 0.25rem;
+  border: 0;
+  border-bottom: 1px solid var(--color-border);
+  border-radius: 0;
   background: var(--color-surface);
-  transition:
-    background var(--duration-fast) var(--ease-out),
-    border-color var(--duration-fast) var(--ease-out);
 }
 
 .media-list-row:has(.media-actions) {
-  grid-template-columns: 1.5rem 7.75rem minmax(0, 1fr) auto auto;
-}
-
-.media-list-row-flat {
-  height: 6rem;
-  width: 100%;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
+  grid-template-columns: 1.25rem 4rem minmax(0, 1fr) auto auto;
 }
 
 .media-list-row:hover {
   background: var(--color-hover-surface);
 }
 
-.media-list-row.is-selected {
-  border-color: var(--color-accent);
-  background: var(--color-accent-faint);
+.media-list-row-flat {
+  width: 100%;
+  height: 4.5rem;
 }
 
 .media-selection {
@@ -159,12 +162,12 @@ function toggleCard(event: MouseEvent) {
 
 .media-cover {
   position: relative;
-  width: 7.75rem;
-  height: 4.375rem;
+  width: 4rem;
+  height: 2.25rem;
   overflow: hidden;
   display: grid;
   place-items: center;
-  border-radius: var(--radius-6);
+  border-radius: var(--radius-4);
   background: var(--color-inset);
 }
 
@@ -175,8 +178,8 @@ function toggleCard(event: MouseEvent) {
 }
 
 .cover-placeholder {
-  width: 1.5625rem;
-  height: 1.5625rem;
+  width: 1.25rem;
+  height: 1.25rem;
   color: var(--color-dimmed);
 }
 
@@ -185,7 +188,7 @@ function toggleCard(event: MouseEvent) {
   inset: 0;
   display: grid;
   place-items: center;
-  border: 0;
+  border: 1px solid transparent;
   background: transparent;
   color: white;
   cursor: pointer;
@@ -196,18 +199,24 @@ function toggleCard(event: MouseEvent) {
 }
 
 .media-play-icon {
-  width: 2rem;
-  height: 2rem;
-  padding: 0.5rem;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0.375rem;
   border-radius: 50%;
   background: rgb(0 0 0 / 60%);
+  opacity: 0;
+}
+
+.media-play:hover .media-play-icon,
+.media-play:focus-visible .media-play-icon {
+  opacity: 1;
 }
 
 .media-copy {
   min-width: 0;
   display: grid;
   align-content: center;
-  gap: 0.375rem;
+  gap: 0.25rem;
 }
 
 .media-title {
@@ -215,33 +224,28 @@ function toggleCard(event: MouseEvent) {
   width: 100%;
   min-width: 0;
   overflow: hidden;
-  border: 0;
+  border: 1px solid transparent;
   padding: 0;
   background: transparent;
   color: var(--color-text-strong);
-  font-size: var(--font-14);
-  font-weight: 650;
-  line-height: 1.375rem;
+  font-size: var(--font-13);
+  font-weight: 400;
+  line-height: 1.25rem;
   text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
-  cursor: pointer;
-}
-
-.media-title:disabled {
-  cursor: default;
 }
 
 .media-title:focus-visible,
 .media-play:focus-visible {
-  outline: 0.125rem solid var(--color-focus-outline);
-  outline-offset: -0.125rem;
+  outline: none;
+  border-color: var(--color-accent);
 }
 
 .media-metadata {
   min-width: 0;
   display: flex;
-  gap: 0.75rem;
+  gap: 0.5rem;
   color: var(--color-muted);
   font-size: var(--font-12);
   line-height: 1.125rem;
@@ -255,11 +259,7 @@ function toggleCard(event: MouseEvent) {
 }
 
 .media-author-icon {
-  display: inline-block;
-  width: 0.8125rem;
-  height: 0.8125rem;
-  margin-right: 0.3125rem;
-  vertical-align: -0.125rem;
+  display: none;
 }
 
 .media-date {
@@ -271,8 +271,7 @@ function toggleCard(event: MouseEvent) {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  flex-wrap: wrap;
-  gap: 0.75rem;
+  gap: 0.5rem;
   color: var(--color-muted);
   font-size: var(--font-12);
   font-variant-numeric: tabular-nums;
@@ -281,13 +280,12 @@ function toggleCard(event: MouseEvent) {
 .media-facts > span {
   display: inline-flex;
   align-items: center;
-  gap: 0.3125rem;
+  gap: 0.25rem;
   white-space: nowrap;
 }
 
 .media-facts :deep(.iconify) {
-  width: 0.875rem;
-  height: 0.875rem;
+  display: none;
 }
 
 .media-actions {
@@ -296,79 +294,37 @@ function toggleCard(event: MouseEvent) {
   gap: 0.25rem;
 }
 
-@media (width <= 1050px) {
-  .media-list-row,
-  .media-list-row:has(.media-actions) {
-    gap: 0.625rem;
-    padding-inline: 0.625rem;
-  }
+.media-index {
+  color: var(--color-muted);
+  font-size: var(--font-12);
+  font-variant-numeric: tabular-nums;
+}
 
-  .media-facts {
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 0.3125rem;
-  }
+.media-list-row-compact {
+  height: 3rem;
+  min-height: 3rem;
+  grid-template-columns: 1.25rem 3.75rem 2rem minmax(0, 1fr) auto;
+  gap: 0.625rem;
+  padding: 0.25rem 0.125rem;
+}
 
-  .media-metadata {
-    gap: 0.375rem;
-  }
+.media-list-row-compact:has(.media-actions) {
+  grid-template-columns: 1.25rem 3.75rem 2rem minmax(0, 1fr) auto auto;
+}
+
+.media-list-row-compact .media-cover {
+  width: 3.75rem;
+  height: 2.25rem;
+  border-radius: 0.1875rem;
+}
+
+.media-list-row-compact .media-metadata {
+  display: none;
 }
 
 @media (width <= 700px) {
-  .media-list-row,
-  .media-list-row:has(.media-actions) {
-    grid-template-columns: 1.375rem 5.5rem minmax(0, 1fr) auto;
-    gap: 0.5rem;
-  }
-
-  .media-list-row:has(.media-actions) {
-    grid-template-columns: 1.375rem 5.5rem minmax(0, 1fr) auto auto;
-  }
-
-  .media-cover {
-    width: 5.5rem;
-    height: 3.125rem;
-  }
-
-  .media-metadata {
-    flex-wrap: wrap;
-  }
-
-  .media-list-row-flat,
-  .media-list-row-flat:has(.media-actions) {
-    grid-template-columns: 1.375rem 4.5rem minmax(0, 1fr);
-    grid-template-rows: auto auto;
-    align-content: center;
-    gap: 0.25rem 0.5rem;
-    padding-inline: 0.25rem;
-  }
-
-  .media-list-row-flat .media-selection,
-  .media-list-row-flat .media-cover {
-    grid-row: 1 / 3;
-  }
-
-  .media-list-row-flat .media-cover {
-    width: 4.5rem;
-    height: 2.75rem;
-  }
-
-  .media-list-row-flat .media-facts {
-    grid-column: 3;
-    flex-direction: row;
-    justify-content: flex-start;
-    align-items: center;
-  }
-
-  .media-list-row-flat .media-metadata {
-    flex-wrap: nowrap;
-  }
-
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .media-list-row {
-    transition: none;
+  .media-date {
+    display: none;
   }
 }
 </style>
