@@ -611,7 +611,13 @@ fn bangumi_episode_title(
     long_title: &str,
     ep_id: u64,
 ) -> String {
-    let prefix = first_non_empty(&[show_title, short_title]);
+    // The API's display title already includes the episode number and long title.
+    let show_title = show_title.trim();
+    if !show_title.is_empty() {
+        return show_title.to_owned();
+    }
+
+    let prefix = short_title.trim();
     let suffix = long_title.trim();
 
     if prefix.is_empty() && suffix.is_empty() {
@@ -619,7 +625,7 @@ fn bangumi_episode_title(
     } else if prefix.is_empty() {
         suffix.to_owned()
     } else if suffix.is_empty() || prefix == suffix {
-        prefix
+        prefix.to_owned()
     } else {
         format!("{prefix} - {suffix}")
     }

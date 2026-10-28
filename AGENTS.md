@@ -1,4 +1,5 @@
 # Repository instructions
+AGENTS version: 1.0.2
 
 Use the installed Flightdeck skill for durable repository work; recover from `flightdeck/deck.md`. Keep `/flightdeck/` in `.gitignore`; these records are local-only. If the workspace is absent in a fresh checkout, do not assume local knowledge or support scripts are available.
 
