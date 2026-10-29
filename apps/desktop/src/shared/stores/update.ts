@@ -1,12 +1,12 @@
 import { getVersion } from '@tauri-apps/api/app'
 import { relaunch } from '@tauri-apps/plugin-process'
-import { check, type Update } from '@tauri-apps/plugin-updater'
+import type { Update } from '@tauri-apps/plugin-updater'
 import { defineStore } from 'pinia'
 import { markRaw } from 'vue'
 
 import { useSettingsStore } from './settings'
 import { checkAndroidUpdate } from '../api/androidUpdate'
-import { distributionUpdate, checkMirror, openUpdateDownload, mirrorTemplate, mirrorUrl, newer, type DistributionUpdate } from '../api/updateSources'
+import { distributionUpdate, checkUpdate, openUpdateDownload, mirrorTemplate, mirrorUrl, newer, type DistributionUpdate } from '../api/updateSources'
 
 type UpdateSource = 'github' | 'mirror' | 'quark' | `official:${string}`
 
@@ -189,11 +189,8 @@ export const useUpdateStore = defineStore('update', {
           this.checked = true
           return
         }
-        const proxy = useSettingsStore().saved.proxy_url ?? undefined
         try {
-          const availableUpdate = template
-            ? await checkMirror(template, proxy)
-            : await check({ timeout: 20_000, ...(proxy ? { proxy } : {}) })
+          const availableUpdate = await checkUpdate(template ?? undefined)
           this.update = availableUpdate ? markRaw(availableUpdate) : null
           this.availableVersion = this.update?.version ?? null
           this.notes = this.update?.body ?? null

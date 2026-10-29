@@ -13,7 +13,7 @@ use reqwest::header::{
     CONTENT_ENCODING, CONTENT_LENGTH, CONTENT_RANGE, ETAG, HeaderMap, HeaderName, HeaderValue,
     LAST_MODIFIED, RANGE,
 };
-use reqwest::{Client, Proxy, StatusCode};
+use reqwest::{Client, StatusCode};
 use serde::{Deserialize, Serialize};
 use tokio::fs::{self, OpenOptions};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -27,6 +27,7 @@ use crate::queue::DownloadResource;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FetchConfig {
     pub max_retries: usize,
+    pub proxy_mode: crate::settings::ProxyMode,
     pub proxy_url: Option<String>,
     pub segment_count: usize,
     pub speed_limit_bytes_per_second: Option<u64>,
@@ -36,6 +37,7 @@ impl Default for FetchConfig {
     fn default() -> Self {
         Self {
             max_retries: 3,
+            proxy_mode: crate::settings::ProxyMode::System,
             proxy_url: None,
             segment_count: 1,
             speed_limit_bytes_per_second: None,
@@ -254,16 +256,9 @@ impl ReqwestFetcher {
         config: FetchConfig,
         global_limiter: Option<Arc<BandwidthLimiter>>,
     ) -> BdlResult<Self> {
-        let mut client = Client::builder();
-        if let Some(proxy_url) = config
-            .proxy_url
-            .as_deref()
-            .filter(|value| !value.is_empty())
-        {
-            let proxy = Proxy::all(proxy_url)
-                .map_err(|error| fetch_error(format!("代理设置无效 `{proxy_url}`: {error}")))?;
-            client = client.proxy(proxy);
-        }
+        let client = config
+            .proxy_mode
+            .configure_client(Client::builder(), config.proxy_url.as_deref())?;
 
         let client = client
             .no_deflate()
@@ -359,16 +354,13 @@ impl ReqwestFetcher {
             .and_then(crate::diagnostics::classify_failure)
             .map_or("download_failed", |rule| rule.code.as_str());
         Err(fetch_error(format!(
-            "[stage=fetch_resource code={failure_code}] 下载 `{}` 失败，已尝试 {attempted} attempts across {} URLs: {}\n失败时配置: segment_count={} max_retries={} proxy_enabled={}\n各下载源最后错误：\n{}",
+            "[stage=fetch_resource code={failure_code}] 下载 `{}` 失败，已尝试 {attempted} attempts across {} URLs: {}\n失败时配置: segment_count={} max_retries={} proxy_mode={}\n各下载源最后错误：\n{}",
             resource.id,
             urls.len(),
             last_error.unwrap_or_else(|| "unknown error".to_owned()),
             self.config.segment_count,
             self.config.max_retries,
-            self.config
-                .proxy_url
-                .as_ref()
-                .is_some_and(|url| !url.trim().is_empty()),
+            self.config.proxy_mode.as_str(),
             source_errors
                 .into_iter()
                 .flatten()

@@ -6,7 +6,7 @@ import ClipboardPreference from '../../ui/ClipboardPreference.vue';
 import UiButton from '../../ui/Button.vue';
 import UiSelect from '../../ui/Select.vue';
 import UiTextField from '../../ui/TextField.vue';
-import { logLevelOptions } from './settingsCatalog';
+import { logLevelOptions, proxyModeOptions } from './settingsCatalog';
 import type { SettingsForm } from './useSettingsForm';
 import { useFileRemoval } from '../transfer/useFileRemoval';
 import FileRemovalDialog from '../transfer/FileRemovalDialog.vue';
@@ -14,7 +14,7 @@ import { maintenanceTempPreview } from '../../api/tauri';
 import LogMaintenance from './LogMaintenance.vue';
 
 const { form, desktopPaths = true } = defineProps<{ form: SettingsForm; desktopPaths?: boolean }>();
-const { settings, settingsProxyUrl, settingsLogLevel, settingsDataDir } = form;
+const { settings, settingsProxyMode, settingsProxyDescription, settingsProxyUrl, settingsLogLevel, settingsDataDir } = form;
 const cleanup = useFileRemoval('temp', maintenanceTempPreview, (token) => settings.cleanupTemp(token));
 </script>
 
@@ -24,7 +24,9 @@ const cleanup = useFileRemoval('temp', maintenanceTempPreview, (token) => settin
       <ClipboardPreference />
     </SettingsCard>
     <SettingsCard title="网络与日志">
-      <UiTextField v-model="settingsProxyUrl" label="代理地址" placeholder="例如 http://127.0.0.1:7890，留空为直连" />
+      <UiSelect v-model="settingsProxyMode" label="下载代理" :options="proxyModeOptions" :helper="settingsProxyDescription" />
+      <UiTextField v-if="settingsProxyMode === 'custom'" v-model="settingsProxyUrl" label="代理地址" placeholder="例如 http://127.0.0.1:7890" :error="settings.proxySettingsError ?? undefined" />
+      <p class="settings-note">用于任务资源下载{{ desktopPaths ? '与桌面应用更新' : '' }}，保存后新启动的下载或检查生效。</p>
       <UiSelect v-model="settingsLogLevel" label="任务日志级别" :options="logLevelOptions" />
     </SettingsCard>
     <SettingsCard v-if="desktopPaths" title="应用数据">

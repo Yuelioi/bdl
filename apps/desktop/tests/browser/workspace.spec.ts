@@ -57,7 +57,7 @@ const installTauriMock = async (
             }
             if (command === 'settings_get') {
               return {
-                settings_schema_version: 1,
+                settings_schema_version: 2,
                 usage_notice_acknowledged: true,
                 auto_check_updates: false,
                 theme_preference: selectedTheme,
@@ -75,6 +75,7 @@ const installTauriMock = async (
                 retain_raw_streams: false,
                 embed_cover: false,
                 embed_subtitles: false,
+                proxy_mode: 'system',
                 proxy_url: null,
                 log_level: 'info',
                 data_dir: null,
@@ -388,7 +389,7 @@ test.describe('specific failure diagnostics', () => {
               segment_count: 4,
               concurrent_tasks: 2,
               retry_count: 5,
-              proxy_enabled: false,
+              proxy_mode: 'system',
             };
           if (command === 'queue_list') return [task];
           if (command === 'queue_logs')
@@ -3038,7 +3039,7 @@ test('desktop update notice remains separate from Android APK guidance', async (
     };
     const invoke = target.__TAURI_INTERNALS__.invoke;
     target.__TAURI_INTERNALS__.invoke = async (command, args) =>
-      command === 'plugin:updater|check'
+      command === 'update_check'
         ? { rid: 99, currentVersion: '0.8.2', version: '0.8.3', body: '桌面更新' }
         : invoke(command, args);
   });
@@ -3109,7 +3110,7 @@ for (const [width, theme] of [
               },
             ],
           };
-        if (command === 'update_check_mirror') {
+        if (command === 'update_check') {
           target.__UPDATE_TEMPLATE__ = (args as { template: string }).template;
           return { rid: 99, currentVersion: '0.8.5', version: '99.0.0', body: '镜像更新', rawJson: {} };
         }

@@ -83,14 +83,20 @@ pub fn update_open_download(
 }
 
 #[tauri::command]
-pub async fn update_distribution() -> Result<serde_json::Value, String> {
+pub async fn update_distribution(
+    state: tauri::State<'_, bdl_tauri::state::AppState>,
+) -> Result<serde_json::Value, String> {
+    let settings = state.settings().map_err(|e| e.to_string())?;
     let platform = std::env::consts::OS;
     let arch = match std::env::consts::ARCH {
         "x86_64" => "amd64",
         "aarch64" => "arm64",
         other => other,
     };
-    reqwest::Client::builder()
+    settings
+        .proxy_mode
+        .configure_client(reqwest::Client::builder(), settings.proxy_url.as_deref())
+        .map_err(|e| e.to_string())?
         .timeout(Duration::from_secs(15))
         .build()
         .map_err(|e| e.to_string())?
@@ -112,22 +118,35 @@ pub async fn update_distribution() -> Result<serde_json::Value, String> {
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 #[tauri::command]
-pub async fn update_check_mirror(
+pub async fn update_check(
     webview: tauri::Webview,
-    template: String,
-    proxy: Option<String>,
+    state: tauri::State<'_, bdl_tauri::state::AppState>,
+    template: Option<String>,
 ) -> Result<Option<serde_json::Value>, String> {
     use tauri::Manager;
     use tauri_plugin_updater::UpdaterExt;
-    let endpoint = mirrored(template.trim(), MANIFEST)?;
+    let settings = state.settings().map_err(|e| e.to_string())?;
+    let endpoint = match template.as_deref() {
+        Some(template) => mirrored(template.trim(), MANIFEST)?,
+        None => Url::parse(MANIFEST).map_err(|e| e.to_string())?,
+    };
     let mut builder = webview
         .updater_builder()
         .timeout(Duration::from_secs(20))
         .endpoints(vec![endpoint])
         .map_err(|e| e.to_string())?;
-    if let Some(proxy) = proxy.filter(|p| !p.trim().is_empty()) {
-        builder = builder.proxy(Url::parse(&proxy).map_err(|e| e.to_string())?);
-    }
+    builder = match settings.proxy_mode {
+        bdl_core::settings::ProxyMode::System => builder,
+        bdl_core::settings::ProxyMode::Direct => builder.no_proxy(),
+        bdl_core::settings::ProxyMode::Custom => {
+            let proxy = settings
+                .proxy_url
+                .as_deref()
+                .filter(|url| !url.trim().is_empty())
+                .ok_or("手动设置代理时，请填写代理地址。")?;
+            builder.proxy(Url::parse(proxy).map_err(|_| "代理地址无效。")?)
+        }
+    };
     let result = builder
         .build()
         .map_err(|e| e.to_string())?
@@ -137,7 +156,9 @@ pub async fn update_check_mirror(
     let Some(mut update) = result else {
         return Ok(None);
     };
-    update.download_url = mirrored(template.trim(), update.download_url.as_str())?;
+    if let Some(template) = template {
+        update.download_url = mirrored(template.trim(), update.download_url.as_str())?;
+    }
     let mut metadata = serde_json::json!({
         "currentVersion": update.current_version, "version": update.version,
         "body": update.body, "rawJson": update.raw_json,
@@ -148,7 +169,7 @@ pub async fn update_check_mirror(
 
 #[cfg(any(target_os = "android", target_os = "ios"))]
 #[tauri::command]
-pub async fn update_check_mirror() -> Result<Option<serde_json::Value>, String> {
+pub async fn update_check() -> Result<Option<serde_json::Value>, String> {
     Err("移动端请下载安装包后手动安装。".into())
 }
 

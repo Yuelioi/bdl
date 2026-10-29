@@ -11,13 +11,13 @@ describe('copied diagnostic environment', () => {
     vi.mocked(diagnosticsEnvironment).mockResolvedValue({
       app_version: '0.8.4', os: 'android', arch: 'aarch64', device_info_available: true,
       device: { os_version: '16', android_sdk: 36, webview_version: '130.0' },
-      segment_count: 4, concurrent_tasks: 2, retry_count: 5, proxy_enabled: true,
+      segment_count: 4, concurrent_tasks: 2, retry_count: 5, proxy_mode: 'custom',
     })
     const text = await captureDiagnosticEnvironment()
     expect(text).toContain('系统: android 16 · aarch64')
     expect(text).toContain('Android SDK: 36')
     expect(text).toContain('WebView: 130.0')
-    expect(text).toContain('分段 4 · 并发 2 · 重试 5 · 应用代理开启')
+    expect(text).toContain('分段 4 · 并发 2 · 重试 5 · 下载代理: 手动设置代理')
     expect(text).toContain('BDL: 0.8.4')
   })
 

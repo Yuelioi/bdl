@@ -223,7 +223,7 @@ export interface DiagnosticEnvironment {
   segment_count: number;
   concurrent_tasks: number;
   retry_count: number;
-  proxy_enabled: boolean;
+  proxy_mode: ProxyMode;
 }
 
 export interface QueueProgressEntry {
@@ -267,6 +267,8 @@ export interface MediaPreferences {
 
 export type AudioCodecPreference = 'aac' | 'flac' | 'eac3';
 
+export type ProxyMode = 'system' | 'direct' | 'custom';
+
 export interface SettingsSnapshot {
   download_presets: DownloadPreset[];
   selected_download_preset: string;
@@ -297,6 +299,7 @@ export interface SettingsSnapshot {
   retain_raw_streams: boolean;
   embed_cover: boolean;
   embed_subtitles: boolean;
+  proxy_mode: ProxyMode;
   proxy_url: string | null;
   log_level: LogLevel;
   data_dir: string | null;

@@ -52,8 +52,8 @@ export function mirrorUrl(template: string, official: string): string {
   return url.href
 }
 
-export async function checkMirror(template: string, proxy?: string): Promise<Update | null> {
-  const metadata = await invoke<ConstructorParameters<typeof Update>[0] | null>('update_check_mirror', { template, proxy })
+export async function checkUpdate(template?: string): Promise<Update | null> {
+  const metadata = await invoke<ConstructorParameters<typeof Update>[0] | null>('update_check', { template })
   return metadata ? new Update(metadata) : null
 }
 

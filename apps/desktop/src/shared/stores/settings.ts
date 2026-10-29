@@ -73,7 +73,7 @@ export const namingVariables = [
 ]
 
 const defaultSettings = (): SettingsSnapshot => ({
-  settings_schema_version: 1,
+  settings_schema_version: 2,
   clipboard_monitor_enabled: false,
   usage_notice_acknowledged: false,
   auto_check_updates: false,
@@ -107,6 +107,7 @@ const defaultSettings = (): SettingsSnapshot => ({
   retain_raw_streams: false,
   embed_cover: false,
   embed_subtitles: false,
+  proxy_mode: 'system',
   proxy_url: null,
   log_level: 'info',
   data_dir: null,
@@ -183,6 +184,18 @@ export const useSettingsStore = defineStore('settings', {
     environmentCheckId: 0,
   }),
   getters: {
+    proxySettingsError(state): string | null {
+      if (state.draft.proxy_mode !== 'custom') return null
+      const address = state.draft.proxy_url?.trim()
+      if (!address) return '手动设置代理时，请填写代理地址。'
+      try {
+        const url = new URL(address)
+        if (!['http:', 'https:', 'socks5:', 'socks5h:'].includes(url.protocol) || !url.hostname || url.search || url.hash) {
+          return '代理地址格式无效，请检查协议、主机及端口。'
+        }
+      } catch { return '请填写有效的代理地址，例如 http://127.0.0.1:7890。' }
+      return null
+    },
     downloadPresetError(state): string | null {
       return downloadPresetsError(state.draft.download_presets, state.draft.selected_download_preset)
     },
@@ -357,7 +370,7 @@ export const useSettingsStore = defineStore('settings', {
     async saveDraft() {
       const ui = useUiStore()
       const namingError = validateNamingTemplate(this.draft.naming_template)
-      const compatibilityError = embeddingContainerError(this.draft) ?? this.downloadPresetError
+      const compatibilityError = embeddingContainerError(this.draft) ?? this.downloadPresetError ?? this.proxySettingsError
       if (namingError || compatibilityError) {
         this.error = namingError ?? compatibilityError
         this.setNotice(this.error ?? '请检查设置', 'warning')
@@ -664,6 +677,9 @@ export const useSettingsStore = defineStore('settings', {
     },
     setAutoRefreshExpiredUrls(value: boolean) {
       this.draft.auto_refresh_expired_urls = value
+    },
+    setProxyMode(value: SettingsSnapshot['proxy_mode']) {
+      this.draft.proxy_mode = value
     },
     setProxyUrl(value: string) {
       const trimmed = value.trim()

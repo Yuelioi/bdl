@@ -11,6 +11,12 @@ export const settingsSections = [
 
 const options = <T extends readonly SelectOption[]>(items: T): T => items;
 
+export const proxyModeOptions = options([
+  { label: '使用系统代理', value: 'system' },
+  { label: '手动设置代理', value: 'custom' },
+  { label: '不使用代理（直连）', value: 'direct' },
+]);
+
 export const concurrentTaskOptions = options([
   { label: '1', value: '1' },
   { label: '2', value: '2' },

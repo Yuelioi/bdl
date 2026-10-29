@@ -1,5 +1,5 @@
-import { distributionUpdate, checkMirror, openUpdateDownload } from '../api/updateSources'
-vi.mock('../api/updateSources', async (original) => ({ ...await original<object>(), distributionUpdate: vi.fn(), checkMirror: vi.fn(), openUpdateDownload: vi.fn() }))
+import { distributionUpdate, checkUpdate, openUpdateDownload } from '../api/updateSources'
+vi.mock('../api/updateSources', async (original) => ({ ...await original<object>(), distributionUpdate: vi.fn(), checkUpdate: vi.fn(), openUpdateDownload: vi.fn() }))
 import { useSettingsStore } from './settings'
 import { settingsUpdate } from '../api/tauri'
 vi.mock('../api/tauri', () => ({ settingsUpdate: vi.fn() }))
@@ -8,11 +8,11 @@ vi.mock('../api/androidUpdate', () => ({ checkAndroidUpdate: vi.fn() }))
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { check, relaunch } = vi.hoisted(() => ({ check: vi.fn(), relaunch: vi.fn() }))
+const { relaunch } = vi.hoisted(() => ({ relaunch: vi.fn() }))
+const check = vi.mocked(checkUpdate)
 
 vi.mock('@tauri-apps/api/app', () => ({ getVersion: vi.fn().mockResolvedValue('1.2.3') }))
 vi.mock('@tauri-apps/plugin-process', () => ({ relaunch }))
-vi.mock('@tauri-apps/plugin-updater', () => ({ check }))
 
 import { useUpdateStore } from './update'
 
@@ -20,7 +20,7 @@ describe('update preferences', () => {
   beforeEach(() => {
     localStorage.clear()
     vi.mocked(distributionUpdate).mockReset().mockRejectedValue(new Error("site offline"))
-    vi.mocked(checkMirror).mockReset()
+    vi.mocked(checkUpdate).mockReset()
     setActivePinia(createPinia())
     const settings = useSettingsStore()
     settings.loaded = true
@@ -105,7 +105,7 @@ describe('update preferences', () => {
       }
     }
 
-    check.mockResolvedValue(new PrivateUpdate())
+    check.mockResolvedValue(new PrivateUpdate() as unknown as Awaited<ReturnType<typeof checkUpdate>>)
     const update = useUpdateStore()
     await update.checkForUpdate()
     await update.install()
@@ -122,9 +122,9 @@ describe('update preferences', () => {
       { id: 'fast', kind: 'external_link', label: 'GHFast', delivery: { mode: 'file', authenticationRequired: false, url: 'https://fast.test/github.com/Yuelioi/bdl/releases/download/v1.2.4/BDL.exe' } },
     ],
   }
-  it('uses site mirror for signed checks and forwards saved network proxy', async () => {
+  it('uses the native updater for official and custom mirrors with saved network settings', async () => {
     vi.mocked(distributionUpdate).mockResolvedValue(site)
-    vi.mocked(checkMirror).mockResolvedValue(null)
+    vi.mocked(checkUpdate).mockResolvedValue(null)
     useSettingsStore().saved.proxy_url = 'http://127.0.0.1:7890'
     const update = useUpdateStore()
     await update.loadSources()
@@ -132,8 +132,7 @@ describe('update preferences', () => {
     expect(mirrors.map(option => option.value)).toEqual(['official:https://mirror.test/{url}', 'official:https://fast.test/{path}'])
     update.setSource(mirrors[0]!.value)
     await update.checkForUpdate()
-    expect(checkMirror).toHaveBeenCalledWith('https://mirror.test/{url}', 'http://127.0.0.1:7890')
-    expect(check).not.toHaveBeenCalled()
+    expect(checkUpdate).toHaveBeenCalledWith('https://mirror.test/{url}')
     await update.install()
     expect(openUpdateDownload).toHaveBeenCalledWith(
       site.sources[1]!.delivery.url,
@@ -156,7 +155,7 @@ describe('update preferences', () => {
     expect(update.hasUpdate).toBe(false)
     update.setSource('mirror', 'https://custom.test/{url}')
     await update.checkForUpdate()
-    expect(checkMirror).toHaveBeenLastCalledWith('https://custom.test/{url}', 'http://127.0.0.1:7890')
+    expect(checkUpdate).toHaveBeenLastCalledWith('https://custom.test/{url}')
     const restored = useUpdateStore(createPinia())
     await restored.initialize()
     expect(restored.source).toBe('mirror')

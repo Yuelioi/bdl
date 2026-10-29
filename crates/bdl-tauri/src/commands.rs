@@ -437,6 +437,7 @@ pub(crate) fn queue_task_launch_context(
 ) -> QueueTaskLaunchContext {
     let fetch_config = FetchConfig {
         max_retries: retry_count(&settings),
+        proxy_mode: settings.proxy_mode,
         proxy_url: settings.proxy_url.clone(),
         segment_count: segment_count(&settings),
         speed_limit_bytes_per_second: task_speed_limit_bytes_per_second,
@@ -2905,6 +2906,7 @@ mod tests {
     #[test]
     fn task_launch_context_uses_the_supplied_latest_settings() {
         let settings = super::SettingsSnapshot {
+            proxy_mode: bdl_core::settings::ProxyMode::Custom,
             proxy_url: Some("http://127.0.0.1:7890".to_owned()),
             retry_count: 5,
             segment_count: 8,
@@ -2919,6 +2921,7 @@ mod tests {
 
         assert_eq!(launch.settings, settings);
         assert_eq!(launch.fetch_config.max_retries, 5);
+        assert_eq!(launch.fetch_config.proxy_mode, settings.proxy_mode);
         assert_eq!(
             launch.fetch_config.proxy_url.as_deref(),
             Some("http://127.0.0.1:7890")

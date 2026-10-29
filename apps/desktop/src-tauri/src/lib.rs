@@ -73,7 +73,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             desktop_read_clipboard_text,
             updates::update_distribution,
-            updates::update_check_mirror,
+            updates::update_check,
             updates::update_open_download,
             bdl_tauri::commands::parse_create_source,
             bdl_tauri::commands::parse_load_more,

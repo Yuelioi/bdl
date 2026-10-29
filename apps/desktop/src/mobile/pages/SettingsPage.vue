@@ -37,9 +37,9 @@ const {
     <SettingsLeaveDialog
       v-model="settingsLeaveOpen"
       :saving="settings.saving"
-      :invalid="Boolean(settings.namingTemplateError || settingsGlobalSpeedLimitError || settingsEmbeddingFormatError)"
+      :invalid="Boolean(settings.namingTemplateError || settings.proxySettingsError || settingsGlobalSpeedLimitError || settingsEmbeddingFormatError)"
       :error="
-        settings.error || settingsGlobalSpeedLimitError || settingsEmbeddingFormatError || settings.namingTemplateError
+        settings.error || settings.proxySettingsError || settingsGlobalSpeedLimitError || settingsEmbeddingFormatError || settings.namingTemplateError
       "
       @save="saveAndLeave"
       @discard="discardAndLeave"
@@ -83,6 +83,7 @@ const {
               settings.saving ||
               !settingsFormChanged ||
               Boolean(settings.namingTemplateError) ||
+              Boolean(settings.proxySettingsError) ||
               Boolean(settingsGlobalSpeedLimitError) ||
               Boolean(settingsEmbeddingFormatError)
             "

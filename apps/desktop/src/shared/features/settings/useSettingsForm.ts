@@ -160,6 +160,15 @@ export function useSettingsForm() {
     get: () => settings.draft.proxy_url ?? '',
     set: (value: string) => settings.setProxyUrl(value),
   });
+  const settingsProxyMode = computed({
+    get: () => settings.draft.proxy_mode,
+    set: (value: typeof settings.draft.proxy_mode) => settings.setProxyMode(value),
+  });
+  const settingsProxyDescription = computed(() => ({
+    system: '使用系统或环境变量中的代理配置，未配置时直连。',
+    direct: '忽略系统和环境变量中的代理配置，直接连接。',
+    custom: '使用下方填写的代理地址。',
+  })[settings.draft.proxy_mode]);
   const settingsLogLevel = computed({
     get: () => settings.draft.log_level,
     set: (value: string) => settings.setLogLevel(value),
@@ -251,6 +260,8 @@ export function useSettingsForm() {
     settingsEmbedCover,
     settingsEmbedSubtitles,
     settingsProxyUrl,
+    settingsProxyMode,
+    settingsProxyDescription,
     settingsLogLevel,
     settingsDataDir,
     settingsDuplicateDescription,

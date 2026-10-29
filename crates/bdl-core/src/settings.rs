@@ -8,6 +8,49 @@ use crate::planner::{
 
 const MAX_SPEED_LIMIT_BYTES_PER_SECOND: u64 = 10 * 1024 * 1024 * 1024;
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProxyMode {
+    #[default]
+    System,
+    Direct,
+    Custom,
+}
+
+impl ProxyMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::System => "system",
+            Self::Direct => "direct",
+            Self::Custom => "custom",
+        }
+    }
+
+    pub fn configure_client(
+        self,
+        builder: reqwest::ClientBuilder,
+        proxy_url: Option<&str>,
+    ) -> BdlResult<reqwest::ClientBuilder> {
+        match self {
+            Self::System => Ok(builder),
+            Self::Direct => Ok(builder.no_proxy()),
+            Self::Custom => {
+                let address = required_proxy_url(proxy_url)?;
+                validate_proxy_url(Some(address))?;
+                let proxy =
+                    reqwest::Proxy::all(address).map_err(|_| crate::error::BdlError::Planning {
+                        message: "代理地址无效。".into(),
+                    })?;
+                Ok(builder.proxy(proxy))
+            }
+        }
+    }
+}
+
+fn legacy_settings_schema_version() -> u16 {
+    1
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ParseRules {
@@ -59,6 +102,7 @@ pub struct DocumentTreeDirectory {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AppSettings {
+    #[serde(default = "legacy_settings_schema_version")]
     pub settings_schema_version: u16,
     #[serde(default)]
     pub clipboard_monitor_enabled: bool,
@@ -89,6 +133,7 @@ pub struct AppSettings {
     pub retain_raw_streams: bool,
     pub embed_cover: bool,
     pub embed_subtitles: bool,
+    pub proxy_mode: ProxyMode,
     pub proxy_url: Option<String>,
     pub log_level: String,
     pub data_dir: Option<String>,
@@ -103,7 +148,7 @@ pub struct AppSettings {
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
-            settings_schema_version: 1,
+            settings_schema_version: 2,
             clipboard_monitor_enabled: false,
             usage_notice_acknowledged: false,
             auto_check_updates: false,
@@ -132,6 +177,7 @@ impl Default for AppSettings {
             retain_raw_streams: false,
             embed_cover: false,
             embed_subtitles: false,
+            proxy_mode: ProxyMode::System,
             proxy_url: None,
             log_level: "info".to_owned(),
             data_dir: None,
@@ -147,8 +193,8 @@ impl Default for AppSettings {
 
 impl AppSettings {
     pub fn normalized(mut self) -> Self {
-        // New fields (including nested settings) use serde(default). Existing valid
-        // choices are not rewritten based on a release/schema version.
+        // Missing nested fields retain defaults. The v1 proxy setting is migrated
+        // below because an empty custom address never meant explicit direct mode.
         if self.naming_template.trim().is_empty() {
             self.naming_template = DEFAULT_NAMING_TEMPLATE.to_owned();
         }
@@ -179,6 +225,14 @@ impl AppSettings {
             .map(str::trim)
             .filter(|url| !url.is_empty())
             .map(ToOwned::to_owned);
+        if self.settings_schema_version < 2 {
+            self.proxy_mode = if self.proxy_url.is_some() {
+                ProxyMode::Custom
+            } else {
+                ProxyMode::System
+            };
+            self.settings_schema_version = 2;
+        }
         self.data_dir = self
             .data_dir
             .as_deref()
@@ -248,7 +302,9 @@ impl AppSettings {
         self.media_preferences.validate()?;
         MissingQualityPolicy::parse(&self.missing_quality_policy)?;
         validate_log_level(&self.log_level)?;
-        validate_proxy_url(self.proxy_url.as_deref())?;
+        if self.proxy_mode == ProxyMode::Custom {
+            validate_proxy_url(Some(required_proxy_url(self.proxy_url.as_deref())?))?;
+        }
         validate_segment_count(self.segment_count)?;
         validate_speed_limit(self.global_speed_limit_bytes_per_second, "全局下载限速")?;
         if let Some(directory) = &self.document_tree_output
@@ -327,6 +383,15 @@ fn validate_log_level(value: &str) -> BdlResult<()> {
     }
 }
 
+fn required_proxy_url(value: Option<&str>) -> BdlResult<&str> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| crate::error::BdlError::Planning {
+            message: "手动设置代理时，请填写代理地址。".into(),
+        })
+}
+
 fn validate_proxy_url(value: Option<&str>) -> BdlResult<()> {
     let Some(value) = value else {
         return Ok(());
@@ -334,6 +399,13 @@ fn validate_proxy_url(value: Option<&str>) -> BdlResult<()> {
     let parsed = url::Url::parse(value).map_err(|error| crate::error::BdlError::Planning {
         message: format!("代理地址无效：{error}"),
     })?;
+    if matches!(parsed.scheme(), "http" | "https" | "socks5" | "socks5h")
+        && (parsed.host_str().is_none() || parsed.fragment().is_some() || parsed.query().is_some())
+    {
+        return Err(crate::error::BdlError::Planning {
+            message: "代理地址须包含主机，且不能包含查询参数或片段。".into(),
+        });
+    }
     match parsed.scheme() {
         "http" | "https" | "socks5" | "socks5h" => Ok(()),
         scheme => Err(crate::error::BdlError::Planning {

@@ -180,7 +180,7 @@ fn settings_normalization_preserves_explicit_single_segment_without_version() {
             .expect("legacy settings should deserialize");
     let migrated = legacy.normalized();
 
-    assert_eq!(migrated.settings_schema_version, 1);
+    assert_eq!(migrated.settings_schema_version, 2);
     assert_eq!(migrated.segment_count, 1);
 
     let explicit_single_segment = AppSettings {
@@ -226,6 +226,7 @@ fn settings_validate_rejects_invalid_media_defaults() {
 #[test]
 fn settings_validate_rejects_invalid_proxy_url() {
     let settings = AppSettings {
+        proxy_mode: bdl_core::settings::ProxyMode::Custom,
         proxy_url: Some("file:///not-a-proxy".to_owned()),
         ..AppSettings::default()
     };

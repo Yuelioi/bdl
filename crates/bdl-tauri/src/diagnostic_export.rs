@@ -14,7 +14,7 @@ pub struct DiagnosticEnvironment {
     pub segment_count: usize,
     pub concurrent_tasks: usize,
     pub retry_count: usize,
-    pub proxy_enabled: bool,
+    pub proxy_mode: bdl_core::settings::ProxyMode,
 }
 
 pub(crate) async fn collect_environment(
@@ -36,10 +36,7 @@ pub(crate) async fn collect_environment(
         segment_count: settings.segment_count,
         concurrent_tasks: settings.concurrent_tasks,
         retry_count: settings.retry_count,
-        proxy_enabled: settings
-            .proxy_url
-            .as_ref()
-            .is_some_and(|url| !url.trim().is_empty()),
+        proxy_mode: settings.proxy_mode,
     })
 }
 
