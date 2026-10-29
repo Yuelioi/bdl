@@ -147,7 +147,6 @@ const {
 
     <FileRemovalDialog :controller="removal" />
     <UiDialog v-model="taskDetailOpen" :title="selectedDetailTitle" size="wide">
-      <div class="task-detail-dialog">
         <TaskInspector
           :task="queue.selectedTask"
           :progress="selectedProgress"
@@ -155,7 +154,6 @@ const {
           :logs-loading="selectedLogsLoading"
           @refresh-logs="refreshSelectedLogs"
         />
-      </div>
     </UiDialog>
 
     <UiDialog v-model="scheduleDialogOpen" title="设置开始时间">

@@ -417,7 +417,7 @@ impl ReqwestFetcher {
         let response = tokio::select! {
             _ = cancel_token.cancelled() => return Err(cancelled_error()),
             response = request.send() => response
-                .map_err(|error| fetch_error(format!("请求下载地址失败: {error}")))?,
+                .map_err(|error| request_send_error("请求下载地址失败", &format!("method=GET range_start={resume_from}"), error))?,
         };
 
         validate_get_status(response.status(), resume_from)?;
@@ -678,7 +678,7 @@ impl ReqwestFetcher {
         let response = tokio::select! {
             _ = cancel_token.cancelled() => return Err(cancelled_error()),
             response = request.send() => response
-                .map_err(|error| fetch_error(format!("请求分段下载地址失败: {error}")))?,
+                .map_err(|error| request_send_error("请求分段下载地址失败", &format!("method=GET segment={} range=bytes={request_start}-{}", segment.index, segment.end), error))?,
         };
 
         if response.status() != StatusCode::PARTIAL_CONTENT {
@@ -761,7 +761,7 @@ impl ReqwestFetcher {
         let response = tokio::select! {
             _ = cancel_token.cancelled() => return Err(cancelled_error()),
             response = request.send() => response
-                .map_err(|error| fetch_error(format!("请求资源长度失败: {error}")))?,
+                .map_err(|error| request_send_error("请求资源长度失败", "method=HEAD", error))?,
         };
 
         if response.status().is_success() {
@@ -784,7 +784,7 @@ impl ReqwestFetcher {
         let response = tokio::select! {
             _ = cancel_token.cancelled() => return Err(cancelled_error()),
             response = request.send() => response
-                .map_err(|error| fetch_error(format!("请求资源长度失败: {error}")))?,
+                .map_err(|error| request_send_error("请求资源长度失败", "method=GET range=bytes=0-0", error))?,
         };
 
         if !response.status().is_success() {
@@ -814,15 +814,25 @@ fn response_diagnostic_context(response: &reqwest::Response) -> String {
     )
 }
 
-fn response_body_error(phase: &str, context: &str, error: reqwest::Error) -> BdlError {
+fn request_send_error(phase: &str, context: &str, error: reqwest::Error) -> BdlError {
     let error = error.without_url();
     let code = if error.is_timeout() {
         "network_timeout"
     } else {
-        "response_body_failed"
+        "download_failed"
     };
+    fetch_error(crate::account::redact_sensitive(&format!(
+        "[stage=request_send code={code}] {phase}: {error}; {context}; is_connect={} is_timeout={} is_request={}; cause={}",
+        error.is_connect(),
+        error.is_timeout(),
+        error.is_request(),
+        request_error_causes(&error)
+    )))
+}
+
+fn request_error_causes(error: &reqwest::Error) -> String {
     let mut causes = Vec::new();
-    let mut current = std::error::Error::source(&error);
+    let mut current = std::error::Error::source(error);
     while let Some(cause) = current {
         causes.push(cause.to_string());
         if causes.len() >= 8 {
@@ -830,12 +840,22 @@ fn response_body_error(phase: &str, context: &str, error: reqwest::Error) -> Bdl
         }
         current = cause.source();
     }
+    causes.join(" <- ")
+}
+
+fn response_body_error(phase: &str, context: &str, error: reqwest::Error) -> BdlError {
+    let error = error.without_url();
+    let code = if error.is_timeout() {
+        "network_timeout"
+    } else {
+        "response_body_failed"
+    };
     fetch_error(crate::account::redact_sensitive(&format!(
         "[stage=response_body code={code}] {phase}: {error}; {context}; is_decode={} is_body={} is_timeout={}; cause={}",
         error.is_decode(),
         error.is_body(),
         error.is_timeout(),
-        causes.join(" <- ")
+        request_error_causes(&error)
     )))
 }
 

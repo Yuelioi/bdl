@@ -501,7 +501,7 @@ const classifyTaskIssue = (task: DownloadTask, logs: QueueLogEntry[]): Classifie
   if (failedResource) {
     return {
       label: `${resourceIntentText(failedResource.intent)}轨道失败`,
-      detail: '某个媒体轨道下载失败，具体原因请查看事件或原始日志。',
+      detail: '某个媒体轨道下载失败，具体原因请查看日志。',
       trackLabel,
       recommendedAction: 'retry',
       recommendedActionLabel: actionLabel('retry'),
@@ -510,7 +510,7 @@ const classifyTaskIssue = (task: DownloadTask, logs: QueueLogEntry[]): Classifie
 
   return {
     label: '任务失败',
-    detail: '任务执行失败，具体原因请查看事件或原始日志。',
+    detail: '任务执行失败，具体原因请查看日志。',
     trackLabel,
     recommendedAction: null,
     recommendedActionLabel: '查看原始日志',

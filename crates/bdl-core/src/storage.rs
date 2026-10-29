@@ -17,6 +17,12 @@ pub struct TaskStorage {
     conn: Connection,
 }
 
+#[derive(Debug, Serialize)]
+pub struct TaskLogCleanup {
+    pub removed_logs: usize,
+    pub task_ids: Vec<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompletedRecord {
     pub id: String,
@@ -44,7 +50,9 @@ impl TaskStorage {
         conn.pragma_update(None, "foreign_keys", "ON")?;
         run_migrations(&conn)?;
 
-        Ok(Self { conn })
+        let mut storage = Self { conn };
+        storage.prune_expired_task_logs()?;
+        Ok(storage)
     }
 
     pub fn table_names(&self) -> BdlResult<Vec<String>> {
@@ -471,12 +479,51 @@ impl TaskStorage {
         Ok(resources)
     }
 
-    fn prune_task_logs(&mut self, task_id: &str) -> BdlResult<()> {
+    pub fn task_log_usage(&self) -> BdlResult<(u64, u64, u64)> {
+        Ok(self.conn.query_row(
+            "SELECT COUNT(*), COALESCE(SUM(length(CAST(message AS BLOB))), 0),
+                    COALESCE(SUM(CASE WHEN tasks.status IN ('\"completed\"', '\"failed\"', '\"cancelled\"') THEN 1 ELSE 0 END), 0)
+             FROM task_logs JOIN tasks ON tasks.id = task_logs.task_id",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )?)
+    }
+
+    /// Keep active, queued and paused attempts intact: queue recovery reads their logs.
+    pub fn clear_finished_task_logs(&mut self) -> BdlResult<TaskLogCleanup> {
+        let transaction = self.conn.transaction()?;
+        let task_ids = {
+            let mut statement = transaction.prepare(
+                "SELECT DISTINCT task_id FROM task_logs JOIN tasks ON tasks.id = task_logs.task_id
+                 WHERE tasks.status IN ('\"completed\"', '\"failed\"', '\"cancelled\"')",
+            )?;
+            statement
+                .query_map([], |row| row.get::<_, String>(0))?
+                .collect::<Result<Vec<_>, _>>()?
+        };
+        let removed_logs = transaction.execute(
+            "DELETE FROM task_logs WHERE task_id IN
+             (SELECT id FROM tasks WHERE status IN ('\"completed\"', '\"failed\"', '\"cancelled\"'))",
+            [],
+        )?;
+        transaction.commit()?;
+        Ok(TaskLogCleanup {
+            removed_logs,
+            task_ids,
+        })
+    }
+
+    fn prune_expired_task_logs(&mut self) -> BdlResult<()> {
         let cutoff = (Utc::now() - Duration::days(TASK_LOG_RETENTION_DAYS)).to_rfc3339();
         self.conn.execute(
             "DELETE FROM task_logs WHERE datetime(created_at) < datetime(?1)",
             [cutoff],
         )?;
+        Ok(())
+    }
+
+    fn prune_task_logs(&mut self, task_id: &str) -> BdlResult<()> {
+        self.prune_expired_task_logs()?;
 
         let max_logs = i64::try_from(MAX_TASK_LOGS_PER_TASK).unwrap_or(i64::MAX);
         self.conn.execute(

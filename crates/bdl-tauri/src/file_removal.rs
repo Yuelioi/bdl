@@ -154,7 +154,7 @@ fn is_link(metadata: &fs::Metadata) -> bool {
         false
     }
 }
-fn validate_ancestors(path: &Path) -> BdlResult<()> {
+pub(crate) fn validate_ancestors(path: &Path) -> BdlResult<()> {
     for ancestor in path.ancestors() {
         match fs::symlink_metadata(ancestor) {
             Ok(metadata) if is_link(&metadata) => {

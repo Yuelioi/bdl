@@ -419,6 +419,7 @@ test.describe('specific failure diagnostics', () => {
       const dialog = page.getByRole('dialog', { name: '源站拒绝访问测试', exact: true });
       await expect(dialog.getByRole('heading', { name: '任务失败：源站拒绝访问' })).toBeVisible();
       await expect(dialog).toContainText('单凭 403 无法判断');
+      await dialog.getByRole('button', { name: '查看日志', exact: true }).click();
       await dialog.getByRole('button', { name: '复制诊断信息', exact: true }).click();
       const copied = await page.evaluate(
         () => (window as unknown as { __COPIED_DIAGNOSTIC__: string }).__COPIED_DIAGNOSTIC__,
@@ -430,8 +431,6 @@ test.describe('specific failure diagnostics', () => {
       expect(copied).toContain('分段 4 · 并发 2 · 重试 5');
       expect(copied).not.toContain('private-cookie');
       expect(copied).not.toContain('private-token');
-      await dialog.getByRole('tab', { name: /原始日志/ }).click();
-      await dialog.getByRole('button', { name: '一键复制', exact: true }).click();
       await expect(dialog.getByRole('button', { name: '已复制', exact: true })).toBeVisible();
       const copiedLogs = await page.evaluate(
         () => (window as unknown as { __COPIED_DIAGNOSTIC__: string }).__COPIED_DIAGNOSTIC__,
@@ -441,7 +440,7 @@ test.describe('specific failure diagnostics', () => {
       expect(copiedLogs).toContain('[error] 2026-10-14T12:02:00Z');
       expect(copiedLogs).toContain('HTTP 403 Forbidden');
       expect(copiedLogs).toContain('source=3 cause=last-source');
-      expect(copiedLogs).not.toContain('诊断:');
+      expect(copiedLogs).not.toContain('事件:');
       expect(copiedLogs).not.toContain('private-cookie');
       expect(copiedLogs).not.toContain('private-token');
       await page.evaluate(() =>
@@ -454,9 +453,9 @@ test.describe('specific failure diagnostics', () => {
           },
         }),
       );
-      await dialog.getByRole('button', { name: /^(已复制|一键复制)$/ }).click();
+      await dialog.getByRole('button', { name: /^(已复制|复制诊断信息)$/ }).click();
       await expect(page.getByText('复制失败，请重试', { exact: true })).toBeVisible();
-      await expect(dialog.getByRole('button', { name: '一键复制', exact: true })).toBeVisible();
+      await expect(dialog.getByRole('button', { name: '复制诊断信息', exact: true })).toBeVisible();
       await page.addInitScript(() => {
         (window as unknown as { __EMPTY_LOGS__: boolean }).__EMPTY_LOGS__ = true;
       });
@@ -464,8 +463,8 @@ test.describe('specific failure diagnostics', () => {
       await page.getByRole('button', { name: /传输/ }).click();
       await row.getByRole('button', { name: /更多操作/ }).click();
       await page.getByRole(device === 'desktop' ? 'menuitem' : 'button', { name: '详情和诊断', exact: true }).click();
-      await dialog.getByRole('tab', { name: /原始日志/ }).click();
-      await expect(dialog.getByRole('button', { name: '一键复制', exact: true })).toBeDisabled();
+      await dialog.getByRole('tab', { name: /日志/ }).click();
+      await expect(dialog.getByRole('button', { name: '复制诊断信息', exact: true })).toBeDisabled();
     });
   }
 });
@@ -3884,7 +3883,7 @@ test('recent failure report survives page changes and can be cleared', async ({ 
   await page.locator('.error-details summary').click();
   await expect(page.locator('.error-details pre')).toContainText('API diagnostic sentinel');
   await expect(page.locator('.error-details pre')).not.toContainText('do-not-copy');
-  await page.getByRole('button', { name: '导出诊断', exact: true }).click();
+  await page.getByRole('button', { name: '导出全部诊断', exact: true }).click();
   const exported = await page.evaluate(() => (window as unknown as { exportedErrors: string }).exportedErrors);
   expect(exported).toContain('API diagnostic sentinel');
   expect(exported).not.toContain('do-not-copy');

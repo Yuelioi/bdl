@@ -56,6 +56,7 @@ interface QueueState {
   selectedTaskIds: string[]
   logsByTask: Record<string, QueueLogEntry[]>
   logsLoadingByTask: Record<string, boolean>
+  logVersions: Record<string, number>
   progressByTask: Record<string, QueueTaskProgressState>
   outputSizesByTask: Record<string, { path: string; bytes: number | null }>
   outputSizesLoading: string[]
@@ -98,6 +99,7 @@ export const useQueueStore = defineStore('queue', {
     selectedTaskIds: [],
     logsByTask: {},
     logsLoadingByTask: {},
+    logVersions: {},
     progressByTask: {},
     outputSizesByTask: {},
     outputSizesLoading: [],
@@ -536,14 +538,23 @@ export const useQueueStore = defineStore('queue', {
     },
     async loadLogs(taskId: string) {
       const ui = useUiStore()
+      const version = this.logVersions[taskId] ?? 0
       this.logsLoadingByTask[taskId] = true
       try {
         const logs = await queueLogs(taskId, LOG_LIMIT)
-        this.logsByTask[taskId] = mergeLogs(logs, this.logsByTask[taskId] ?? [])
+        if (version === (this.logVersions[taskId] ?? 0)) {
+          this.logsByTask[taskId] = mergeLogs(logs, this.logsByTask[taskId] ?? [])
+        }
       } catch (error) {
         ui.pushToast(errorMessage(error), 'danger')
       } finally {
         this.logsLoadingByTask[taskId] = false
+      }
+    },
+    invalidateLogs(taskIds: string[]) {
+      for (const taskId of taskIds) {
+        this.logVersions[taskId] = (this.logVersions[taskId] ?? 0) + 1
+        delete this.logsByTask[taskId]
       }
     },
     async runTaskCommand(command: () => Promise<DownloadTask>, successMessage: string): Promise<boolean> {

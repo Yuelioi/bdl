@@ -51,22 +51,6 @@
   border-top: 1px solid var(--color-border);
 }
 
-.task-detail-dialog {
-  min-width: 0;
-  min-height: 0;
-  height: min(680px, calc(100vh - 180px));
-}
-
-.task-detail-dialog :deep(.task-inspector) {
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: auto minmax(0, 1fr);
-}
-
-.task-detail-dialog :deep(.ui-tabs),
-.task-detail-dialog :deep(.tab-panel) {
-  grid-column: auto;
-}
-
 .context-menu-scrim {
   position: fixed;
   inset: 0;

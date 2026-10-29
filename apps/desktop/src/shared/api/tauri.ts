@@ -13,6 +13,8 @@ import type {
   DownloadDirectoryHealth,
   DuplicateTaskPolicy,
   MaintenanceResult,
+  LogMaintenanceUsage,
+  TaskLogCleanup,
   EnvironmentHealthSnapshot,
   NormalizedSourceTree,
   QrLoginPollResponse,
@@ -275,7 +277,10 @@ export const maintenanceCleanupCache = () => invokeCommand<MaintenanceResult>('m
 
 export const maintenanceCleanupTemp = (token: string) => invokeCommand<MaintenanceResult>('maintenance_cleanup_temp', { token })
 
-export const diagnosticsExport = () => invokeCommand<DiagnosticsExportResponse>('diagnostics_export', { recentErrors: recentFailureReport.value || null })
+export const maintenanceLogUsage = () => invokeCommand<LogMaintenanceUsage>('maintenance_log_usage')
+export const maintenanceCleanupLogs = () => invokeCommand<TaskLogCleanup>('maintenance_cleanup_logs')
+export const maintenanceCleanupDiagnostics = () => invokeCommand<number>('maintenance_cleanup_diagnostics')
+export const diagnosticsExport = (taskId?: string) => invokeCommand<DiagnosticsExportResponse>('diagnostics_export', { taskId: taskId ?? null, recentErrors: taskId ? null : recentFailureReport.value || null })
 export const diagnosticsEnvironment = () => invokeCommand<DiagnosticEnvironment>('diagnostics_environment')
 
 export const openExternalUrl = (url: string) => invokeCommand<void>('open_external_url', { url })

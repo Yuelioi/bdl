@@ -1517,12 +1517,8 @@ pub async fn diagnostics_environment(
 pub async fn diagnostics_export(
     state: State<'_, AppState>,
     recent_errors: Option<String>,
+    task_id: Option<String>,
 ) -> CommandResult<DiagnosticsExportResponse> {
-    let diagnostics_dir = state.data_dir().join("diagnostics");
-    fs::create_dir_all(&diagnostics_dir)
-        .await
-        .map_err(BdlError::from)?;
-
     let settings = state.settings()?;
     let mut settings_json = serde_json::to_value(&settings).map_err(BdlError::from)?;
     if let Some(proxy_url) = settings_json
@@ -1533,7 +1529,16 @@ pub async fn diagnostics_export(
         settings_json["proxy_url"] = serde_json::Value::String(proxy_url);
     }
 
-    let tasks = state.queue_snapshot()?;
+    let mut tasks = state.queue_snapshot()?;
+    if let Some(task_id) = &task_id {
+        tasks.retain(|task| &task.id == task_id);
+        if tasks.is_empty() {
+            return Err(BdlError::Planning {
+                message: "任务不存在，请刷新任务列表。".into(),
+            }
+            .into());
+        }
+    }
     let redacted_tasks = tasks
         .iter()
         .cloned()
@@ -1543,7 +1548,7 @@ pub async fn diagnostics_export(
         .iter()
         .map(|task| {
             let logs = state
-                .task_logs(&task.id, 50)?
+                .task_logs(&task.id, if task_id.is_some() { 1000 } else { 50 })?
                 .into_iter()
                 .map(redact_log_for_diagnostics)
                 .collect::<Vec<_>>();
@@ -1554,32 +1559,89 @@ pub async fn diagnostics_export(
         })
         .collect::<BdlResult<Vec<_>>>()?;
 
-    let report = serde_json::json!({
+    let mut report = serde_json::json!({
         "environment": crate::diagnostic_export::collect_environment(&state).await?,
         "generated_at": Utc::now().to_rfc3339(),
         "version": crate::version(),
         "data_dir": state.data_dir(),
-        "account": state.account()?,
         "settings": settings_json,
         "tasks": redacted_tasks,
         "task_logs": task_logs,
-        "recent_operation_errors": recent_errors.map(|report| bdl_core::account::redact_diagnostic(&report)),
+        "recent_operation_errors": if task_id.is_none() { recent_errors.map(|report| bdl_core::account::redact_diagnostic(&report)) } else { None },
     });
-    let file_name = format!(
-        "bdl-diagnostics-{}.json",
-        Utc::now().format("%Y%m%d-%H%M%S")
-    );
-    let path = diagnostics_dir.join(file_name);
-    fs::write(
-        &path,
-        serde_json::to_vec_pretty(&report).map_err(BdlError::from)?,
-    )
+    if task_id.is_none() {
+        report["account"] = serde_json::to_value(state.account()?).map_err(BdlError::from)?;
+    }
+    let data_dir = state.data_dir();
+    let bytes = serde_json::to_vec_pretty(&report).map_err(BdlError::from)?;
+    let path = tauri::async_runtime::spawn_blocking(move || {
+        crate::diagnostic_files::write(&data_dir, &bytes)
+    })
     .await
-    .map_err(BdlError::from)?;
+    .map_err(|error| BdlError::Planning {
+        message: format!("诊断导出任务失败：{error}"),
+    })??;
 
     Ok(DiagnosticsExportResponse {
         path: path.to_string_lossy().into_owned(),
     })
+}
+
+#[derive(Debug, Serialize)]
+pub struct LogMaintenanceUsage {
+    pub log_count: u64,
+    pub log_bytes: u64,
+    pub cleanable_log_count: u64,
+    pub diagnostic_files: usize,
+    pub diagnostic_bytes: u64,
+}
+
+#[tauri::command]
+pub async fn maintenance_log_usage(app: AppHandle) -> CommandResult<LogMaintenanceUsage> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let (log_count, log_bytes, cleanable_log_count) = state.task_log_usage()?;
+        let (diagnostic_files, diagnostic_bytes) =
+            crate::diagnostic_files::usage(&state.data_dir())?;
+        Ok(LogMaintenanceUsage {
+            log_count,
+            log_bytes,
+            cleanable_log_count,
+            diagnostic_files,
+            diagnostic_bytes,
+        })
+    })
+    .await
+    .map_err(|error| BdlError::Planning {
+        message: format!("读取日志用量失败：{error}"),
+    })?
+}
+
+#[tauri::command]
+pub async fn maintenance_cleanup_logs(
+    app: AppHandle,
+) -> CommandResult<bdl_core::storage::TaskLogCleanup> {
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<AppState>()
+            .clear_finished_task_logs()
+            .map_err(CommandError::from)
+    })
+    .await
+    .map_err(|error| BdlError::Planning {
+        message: format!("清理任务日志失败：{error}"),
+    })?
+}
+
+#[tauri::command]
+pub async fn maintenance_cleanup_diagnostics(app: AppHandle) -> CommandResult<usize> {
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::diagnostic_files::clear(&app.state::<AppState>().data_dir())
+            .map_err(CommandError::from)
+    })
+    .await
+    .map_err(|error| BdlError::Planning {
+        message: format!("清理诊断文件失败：{error}"),
+    })?
 }
 
 #[tauri::command]

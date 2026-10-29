@@ -54,15 +54,3 @@
   padding: 0.25rem 0.5rem;
   font-size: var(--mobile-font-body);
 }
-.task-detail-dialog {
-  min-height: 0;
-  height: min(42.5rem, 75dvh);
-}
-.task-detail-dialog :deep(.task-inspector) {
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: auto minmax(0, 1fr);
-}
-.task-detail-dialog :deep(.ui-tabs),
-.task-detail-dialog :deep(.tab-panel) {
-  grid-column: auto;
-}

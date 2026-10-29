@@ -11,6 +11,7 @@ import type { SettingsForm } from './useSettingsForm';
 import { useFileRemoval } from '../transfer/useFileRemoval';
 import FileRemovalDialog from '../transfer/FileRemovalDialog.vue';
 import { maintenanceTempPreview } from '../../api/tauri';
+import LogMaintenance from './LogMaintenance.vue';
 
 const { form, desktopPaths = true } = defineProps<{ form: SettingsForm; desktopPaths?: boolean }>();
 const { settings, settingsProxyUrl, settingsLogLevel, settingsDataDir } = form;
@@ -41,6 +42,7 @@ const cleanup = useFileRemoval('temp', maintenanceTempPreview, (token) => settin
       <p v-if="desktopPaths" class="settings-note">数据目录影响任务库、账户摘要和维护文件，修改后下次启动生效。</p>
     </SettingsCard>
     <SettingsCard title="清理与诊断">
+      <LogMaintenance />
       <details v-if="recentFailureReport" class="min-w-0">
         <summary class="cursor-pointer">最近的操作错误</summary>
         <div class="grid min-w-0 gap-3 py-3">
@@ -69,7 +71,7 @@ const cleanup = useFileRemoval('temp', maintenanceTempPreview, (token) => settin
           variant="secondary"
           :disabled="settings.loading || settings.saving"
           @click="settings.exportDiagnostics"
-          ><UIcon name="i-tabler-file-export" class="size-4" aria-hidden="true" />导出诊断</UiButton
+          ><UIcon name="i-tabler-file-export" class="size-4" aria-hidden="true" />导出全部诊断</UiButton
         >
       </div>
     </SettingsCard>

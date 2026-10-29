@@ -398,6 +398,19 @@ export interface MaintenanceResult {
   path: string;
 }
 
+export interface LogMaintenanceUsage {
+  log_count: number;
+  log_bytes: number;
+  cleanable_log_count: number;
+  diagnostic_files: number;
+  diagnostic_bytes: number;
+}
+
+export interface TaskLogCleanup {
+  removed_logs: number;
+  task_ids: string[];
+}
+
 export type DownloadDirectoryStatus = 'ready' | 'missing' | 'not_directory' | 'unwritable';
 export type FfmpegStatus = 'ready' | 'missing' | 'invalid';
 export type FfmpegSource = 'configured' | 'system' | 'native';

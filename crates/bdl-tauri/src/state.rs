@@ -1219,6 +1219,20 @@ impl AppState {
             .load_task_logs(task_id, limit)
     }
 
+    pub fn task_log_usage(&self) -> BdlResult<(u64, u64, u64)> {
+        self.storage
+            .lock()
+            .map_err(|_| state_poisoned("storage"))?
+            .task_log_usage()
+    }
+
+    pub fn clear_finished_task_logs(&self) -> BdlResult<bdl_core::storage::TaskLogCleanup> {
+        self.storage
+            .lock()
+            .map_err(|_| state_poisoned("storage"))?
+            .clear_finished_task_logs()
+    }
+
     pub fn record_completed_task(&self, task: &DownloadTask) -> BdlResult<()> {
         let logs = self.task_logs(&task.id, 1000)?;
         self.storage
