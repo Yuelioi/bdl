@@ -8,7 +8,7 @@ use bdl_core::account::{
 use bdl_core::fetcher::{
     FetchCancelToken, FetchConfig, FetchProgress, ProgressSender, ReqwestFetcher,
 };
-use bdl_core::ids::{PartId, SourceId};
+use bdl_core::ids::PartId;
 use bdl_core::model::NormalizedSourceTree;
 #[cfg(not(target_os = "android"))]
 use bdl_core::muxer::{MediaMuxer, MediaMuxerConfig};
@@ -17,7 +17,6 @@ use bdl_core::naming::DuplicateNamingStrategy;
 use bdl_core::planner::{
     ArchiveMode, DownloadMediaMode, DownloadOptions, DownloadSizeEstimate, MissingQualityPolicy,
     StreamPreference, estimate_selected_parts_download_size, parse_stream_codec,
-    plan_selected_parts,
 };
 use bdl_core::queue::{
     DownloadExportTarget, DownloadResource, DownloadResourceIntent, DownloadTask,
@@ -53,7 +52,7 @@ use bdl_core::diagnostics::classify_failure;
 
 pub type CommandResult<T> = Result<T, CommandError>;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CommandError {
     pub code: String,
     pub message: String,
@@ -63,15 +62,18 @@ pub struct CommandError {
 
 impl From<BdlError> for CommandError {
     fn from(error: BdlError) -> Self {
-        let raw = match &error {
-            BdlError::Fetch { .. } | BdlError::Platform { .. } => {
-                bdl_core::account::redact_diagnostic(&error.to_string())
-            }
-            _ => bdl_core::account::redact_sensitive(&error.to_string()),
-        };
-        let code = command_error_code(&error).to_owned();
+        let raw = bdl_core::account::redact_diagnostic(&error.to_string());
+        let cause = error.root_cause();
+        let explicit = bdl_core::diagnostics::explicit_failure(&raw);
+        let code = explicit.map_or_else(
+            || command_error_code(cause).to_owned(),
+            |rule| rule.code.clone(),
+        );
         let message = bdl_core::account::redact_sensitive(
-            &command_error_message(&error).unwrap_or_else(|| raw.clone()),
+            &explicit
+                .map(|rule| format!("{}。{}", rule.summary, rule.detail))
+                .or_else(|| command_error_message(cause))
+                .unwrap_or_else(|| bdl_core::account::redact_diagnostic(&cause.to_string())),
         );
         let detail = (raw != message).then_some(raw);
         tracing::warn!(code, message, detail = ?detail, "BDL operation failed");
@@ -84,6 +86,14 @@ impl From<BdlError> for CommandError {
 }
 
 impl CommandError {
+    pub(crate) fn with_context(mut self, context: &str) -> Self {
+        let detail = self.detail.take().unwrap_or_else(|| self.message.clone());
+        self.detail = Some(bdl_core::account::redact_diagnostic(&format!(
+            "{context}\n{detail}"
+        )));
+        self
+    }
+
     pub(crate) fn diagnostic_message(&self) -> String {
         match &self.detail {
             Some(detail) => format!("{}\n原始错误：{detail}", self.message),
@@ -94,12 +104,16 @@ impl CommandError {
 
 fn command_error_code(error: &BdlError) -> &'static str {
     match error {
+        BdlError::ParseCancelled { .. } => "parse_cancelled",
         BdlError::InvalidInput { .. } => "parse_unrecognized",
         BdlError::UnsupportedSource { .. } => "unsupported_source",
         BdlError::DrmProtected => "drm_protected",
         BdlError::CoursePreviewOnly => "course_preview_only",
         BdlError::Mux(MuxError::FfmpegNotFound { .. }) => "missing_ffmpeg",
         BdlError::Io(error) if error.kind() == ErrorKind::PermissionDenied => "file_access_denied",
+        BdlError::Storage(_) => "database_error",
+        BdlError::Serialization(_) => "data_format_error",
+        BdlError::Io(_) => "local_io_failed",
         _ if classify_failure(&error.to_string()).is_some() => {
             &classify_failure(&error.to_string())
                 .expect("classified failure")
@@ -109,6 +123,14 @@ fn command_error_code(error: &BdlError) -> &'static str {
             "bilibili_response_decode_failed"
         }
         BdlError::Bpi(_) => "bilibili_api_error",
+        BdlError::BpiTransport { source, .. } => {
+            if source.is_timeout() {
+                "network_timeout"
+            } else {
+                "bilibili_request_failed"
+            }
+        }
+        BdlError::Fetch { .. } => "download_error",
         BdlError::Platform { .. } => "platform_error",
         _ => "core_error",
     }
@@ -116,6 +138,9 @@ fn command_error_code(error: &BdlError) -> &'static str {
 
 fn command_error_message(error: &BdlError) -> Option<String> {
     match error {
+        BdlError::ParseCancelled { .. } => Some("解析已停止。".into()),
+        BdlError::Storage(_) => Some("本地数据读写失败，请查看错误详情。".into()),
+        BdlError::Serialization(_) => Some("应用数据格式异常，请查看错误详情。".into()),
         BdlError::DrmProtected | BdlError::CoursePreviewOnly => Some(error.to_string()),
         BdlError::InvalidInput { message } => Some(message.clone()),
         BdlError::UnsupportedSource { kind } => Some(format!("暂不支持 `{kind}` 类型的来源。")),
@@ -125,6 +150,7 @@ fn command_error_message(error: &BdlError) -> Option<String> {
         BdlError::Io(error) if error.kind() == ErrorKind::PermissionDenied => {
             Some("本地文件访问被拒绝，请检查文件或目录权限。".to_owned())
         }
+        BdlError::Io(_) => Some("本地文件操作失败，请查看错误详情。".into()),
         _ if classify_failure(&error.to_string()).is_some() => {
             let rule = classify_failure(&error.to_string()).expect("classified failure");
             Some(format!("{}。{}", rule.summary, rule.detail))
@@ -133,6 +159,7 @@ fn command_error_message(error: &BdlError) -> Option<String> {
             "解析失败，返回的数据暂时无法解析。请稍后重试；如果持续失败，请反馈问题。".to_owned(),
         ),
         BdlError::Bpi(_) => Some("操作失败，暂时无法获取 Bilibili 数据，请稍后重试。".to_owned()),
+        BdlError::Fetch { .. } => Some("下载失败，请查看错误详情。".into()),
         BdlError::Platform { message } => Some(message.clone()),
         _ => None,
     }
@@ -198,7 +225,69 @@ pub struct SpeedLimitTaskRequest {
 #[derive(Debug, Clone, Serialize)]
 pub struct BulkQueueFailure {
     pub task_id: String,
+    pub code: String,
     pub message: String,
+    pub detail: Option<String>,
+}
+
+impl BulkQueueFailure {
+    fn from_error(task_id: String, error: CommandError) -> Self {
+        Self {
+            task_id,
+            code: error.code,
+            message: error.message,
+            detail: error.detail,
+        }
+    }
+
+    fn from_message(task_id: String, message: String) -> Self {
+        Self::from_error(
+            task_id,
+            CommandError {
+                code: "task_operation_failed".into(),
+                message,
+                detail: None,
+            },
+        )
+    }
+}
+
+async fn journal_bulk_failures(state: &AppState, command: &str, result: &mut BulkQueueResult) {
+    if result.failed.is_empty() {
+        return;
+    }
+    let environment = crate::diagnostic_export::collect_environment(state)
+        .await
+        .and_then(|environment| serde_json::to_value(environment).map_err(Into::into));
+    for failure in &mut result.failed {
+        let mut error = CommandError {
+            code: failure.code.clone(),
+            message: failure.message.clone(),
+            detail: failure.detail.clone(),
+        }
+        .with_context(&format!(
+            "[stage=bulk_task_operation] task_id={}",
+            failure.task_id
+        ));
+        let recorded = match &environment {
+            Ok(environment) => state
+                .append_operation_error(
+                    command,
+                    &error.code,
+                    &error.message,
+                    error.detail.as_deref(),
+                    environment,
+                )
+                .map_err(|cause| cause.to_string()),
+            Err(cause) => Err(cause.to_string()),
+        };
+        let context = match recorded {
+            Ok(id) => format!("operation_error_id={id}"),
+            Err(cause) => format!("[stage=diagnostic_persist] 操作错误未能写入日志: {cause}"),
+        };
+        error = error.with_context(&context);
+        failure.detail = error.detail;
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Default)]
@@ -220,11 +309,15 @@ pub struct QueueProgressEntry {
 #[derive(Debug, Clone, Deserialize)]
 pub struct ParseSourcePageRequest {
     pub source_id: String,
+    pub snapshot: NormalizedSourceTree,
+    pub operation_id: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ParseLoadPageRequest {
     pub source_id: String,
+    pub snapshot: NormalizedSourceTree,
+    pub operation_id: String,
     pub page_number: u32,
 }
 
@@ -237,6 +330,8 @@ pub struct ParseLoadPageResponse {
 #[derive(Debug, Clone, Deserialize)]
 pub struct ParseLoadAllRequest {
     pub source_id: String,
+    pub snapshot: NormalizedSourceTree,
+    pub operation_id: String,
     pub limit: Option<usize>,
 }
 
@@ -282,7 +377,7 @@ pub struct SelectionEstimateSizeRequest {
     pub media_preferences: Option<bdl_core::media_preferences::MediaPreferences>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DuplicateTaskMatch {
     pub proposed_task_id: String,
     pub title: String,
@@ -290,7 +385,7 @@ pub struct DuplicateTaskMatch {
     pub existing_status: TaskStatus,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SelectionCreateTasksResult {
     pub created: Vec<DownloadTask>,
     pub duplicates: Vec<DuplicateTaskMatch>,
@@ -390,6 +485,7 @@ pub struct EnvironmentHealthSnapshot {
 #[derive(Debug, Clone, Serialize)]
 pub struct DiagnosticsExportResponse {
     pub path: String,
+    pub saved: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -455,21 +551,28 @@ pub async fn parse_create_source(
     app: AppHandle,
     state: State<'_, AppState>,
     request: ParseCreateSourceRequest,
+    operation_id: String,
 ) -> CommandResult<NormalizedSourceTree> {
-    let tree = state
-        .parse_source_for_workspace(
+    let operation = state.parse_control.begin(&operation_id, "create_source");
+    operation.phase(crate::parse_control::Phase::Running);
+    let tree = operation
+        .run(state.parse_source_for_workspace(
             &request.input,
             request.fetch_streams,
             request.expand_video_collection,
-        )
+        ))
         .await?;
     events::emit(&app, events::PARSE_SOURCE_UPDATED, &tree)?;
     Ok(tree)
 }
 
 #[tauri::command]
-pub fn parse_cancel(state: State<'_, AppState>, source_id: String) {
-    state.cancel_parse(&source_id);
+pub fn parse_cancel(
+    state: State<'_, AppState>,
+    source_id: String,
+    reason: crate::parse_control::CancelReason,
+) {
+    state.cancel_parse(&source_id, reason);
 }
 
 #[tauri::command]
@@ -486,7 +589,9 @@ pub async fn parse_load_more(
     state: State<'_, AppState>,
     request: ParseSourcePageRequest,
 ) -> CommandResult<NormalizedSourceTree> {
-    let tree = state.load_more(&SourceId(request.source_id)).await?;
+    let tree = state
+        .load_more(request.snapshot, &request.operation_id)
+        .await?;
     events::emit(&app, events::PARSE_SOURCE_UPDATED, &tree)?;
     Ok(tree)
 }
@@ -497,7 +602,7 @@ pub async fn parse_load_page(
     request: ParseLoadPageRequest,
 ) -> CommandResult<ParseLoadPageResponse> {
     let (tree, item_ids) = state
-        .load_page(&SourceId(request.source_id), request.page_number)
+        .load_page(request.snapshot, request.page_number, &request.operation_id)
         .await?;
     Ok(ParseLoadPageResponse { tree, item_ids })
 }
@@ -509,19 +614,10 @@ pub async fn parse_load_all(
     request: ParseLoadAllRequest,
 ) -> CommandResult<NormalizedSourceTree> {
     let tree = state
-        .load_all(&SourceId(request.source_id), request.limit)
+        .load_all(request.snapshot, request.limit, &request.operation_id)
         .await?;
     events::emit(&app, events::PARSE_SOURCE_UPDATED, &tree)?;
     Ok(tree)
-}
-
-#[tauri::command]
-pub fn parse_close_source(
-    state: State<'_, AppState>,
-    source_id: String,
-) -> CommandResult<ParseCloseSourceResponse> {
-    let removed = state.close_source(&SourceId(source_id))?;
-    Ok(ParseCloseSourceResponse { removed })
 }
 
 #[tauri::command]
@@ -530,7 +626,12 @@ pub async fn parse_refresh_source(
     state: State<'_, AppState>,
     request: ParseSourcePageRequest,
 ) -> CommandResult<NormalizedSourceTree> {
-    let tree = state.refresh_source(&SourceId(request.source_id)).await?;
+    let operation = state
+        .parse_control
+        .begin(&request.operation_id, "refresh_source");
+    let tree = operation
+        .run(state.parse_source_for_workspace(&request.snapshot.source.input, false, false))
+        .await?;
     events::emit(&app, events::PARSE_SOURCE_UPDATED, &tree)?;
     Ok(tree)
 }
@@ -540,100 +641,36 @@ pub async fn selection_create_tasks(
     app: AppHandle,
     state: State<'_, AppState>,
     request: SelectionCreateTasksRequest,
+    snapshot: NormalizedSourceTree,
+    operation_id: String,
 ) -> CommandResult<SelectionCreateTasksResult> {
-    let settings = state.settings()?;
-    let document_tree_output = request
-        .document_tree_output
-        .clone()
-        .or_else(|| settings.document_tree_output.clone());
-    let mobile_work_dir = document_tree_output.as_ref().map(|_| {
-        state
-            .data_dir()
-            .join("downloads")
-            .join("work")
-            .join(uuid::Uuid::new_v4().to_string())
-    });
-    let options = download_options_from_request(&request, &settings, mobile_work_dir.clone())?;
-    let export_duplicate_strategy = options.duplicate_naming_strategy;
-    let source_id = SourceId(request.source_id);
-    let duplicate_policy = request.duplicate_policy;
-    let scheduled_at = parse_future_schedule(request.scheduled_at.as_deref(), Utc::now())?;
-    let speed_limit_bytes_per_second =
-        parse_speed_limit(request.speed_limit_bytes_per_second, "单任务下载限速")?;
-    let selected_part_ids = request.part_ids.into_iter().map(PartId).collect::<Vec<_>>();
-
-    let mut prepared = state
-        .prepare_selection_for_options(&source_id, &selected_part_ids, &options)
-        .await?;
-    let missing = bdl_core::planner::missing_required_media_parts(
-        &prepared.tree,
-        &prepared.part_ids,
-        &options,
-    );
-    if !missing.is_empty() {
-        // One fresh resolution before planning; never retry enqueue side effects.
-        let refreshed = state.refresh_selection(&source_id, &missing).await?;
-        prepared.tree = refreshed.tree;
-        prepared.tree_updated = true;
+    // The explicit background-parse loop waits for one result; ordinary UI uses submit.
+    let input = crate::preparation::build_input(&state, request, snapshot, operation_id.clone())?;
+    state
+        .task_execution()
+        .set_preparation_active(&operation_id, true)?;
+    let result = async {
+        let (tasks, skipped, input) =
+            crate::preparation::plan_input(&state, input, |_, _| Ok(())).await?;
+        state.check_account_revision(input.context.account_revision)?;
+        let result = crate::preparation::commit(
+            &state,
+            tasks,
+            skipped,
+            input.policy,
+            input.options.duplicate_naming_strategy,
+        )?;
+        crate::preparation::publish(&app, &state, &result).await;
+        Ok(result)
     }
-    let mut planned_tasks = plan_selected_parts(&prepared.tree, &prepared.part_ids, &options)?;
-    let mut skipped_existing = prepared.part_ids.len().saturating_sub(planned_tasks.len());
-    for task in &mut planned_tasks {
-        task.scheduled_at = scheduled_at;
-        task.speed_limit_bytes_per_second = speed_limit_bytes_per_second;
-        if let (Some(directory), Some(work_dir)) =
-            (document_tree_output.as_ref(), mobile_work_dir.as_ref())
-        {
-            let relative_path =
-                task.output_path
-                    .strip_prefix(work_dir)
-                    .map_err(|_| BdlError::Planning {
-                        message: "Android 工作文件路径不在应用私有目录内。".to_owned(),
-                    })?;
-            task.export_target = Some(DownloadExportTarget::DocumentTree {
-                tree_uri: directory.tree_uri.clone(),
-                relative_path: portable_relative_path(relative_path)?,
-                duplicate_naming_strategy: export_duplicate_strategy,
-                document_uri: None,
-            });
-        }
+    .await;
+    if let Err(error) = state
+        .task_execution()
+        .set_preparation_active(&operation_id, false)
+    {
+        report_runtime_error(&app, &state, "stop_preparation_execution", error.into()).await;
     }
-
-    if prepared.tree_updated {
-        events::emit(&app, events::PARSE_SOURCE_UPDATED, &prepared.tree)?;
-    }
-
-    let outcome = state.enqueue_tasks_with_duplicate_policy(
-        planned_tasks,
-        duplicate_policy,
-        options.duplicate_naming_strategy,
-    )?;
-    skipped_existing += outcome.skipped_existing;
-    let tasks = outcome.inserted;
-    let duplicates = outcome
-        .duplicates
-        .into_iter()
-        .map(|duplicate| DuplicateTaskMatch {
-            proposed_task_id: duplicate.proposed_task_id,
-            title: duplicate.title,
-            existing_task_id: duplicate.existing_task_id,
-            existing_status: duplicate.existing_status,
-        })
-        .collect();
-
-    for task in &tasks {
-        events::emit(&app, events::QUEUE_TASK_UPDATED, task)?;
-    }
-    if !tasks.is_empty() {
-        start_queue_worker(&app);
-    }
-
-    Ok(SelectionCreateTasksResult {
-        created: tasks,
-        duplicates,
-        skipped_existing,
-        requires_confirmation: outcome.requires_confirmation,
-    })
+    result
 }
 
 #[tauri::command]
@@ -641,9 +678,22 @@ pub async fn selection_prepare(
     state: State<'_, AppState>,
     source_id: String,
     part_ids: Vec<String>,
+    snapshot: NormalizedSourceTree,
+    operation_id: String,
 ) -> CommandResult<NormalizedSourceTree> {
+    if source_id != snapshot.source.id.0 {
+        return Err(BdlError::Planning {
+            message: "所选来源已变化。".into(),
+        }
+        .into());
+    }
     let ids = part_ids.into_iter().map(PartId).collect::<Vec<_>>();
-    let prepared = state.prepare_selection(&SourceId(source_id), &ids).await?;
+    let context = state.preparation_context(operation_id)?;
+    let options = DownloadOptions::new(PathBuf::from("downloads"))
+        .with_archive_mode(ArchiveMode::CompleteArchive);
+    let prepared = state
+        .prepare_selection_owned(snapshot, &ids, &options, &context, false, |_, _| Ok(()))
+        .await?;
     for id in &prepared.part_ids {
         let ready = crate::parse_session::find_part(&prepared.tree, id)
             .is_some_and(|part| part.cid.is_some() && !part.streams.is_empty());
@@ -664,6 +714,7 @@ pub async fn selection_prepare(
 pub async fn selection_estimate_size(
     state: State<'_, AppState>,
     request: SelectionEstimateSizeRequest,
+    snapshot: NormalizedSourceTree,
 ) -> CommandResult<DownloadSizeEstimate> {
     let settings = state.settings()?;
     let mut options = DownloadOptions::new(PathBuf::from("downloads"));
@@ -693,16 +744,15 @@ pub async fn selection_estimate_size(
             &settings,
         )?;
     }
-    let source_id = SourceId(request.source_id);
     let selected_part_ids = request.part_ids.into_iter().map(PartId).collect::<Vec<_>>();
-    let tree = state.source_snapshot(&source_id)?;
+    let tree = snapshot;
     let part_ids = crate::parse_session::normalize_selected_part_ids(&tree, &selected_part_ids);
     Ok(estimate_selected_parts_download_size(
         &tree, &part_ids, &options,
     )?)
 }
 
-fn download_options_from_request(
+pub(crate) fn download_options_from_request(
     request: &SelectionCreateTasksRequest,
     settings: &SettingsSnapshot,
     output_dir_override: Option<PathBuf>,
@@ -914,6 +964,11 @@ pub fn mobile_read_clipboard_text(state: State<'_, AppState>) -> CommandResult<S
 }
 
 #[tauri::command]
+pub fn mobile_write_clipboard_text(state: State<'_, AppState>, text: String) -> CommandResult<()> {
+    Ok(state.mobile_storage().write_clipboard_text(&text)?)
+}
+
+#[tauri::command]
 pub fn mobile_save_image_to_gallery(
     state: State<'_, AppState>,
     file_name: String,
@@ -1091,12 +1146,10 @@ pub async fn queue_bulk_pause(
     state: State<'_, AppState>,
     request: BulkQueueRequest,
 ) -> CommandResult<BulkQueueResult> {
-    Ok(bulk_update_task_status(
-        &app,
-        state.inner(),
-        request.task_ids,
-        TaskStatus::Paused,
-    ))
+    let mut result =
+        bulk_update_task_status(&app, state.inner(), request.task_ids, TaskStatus::Paused);
+    journal_bulk_failures(&state, "queue_bulk_pause", &mut result).await;
+    Ok(result)
 }
 
 #[tauri::command]
@@ -1105,12 +1158,10 @@ pub async fn queue_bulk_cancel(
     state: State<'_, AppState>,
     request: BulkQueueRequest,
 ) -> CommandResult<BulkQueueResult> {
-    Ok(bulk_update_task_status(
-        &app,
-        state.inner(),
-        request.task_ids,
-        TaskStatus::Cancelled,
-    ))
+    let mut result =
+        bulk_update_task_status(&app, state.inner(), request.task_ids, TaskStatus::Cancelled);
+    journal_bulk_failures(&state, "queue_bulk_cancel", &mut result).await;
+    Ok(result)
 }
 
 #[tauri::command]
@@ -1119,10 +1170,11 @@ pub async fn queue_bulk_resume(
     state: State<'_, AppState>,
     request: BulkQueueRequest,
 ) -> CommandResult<BulkQueueResult> {
-    let result =
+    let mut result =
         bulk_update_task_status(&app, state.inner(), request.task_ids, TaskStatus::Waiting);
     start_queue_worker(&app);
 
+    journal_bulk_failures(&state, "queue_bulk_resume", &mut result).await;
     Ok(result)
 }
 
@@ -1132,7 +1184,7 @@ pub async fn queue_bulk_retry(
     state: State<'_, AppState>,
     request: BulkQueueRequest,
 ) -> CommandResult<BulkQueueResult> {
-    let result = bulk_mutate_tasks(
+    let mut result = bulk_mutate_tasks(
         &app,
         state.inner(),
         request.task_ids,
@@ -1140,6 +1192,7 @@ pub async fn queue_bulk_retry(
         true,
     );
     start_queue_worker(&app);
+    journal_bulk_failures(&state, "queue_bulk_retry", &mut result).await;
     Ok(result)
 }
 
@@ -1155,13 +1208,13 @@ pub async fn queue_bulk_refresh_urls_and_retry(
         let outcome = refresh_urls_and_retry(app.clone(), state.inner(), &task_id).await;
         match outcome {
             Ok(task) => result.updated.push(task),
-            Err(error) => result.failed.push(BulkQueueFailure {
-                task_id,
-                message: error.message,
-            }),
+            Err(error) => result
+                .failed
+                .push(BulkQueueFailure::from_error(task_id, error)),
         }
     }
 
+    journal_bulk_failures(&state, "queue_bulk_refresh_urls_and_retry", &mut result).await;
     Ok(result)
 }
 
@@ -1175,17 +1228,17 @@ pub async fn queue_bulk_remove(
     for task_id in request.task_ids {
         match state.stop_and_remove_task(&task_id).await {
             Ok(true) => result.removed.push(task_id),
-            Ok(false) => result.failed.push(BulkQueueFailure {
+            Ok(false) => result.failed.push(BulkQueueFailure::from_message(
                 task_id,
-                message: "任务不存在。".to_owned(),
-            }),
-            Err(error) => result.failed.push(BulkQueueFailure {
-                task_id,
-                message: error.to_string(),
-            }),
+                "任务不存在。".to_owned(),
+            )),
+            Err(error) => result
+                .failed
+                .push(BulkQueueFailure::from_error(task_id, error.into())),
         }
     }
 
+    journal_bulk_failures(&state, "queue_bulk_remove", &mut result).await;
     Ok(result)
 }
 
@@ -1254,15 +1307,13 @@ fn bulk_mutate_tasks(
     let changed = match state.bulk_update_tasks(&task_ids, status, retry) {
         Ok(changed) => changed,
         Err(error) => {
+            let error = CommandError::from(error);
             return BulkQueueResult {
                 updated: vec![],
                 removed: vec![],
                 failed: task_ids
                     .into_iter()
-                    .map(|task_id| BulkQueueFailure {
-                        task_id,
-                        message: error.to_string(),
-                    })
+                    .map(|task_id| BulkQueueFailure::from_error(task_id, error.clone()))
                     .collect(),
             };
         }
@@ -1273,7 +1324,7 @@ fn bulk_mutate_tasks(
         failed: changed
             .failed
             .into_iter()
-            .map(|(task_id, message)| BulkQueueFailure { task_id, message })
+            .map(|(task_id, message)| BulkQueueFailure::from_message(task_id, message))
             .collect(),
     };
     for task in changed.updated {
@@ -1286,10 +1337,9 @@ fn bulk_mutate_tasks(
         });
         match notification {
             Ok(()) => result.updated.push(task),
-            Err(error) => result.failed.push(BulkQueueFailure {
-                task_id: task.id,
-                message: error.message,
-            }),
+            Err(error) => result
+                .failed
+                .push(BulkQueueFailure::from_error(task.id, error)),
         }
     }
     result
@@ -1515,11 +1565,85 @@ pub async fn diagnostics_environment(
 }
 
 #[tauri::command]
+pub async fn diagnostics_record_operation_error(
+    state: State<'_, AppState>,
+    command: String,
+    error: CommandError,
+) -> CommandResult<i64> {
+    Ok(record_runtime_error(&state, &command, &error).await?)
+}
+
+pub(crate) async fn record_runtime_error(
+    state: &AppState,
+    command: &str,
+    error: &CommandError,
+) -> BdlResult<i64> {
+    let environment =
+        serde_json::to_value(crate::diagnostic_export::collect_environment(state).await?)
+            .map_err(BdlError::from)?;
+    state.append_operation_error(
+        command,
+        &error.code,
+        &error.message,
+        error.detail.as_deref(),
+        &environment,
+    )
+}
+
+pub(crate) async fn report_runtime_error(
+    app: &AppHandle,
+    state: &AppState,
+    command: &str,
+    mut error: CommandError,
+) {
+    match record_runtime_error(state, command, &error).await {
+        Ok(id) => error = error.with_context(&format!("operation_error_id={id} command={command}")),
+        Err(journal_error) => {
+            error = error.with_context(&format!(
+                "[stage=diagnostic_persist] 操作错误未能写入日志: {}",
+                bdl_core::account::redact_diagnostic(&journal_error.to_string()),
+            ))
+        }
+    }
+    if let Err(notify_error) = events::emit(
+        app,
+        events::OPERATION_ERROR,
+        &serde_json::json!({"command": command, "error": error}),
+    ) {
+        tracing::error!(
+            "cannot notify operation error: {}",
+            notify_error.diagnostic_message()
+        );
+    }
+}
+
+#[tauri::command]
+pub fn diagnostics_operation_errors(
+    state: State<'_, AppState>,
+) -> CommandResult<Vec<bdl_core::storage::OperationErrorRecord>> {
+    Ok(state.operation_errors(20)?)
+}
+
+#[tauri::command]
 pub async fn diagnostics_export(
     state: State<'_, AppState>,
-    recent_errors: Option<String>,
     task_id: Option<String>,
 ) -> CommandResult<DiagnosticsExportResponse> {
+    let path = export_diagnostics(&state, task_id.as_deref()).await?;
+    #[cfg(target_os = "android")]
+    let saved = state.mobile_storage().save_diagnostic_file(&path)?;
+    #[cfg(not(target_os = "android"))]
+    let saved = true;
+    Ok(DiagnosticsExportResponse {
+        path: path.to_string_lossy().into_owned(),
+        saved,
+    })
+}
+
+pub async fn diagnostic_report(
+    state: &AppState,
+    task_id: Option<&str>,
+) -> BdlResult<serde_json::Value> {
     let settings = state.settings()?;
     let mut settings_json = serde_json::to_value(&settings).map_err(BdlError::from)?;
     if let Some(proxy_url) = settings_json
@@ -1531,13 +1655,12 @@ pub async fn diagnostics_export(
     }
 
     let mut tasks = state.queue_snapshot()?;
-    if let Some(task_id) = &task_id {
-        tasks.retain(|task| &task.id == task_id);
+    if let Some(task_id) = task_id {
+        tasks.retain(|task| task.id == task_id);
         if tasks.is_empty() {
             return Err(BdlError::Planning {
                 message: "任务不存在，请刷新任务列表。".into(),
-            }
-            .into());
+            });
         }
     }
     let redacted_tasks = tasks
@@ -1561,31 +1684,49 @@ pub async fn diagnostics_export(
         .collect::<BdlResult<Vec<_>>>()?;
 
     let mut report = serde_json::json!({
-        "environment": crate::diagnostic_export::collect_environment(&state).await?,
+        "environment": crate::diagnostic_export::collect_environment(state).await?,
         "generated_at": Utc::now().to_rfc3339(),
         "version": crate::version(),
         "data_dir": state.data_dir(),
         "settings": settings_json,
         "tasks": redacted_tasks,
         "task_logs": task_logs,
-        "recent_operation_errors": if task_id.is_none() { recent_errors.map(|report| bdl_core::account::redact_diagnostic(&report)) } else { None },
+        "operation_errors": if task_id.is_none() { state.operation_errors(200)? } else { Vec::new() },
     });
     if task_id.is_none() {
         report["account"] = serde_json::to_value(state.account()?).map_err(BdlError::from)?;
+        let jobs = state
+            .preparation_jobs()
+            .into_iter()
+            .map(|mut job| {
+                job.input = bdl_core::account::redact_diagnostic(&job.input);
+                if let Some(error) = &mut job.error {
+                    error.message = bdl_core::account::redact_diagnostic(&error.message);
+                    error.detail = error
+                        .detail
+                        .as_deref()
+                        .map(bdl_core::account::redact_diagnostic);
+                }
+                job
+            })
+            .collect::<Vec<_>>();
+        report["preparations"] = serde_json::to_value(jobs)?;
     }
-    let data_dir = state.data_dir();
-    let bytes = serde_json::to_vec_pretty(&report).map_err(BdlError::from)?;
-    let path = tauri::async_runtime::spawn_blocking(move || {
-        crate::diagnostic_files::write(&data_dir, &bytes)
-    })
-    .await
-    .map_err(|error| BdlError::Planning {
-        message: format!("诊断导出任务失败：{error}"),
-    })??;
+    Ok(report)
+}
 
-    Ok(DiagnosticsExportResponse {
-        path: path.to_string_lossy().into_owned(),
-    })
+pub async fn export_diagnostics(
+    state: &AppState,
+    task_id: Option<&str>,
+) -> BdlResult<std::path::PathBuf> {
+    let report = diagnostic_report(state, task_id).await?;
+    let bytes = serde_json::to_vec_pretty(&report)?;
+    let data_dir = state.data_dir();
+    tauri::async_runtime::spawn_blocking(move || crate::diagnostic_files::write(&data_dir, &bytes))
+        .await
+        .map_err(|error| BdlError::Planning {
+            message: format!("诊断导出任务失败：{error}"),
+        })?
 }
 
 #[derive(Debug, Serialize)]
@@ -1750,6 +1891,8 @@ pub fn start_account_startup_verification(app: &AppHandle) {
             Ok(account) => account,
             Err(error) => {
                 tracing::warn!("startup account verification failed: {error}");
+                report_runtime_error(&app, &state, "startup_account_verification", error.into())
+                    .await;
                 match state.account() {
                     Ok(account) => account,
                     Err(error) => {
@@ -1802,7 +1945,7 @@ fn resolve_download_directory(configured: Option<&str>) -> BdlResult<PathBuf> {
     }
 }
 
-fn parse_future_schedule(
+pub(crate) fn parse_future_schedule(
     value: Option<&str>,
     now: DateTime<Utc>,
 ) -> BdlResult<Option<DateTime<Utc>>> {
@@ -1822,7 +1965,7 @@ fn parse_future_schedule(
     Ok(Some(scheduled_at))
 }
 
-fn parse_speed_limit(value: Option<u64>, label: &str) -> CommandResult<Option<u64>> {
+pub(crate) fn parse_speed_limit(value: Option<u64>, label: &str) -> CommandResult<Option<u64>> {
     let value = value.filter(|limit| *limit > 0);
     validate_speed_limit(value, label)?;
     Ok(value)
@@ -2224,7 +2367,7 @@ pub(crate) async fn has_recoverable_completed_output(task: &DownloadTask) -> Com
                 .resources
                 .iter()
                 .all(|r| r.status == ResourceStatus::Completed)
-            && crate::workflow_execution::outputs_complete(task).await);
+            && crate::workflow_execution::outputs_complete(task).await?);
     }
     let media_resources = task.resources.iter().filter(|resource| {
         matches!(
@@ -2241,8 +2384,17 @@ pub(crate) async fn has_recoverable_completed_output(task: &DownloadTask) -> Com
         return Ok(false);
     }
 
-    let Ok(output_metadata) = fs::metadata(&task.output_path).await else {
-        return Ok(false);
+    let output_metadata = match fs::metadata(&task.output_path).await {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(false),
+        Err(error) => {
+            return Err(bdl_core::error::file_io_error(
+                "verify_recoverable_output",
+                &task.output_path,
+                error,
+            )
+            .into());
+        }
     };
     if output_metadata.len() == 0 {
         return Ok(false);
@@ -3170,8 +3322,8 @@ mod tests {
         assert!(rejected.message.contains("稍后重试"));
     }
 
-    #[test]
-    fn command_error_preserves_cause_and_redacts_secrets_before_delivery() {
+    #[tokio::test]
+    async fn command_error_preserves_cause_and_redacts_secrets_before_delivery() {
         let error = super::CommandError::from(BdlError::Bpi(
             "HTTP 429 Too Many Requests; Retry-After: 60\nCookie: SESSDATA=private-cookie\nhttps://cdn.test/video?token=private-token".into()
         ));
@@ -3180,6 +3332,48 @@ mod tests {
         assert!(error.diagnostic_message().contains("Retry-After: 60"));
         assert!(!error.diagnostic_message().contains("private-cookie"));
         assert!(!error.diagnostic_message().contains("private-token"));
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../.task")
+            .join(format!("error-journal-{}", uuid::Uuid::new_v4()));
+        let state = crate::state::AppState::new_with_secure_store(
+            root.join("data"),
+            root.join("downloads"),
+            crate::secure_store::SecureStore::in_memory(),
+        )
+        .unwrap();
+        let database =
+            super::CommandError::from(BdlError::Storage(rusqlite::Error::SqliteFailure(
+                rusqlite::ffi::Error::new(5),
+                Some("database mux locked".into()),
+            )));
+        assert_eq!(database.code, "database_error");
+        assert!(
+            database
+                .detail
+                .as_deref()
+                .unwrap()
+                .contains("sqlite_extended_code=5")
+        );
+        let mut result = super::BulkQueueResult {
+            failed: vec![
+                super::BulkQueueFailure::from_error("task:api".into(), error),
+                super::BulkQueueFailure::from_error("task:db".into(), database),
+            ],
+            ..Default::default()
+        };
+        super::journal_bulk_failures(&state, "queue_bulk_retry", &mut result).await;
+        for failure in &result.failed {
+            let detail = failure.detail.as_deref().unwrap();
+            assert!(detail.contains(&failure.task_id));
+            assert!(detail.contains("operation_error_id="));
+            assert!(!detail.contains("private-cookie"));
+        }
+        let report = super::diagnostic_report(&state, None).await.unwrap();
+        assert_eq!(report["operation_errors"].as_array().unwrap().len(), 2);
+        assert!(report.to_string().contains("Retry-After: 60"));
+        assert!(!report.to_string().contains("private-token"));
+        drop(state);
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     fn resource(intent: DownloadResourceIntent, current_urls: Vec<String>) -> DownloadResource {

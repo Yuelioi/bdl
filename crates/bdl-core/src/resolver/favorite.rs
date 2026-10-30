@@ -65,7 +65,7 @@ impl FavoriteResolver<BpiFavoriteApi> {
             .cookie(cookie)
             .build()
             .map(Self::from_bpi_client)
-            .map_err(|error| BdlError::Bpi(error.to_string()))
+            .map_err(|error| crate::error::bpi_error(error))
     }
 
     pub fn from_bpi_client(client: impl Into<Arc<BpiClient>>) -> Self {
@@ -125,7 +125,7 @@ impl BpiFavoriteApi {
     pub fn new() -> BdlResult<Self> {
         BpiClient::new()
             .map(Self::from_client)
-            .map_err(|error| BdlError::Bpi(error.to_string()))
+            .map_err(|error| crate::error::bpi_error(error))
     }
 
     pub fn from_client(client: impl Into<Arc<BpiClient>>) -> Self {
@@ -142,21 +142,21 @@ impl FavoriteApi for BpiFavoriteApi {
         media_id: u64,
         request: PageRequest,
     ) -> BdlResult<ResolvedFavoritePage> {
-        let media_id = MediaId::new(media_id).map_err(|error| BdlError::Bpi(error.to_string()))?;
+        let media_id = MediaId::new(media_id).map_err(|error| crate::error::bpi_error(error))?;
         let params = FavListDetailParams::new(media_id)
             .order("mtime")
-            .map_err(|error| BdlError::Bpi(error.to_string()))?
+            .map_err(|error| crate::error::bpi_error(error))?
             .content_type(0)
             .page_size(request.page_size)
-            .map_err(|error| BdlError::Bpi(error.to_string()))?
+            .map_err(|error| crate::error::bpi_error(error))?
             .page(request.page_number)
-            .map_err(|error| BdlError::Bpi(error.to_string()))?;
+            .map_err(|error| crate::error::bpi_error(error))?;
         let data = self
             .client
             .fav()
             .list_detail(params)
             .await
-            .map_err(|error| BdlError::Bpi(error.to_string()))?;
+            .map_err(|error| crate::error::bpi_error(error))?;
 
         Ok(ResolvedFavoritePage {
             media_id: media_id.get(),

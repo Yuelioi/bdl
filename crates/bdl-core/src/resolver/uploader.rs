@@ -61,7 +61,7 @@ impl UploaderResolver<BpiUploaderApi> {
             .cookie(cookie)
             .build()
             .map(Self::from_bpi_client)
-            .map_err(|error| BdlError::Bpi(error.to_string()))
+            .map_err(|error| crate::error::bpi_error(error))
     }
 
     pub fn from_bpi_client(client: impl Into<Arc<BpiClient>>) -> Self {
@@ -121,7 +121,7 @@ impl BpiUploaderApi {
     pub fn new() -> BdlResult<Self> {
         BpiClient::new()
             .map(Self::from_client)
-            .map_err(|error| BdlError::Bpi(error.to_string()))
+            .map_err(|error| crate::error::bpi_error(error))
     }
 
     pub fn from_client(client: impl Into<Arc<BpiClient>>) -> Self {
@@ -138,18 +138,18 @@ impl UploaderApi for BpiUploaderApi {
         mid: u64,
         request: PageRequest,
     ) -> BdlResult<ResolvedUploaderPage> {
-        let mid = Mid::new(mid).map_err(|error| BdlError::Bpi(error.to_string()))?;
+        let mid = Mid::new(mid).map_err(|error| crate::error::bpi_error(error))?;
         let params = UserUploadedVideosParams::new(mid)
             .with_page(request.page_number)
-            .map_err(|error| BdlError::Bpi(error.to_string()))?
+            .map_err(|error| crate::error::bpi_error(error))?
             .with_page_size(request.page_size)
-            .map_err(|error| BdlError::Bpi(error.to_string()))?;
+            .map_err(|error| crate::error::bpi_error(error))?;
         let data = self
             .client
             .user()
             .uploaded_videos(params)
             .await
-            .map_err(|error| BdlError::Bpi(error.to_string()))?;
+            .map_err(|error| crate::error::bpi_error(error))?;
 
         let videos = data
             .list

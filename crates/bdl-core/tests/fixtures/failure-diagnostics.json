@@ -1,5 +1,20 @@
 [
   {
+    "message": "[stage=bilibili_transport code=bilibili_request_failed] is_timeout=false cause=tunnel error: unsuccessful",
+    "summary": "接口请求失败",
+    "action": "inspect_raw_log"
+  },
+  {
+    "message": "[stage=file_io code=file_not_found] operation=publish path=/downloads/403/mux.video.m4s os_code=2",
+    "summary": "文件或目录不存在",
+    "action": "inspect_raw_log"
+  },
+  {
+    "message": "[stage=request_send code=network_request_failed] is_timeout=false cause=connection refused",
+    "summary": "网络请求失败",
+    "action": "inspect_raw_log"
+  },
+  {
     "message": "fetch error: 读取分段响应失败: error decoding response body",
     "summary": "下载响应读取失败",
     "action": "inspect_raw_log"

@@ -129,9 +129,12 @@ fn is_rate_limit(error: &BdlError) -> bool {
     let BdlError::Bpi(message) = error else {
         return false;
     };
-    message
-        .split(|c: char| !c.is_ascii_digit() && c != '-')
-        .any(|code| matches!(code, "-352" | "-412" | "-509" | "-799" | "412" | "429"))
+    bdl_core::diagnostics::classify_failure(message).is_some_and(|rule| {
+        matches!(
+            rule.code.as_str(),
+            "source_rate_limited" | "source_verification_required"
+        )
+    })
 }
 
 fn is_transient(error: &BdlError) -> bool {
@@ -139,6 +142,16 @@ fn is_transient(error: &BdlError) -> bool {
         return false;
     }
     match error {
+        BdlError::BpiTransport { source, .. } => {
+            source.is_timeout()
+                || bdl_core::account::redact_diagnostic(&error.to_string())
+                    .to_lowercase()
+                    .contains("connection reset")
+                || error
+                    .to_string()
+                    .to_lowercase()
+                    .contains("connection closed")
+        }
         BdlError::Bpi(message) => {
             let message = message.to_ascii_lowercase();
             [
@@ -214,7 +227,7 @@ mod tests {
             ..Default::default()
         };
         pacer.run(rules, async { Ok(()) }, |_| 1).await.unwrap();
-        let operation = control.begin("source");
+        let operation = control.begin("source", "test");
         let work = operation.run(pacer.run_observed(
             rules,
             async {
@@ -228,7 +241,7 @@ mod tests {
         let stop = async {
             tokio::task::yield_now().await;
             assert_eq!(control.progress("source").waiting_seconds, 10);
-            control.cancel("source");
+            control.cancel("source", crate::parse_control::CancelReason::StopRequested);
         };
         let start = Instant::now();
         let (result, ()) = tokio::join!(work, stop);
@@ -241,6 +254,9 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn transient_failure_retries_once_but_restrictions_never_retry() {
+        assert!(!is_rate_limit(&BdlError::Bpi(
+            "[stage=bilibili_api origin=source.rs:429:12] missing response data".into()
+        )));
         use std::sync::atomic::{AtomicUsize, Ordering};
         for (message, expected) in [("connection reset", 2), ("HTTP 429", 1), ("code=-352", 1)] {
             let pacer = ParsePacer::default();

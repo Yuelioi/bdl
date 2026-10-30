@@ -1,4 +1,5 @@
-use std::sync::Arc;
+use std::collections::HashSet;
+use std::sync::{Arc, Mutex};
 
 use bdl_core::BdlResult;
 use serde::{Deserialize, Serialize};
@@ -33,6 +34,13 @@ pub trait TaskExecutionBackendImpl: Send + Sync {
 #[derive(Clone)]
 pub struct TaskExecutionBackend {
     inner: Arc<dyn TaskExecutionBackendImpl>,
+    activity: Arc<Mutex<Activity>>,
+}
+
+#[derive(Default)]
+struct Activity {
+    downloads: bool,
+    preparations: HashSet<String>,
 }
 
 impl TaskExecutionBackend {
@@ -45,6 +53,7 @@ impl TaskExecutionBackend {
     {
         Self {
             inner: Arc::new(backend),
+            activity: Default::default(),
         }
     }
 
@@ -53,7 +62,25 @@ impl TaskExecutionBackend {
     }
 
     pub fn set_active(&self, active: bool) -> BdlResult<()> {
-        self.inner.set_active(active)
+        let mut activity = self.activity.lock().unwrap();
+        let effective = active || !activity.preparations.is_empty();
+        self.inner.set_active(effective)?;
+        activity.downloads = active;
+        Ok(())
+    }
+
+    pub(crate) fn set_preparation_active(&self, id: &str, active: bool) -> BdlResult<()> {
+        let mut activity = self.activity.lock().unwrap();
+        let mut preparations = activity.preparations.clone();
+        if active {
+            preparations.insert(id.to_owned());
+        } else {
+            preparations.remove(id);
+        }
+        self.inner
+            .set_active(activity.downloads || !preparations.is_empty())?;
+        activity.preparations = preparations;
+        Ok(())
     }
 
     pub fn sync_scheduled_wakeups(&self, scheduled_at_unix_millis: &[i64]) -> BdlResult<()> {

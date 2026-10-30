@@ -44,6 +44,11 @@ struct ClipboardTextResponse {
 }
 
 #[derive(Debug, Deserialize)]
+struct DiagnosticSaveResponse {
+    saved: bool,
+}
+
+#[derive(Debug, Deserialize)]
 struct LegacyGalleryPermissionResponse {
     required: bool,
 }
@@ -164,6 +169,26 @@ impl<R: Runtime> MobileStorageBackend for AndroidStorageBackend<R> {
             .map_err(|error| platform_error("读取剪贴板", error))
     }
 
+    fn write_clipboard_text(&self, text: &str) -> BdlResult<()> {
+        self.handle
+            .run_mobile_plugin::<serde_json::Value>(
+                "writeClipboardText",
+                serde_json::json!({"text":text}),
+            )
+            .map(|_| ())
+            .map_err(|error| platform_error("写入剪贴板", error))
+    }
+
+    fn save_diagnostic_file(&self, path: &Path) -> BdlResult<bool> {
+        self.handle
+            .run_mobile_plugin::<DiagnosticSaveResponse>(
+                "saveDiagnosticFile",
+                serde_json::json!({"sourcePath":path}),
+            )
+            .map(|response| response.saved)
+            .map_err(|error| platform_error("保存诊断文件", error))
+    }
+
     fn save_image_to_gallery(
         &self,
         file_name: &str,
@@ -277,6 +302,7 @@ impl<R: Runtime> MobileStorageBackend for AndroidStorageBackend<R> {
 
 fn platform_error(action: &str, error: impl std::fmt::Display) -> BdlError {
     BdlError::Platform {
-        message: format!("{action}失败：{error}"),
+        message: format!("{action}失败，请查看错误详情。"),
     }
+    .with_context(format!("[stage=android_storage] action={action} {error}"))
 }

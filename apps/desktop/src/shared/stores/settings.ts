@@ -18,6 +18,7 @@ import type { InlineNotice, NoticeTone } from './feedback'
 import { NOTICE_CLEAR_DELAY } from './feedback'
 import { fillMissingDefaults } from '../utils/settingsDefaults'
 import { builtinDownloadPresets, cloneDownloadPresets, migrateDownloadPresets, downloadPresetsError } from '../utils/downloadWorkflow'
+import { isAndroidPlatform } from '../platform/environment'
 
 export const defaultNamingTemplate = '{title}/P{part_index} - {part_title}'
 export const embeddingContainerError = (
@@ -569,7 +570,7 @@ export const useSettingsStore = defineStore('settings', {
       const ui = useUiStore()
       try {
         const result = await diagnosticsExport()
-        this.setNotice(`诊断已导出：${result.path}`, 'success')
+        this.setNotice(result.saved ? (isAndroidPlatform() ? '诊断已保存到所选位置。' : `诊断已导出：${result.path}`) : '已取消保存诊断。', result.saved ? 'success' : 'info')
       } catch (error) {
         ui.pushToast(errorMessage(error), 'danger')
       }

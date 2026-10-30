@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import SettingsCard from './SettingsCard.vue';
 import ErrorDetails from '../../ui/ErrorDetails.vue';
-import { recentFailureReport, clearRecentFailures } from '../../utils/recentFailures';
+import { recentFailureReport } from '../../utils/recentFailures';
 import ClipboardPreference from '../../ui/ClipboardPreference.vue';
 import UiButton from '../../ui/Button.vue';
 import UiSelect from '../../ui/Select.vue';
@@ -48,9 +48,8 @@ const cleanup = useFileRemoval('temp', maintenanceTempPreview, (token) => settin
       <details v-if="recentFailureReport" class="min-w-0">
         <summary class="cursor-pointer">最近的操作错误</summary>
         <div class="grid min-w-0 gap-3 py-3">
-          <p class="settings-note">保留本次运行最近 20 条错误，退出应用后清空。</p>
+          <p class="settings-note">显示最近 20 条操作错误，重启后保留。完整记录可导出诊断，清理日志时一并删除。</p>
           <ErrorDetails :detail="recentFailureReport" :show-advice="false" />
-          <UiButton variant="ghost" @click="clearRecentFailures">清空错误记录</UiButton>
         </div>
       </details>
       <div class="maintenance-actions">

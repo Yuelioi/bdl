@@ -135,7 +135,7 @@ impl VideoResolver<BpiVideoApi> {
             .cookie(cookie)
             .build()
             .map(Self::from_bpi_client)
-            .map_err(|error| BdlError::Bpi(error.to_string()))
+            .map_err(|error| crate::error::bpi_error(error))
     }
 
     pub fn from_bpi_client(client: impl Into<Arc<BpiClient>>) -> Self {
@@ -289,7 +289,7 @@ impl BpiVideoApi {
     pub fn new() -> BdlResult<Self> {
         BpiClient::new()
             .map(Self::from_client)
-            .map_err(|error| BdlError::Bpi(error.to_string()))
+            .map_err(|error| crate::error::bpi_error(error))
     }
 
     pub fn from_client(client: impl Into<Arc<BpiClient>>) -> Self {
@@ -316,9 +316,9 @@ impl BpiVideoApi {
             "video-view",
         )
         .await
-        .map_err(|error| BdlError::Bpi(error.to_string()))?;
+        .map_err(|error| crate::error::bpi_error(error))?;
         let snapshot = serde_json::from_slice::<VideoViewResponse>(&response.body)
-            .map_err(|error| BdlError::Bpi(error.to_string()))?
+            .map_err(|error| crate::error::bpi_error(error))?
             .into_snapshot()?;
 
         self.view_snapshots
@@ -342,7 +342,7 @@ impl VideoApi for BpiVideoApi {
             .video()
             .play_url(play_url_params(id, cid)?)
             .await
-            .map_err(|error| BdlError::Bpi(error.to_string()))?;
+            .map_err(|error| crate::error::bpi_error(error))?;
 
         Ok(data
             .dash
@@ -360,7 +360,7 @@ impl VideoApi for BpiVideoApi {
             .video()
             .player_info_v2(player_info_params(id, cid)?)
             .await
-            .map_err(|error| BdlError::Bpi(error.to_string()))?;
+            .map_err(|error| crate::error::bpi_error(error))?;
 
         Ok(ResolvedPlayerInfo {
             subtitles: data
@@ -396,7 +396,7 @@ impl VideoViewResponse {
     fn into_snapshot(self) -> BdlResult<VideoViewSnapshot> {
         if self.code != 0 {
             return Err(BdlError::Bpi(format!(
-                "video view returned code {}: {}",
+                "video view returned code={}: {}",
                 self.code, self.message
             )));
         }
@@ -543,15 +543,15 @@ fn video_view_query(id: &VideoInputId) -> Vec<(&'static str, String)> {
 }
 
 fn play_url_params(id: &VideoInputId, cid: u64) -> BdlResult<VideoPlayUrlParams> {
-    let cid = Cid::new(cid).map_err(|error| BdlError::Bpi(error.to_string()))?;
+    let cid = Cid::new(cid).map_err(|error| crate::error::bpi_error(error))?;
     let params = match id {
         VideoInputId::Aid(aid) => Aid::new(*aid)
             .map(|aid| VideoPlayUrlParams::from_aid(aid, cid))
-            .map_err(|error| BdlError::Bpi(error.to_string()))?,
+            .map_err(|error| crate::error::bpi_error(error))?,
         VideoInputId::Bvid(bvid) => bvid
             .parse::<Bvid>()
             .map(|bvid| VideoPlayUrlParams::from_bvid(bvid, cid))
-            .map_err(|error| BdlError::Bpi(error.to_string()))?,
+            .map_err(|error| crate::error::bpi_error(error))?,
     };
 
     Ok(params
@@ -572,15 +572,15 @@ fn play_url_params(id: &VideoInputId, cid: u64) -> BdlResult<VideoPlayUrlParams>
 }
 
 fn player_info_params(id: &VideoInputId, cid: u64) -> BdlResult<VideoPlayerInfoParams> {
-    let cid = Cid::new(cid).map_err(|error| BdlError::Bpi(error.to_string()))?;
+    let cid = Cid::new(cid).map_err(|error| crate::error::bpi_error(error))?;
     match id {
         VideoInputId::Aid(aid) => Aid::new(*aid)
             .map(|aid| VideoPlayerInfoParams::from_aid(aid, cid))
-            .map_err(|error| BdlError::Bpi(error.to_string())),
+            .map_err(|error| crate::error::bpi_error(error)),
         VideoInputId::Bvid(bvid) => bvid
             .parse::<Bvid>()
             .map(|bvid| VideoPlayerInfoParams::from_bvid(bvid, cid))
-            .map_err(|error| BdlError::Bpi(error.to_string())),
+            .map_err(|error| crate::error::bpi_error(error)),
     }
 }
 

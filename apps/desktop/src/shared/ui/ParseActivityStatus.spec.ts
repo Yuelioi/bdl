@@ -2,6 +2,8 @@ import { flushPromises, mount } from '@vue/test-utils';
 import { afterEach, expect, it, vi } from 'vitest';
 import ParseActivityStatus from './ParseActivityStatus.vue';
 import { parseProgress } from '../api/tauri';
+import { createPinia, setActivePinia } from 'pinia';
+import { useParseStore } from '../stores/parse';
 
 vi.mock('../api/tauri', () => ({ parseProgress: vi.fn() }));
 afterEach(() => {
@@ -10,6 +12,8 @@ afterEach(() => {
 });
 
 it('expires the countdown after a suspended window even if status polling stalls', async () => {
+  setActivePinia(createPinia());
+  useParseStore().operationsBySource.test = ['request-test'];
   vi.useFakeTimers();
   const startClock = vi.spyOn(globalThis, 'setInterval');
   const stopClock = vi.spyOn(globalThis, 'clearInterval');
@@ -28,4 +32,5 @@ it('expires the countdown after a suspended window even if status polling stalls
   await vi.advanceTimersByTimeAsync(1000);
   expect(stopClock).toHaveBeenCalledWith(startClock.mock.results[0]?.value);
   expect(vi.mocked(parseProgress)).toHaveBeenCalledTimes(2);
+  expect(vi.mocked(parseProgress)).toHaveBeenCalledWith('request-test');
 });

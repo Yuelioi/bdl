@@ -66,6 +66,14 @@ impl MobileStorage {
         self.backend.read_clipboard_text()
     }
 
+    pub fn write_clipboard_text(&self, text: &str) -> BdlResult<()> {
+        self.backend.write_clipboard_text(text)
+    }
+
+    pub fn save_diagnostic_file(&self, path: &Path) -> BdlResult<bool> {
+        self.backend.save_diagnostic_file(path)
+    }
+
     pub fn save_image_to_gallery(
         &self,
         file_name: &str,
@@ -81,7 +89,15 @@ impl MobileStorage {
         source_path: &Path,
         target: &DownloadExportTarget,
     ) -> BdlResult<ExportResult> {
-        self.backend.export_file(source_path, target)
+        let DownloadExportTarget::DocumentTree {
+            relative_path,
+            duplicate_naming_strategy,
+            ..
+        } = target;
+        self.backend.export_file(source_path, target).map_err(|error| error.with_context(format!(
+            "[stage=export_file] source={} relative_path={} naming_strategy={duplicate_naming_strategy:?}",
+            source_path.display(), relative_path,
+        )))
     }
 
     pub fn open_exported_file(&self, target: &DownloadExportTarget) -> BdlResult<()> {
@@ -131,6 +147,8 @@ pub trait MobileStorageBackend: Send + Sync {
     }
     fn pick_document_tree(&self) -> BdlResult<DocumentTreeDirectory>;
     fn read_clipboard_text(&self) -> BdlResult<String>;
+    fn write_clipboard_text(&self, text: &str) -> BdlResult<()>;
+    fn save_diagnostic_file(&self, path: &Path) -> BdlResult<bool>;
     fn save_image_to_gallery(
         &self,
         file_name: &str,
@@ -150,6 +168,12 @@ pub trait MobileStorageBackend: Send + Sync {
 struct UnsupportedMobileStorageBackend;
 
 impl MobileStorageBackend for UnsupportedMobileStorageBackend {
+    fn save_diagnostic_file(&self, _path: &Path) -> BdlResult<bool> {
+        Err(unsupported_error())
+    }
+    fn write_clipboard_text(&self, _text: &str) -> BdlResult<()> {
+        Err(unsupported_error())
+    }
     fn pick_document_tree(&self) -> BdlResult<DocumentTreeDirectory> {
         Err(unsupported_error())
     }

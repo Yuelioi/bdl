@@ -4,13 +4,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AccountLibraryPage } from '../api/dto'
 import { useLibraryStore } from './library'
 
-const { accountLibraryList, parseCreateSource, parseCloseSource } = vi.hoisted(() => ({
+const { accountLibraryList, parseCreateSource } = vi.hoisted(() => ({
   accountLibraryList: vi.fn(),
   parseCreateSource: vi.fn(),
-  parseCloseSource: vi.fn(),
 }))
 
-vi.mock('../api/tauri', () => ({ accountLibraryList, parseCreateSource, parseCloseSource }))
+vi.mock('../api/tauri', () => ({ accountLibraryList, parseCreateSource }))
 
 const fixturePage: AccountLibraryPage = {
   items: [],
@@ -25,7 +24,6 @@ describe('library store', () => {
     setActivePinia(createPinia())
     accountLibraryList.mockReset()
     parseCreateSource.mockReset()
-    parseCloseSource.mockReset()
   })
 
   it.each(['created_favorite', 'collected_favorite', 'watch_later'] as const)('retains %s failure details and clears them on logout', async (kind) => {
@@ -65,14 +63,14 @@ describe('library store', () => {
     await library.load('watch_later', 50)
     expect(library.activePage?.items[0]?.title).toBe('视频 980')
     expect(parseCreateSource).toHaveBeenCalledTimes(1)
-    expect(parseCloseSource).toHaveBeenCalledWith('watch:1')
+    expect(library.watchLaterItems).toHaveLength(1000)
     expect(accountLibraryList).not.toHaveBeenCalled()
     library.clear()
     expect(library.pages.watch_later).toBeNull()
     expect(library.watchLaterItems).toBeNull()
   })
 
-  it('ignores watch-later responses arriving after account clear and releases their source', async () => {
+  it('ignores stateless watch-later responses arriving after account clear', async () => {
     let resolve: (value: unknown) => void = () => undefined
     parseCreateSource.mockReturnValue(new Promise(done => { resolve = done }))
     const library = useLibraryStore()
@@ -82,7 +80,7 @@ describe('library store', () => {
     await loading
     expect(library.pages.watch_later).toBeNull()
     expect(library.watchLaterItems).toBeNull()
-    expect(parseCloseSource).toHaveBeenCalledWith('watch:old')
+    expect(library.pages.watch_later).toBeNull()
   })
 
   it('keeps an actionable error when account content cannot load', async () => {

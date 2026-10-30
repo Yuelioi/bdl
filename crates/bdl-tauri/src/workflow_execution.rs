@@ -1,27 +1,30 @@
 //! Executes the immutable recipe and verifies every retained artifact before cleanup.
 use crate::media_mux::MediaMuxBackend;
+use bdl_core::error::IoResultExt;
 use bdl_core::muxer::MuxRequest;
 use bdl_core::queue::{DownloadResourceIntent as Intent, DownloadTask};
 use bdl_core::{BdlError, BdlResult};
 use std::path::{Path, PathBuf};
 use tokio::fs;
 
-pub(crate) async fn outputs_complete(task: &DownloadTask) -> bool {
+pub(crate) async fn outputs_complete(task: &DownloadTask) -> BdlResult<bool> {
     if task.media_selection.artifacts.is_empty() {
-        return false;
+        return Ok(false);
     }
     for artifact in &task.media_selection.artifacts {
-        if !nonempty(&artifact.path).await {
-            return false;
+        if !nonempty(&artifact.path).await? {
+            return Ok(false);
         }
     }
-    true
+    Ok(true)
 }
 
-async fn nonempty(path: &Path) -> bool {
-    fs::metadata(path)
-        .await
-        .is_ok_and(|meta| meta.is_file() && meta.len() > 0)
+async fn nonempty(path: &Path) -> BdlResult<bool> {
+    match fs::metadata(path).await {
+        Ok(meta) => Ok(meta.is_file() && meta.len() > 0),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(error).path_context("verify_artifact", path),
+    }
 }
 
 async fn copy(source: &Path, output: &Path) -> BdlResult<()> {
@@ -29,19 +32,27 @@ async fn copy(source: &Path, output: &Path) -> BdlResult<()> {
         return Ok(());
     }
     if let Some(parent) = output.parent() {
-        fs::create_dir_all(parent).await?;
+        fs::create_dir_all(parent)
+            .await
+            .path_context("create_artifact_directory", parent)?;
     }
     let temporary = output.with_extension(format!(
         "{}.bdl-copy.tmp",
         output.extension().and_then(|e| e.to_str()).unwrap_or("bin")
     ));
-    fs::copy(source, &temporary).await?;
-    if !nonempty(&temporary).await {
+    fs::copy(source, &temporary)
+        .await
+        .path_context("copy_artifact", &temporary)
+        .map_err(|error| error.with_context(format!("source={}", source.display())))?;
+    if !nonempty(&temporary).await? {
         return Err(BdlError::Planning {
             message: "保存内容为空，已保留原始素材。".into(),
         });
     }
-    fs::rename(temporary, output).await?;
+    fs::rename(&temporary, output)
+        .await
+        .path_context("publish_artifact", output)
+        .map_err(|error| error.with_context(format!("source={}", temporary.display())))?;
     Ok(())
 }
 
@@ -90,7 +101,7 @@ pub(crate) async fn execute(
             .ok_or_else(|| BdlError::Planning {
                 message: "任务产物缺少对应素材。".into(),
             })?;
-        if !resource.target_path.is_file() && nonempty(&artifact.path).await {
+        if !resource.target_path.is_file() && nonempty(&artifact.path).await? {
             continue;
         }
         if resource.intent == Intent::Audio && !artifact.original {
@@ -153,7 +164,7 @@ pub(crate) async fn execute(
         )
         .await?;
     }
-    if !outputs_complete(task).await {
+    if !outputs_complete(task).await? {
         return Err(BdlError::Planning {
             message: "部分输出文件未生成或为空，已保留素材以便重试。".into(),
         });
@@ -163,8 +174,16 @@ pub(crate) async fn execute(
 
 pub(crate) async fn cleanup(task: &DownloadTask) -> Vec<String> {
     let mut warnings = Vec::new();
-    if !task.media_selection.outputs_verified || !outputs_complete(task).await {
+    if !task.media_selection.outputs_verified {
         return warnings;
+    }
+    match outputs_complete(task).await {
+        Ok(true) => {}
+        Ok(false) => return warnings,
+        Err(error) => {
+            warnings.push(format!("清理前无法验证成品，已保留素材：{error}"));
+            return warnings;
+        }
     }
     // The verified manifest is persisted before removing any input.
     let retained = task
@@ -184,7 +203,10 @@ pub(crate) async fn cleanup(task: &DownloadTask) -> Vec<String> {
             match fs::remove_file(&path).await {
                 Ok(()) => {}
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                Err(error) => warnings.push(format!("输出已生成，临时素材清理失败：{error}")),
+                Err(error) => warnings.push(format!(
+                    "输出已生成，临时素材清理失败：{}",
+                    bdl_core::error::file_io_error("cleanup_source", &path, error)
+                )),
             }
         }
     }
@@ -427,7 +449,7 @@ mod tests {
                 execute(&restored, &MediaMuxBackend::desktop(), Some(ffmpeg.clone()))
                     .await
                     .unwrap();
-                assert!(outputs_complete(&restored).await);
+                assert!(outputs_complete(&restored).await.unwrap());
                 let source = restored
                     .resources
                     .iter()
@@ -486,7 +508,7 @@ mod tests {
                     "ass" => assert!(content.contains("[Events]")),
                     _ => assert!(serde_json::from_str::<serde_json::Value>(&content).is_ok()),
                 }
-                assert!(outputs_complete(&task).await);
+                assert!(outputs_complete(&task).await.unwrap());
                 cleanup(&task).await;
                 assert!(
                     task.resources[0].target_path.exists(),
@@ -498,7 +520,7 @@ mod tests {
                     task.resources[0].target_path.exists(),
                     retain && format != "original"
                 );
-                assert!(outputs_complete(&task).await);
+                assert!(outputs_complete(&task).await.unwrap());
             }
         }
     }
@@ -518,6 +540,12 @@ mod tests {
         }
         struct Storage(Arc<Mutex<ExportState>>);
         impl MobileStorageBackend for Storage {
+            fn save_diagnostic_file(&self, _: &Path) -> BdlResult<bool> {
+                unreachable!()
+            }
+            fn write_clipboard_text(&self, _: &str) -> BdlResult<()> {
+                unreachable!()
+            }
             fn pick_document_tree(&self) -> BdlResult<DocumentTreeDirectory> {
                 unreachable!()
             }
@@ -628,7 +656,7 @@ mod tests {
                 .is_err()
         );
         assert!(task.resources[0].target_path.exists());
-        assert!(!outputs_complete(&task).await);
+        assert!(!outputs_complete(&task).await.unwrap());
         assert!(
             !crate::commands::has_recoverable_completed_output(&task)
                 .await
@@ -768,7 +796,7 @@ mod tests {
                 .unwrap();
             task.media_selection.outputs_verified = true;
             assert!(cleanup(&task).await.is_empty());
-            assert!(outputs_complete(&task).await);
+            assert!(outputs_complete(&task).await.unwrap());
             assert!(
                 crate::commands::has_recoverable_completed_output(&task)
                     .await

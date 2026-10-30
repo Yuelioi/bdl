@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 
 import { commandDiagnostic } from '../utils/commandDiagnostic'
+import { classifyFailure } from '../utils/failureDiagnostic'
 
 import type {
   DocumentTreeDirectory,
@@ -15,17 +16,20 @@ import type {
   SelectionSizeEstimate,
 } from '../api/dto'
 import {
-  parseCloseSource,
   parseCreateSource,
   parseLoadMore,
   parseLoadPage,
   parseCancel,
+  type ParseCancelReason,
+  type SelectionCreateTasksRequest,
   selectionCreateTasks,
   selectionEstimateSize,
   selectionPrepare,
 } from '../api/tauri'
 import { useQueueStore } from './queue'
 import { useSettingsStore } from './settings'
+import { useUiStore } from './ui'
+import { usePreparationsStore } from './preparations'
 import { isSingleVideoInput } from '../utils/bilibiliLinks'
 import type { InlineNotice, NoticeTone } from './feedback'
 import { NOTICE_CLEAR_DELAY } from './feedback'
@@ -50,6 +54,8 @@ interface BackgroundParseJob {
 }
 
 interface ParseState {
+  operationsBySource: Record<string, string[]>
+  sourceEpochById: Record<string, string>
   preparationBySource: Record<string, { total: number; processed: number; failures: Array<{ itemId: string; title: string; message: string; detail?: string; partIds: string[] }> }>
   createGeneration: number
   backgroundJob: BackgroundParseJob | null
@@ -137,6 +143,8 @@ export type PacedParsingResult = 'completed' | 'stopped' | 'failed'
 
 export const useParseStore = defineStore('parse', {
   state: (): ParseState => ({
+    operationsBySource: {},
+    sourceEpochById: {},
     createGeneration: 0,
     preparationBySource: {},
     backgroundJob: null,
@@ -178,6 +186,20 @@ export const useParseStore = defineStore('parse', {
     },
   },
   actions: {
+    beginOperation(sourceId: string) {
+      const id = crypto.randomUUID()
+      this.operationsBySource[sourceId] = [...(this.operationsBySource[sourceId] ?? []), id]
+      return id
+    },
+    endOperation(sourceId: string, id: string) {
+      if (this.operationsBySource[sourceId]) {
+        this.operationsBySource[sourceId] = this.operationsBySource[sourceId].filter(value => value !== id)
+        if (!this.operationsBySource[sourceId].length) delete this.operationsBySource[sourceId]
+      }
+    },
+    ownsSource(sourceId: string, generation: number, epoch: string | undefined) {
+      return generation === this.createGeneration && epoch !== undefined && this.sourceEpochById[sourceId] === epoch
+    },
     recordSourceFailure(sourceId: string, error: unknown, operation = '解析来源') {
       if (!this.sources[sourceId]) return
       this.errorsBySource[sourceId] = errorMessage(error)
@@ -227,19 +249,20 @@ export const useParseStore = defineStore('parse', {
       this.loadingBySource.__create__ = true
       try {
         const outcomes = await mapWithConcurrency(inputs, PARSE_CONCURRENCY, async (sourceInput) => {
+          if (generation !== this.createGeneration) return { input: sourceInput, tree: null, error: '解析已停止', detail: '' }
+          const operationId = this.beginOperation("__create__")
           try {
             const tree = await parseCreateSource({
               input: sourceInput,
               fetch_streams: false,
               expand_video_collection: !batch && !options.singleVideo,
-            })
+            }, operationId)
             return { input: sourceInput, tree, error: null, detail: '' }
           } catch (error) {
             return { input: sourceInput, tree: null, error: errorMessage(error), detail: commandDiagnostic(error, `操作: 解析链接\n来源: ${sourceInput}`) }
-          }
+          } finally { this.endOperation("__create__", operationId) }
         })
         if (generation !== this.createGeneration) {
-          await Promise.allSettled(outcomes.filter((outcome) => outcome.tree?.source.kind === 'watch_later').map((outcome) => parseCloseSource(outcome.tree!.source.id)))
           return false
         }
         const failures = outcomes.filter((outcome) => !outcome.tree)
@@ -248,13 +271,6 @@ export const useParseStore = defineStore('parse', {
           if (!outcome.tree) continue
           if ((batch || options.singleVideo) && outcome.tree.source.kind !== 'video') {
             failures.push({ ...outcome, tree: null, error: options.singleVideo ? '该链接不是单个视频，请切换到批量解析。' : '批量模式只支持视频链接' })
-            if (!this.sources[outcome.tree.source.id]) {
-              try {
-                await parseCloseSource(outcome.tree.source.id)
-              } catch {
-                // The rejected container is not retained in the local workspace.
-              }
-            }
             continue
           }
           validOutcomes.push({ ...outcome, tree: outcome.tree })
@@ -269,11 +285,13 @@ export const useParseStore = defineStore('parse', {
         const previousSourceIds = this.sourceOrder.filter((sourceId) => !nextSourceIds.has(sourceId))
         for (const sourceId of previousSourceIds) {
           await this.removeSource(sourceId)
+          if (generation !== this.createGeneration) return false
         }
 
         for (const tree of trees) {
           const sourceId = tree.source.id
           this.sources[sourceId] = tree
+          this.sourceEpochById[sourceId] = crypto.randomUUID()
           this.errorsBySource[sourceId] = null
           this.errorDetailsBySource[sourceId] = null
           this.selectionBySource[sourceId] = batch ? [] : defaultSelection(tree)
@@ -314,37 +332,50 @@ export const useParseStore = defineStore('parse', {
       }
     },
     async loadMore(sourceId: string) {
+      if (!this.sources[sourceId] || this.loadingBySource[sourceId]) return
+      const generation = this.createGeneration
+      const epoch = this.sourceEpochById[sourceId]
+      const operationId = this.beginOperation(sourceId)
+      const snapshot = cloneTree(this.sources[sourceId])
       this.pacedParsingStopRequestedBySource[sourceId] = false
       this.loadingBySource[sourceId] = true
       try {
-        const tree = await parseLoadMore({ source_id: sourceId })
-        this.upsertSource(tree)
+        const tree = await parseLoadMore({ source_id: sourceId, snapshot, operation_id: operationId })
+        if (this.ownsSource(sourceId, generation, epoch)) this.upsertSource(tree)
       } catch (error) {
-        if (!this.pacedParsingStopRequestedBySource[sourceId]) this.recordSourceFailure(sourceId, error)
+        if (this.ownsSource(sourceId, generation, epoch) && !this.pacedParsingStopRequestedBySource[sourceId]) this.recordSourceFailure(sourceId, error)
       } finally {
-        this.loadingBySource[sourceId] = false
+        this.endOperation(sourceId, operationId)
+        if (this.ownsSource(sourceId, generation, epoch)) this.loadingBySource[sourceId] = false
       }
     },
     async loadPage(sourceId: string, pageNumber: number): Promise<string[] | null> {
       if (!this.sources[sourceId] || this.loadingBySource[sourceId] || this.pacedParsingBySource[sourceId]) return null
+      const generation = this.createGeneration
+      const epoch = this.sourceEpochById[sourceId]
+      const operationId = this.beginOperation(sourceId)
       this.loadingBySource[sourceId] = true
       this.errorsBySource[sourceId] = null
       this.errorDetailsBySource[sourceId] = null
       try {
-        const result = await parseLoadPage({ source_id: sourceId, page_number: pageNumber })
-        if (!this.sources[sourceId]) return null
+        const result = await parseLoadPage({ source_id: sourceId, snapshot: cloneTree(this.sources[sourceId]), operation_id: operationId, page_number: pageNumber })
+        if (!this.ownsSource(sourceId, generation, epoch)) return null
         this.upsertSource(result.tree)
         return result.item_ids
       } catch (error) {
-        if (this.sources[sourceId]) this.recordSourceFailure(sourceId, error, `加载第 ${pageNumber} 页`)
+        if (this.ownsSource(sourceId, generation, epoch)) this.recordSourceFailure(sourceId, error, `加载第 ${pageNumber} 页`)
         return null
       } finally {
-        this.loadingBySource[sourceId] = false
+        this.endOperation(sourceId, operationId)
+        if (this.ownsSource(sourceId, generation, epoch)) this.loadingBySource[sourceId] = false
       }
     },
     async loadChunk(sourceId: string, chunkSize: number): Promise<boolean> {
       const current = this.sources[sourceId]
       if (!current?.source.has_more || this.loadingBySource[sourceId]) return false
+      const generation = this.createGeneration
+      const epoch = this.sourceEpochById[sourceId]
+      const owns = () => this.ownsSource(sourceId, generation, epoch)
       const loadedBefore = current.source.loaded_count
       const limit = loadedBefore + Math.max(1, Math.floor(chunkSize))
       if (!this.pacedParsingBySource[sourceId]) this.pacedParsingStopRequestedBySource[sourceId] = false
@@ -352,21 +383,24 @@ export const useParseStore = defineStore('parse', {
       this.errorsBySource[sourceId] = null
       this.errorDetailsBySource[sourceId] = null
       try {
-        while (this.sources[sourceId]?.source.has_more && this.sources[sourceId].source.loaded_count < limit) {
+        while (owns() && this.sources[sourceId]?.source.has_more && this.sources[sourceId].source.loaded_count < limit) {
           if (this.pacedParsingStopRequestedBySource[sourceId]) break
           const before = this.sources[sourceId].source.loaded_count
           const pageBefore = this.sources[sourceId].groups[0]?.page?.page_number
-          const tree = await parseLoadMore({ source_id: sourceId })
-          if (!this.sources[sourceId]) break
+          const operationId = this.beginOperation(sourceId)
+          let tree: NormalizedSourceTree
+          try { tree = await parseLoadMore({ source_id: sourceId, snapshot: cloneTree(this.sources[sourceId]), operation_id: operationId }) }
+          finally { this.endOperation(sourceId, operationId) }
+          if (!owns()) break
           this.upsertSource(tree)
           if (tree.source.loaded_count <= before && tree.groups[0]?.page?.page_number === pageBefore) break
         }
-        return (this.sources[sourceId]?.source.loaded_count ?? 0) > loadedBefore
+        return owns() && (this.sources[sourceId]?.source.loaded_count ?? 0) > loadedBefore
       } catch (error) {
-        if (!this.pacedParsingStopRequestedBySource[sourceId]) this.recordSourceFailure(sourceId, error)
+        if (owns() && !this.pacedParsingStopRequestedBySource[sourceId]) this.recordSourceFailure(sourceId, error)
         return false
       } finally {
-        this.loadingBySource[sourceId] = false
+        if (owns()) this.loadingBySource[sourceId] = false
       }
     },
     async prepareLoadedVideos(sourceId: string, mode: 'selected' | 'next' | 'all' | 'retry', batchSize = 50) {
@@ -386,6 +420,8 @@ export const useParseStore = defineStore('parse', {
       if (mode === 'next') targets = targets.slice(0, Math.max(1, Math.floor(batchSize)))
       if (!targets.length) return
       const generation = this.createGeneration
+      const epoch = this.sourceEpochById[sourceId]
+      const owns = () => this.ownsSource(sourceId, generation, epoch)
       const job = { total: targets.length, processed: 0, failures: [...failures] }
       this.preparationBySource[sourceId] = job
       const progress = this.preparationBySource[sourceId]!
@@ -393,13 +429,16 @@ export const useParseStore = defineStore('parse', {
       this.pacedParsingStopRequestedBySource[sourceId] = false
       this.errorsBySource[sourceId] = null
       this.errorDetailsBySource[sourceId] = null
-      const stopped = () => generation !== this.createGeneration || !this.sources[sourceId] || this.pacedParsingStopRequestedBySource[sourceId]
+      const stopped = () => !owns() || this.pacedParsingStopRequestedBySource[sourceId]
       try {
         for (const target of targets) {
           if (stopped()) break
           try {
-            const tree = await selectionPrepare(sourceId, target.partIds)
-            if (generation !== this.createGeneration || !this.sources[sourceId]) break
+            const operationId = this.beginOperation(sourceId)
+            let tree: NormalizedSourceTree
+            try { tree = await selectionPrepare(sourceId, target.partIds, cloneTree(this.sources[sourceId]), operationId) }
+            finally { this.endOperation(sourceId, operationId) }
+            if (!owns()) break
             this.upsertSource(tree)
             progress.failures = progress.failures.filter(failure => failure.itemId !== target.itemId)
           } catch (error) {
@@ -416,7 +455,7 @@ export const useParseStore = defineStore('parse', {
           progress.processed++
         }
       } finally {
-        if (generation === this.createGeneration && this.sources[sourceId]) this.pacedParsingBySource[sourceId] = false
+        if (owns()) this.pacedParsingBySource[sourceId] = false
       }
     },
     async startBackgroundDownload(sourceId: string, retryFailed = false): Promise<void> {
@@ -510,17 +549,21 @@ export const useParseStore = defineStore('parse', {
       const source = this.sources[sourceId]
       if (!source?.source.has_more) return 'completed'
       if (this.pacedParsingBySource[sourceId]) return 'stopped'
+      const generation = this.createGeneration
+      const epoch = this.sourceEpochById[sourceId]
+      const owns = () => this.ownsSource(sourceId, generation, epoch)
 
       this.pacedParsingBySource[sourceId] = true
       this.pacedParsingWaitingBySource[sourceId] = false
       this.pacedParsingStopRequestedBySource[sourceId] = false
       try {
-        while (this.sources[sourceId]?.source.has_more) {
+        while (owns() && this.sources[sourceId]?.source.has_more) {
           if (this.pacedParsingStopRequestedBySource[sourceId]) {
             return 'stopped'
           }
 
           const progressed = await this.loadChunk(sourceId, chunkSize)
+          if (!owns()) return 'stopped'
           if (!progressed) {
             return this.pacedParsingStopRequestedBySource[sourceId] ? 'stopped' : this.sources[sourceId]?.source.has_more ? 'failed' : 'completed'
           }
@@ -528,7 +571,7 @@ export const useParseStore = defineStore('parse', {
 
           this.pacedParsingWaitingBySource[sourceId] = true
           const shouldContinue = await waitForPacedParsing(delayMs, () =>
-            Boolean(this.pacedParsingStopRequestedBySource[sourceId]),
+            !owns() || Boolean(this.pacedParsingStopRequestedBySource[sourceId]),
           )
           this.pacedParsingWaitingBySource[sourceId] = false
           if (!shouldContinue) {
@@ -536,33 +579,30 @@ export const useParseStore = defineStore('parse', {
           }
         }
 
-        return 'completed'
+        return owns() ? 'completed' : 'stopped'
       } finally {
+        if (owns()) {
         this.pacedParsingBySource[sourceId] = false
         this.pacedParsingWaitingBySource[sourceId] = false
         this.pacedParsingStopRequestedBySource[sourceId] = false
+        }
       }
     },
-    stopPacedParsing(sourceId: string) {
-      if (this.pacedParsingBySource[sourceId] || this.loadingBySource[sourceId]) {
-        this.pacedParsingStopRequestedBySource[sourceId] = true
-        void parseCancel(sourceId).catch((error) => {
-          this.setNotice(`停止请求未送达：${errorMessage(error)}`, 'warning', undefined, commandDiagnostic(error, `操作: 停止解析\n来源: ${sourceId}`))
-        })
-      }
+    stopPacedParsing(sourceId: string, reason: ParseCancelReason = 'stop_requested') {
+      if (this.pacedParsingBySource[sourceId] || this.loadingBySource[sourceId]) this.pacedParsingStopRequestedBySource[sourceId] = true
+      return Promise.allSettled((this.operationsBySource[sourceId] ?? []).map(id => parseCancel(id, reason).catch((error) => {
+        this.setNotice(`停止请求未送达：${errorMessage(error)}`, 'warning', undefined, commandDiagnostic(error, `操作: 停止解析\n来源: ${sourceId}\n请求: ${id}`))
+      })))
     },
-    async clearWorkspace() {
-      if (this.backgroundJob?.status === 'running') {
-        this.setNotice('请先停止后台解析下载', 'warning')
-        return
-      }
+    async clearWorkspace(reason: ParseCancelReason = 'workspace_cleared') {
+      if (this.backgroundJob?.status === 'running') { this.setNotice('请先停止后台解析下载', 'warning'); return }
       this.createGeneration++
-      const sourceIds = [...this.sourceOrder]
-      sourceIds.forEach((sourceId) => this.stopPacedParsing(sourceId))
-
+      const stopping = Object.keys(this.operationsBySource).map(id => this.stopPacedParsing(id, reason))
       this.input = ''
       this.clearNotice()
       this.sources = {}
+      this.sourceEpochById = {}
+      this.operationsBySource = {}
       this.preparationBySource = {}
       this.backgroundJob = null
       this.sourceOrder = []
@@ -577,32 +617,27 @@ export const useParseStore = defineStore('parse', {
       this.pacedParsingStopRequestedBySource = {}
       this.errorsBySource = {}
       this.errorDetailsBySource = {}
-
-      await Promise.allSettled(sourceIds.map((sourceId) => parseCloseSource(sourceId)))
+      await Promise.allSettled(stopping)
     },
     async removeSource(sourceId: string) {
       if (this.backgroundJob?.status === 'running' && this.backgroundJob.sourceId === sourceId) return
-      try {
-        await parseCloseSource(sourceId)
-      } finally {
-        if (this.backgroundJob?.sourceId === sourceId) this.backgroundJob = null
-        delete this.sources[sourceId]
-        delete this.preparationBySource[sourceId]
-        delete this.selectionBySource[sourceId]
-        delete this.errorsBySource[sourceId]
-        delete this.errorDetailsBySource[sourceId]
-        delete this.pacedParsingBySource[sourceId]
-        delete this.pacedParsingWaitingBySource[sourceId]
-        delete this.pacedParsingStopRequestedBySource[sourceId]
-        this.sourceOrder = this.sourceOrder.filter((id) => id !== sourceId)
-        this.batchEntries = this.batchEntries.filter((entry) => entry.sourceId !== sourceId)
-        this.selectedBatchEntryIds = this.selectedBatchEntryIds.filter((entryId) =>
-          this.batchEntries.some((entry) => entry.id === entryId),
-        )
-        if (this.activeSourceId === sourceId) {
-          this.activeSourceId = this.sourceOrder[0] ?? null
-        }
-      }
+      const epoch = this.sourceEpochById[sourceId]
+      await this.stopPacedParsing(sourceId, 'workspace_cleared')
+      if (this.sourceEpochById[sourceId] !== epoch) return
+      if (this.backgroundJob?.sourceId === sourceId) this.backgroundJob = null
+      delete this.sources[sourceId]
+      delete this.sourceEpochById[sourceId]
+      delete this.preparationBySource[sourceId]
+      delete this.selectionBySource[sourceId]
+      delete this.errorsBySource[sourceId]
+      delete this.errorDetailsBySource[sourceId]
+      delete this.pacedParsingBySource[sourceId]
+      delete this.pacedParsingWaitingBySource[sourceId]
+      delete this.pacedParsingStopRequestedBySource[sourceId]
+      this.sourceOrder = this.sourceOrder.filter(id => id !== sourceId)
+      this.batchEntries = this.batchEntries.filter(entry => entry.sourceId !== sourceId)
+      this.selectedBatchEntryIds = this.selectedBatchEntryIds.filter(id => this.batchEntries.some(entry => entry.id === id))
+      if (this.activeSourceId === sourceId) this.activeSourceId = this.sourceOrder[0] ?? null
     },
     toggleNode(sourceId: string, nodeId: string) {
       const tree = this.sources[sourceId]
@@ -695,33 +730,57 @@ export const useParseStore = defineStore('parse', {
       options: CreateTaskOptions = {},
     ): Promise<SelectionSizeEstimate> {
       const settings = useSettingsStore()
-      await settings.ensureLoaded()
       const targets = uniquePartIds(sourceIds).filter(
         (sourceId) => ((options.partIdsBySource?.[sourceId] ?? this.selectionBySource[sourceId])?.length ?? 0) > 0,
       )
+      const snapshots = targets.map(sourceId => ({ sourceId, snapshot: cloneTree(this.sources[sourceId]), partIds: [...(options.partIdsBySource?.[sourceId] ?? this.selectionBySource[sourceId] ?? [])] }))
+      await settings.ensureLoaded()
       const mediaPreferences = mediaPreferencesForTaskRequest(options, settings.saved)
       const aggregate: SelectionSizeEstimate = {
         estimated_bytes: 0,
         estimated_parts: 0,
         unknown_streams: 0,
       }
-      for (const sourceId of targets) {
+      for (const { sourceId, snapshot, partIds } of snapshots) {
         const estimate = await selectionEstimateSize({
           download_preset_id: options.downloadPresetId,
           source_id: sourceId,
-          part_ids: options.partIdsBySource?.[sourceId] ?? this.selectionBySource[sourceId] ?? [],
+          part_ids: partIds,
           missing_quality_policy: options.missingQualityPolicy ?? settings.saved.missing_quality_policy,
           media_mode: options.mediaMode ?? settings.saved.media_mode,
           quality: options.quality ?? settings.saved.quality,
           audio_quality: options.audioQuality ?? settings.saved.audio_quality,
           codec: options.codec ?? settings.saved.codec,
           media_preferences: mediaPreferences,
-        })
+        }, snapshot)
         aggregate.estimated_bytes += estimate.estimated_bytes
         aggregate.estimated_parts += estimate.estimated_parts
         aggregate.unknown_streams += estimate.unknown_streams
       }
       return aggregate
+    },
+    async submitTasksForSources(sourceIds: string[], options: CreateTaskOptions = {}) {
+      const settings = useSettingsStore()
+      const origin = useUiStore().activeTab
+      const sources = uniquePartIds(sourceIds).flatMap(sourceId => {
+        const tree = this.sources[sourceId]
+        const partIds = [...(options.partIdsBySource?.[sourceId] ?? this.selectionBySource[sourceId] ?? [])]
+        if (!tree || !partIds.length) return []
+        const snapshot = cloneTree(tree)
+        for (const group of snapshot.groups) group.items = group.items.map(item => item.parts.some(part => partIds.includes(part.id)) ? item : { id: '', title: '', owner_name: null, cover_url: null, duration_seconds: null, parts: [] })
+        return [{ sourceId, partIds, snapshot }]
+      })
+      if (!sources.length) return null
+      await settings.ensureLoaded()
+      const requests = sources.map(source => ({ ...source, request: taskRequest(source.sourceId, source.partIds, options, settings.saved) }))
+      const failures: Array<{ message: string; detail: string }> = []
+      let submitted = 0
+      for (const { sourceId, snapshot, request } of requests) {
+        try { await usePreparationsStore().submit(request, snapshot, origin); submitted++ }
+        catch (error) { failures.push({ message: errorMessage(error), detail: commandDiagnostic(error, `操作: 提交下载准备\n提交入口: ${origin}\n来源: ${snapshot.source.title}\n链接: ${snapshot.source.input}\n来源ID: ${sourceId}\n所选分集数: ${request.part_ids.length}\n所选分集: ${request.part_ids.join(', ')}`) }) }
+      }
+      if (submitted) this.setNotice(`已提交 ${submitted} 个来源，正在准备下载`, 'info', '查看传输')
+      return { submitted, failures }
     },
     async createTasksForSources(
       sourceIds: string[],
@@ -736,20 +795,18 @@ export const useParseStore = defineStore('parse', {
         return null
       }
 
+      const requests = targets.map((sourceId) => {
+        const source = this.sources[sourceId]?.source
+        const partIds = [...(options.partIdsBySource?.[sourceId] ?? this.selectionBySource[sourceId] ?? [])]
+        const entry = useUiStore().activeTab
+        const failureContext = `操作: 创建下载任务\n提交入口: ${entry}\n来源类型: ${source?.kind ?? 'unknown'}\n来源: ${source?.title ?? sourceId}\n链接: ${source?.input ?? sourceId}\n所选分集数: ${partIds.length}\n所选分集: ${partIds.join(', ')}\n预设: ${options.downloadPresetId ?? '自定义'}`
+        return { sourceId, partIds, failureContext, snapshot: cloneTree(this.sources[sourceId]), generation: this.createGeneration, epoch: this.sourceEpochById[sourceId] }
+      })
       targets.forEach((sourceId) => {
         this.loadingBySource[sourceId] = true
       })
       try {
         await settings.ensureLoaded()
-        const downloadDir =
-          options.downloadDir !== undefined ? options.downloadDir?.trim() : settings.saved.download_dir?.trim()
-        const documentTreeOutput =
-          options.documentTreeOutput !== undefined
-            ? options.documentTreeOutput
-            : settings.saved.document_tree_output
-        const mediaPreferences = mediaPreferencesForTaskRequest(options, settings.saved)
-        const mediaMode = options.mediaMode ?? settings.saved.media_mode
-        const audioOnly = mediaMode === 'audio_only'
         const aggregate: CreateTasksForSourcesResult = {
           created: [],
           duplicates: [],
@@ -760,36 +817,13 @@ export const useParseStore = defineStore('parse', {
           failures: [],
         }
 
-        for (const sourceId of targets) {
+        for (const { sourceId, partIds, failureContext, snapshot } of requests) {
           if (this.pacedParsingBySource[sourceId] && this.pacedParsingStopRequestedBySource[sourceId]) break
           try {
-            const result = await selectionCreateTasks({
-              source_id: sourceId,
-              part_ids: options.partIdsBySource?.[sourceId] ?? this.selectionBySource[sourceId] ?? [],
-              output_dir: downloadDir || undefined,
-              document_tree_output: documentTreeOutput ?? undefined,
-              naming_template: options.namingTemplate ?? settings.saved.naming_template,
-              duplicate_naming_strategy: options.duplicateNamingStrategy ?? settings.saved.duplicate_naming_strategy,
-              ...(options.downloadPresetId ? { download_preset_id: options.downloadPresetId } : {
-              archive_mode: options.archiveMode ?? settings.saved.archive_mode,
-              output_extension: options.outputExtension ?? (audioOnly ? settings.saved.audio_output_format : settings.saved.output_extension),
-              subtitle_format: options.subtitleFormat ?? settings.saved.subtitle_format,
-              danmaku_format: options.danmakuFormat ?? settings.saved.danmaku_format,
-              archive_assets: options.archiveAssets ?? settings.saved.archive_assets,
-              retain_raw_streams: options.retainRawStreams ?? settings.saved.retain_raw_streams,
-              embed_cover: !audioOnly && (options.embedCover ?? settings.saved.embed_cover),
-              embed_subtitles: !audioOnly && (options.embedSubtitles ?? settings.saved.embed_subtitles),
-              missing_quality_policy: options.missingQualityPolicy ?? settings.saved.missing_quality_policy,
-              media_mode: mediaMode,
-              quality: options.quality ?? settings.saved.quality,
-              audio_quality: options.audioQuality ?? settings.saved.audio_quality,
-              codec: options.codec ?? settings.saved.codec,
-              media_preferences: mediaPreferences,
-              }),
-              duplicate_policy: options.duplicatePolicy ?? 'ask',
-              scheduled_at: options.scheduledAt,
-              speed_limit_bytes_per_second: options.speedLimitBytesPerSecond,
-            })
+            const operationId = this.beginOperation(sourceId)
+            let result: SelectionCreateTasksResult
+            try { result = await selectionCreateTasks(taskRequest(sourceId, partIds, options, settings.saved), snapshot, operationId) }
+            finally { this.endOperation(sourceId, operationId) }
             aggregate.created.push(...result.created)
             aggregate.duplicates.push(...result.duplicates)
             aggregate.skipped_existing += result.skipped_existing
@@ -801,7 +835,7 @@ export const useParseStore = defineStore('parse', {
           } catch (error) {
             const message = errorMessage(error)
             aggregate.failedSourceIds.push(sourceId)
-            aggregate.failures.push({ sourceId, message, stopBackground: shouldStopBackgroundParsing(errorCause(error)), detail: commandDiagnostic(error, `操作: 创建下载任务\n来源: ${this.sources[sourceId]?.source.title ?? sourceId}\n链接: ${this.sources[sourceId]?.source.input ?? sourceId}\n所选分集: ${(options.partIdsBySource?.[sourceId] ?? this.selectionBySource[sourceId] ?? []).join(", ")}\n预设: ${options.downloadPresetId ?? "自定义"}`) })
+            aggregate.failures.push({ sourceId, message, stopBackground: shouldStopBackgroundParsing(errorCause(error)), detail: commandDiagnostic(error, failureContext) })
           }
         }
 
@@ -824,14 +858,15 @@ export const useParseStore = defineStore('parse', {
         }
         return aggregate
       } finally {
-        targets.forEach((sourceId) => {
-          this.loadingBySource[sourceId] = false
+        requests.forEach(({ sourceId, generation, epoch }) => {
+          if (this.ownsSource(sourceId, generation, epoch)) this.loadingBySource[sourceId] = false
         })
       }
     },
     upsertSource(tree: NormalizedSourceTree) {
       const sourceId = tree.source.id
       const previous = this.sources[sourceId]
+      if (!previous) this.sourceEpochById[sourceId] = crypto.randomUUID()
       const selection = this.selectionBySource[sourceId]
       if (previous && selection) {
         const currentIds = new Set(collectPartIds(tree))
@@ -856,6 +891,51 @@ export const useParseStore = defineStore('parse', {
     },
   },
 })
+
+const cloneTree = (tree: NormalizedSourceTree): NormalizedSourceTree => JSON.parse(JSON.stringify(tree)) as NormalizedSourceTree
+
+const taskRequest = (
+  sourceId: string,
+  partIds: string[],
+  options: CreateTaskOptions,
+  saved: SettingsSnapshot,
+): SelectionCreateTasksRequest => {
+  const downloadDir = options.downloadDir !== undefined ? options.downloadDir?.trim() : saved.download_dir?.trim()
+  const documentTreeOutput =
+    options.documentTreeOutput !== undefined ? options.documentTreeOutput : saved.document_tree_output
+  const mediaPreferences = mediaPreferencesForTaskRequest(options, saved)
+  const mediaMode = options.mediaMode ?? saved.media_mode
+  const audioOnly = mediaMode === 'audio_only'
+  return {
+    source_id: sourceId,
+    part_ids: partIds,
+    output_dir: downloadDir || undefined,
+    document_tree_output: documentTreeOutput ?? undefined,
+    naming_template: options.namingTemplate ?? saved.naming_template,
+    duplicate_naming_strategy: options.duplicateNamingStrategy ?? saved.duplicate_naming_strategy,
+    ...(options.downloadPresetId
+      ? { download_preset_id: options.downloadPresetId }
+      : {
+          archive_mode: options.archiveMode ?? saved.archive_mode,
+          output_extension: options.outputExtension ?? (audioOnly ? saved.audio_output_format : saved.output_extension),
+          subtitle_format: options.subtitleFormat ?? saved.subtitle_format,
+          danmaku_format: options.danmakuFormat ?? saved.danmaku_format,
+          archive_assets: options.archiveAssets ?? saved.archive_assets,
+          retain_raw_streams: options.retainRawStreams ?? saved.retain_raw_streams,
+          embed_cover: !audioOnly && (options.embedCover ?? saved.embed_cover),
+          embed_subtitles: !audioOnly && (options.embedSubtitles ?? saved.embed_subtitles),
+          missing_quality_policy: options.missingQualityPolicy ?? saved.missing_quality_policy,
+          media_mode: mediaMode,
+          quality: options.quality ?? saved.quality,
+          audio_quality: options.audioQuality ?? saved.audio_quality,
+          codec: options.codec ?? saved.codec,
+          media_preferences: mediaPreferences,
+        }),
+    duplicate_policy: options.duplicatePolicy ?? 'ask',
+    scheduled_at: options.scheduledAt,
+    speed_limit_bytes_per_second: options.speedLimitBytesPerSecond,
+  }
+}
 
 const collectPartIds = (tree: NormalizedSourceTree): string[] =>
   tree.groups.flatMap((group) => group.items.flatMap((item) => item.parts.map((part) => part.id)))
@@ -966,5 +1046,7 @@ const errorCause = (error: unknown): string => {
 const shouldStopBackgroundParsing = (message: string): boolean => {
   // Content titles may themselves contain restriction words or HTTP-like numbers.
   if (message.startsWith('planning error:') && /缺少(?:视频|音频)流|没有符合.*偏好|没有可用的 SDR/.test(message)) return false
+  const code = classifyFailure(message)?.code
+  if (code && ['file_not_found', 'file_path_invalid', 'file_access_denied', 'file_read_only', 'disk_full', 'local_io_failed', 'database_error', 'data_format_error', 'bilibili_request_failed', 'network_request_failed', 'network_timeout', 'parse_cancelled'].includes(code)) return true
   return /(?:^|[^\d])(?:-352|-412|-509|-799|401|403|412|429)(?:[^\d]|$)|限流|验证|风控|captcha|too many requests|解析已因|源站限制|登录状态可能已失效|storage error|io error|platform error|保存目录|磁盘|空间不足|后台创建下载任务失败/i.test(message)
 }

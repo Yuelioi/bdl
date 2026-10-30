@@ -73,8 +73,11 @@ impl<R: Runtime> MediaMuxBackendImpl for AndroidMediaMuxBackend<R> {
         self.handle
             .run_mobile_plugin::<serde_json::Value>("mux", payload)
             .map(|_| ())
-            .map_err(|error| BdlError::Platform {
-                message: format!("Android 媒体合并失败：{error}"),
+            .map_err(|error| {
+                BdlError::Platform {
+                    message: "Android 媒体处理失败，请查看错误详情。".into(),
+                }
+                .with_context(format!("[stage=android_media code=mux_failed] {error}"))
             })
     }
 }

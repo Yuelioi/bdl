@@ -1,3 +1,4 @@
+use bdl_core::error::IoResultExt;
 use bdl_core::muxer::{supports_cover_embedding, supports_subtitle_embedding};
 use bdl_core::queue::{DownloadResource, DownloadResourceIntent, DownloadTask, ResourceStatus};
 use bdl_core::subtitles::{SubtitleFormat, bilibili_json_to_ass, bilibili_json_to_srt};
@@ -143,10 +144,14 @@ pub(crate) async fn prepare_sidecars(task: &DownloadTask) -> BdlResult<()> {
             continue;
         }
         if source.extension() == output.extension() {
-            fs::copy(source, &output).await?;
+            fs::copy(source, &output)
+                .await
+                .path_context("copy_sidecar", &output)?;
             continue;
         }
-        let raw = fs::read_to_string(source).await?;
+        let raw = fs::read_to_string(source)
+            .await
+            .path_context("read_sidecar", source)?;
         let content = match resource.intent {
             DownloadResourceIntent::Subtitle
                 if source.extension().is_some_and(|ext| ext == "json") =>
@@ -202,7 +207,9 @@ pub(crate) async fn prepare_sidecars(task: &DownloadTask) -> BdlResult<()> {
                 });
             }
         };
-        fs::write(&output, content).await?;
+        fs::write(&output, content)
+            .await
+            .path_context("write_sidecar", &output)?;
     }
     Ok(())
 }
@@ -217,7 +224,9 @@ pub(crate) async fn cleanup_converted_sources(task: &DownloadTask) -> BdlResult<
     for resource in &task.resources {
         let output = sidecar_output_path(task, resource);
         if output != resource.target_path && output.is_file() && resource.target_path.is_file() {
-            fs::remove_file(&resource.target_path).await?;
+            fs::remove_file(&resource.target_path)
+                .await
+                .path_context("cleanup_converted_source", &resource.target_path)?;
         }
     }
     Ok(())
@@ -226,7 +235,9 @@ pub(crate) async fn cleanup_converted_sources(task: &DownloadTask) -> BdlResult<
 async fn convert_subtitle(
     path: &std::path::Path,
 ) -> Result<PathBuf, Box<dyn std::error::Error + Send + Sync>> {
-    let json = fs::read_to_string(path).await?;
+    let json = fs::read_to_string(path)
+        .await
+        .path_context("read_subtitle", path)?;
     let srt = bilibili_json_to_srt(&json)?;
     let output = path.with_extension("srt");
     fs::write(&output, srt).await?;
@@ -282,7 +293,10 @@ pub(crate) async fn cleanup_embedded_sources(
             if let Err(error) = fs::remove_file(path).await
                 && error.kind() != std::io::ErrorKind::NotFound
             {
-                warnings.push(format!("嵌入成功，清理临时素材失败：{error}"));
+                warnings.push(format!(
+                    "嵌入成功，清理临时素材失败：{}",
+                    bdl_core::error::file_io_error("cleanup_embedded_source", path, error)
+                ));
             }
         }
     }
@@ -302,11 +316,13 @@ pub(crate) fn completed_resource_by_intent(
 
 pub(crate) async fn write_nfo(task: &DownloadTask, resource: &DownloadResource) -> BdlResult<()> {
     if let Some(parent) = resource.target_path.parent() {
-        fs::create_dir_all(parent).await.map_err(BdlError::from)?;
+        fs::create_dir_all(parent)
+            .await
+            .path_context("create_nfo_directory", parent)?;
     }
     fs::write(&resource.target_path, nfo_content(task)?)
         .await
-        .map_err(BdlError::from)?;
+        .path_context("write_nfo", &resource.target_path)?;
     Ok(())
 }
 

@@ -74,10 +74,11 @@ export function useFileRemoval(
     copyNotice.value = '';
     try {
       const environment = await captureDiagnosticEnvironment();
-      await navigator.clipboard.writeText(`${environment}\n\n${kind === 'tasks' ? '删除任务及文件' : '清理临时文件'}\n任务：${ids.join(', ')}\n${error.value}\n${errorDetails.value}`);
+      await writeClipboardText(`${environment}\n\n${kind === 'tasks' ? '删除任务及文件' : '清理临时文件'}\n任务：${ids.join(', ')}\n${error.value}\n${errorDetails.value}`);
       copied.value = true;
     } catch { copied.value = false; copyNotice.value = '复制失败，请重试'; }
   };
   return { kind, open, busy, executing, preview, error, errorDetails, copied, copyNotice, copyError, canConfirm, show, refresh, confirm };
 }
 export type FileRemovalController = ReturnType<typeof useFileRemoval>;
+import { writeClipboardText } from '../../utils/clipboard';

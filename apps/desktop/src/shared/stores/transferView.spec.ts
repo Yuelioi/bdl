@@ -51,6 +51,8 @@ describe('failure diagnostics', () => {
   it('does not diagnose an earlier attempt after a new attempt has started', () => {
     const logs = [log('Cookie 已失效'), { ...log('开始下载任务', '2026-07-10T12:02:00Z'), level: 'info' as const }]
     expect(createTransferTaskView(task, 0, logs).issueLabel).toBe('任务失败')
+    const sameTime = [{ ...logs[1] }, { ...logs[0], created_at: logs[1].created_at }]
+    expect(createTransferTaskView(task, 0, sameTime).issueLabel).toBe('任务失败')
   })
 
   it('keeps deletion errors separate from a completed download', () => {

@@ -141,6 +141,23 @@ export interface SelectionCreateTasksResult {
   requires_confirmation: boolean;
 }
 
+export type PreparationStatus = 'queued' | 'preparing' | 'awaiting_confirmation' | 'completed' | 'failed' | 'cancelled' | 'interrupted';
+export interface PreparationJob {
+  id: string;
+  title: string;
+  source_id: string;
+  input: string;
+  status: PreparationStatus;
+  origin: string;
+  processed: number;
+  total: number;
+  created: number;
+  skipped_existing: number;
+  duplicates: DuplicateTaskMatch[];
+  error: { code: string; message: string; detail?: string } | null;
+  created_at: string;
+}
+
 export interface SelectionSizeEstimate {
   estimated_bytes: number;
   estimated_parts: number;
@@ -198,7 +215,9 @@ export interface QueueRemoveResponse {
 
 export interface BulkQueueFailure {
   task_id: string;
+  code: string;
   message: string;
+  detail: string | null;
 }
 
 export interface BulkQueueResult {
@@ -220,6 +239,7 @@ export interface DiagnosticEnvironment {
   arch: string;
   device: { os_version: string | null; android_sdk: number | null; webview_version: string | null };
   device_info_available: boolean;
+  device_info_error?: string | null;
   segment_count: number;
   concurrent_tasks: number;
   retry_count: number;
@@ -414,6 +434,16 @@ export interface TaskLogCleanup {
   task_ids: string[];
 }
 
+export interface OperationErrorRecord {
+  id: number;
+  command: string;
+  code: string;
+  message: string;
+  detail: string | null;
+  environment: DiagnosticEnvironment;
+  created_at: string;
+}
+
 export type DownloadDirectoryStatus = 'ready' | 'missing' | 'not_directory' | 'unwritable';
 export type FfmpegStatus = 'ready' | 'missing' | 'invalid';
 export type FfmpegSource = 'configured' | 'system' | 'native';
@@ -440,6 +470,7 @@ export interface EnvironmentHealthSnapshot {
 
 export interface DiagnosticsExportResponse {
   path: string;
+  saved: boolean;
 }
 
 export interface AccountSummary {

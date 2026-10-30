@@ -4,7 +4,8 @@ use std::collections::HashSet;
 
 use bdl_core::BdlResult;
 use bdl_core::naming::{
-    DuplicateNamingStrategy, ReservedPaths, resolve_duplicate_path, unique_path,
+    DuplicateNamingStrategy, ReservedPaths, resolve_duplicate_path_with_stem_limit,
+    unique_path_with_stem_limit,
 };
 use bdl_core::queue::{DownloadResource, DownloadTask, ResourceStatus, TaskStatus};
 use serde::Serialize;
@@ -104,7 +105,11 @@ pub(crate) fn prepare_duplicate_copies(
         while !used_ids.insert(format!("{}:copy:{copy_index}", task.logical_id())) {
             copy_index += 1;
         }
-        let output_path = unique_path(task.output_path.clone(), &mut reserved_paths);
+        let output_path = unique_path_with_stem_limit(
+            task.output_path.clone(),
+            &mut reserved_paths,
+            task.file_stem_byte_limit()?,
+        );
         prepared.push(task.into_duplicate_copy(copy_index, output_path)?);
     }
     Ok(prepared)
@@ -134,11 +139,20 @@ pub(crate) fn reserve_queued_paths(
             continue;
         }
         let path = if reserved.contains(&task.output_path) {
-            Some(unique_path(task.output_path.clone(), &mut reserved))
+            Some(unique_path_with_stem_limit(
+                task.output_path.clone(),
+                &mut reserved,
+                task.file_stem_byte_limit()?,
+            ))
         } else {
             // Recheck disk under the enqueue lock: an earlier download may have
             // completed since the planner inspected its destination.
-            resolve_duplicate_path(task.output_path.clone(), &mut reserved, strategy)
+            resolve_duplicate_path_with_stem_limit(
+                task.output_path.clone(),
+                &mut reserved,
+                strategy,
+                task.file_stem_byte_limit()?,
+            )
         };
         if let Some(path) = path {
             prepared.push(if path == task.output_path {

@@ -34,12 +34,16 @@ pub struct FailureRule {
     pub http_statuses: Vec<u16>,
 }
 
-pub fn classify_failure(message: &str) -> Option<&'static FailureRule> {
+fn rules() -> &'static [FailureRule] {
     static RULES: OnceLock<Vec<FailureRule>> = OnceLock::new();
-    let rules = RULES.get_or_init(|| {
+    RULES.get_or_init(|| {
         serde_json::from_str(include_str!("diagnostic-rules.json"))
             .expect("bundled diagnostic rules must be valid")
-    });
+    })
+}
+
+pub fn explicit_failure(message: &str) -> Option<&'static FailureRule> {
+    let rules = rules();
     let lower = message.to_lowercase();
     // A producer's contextual code takes priority over incidental words in paths or causes.
     for marker in lower.split("code=").skip(1) {
@@ -50,7 +54,15 @@ pub fn classify_failure(message: &str) -> Option<&'static FailureRule> {
             return Some(rule);
         }
     }
-    rules.iter().find(|rule| {
+    None
+}
+
+pub fn classify_failure(message: &str) -> Option<&'static FailureRule> {
+    if let Some(rule) = explicit_failure(message) {
+        return Some(rule);
+    }
+    let lower = message.to_lowercase();
+    rules().iter().find(|rule| {
         rule.contains.iter().any(|text| lower.contains(text))
             || rule
                 .http_statuses
@@ -74,23 +86,22 @@ fn has_http_status(message: &str, status: u16) -> bool {
 }
 
 pub fn latest_failure(logs: &[QueueLogEntry]) -> Option<&str> {
-    let attempt = logs
-        .iter()
-        .filter(|log| {
-            matches!(
-                log.message.as_str(),
-                "重试任务" | "开始下载任务" | "刷新下载地址"
-            )
-        })
-        .map(|log| &log.created_at)
-        .max();
-    logs.iter()
-        .filter(|log| {
-            log.level == QueueLogLevel::Error
-                && attempt.is_none_or(|start| &log.created_at >= start)
-        })
-        .max_by_key(|log| &log.created_at)
-        .map(|log| log.message.as_str())
+    // Storage and live events are newest first. Preserve that order for equal
+    // timestamps so an earlier error cannot cross a new attempt boundary.
+    let mut ordered: Vec<_> = logs.iter().collect();
+    ordered.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+    for log in ordered {
+        if matches!(
+            log.message.as_str(),
+            "重试任务" | "开始下载任务" | "刷新下载地址"
+        ) {
+            return None;
+        }
+        if log.level == QueueLogLevel::Error {
+            return Some(log.message.as_str());
+        }
+    }
+    None
 }
 
 pub fn diagnose_task(task: &DownloadTask, logs: &[QueueLogEntry]) -> TaskDiagnostic {

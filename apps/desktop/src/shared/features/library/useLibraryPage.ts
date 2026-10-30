@@ -1,5 +1,6 @@
 import { computed, onActivated, onDeactivated, onMounted, ref, useTemplateRef, watch } from 'vue';
 import type { LibraryContentSource, LibraryCategory } from '../../api/dto';
+import type { ParseCancelReason } from '../../api/tauri';
 import { useAccountStore } from '../../stores/account';
 import { useLibraryStore } from '../../stores/library';
 import { useParseStore } from '../../stores/parse';
@@ -78,12 +79,13 @@ export function useLibraryPage() {
     parse.clearNotice();
     void loadFolder(item, requestId);
   };
-  const closeFolder = async () => {
+  const clearFolder = async (reason: ParseCancelReason) => {
     detailRequestId += 1;
     detailFolder.value = null;
     detailLoading.value = false;
-    await parse.clearWorkspace();
+    await parse.clearWorkspace(reason);
   };
+  const closeFolder = () => clearFolder('library_folder_closed');
   const openDownloadSettings = () => void downloadPlanner.value?.openDialog();
   onMounted(() => {
     if (pageActive) return;
@@ -97,19 +99,19 @@ export function useLibraryPage() {
   });
   onDeactivated(() => {
     pageActive = false;
-    if (detailFolder.value || detailLoading.value) void closeFolder();
+    if (detailFolder.value || detailLoading.value) void clearFolder('library_deactivated');
   });
   watch(
     () => [account.profile.logged_in, account.profile.mid] as const,
     ([loggedIn, mid], previous) => {
       if (!loggedIn) {
-        if (detailFolder.value || detailLoading.value) void closeFolder();
+        if (detailFolder.value || detailLoading.value) void clearFolder('account_changed');
         library.clear();
         return;
       }
       if (!previous?.[0] || previous[1] !== mid) {
         library.clear();
-        if (detailFolder.value || detailLoading.value) void closeFolder().then(() => load());
+        if (detailFolder.value || detailLoading.value) void clearFolder('account_changed').then(() => load());
         else void load();
       }
     },

@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use bdl_core::error::IoResultExt;
 use bdl_core::muxer::{MediaMuxer, MediaMuxerConfig, MuxRequest};
 use bdl_core::{BdlError, BdlResult};
 
@@ -58,12 +59,28 @@ impl MediaMuxBackend {
             if source != &request.output_path {
                 // Publish only a complete copy so interrupted saves cannot be recovered as finished.
                 let temporary = request.output_path.with_extension("m4s.bdl-copy.tmp");
-                tokio::fs::copy(source, &temporary).await?;
-                tokio::fs::rename(&temporary, &request.output_path).await?;
+                tokio::fs::copy(source, &temporary)
+                    .await
+                    .path_context("copy_raw_audio", &temporary)?;
+                tokio::fs::rename(&temporary, &request.output_path)
+                    .await
+                    .path_context("publish_raw_audio", &request.output_path)?;
             }
             return Ok(());
         }
-        self.inner.mux(request, ffmpeg_path).await
+        self.inner.mux(request, ffmpeg_path).await.map_err(|error| {
+            error.with_context(format!(
+                "[stage=media_process] video={:?} audio={:?} output={} ffmpeg_backend={}",
+                request.video_path,
+                request.audio_path,
+                request.output_path.display(),
+                if cfg!(target_os = "android") {
+                    "android_native"
+                } else {
+                    "desktop"
+                },
+            ))
+        })
     }
 }
 

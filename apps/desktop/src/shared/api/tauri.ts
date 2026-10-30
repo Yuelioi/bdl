@@ -1,8 +1,11 @@
 import { invoke } from '@tauri-apps/api/core'
-import { recordCommandFailure, recentFailureReport } from '../utils/recentFailures'
+import { recordCommandFailure, replaceRecentFailures, clearRecentFailures } from '../utils/recentFailures'
+import { redactDiagnosticMessage } from '../stores/transferView'
+import { boundedDiagnostic } from '../utils/commandDiagnostic'
 
 import type {
   AccountSummary,
+  OperationErrorRecord,
   AccountLibraryFolderKind,
   AccountLibraryPage,
   BulkQueueResult,
@@ -26,6 +29,7 @@ import type {
   DownloadMediaMode,
   SettingsSnapshot,
   SelectionCreateTasksResult,
+  PreparationJob,
   SelectionSizeEstimate,
   StartupRecoverySnapshot,
   VideoCodecPreference,
@@ -55,16 +59,16 @@ export interface ParseCreateSourceRequest {
   expand_video_collection?: boolean
 }
 
-export interface ParseCloseSourceResponse {
-  removed: boolean
-}
-
 export interface ParseSourcePageRequest {
   source_id: string
+  snapshot: NormalizedSourceTree
+  operation_id: string
 }
 
 export interface ParseLoadAllRequest {
   source_id: string
+  snapshot: NormalizedSourceTree
+  operation_id: string
   limit?: number
 }
 
@@ -137,8 +141,8 @@ export type NotificationPermissionState =
   | 'prompt-with-rationale'
   | 'unsupported'
 
-export const parseCreateSource = (request: ParseCreateSourceRequest) =>
-  invokeCommand<NormalizedSourceTree>('parse_create_source', { request })
+export const parseCreateSource = (request: ParseCreateSourceRequest, operationId: string) =>
+  invokeCommand<NormalizedSourceTree>('parse_create_source', { request, operationId })
 
 export const parseLoadMore = (request: ParseSourcePageRequest) =>
   invokeCommand<NormalizedSourceTree>('parse_load_more', { request })
@@ -146,7 +150,8 @@ export const parseLoadMore = (request: ParseSourcePageRequest) =>
 export const parseLoadPage = (request: ParseSourcePageRequest & { page_number: number }) =>
   invokeCommand<{ tree: NormalizedSourceTree; item_ids: string[] }>('parse_load_page', { request })
 
-export const parseCancel = (sourceId: string) => invokeCommand<void>('parse_cancel', { sourceId })
+export type ParseCancelReason = 'stop_requested' | 'workspace_cleared' | 'library_deactivated' | 'library_folder_closed' | 'account_changed'
+export const parseCancel = (sourceId: string, reason: ParseCancelReason) => invokeCommand<void>('parse_cancel', { sourceId, reason })
 
 export const parseProgress = (sourceId: string) =>
   invokeCommand<{ active: boolean; waiting_seconds: number; queued: boolean }>('parse_progress', { sourceId })
@@ -154,23 +159,30 @@ export const parseProgress = (sourceId: string) =>
 export const parseLoadAll = (request: ParseLoadAllRequest) =>
   invokeCommand<NormalizedSourceTree>('parse_load_all', { request })
 
-export const parseCloseSource = (sourceId: string) =>
-  invokeCommand<ParseCloseSourceResponse>('parse_close_source', { sourceId })
-
 export const parseRefreshSource = (request: ParseSourcePageRequest) =>
   invokeCommand<NormalizedSourceTree>('parse_refresh_source', { request })
 
-export const selectionCreateTasks = (request: SelectionCreateTasksRequest) =>
-  invokeCommand<SelectionCreateTasksResult>('selection_create_tasks', { request })
+export const selectionCreateTasks = (request: SelectionCreateTasksRequest, snapshot: NormalizedSourceTree, operationId: string) =>
+  invokeCommand<SelectionCreateTasksResult>('selection_create_tasks', { request, snapshot, operationId })
 
-export const selectionEstimateSize = (request: SelectionEstimateSizeRequest) =>
-  invokeCommand<SelectionSizeEstimate>('selection_estimate_size', { request })
+export const selectionSubmitTasks = (request: SelectionCreateTasksRequest, snapshot: NormalizedSourceTree, origin: string) =>
+  invokeCommand<PreparationJob>('selection_submit_tasks', { request, snapshot, origin })
+export const preparationList = () => invokeCommand<PreparationJob[]>('preparation_list')
+export const preparationCancel = (jobId: string) => invokeCommand<void>('preparation_cancel', { jobId })
+export const preparationConfirm = (jobId: string, policy: DuplicateTaskPolicy) => invokeCommand<void>('preparation_confirm', { jobId, policy })
+export const preparationDismiss = (jobId: string) => invokeCommand<void>('preparation_dismiss', { jobId })
 
-export const selectionPrepare = (sourceId: string, partIds: string[]) =>
-  invokeCommand<NormalizedSourceTree>('selection_prepare', { sourceId, partIds })
+export const selectionEstimateSize = (request: SelectionEstimateSizeRequest, snapshot: NormalizedSourceTree) =>
+  invokeCommand<SelectionSizeEstimate>('selection_estimate_size', { request, snapshot })
+
+export const selectionPrepare = (sourceId: string, partIds: string[], snapshot: NormalizedSourceTree, operationId: string) =>
+  invokeCommand<NormalizedSourceTree>('selection_prepare', { sourceId, partIds, snapshot, operationId })
 
 export const mobilePickExportDirectory = () =>
   invokeCommand<DocumentTreeDirectory>('mobile_pick_export_directory')
+
+export const writeNativeClipboardText = (text: string, android: boolean) =>
+  invokeCommand<void>(android ? 'mobile_write_clipboard_text' : 'desktop_write_clipboard_text', { text })
 
 export const mobileSaveImageToGallery = (fileName: string, imageBase64: string) =>
   invokeCommand<string>('mobile_save_image_to_gallery', { fileName, imageBase64 })
@@ -278,9 +290,17 @@ export const maintenanceCleanupCache = () => invokeCommand<MaintenanceResult>('m
 export const maintenanceCleanupTemp = (token: string) => invokeCommand<MaintenanceResult>('maintenance_cleanup_temp', { token })
 
 export const maintenanceLogUsage = () => invokeCommand<LogMaintenanceUsage>('maintenance_log_usage')
-export const maintenanceCleanupLogs = () => invokeCommand<TaskLogCleanup>('maintenance_cleanup_logs')
+export const maintenanceCleanupLogs = async () => {
+  const result = await invokeCommand<TaskLogCleanup>('maintenance_cleanup_logs')
+  clearRecentFailures()
+  return result
+}
 export const maintenanceCleanupDiagnostics = () => invokeCommand<number>('maintenance_cleanup_diagnostics')
-export const diagnosticsExport = (taskId?: string) => invokeCommand<DiagnosticsExportResponse>('diagnostics_export', { taskId: taskId ?? null, recentErrors: taskId ? null : recentFailureReport.value || null })
+export const diagnosticsExport = (taskId?: string) => invokeCommand<DiagnosticsExportResponse>('diagnostics_export', { taskId: taskId ?? null })
+export const refreshOperationErrors = async () => {
+  const records = await invokeCommand<OperationErrorRecord[]>('diagnostics_operation_errors')
+  replaceRecentFailures(records)
+}
 export const diagnosticsEnvironment = () => invokeCommand<DiagnosticEnvironment>('diagnostics_environment')
 
 export const openExternalUrl = (url: string) => invokeCommand<void>('open_external_url', { url })
@@ -289,7 +309,18 @@ const invokeCommand = async <T>(command: string, args?: Record<string, unknown>)
   try {
     return await invoke<T>(command, args)
   } catch (error) {
-    const normalized = normalizeCommandError(error, command)
+    let normalized = normalizeCommandError(error, command)
+    if (normalized.code === 'parse_cancelled') throw normalized
+    const safe = { code: normalized.code, message: boundedDiagnostic(normalized.message, 4000),
+      detail: normalized.detail ? boundedDiagnostic(normalized.detail) : undefined }
+    try {
+      // Raw invoke avoids recursively trying to journal a journal-write failure.
+      const id = await invoke<number>('diagnostics_record_operation_error', { command, error: safe })
+      normalized = new BdlCommandError({ ...safe, detail: `错误记录: ${id}\n${safe.detail ?? safe.message}` })
+    } catch (journalError) {
+      const cause = normalizeCommandError(journalError, 'diagnostics_record_operation_error')
+      normalized = new BdlCommandError({ ...safe, detail: `${safe.detail ?? safe.message}\n[stage=diagnostic_persist] 操作错误未能写入日志: ${redactDiagnosticMessage(cause.detail ?? cause.message)}` })
+    }
     recordCommandFailure(command, normalized)
     throw normalized
   }

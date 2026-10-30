@@ -19,6 +19,9 @@ export const classifyFailure = (message: string) => {
 
 export const latestFailure = (logs: QueueLogEntry[]): string | undefined => {
   const ordered = [...logs].sort((a, b) => b.created_at.localeCompare(a.created_at))
-  const start = ordered.find((log) => ['重试任务', '开始下载任务', '刷新下载地址'].includes(log.message))?.created_at
-  return ordered.find((log) => log.level === 'error' && (!start || log.created_at >= start))?.message
+  for (const log of ordered) {
+    if (['重试任务', '开始下载任务', '刷新下载地址'].includes(log.message)) return undefined
+    if (log.level === 'error') return log.message
+  }
+  return undefined
 }

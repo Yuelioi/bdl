@@ -80,24 +80,22 @@ impl ResolveGate {
 }
 
 pub fn is_source_restriction(message: &str) -> bool {
+    if let Some(rule) = crate::diagnostics::classify_failure(message) {
+        return matches!(
+            rule.code.as_str(),
+            "source_rate_limited" | "source_verification_required" | "remote_forbidden"
+        );
+    }
     let lower = message.to_ascii_lowercase();
-    lower
-        .split(|c: char| !c.is_ascii_digit() && c != '-')
-        .any(|code| {
-            matches!(
-                code,
-                "-352" | "-412" | "-509" | "-799" | "403" | "412" | "429"
-            )
-        })
-        || [
-            "source restriction",
-            "captcha",
-            "验证",
-            "风控",
-            "too many requests",
-        ]
-        .iter()
-        .any(|text| lower.contains(text))
+    [
+        "source restriction",
+        "captcha",
+        "验证",
+        "风控",
+        "too many requests",
+    ]
+    .iter()
+    .any(|text| lower.contains(text))
 }
 
 fn error(message: &str) -> BdlError {
@@ -158,5 +156,8 @@ mod tests {
             assert_eq!(called.load(Ordering::SeqCst), 0);
         }
         assert!(!is_source_restriction("connection timeout"));
+        assert!(!is_source_restriction(
+            "[stage=bilibili_api origin=source.rs:429:12] missing response data"
+        ));
     }
 }

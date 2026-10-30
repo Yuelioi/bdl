@@ -1272,6 +1272,12 @@ mod tests {
         fn pick_document_tree(&self) -> BdlResult<bdl_core::settings::DocumentTreeDirectory> {
             Err(error("unused"))
         }
+        fn write_clipboard_text(&self, _: &str) -> BdlResult<()> {
+            unreachable!()
+        }
+        fn save_diagnostic_file(&self, _: &Path) -> BdlResult<bool> {
+            unreachable!()
+        }
         fn read_clipboard_text(&self) -> BdlResult<String> {
             Err(error("unused"))
         }

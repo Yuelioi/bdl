@@ -13,7 +13,7 @@ use crate::model::{
 };
 use crate::naming::{
     DEFAULT_NAMING_TEMPLATE, DuplicateNamingStrategy, NamingContext, ReservedPaths,
-    render_output_path, resolve_duplicate_path,
+    render_output_path, resolve_duplicate_path, resolve_duplicate_path_with_stem_limit,
 };
 use crate::queue::{
     DownloadResource, DownloadResourceIntent, DownloadResourceKind, DownloadTask,
@@ -574,15 +574,24 @@ fn plan_part(
         scheduled_at: None,
         speed_limit_bytes_per_second: None,
     };
+    reserved_paths.remove(&task.output_path);
+    let task = task.limit_file_names()?;
     if options.workflow.is_some() {
-        reserved_paths.remove(&task.output_path);
         return crate::workflow::reserve_task_paths(
             task,
             reserved_paths,
             options.duplicate_naming_strategy,
         );
     }
-    Ok(Some(task))
+    let output_path = resolve_duplicate_path_with_stem_limit(
+        task.output_path.clone(),
+        reserved_paths,
+        options.duplicate_naming_strategy,
+        task.file_stem_byte_limit()?,
+    );
+    output_path
+        .map(|output| task.with_output_path(output))
+        .transpose()
 }
 
 fn workflow_output_extension(

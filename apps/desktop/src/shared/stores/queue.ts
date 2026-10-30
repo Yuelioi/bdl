@@ -1,5 +1,7 @@
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { defineStore } from 'pinia'
+import { recordCommandFailure } from '../utils/recentFailures'
+import type { CommandErrorShape } from '../api/tauri'
 
 import type {
   BulkQueueResult,
@@ -171,6 +173,12 @@ export const useQueueStore = defineStore('queue', {
       }
 
       this.listening = true
+      this.unlisten.push(
+        await listen<{ command: string; error: CommandErrorShape }>('diagnostic://operation-error', (event) => {
+          recordCommandFailure(event.payload.command, event.payload.error)
+          this.setNotice(event.payload.error.message, event.payload.command === 'queue_worker' ? 'danger' : 'warning')
+        }),
+      )
       this.unlisten.push(
         await listen<DownloadTask>('queue://task-updated', (event) => {
           this.upsertTask(event.payload)
@@ -515,7 +523,7 @@ export const useQueueStore = defineStore('queue', {
       }
 
       try {
-        await navigator.clipboard.writeText(sourceReference(task.source_id))
+        await writeClipboardText(sourceReference(task.source_id))
         this.setNotice('已复制来源', 'success')
       } catch (error) {
         ui.pushToast(errorMessage(error), 'danger')
@@ -702,3 +710,4 @@ const errorMessage = (error: unknown): string => {
 
   return String(error)
 }
+import { writeClipboardText } from '../utils/clipboard'

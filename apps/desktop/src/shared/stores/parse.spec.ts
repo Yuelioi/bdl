@@ -4,9 +4,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useParseStore } from './parse'
 import type { NormalizedSourceTree } from '../api/dto'
 import { useSettingsStore } from './settings'
+import { useUiStore } from './ui'
 
 const api = vi.hoisted(() => ({
-  parseCloseSource: vi.fn(),
   parseCreateSource: vi.fn(),
   parseLoadAll: vi.fn(),
   parseLoadMore: vi.fn(),
@@ -106,10 +106,20 @@ describe('parse store', () => {
     expect(parse.notice?.detail).toContain('BV1xx411c8m1')
     expect(parse.notice?.detail).not.toContain('secret-cookie')
     parse.upsertSource(sourceTree('source:diagnostic', '测试视频'))
-    api.selectionCreateTasks.mockRejectedValueOnce(error)
+    const selectedIds = [...parse.selectionBySource['source:diagnostic']!]
+    useUiStore().activeTab = 'library'
+    api.selectionCreateTasks.mockImplementationOnce(async () => {
+      useUiStore().activeTab = 'transfer'
+      await parse.clearWorkspace()
+      throw error
+    })
     const result = await parse.createTasksForSources(['source:diagnostic'])
     expect(result?.failures[0]?.detail).toContain('HTTP 412')
     expect(result?.failures[0]?.detail).toContain('测试视频')
+    expect(result?.failures[0]?.detail).toContain('提交入口: library')
+    expect(result?.failures[0]?.detail).toContain('来源类型: video')
+    expect(result?.failures[0]?.detail).toContain(`所选分集数: ${selectedIds.length}`)
+    selectedIds.forEach((id) => expect(result?.failures[0]?.detail).toContain(id))
     expect(result?.failures[0]?.detail).not.toContain('secret-cookie')
   })
 
@@ -146,11 +156,18 @@ describe('parse store', () => {
     api.selectionPrepare.mockReturnValue(new Promise(done => { resolve = done }))
     const pending = parse.prepareLoadedVideos(tree.source.id, 'all')
     parse.stopPacedParsing(tree.source.id)
-    await parse.clearWorkspace()
+    let cancelled!: () => void
+    api.parseCancel.mockReturnValueOnce(new Promise<void>(done => { cancelled = done }))
+    const closing = parse.clearWorkspace()
+    expect(parse.activeSource).toBeNull()
+    expect(parse.operationsBySource).toEqual({})
+    cancelled()
+    await closing
     resolve(tree)
     await pending
     expect(api.selectionPrepare).toHaveBeenCalledTimes(1)
-    expect(api.parseCancel).toHaveBeenCalled()
+    expect(api.parseCancel).toHaveBeenCalledWith(expect.any(String), 'stop_requested')
+    expect(api.parseCancel).toHaveBeenCalledWith(expect.any(String), 'workspace_cleared')
     expect(parse.activeSource).toBeNull()
     expect(parse.preparationBySource).toEqual({})
   })
@@ -183,7 +200,7 @@ describe('parse store', () => {
     resolve(tree)
     await expect(pending).resolves.toBe(false)
     expect(parse.activeSourceId).toBeNull()
-    expect(api.parseCloseSource).toHaveBeenCalledWith('watch_later:old')
+    expect(parse.operationsBySource).toEqual({})
   })
 
   beforeEach(() => {
@@ -206,7 +223,7 @@ describe('parse store', () => {
     expect(await parse.loadPage(tree.source.id, 8)).toBeNull()
     expect(parse.errorsBySource[tree.source.id]).toBe('网络错误')
     expect(await parse.loadPage(tree.source.id, 8)).toEqual(['item:page:8'])
-    expect(api.parseLoadPage).toHaveBeenLastCalledWith({ source_id: tree.source.id, page_number: 8 })
+    expect(api.parseLoadPage.mock.lastCall?.[0]).toMatchObject({ source_id: tree.source.id, page_number: 8, operation_id: expect.any(String), snapshot: expect.objectContaining({ source: expect.objectContaining({ id: tree.source.id }) }) })
     expect(api.parseLoadMore).not.toHaveBeenCalled()
     expect(parse.selectionBySource[tree.source.id]).toEqual(['part:favorite:42'])
     expect(parse.errorsBySource[tree.source.id]).toBeNull()
@@ -250,10 +267,8 @@ describe('parse store', () => {
     await vi.advanceTimersByTimeAsync(3_000)
 
     await expect(parsing).resolves.toBe('completed')
-    expect(api.parseLoadMore.mock.calls).toEqual([
-      [{ source_id: 'favorite:42' }],
-      [{ source_id: 'favorite:42' }],
-    ])
+    expect(api.parseLoadMore.mock.calls.map(([request]) => request.source_id)).toEqual(['favorite:42', 'favorite:42'])
+    expect(api.parseLoadMore.mock.calls[0]![0].operation_id).not.toBe(api.parseLoadMore.mock.calls[1]![0].operation_id)
     expect(parse.pacedParsingBySource['favorite:42']).toBe(false)
     vi.useRealTimers()
   })
@@ -317,7 +332,7 @@ describe('parse store', () => {
     parse.upsertSource(tree)
     const parsing = parse.parseAllPaced(tree.source.id)
     parse.stopPacedParsing(tree.source.id)
-    expect(api.parseCancel).toHaveBeenCalledWith(tree.source.id)
+    expect(api.parseCancel).toHaveBeenCalledWith(expect.any(String), 'stop_requested')
     await expect(parsing).resolves.toBe('stopped')
     expect(parse.sources[tree.source.id]?.source.loaded_count).toBe(100)
     expect(parse.errorsBySource[tree.source.id]).toBeNull()
@@ -338,7 +353,7 @@ describe('parse store', () => {
     await parse.loadMore('uploader:42')
 
     expect(api.parseLoadMore).toHaveBeenCalledOnce()
-    expect(api.parseLoadMore).toHaveBeenCalledWith({ source_id: 'uploader:42' })
+    expect(api.parseLoadMore.mock.calls[0]?.[0]).toMatchObject({ source_id: 'uploader:42', operation_id: expect.any(String) })
     expect(parse.activeSource?.source.loaded_count).toBe(100)
     expect(parse.notice).toBeNull()
   })
@@ -357,7 +372,7 @@ describe('parse store', () => {
 
     await parse.loadChunk('uploader:42', 200)
 
-    expect(api.parseLoadMore).toHaveBeenCalledWith({ source_id: 'uploader:42' })
+    expect(api.parseLoadMore.mock.calls[0]?.[0]).toMatchObject({ source_id: 'uploader:42', operation_id: expect.any(String) })
     expect(parse.notice).toBeNull()
   })
 
@@ -371,7 +386,7 @@ describe('parse store', () => {
       input: 'https://www.bilibili.com/video/av807178613/',
       fetch_streams: false,
       expand_video_collection: true,
-    })
+    }, expect.any(String))
   })
 
   it('single-video mode disables collection expansion and preserves the batch draft', async () => {
@@ -379,7 +394,7 @@ describe('parse store', () => {
     parse.input = 'BV1xx411c7mD\nBV1xx411c7mE'
     api.parseCreateSource.mockResolvedValue(sourceTree('video:one', '单个视频'))
     expect(await parse.createSource('BV1xx411c7mD', { singleVideo: true })).toBe(true)
-    expect(api.parseCreateSource).toHaveBeenCalledWith({ input: 'BV1xx411c7mD', fetch_streams: false, expand_video_collection: false })
+    expect(api.parseCreateSource).toHaveBeenCalledWith({ input: 'BV1xx411c7mD', fetch_streams: false, expand_video_collection: false }, expect.any(String))
     expect(parse.input).toBe('BV1xx411c7mD\nBV1xx411c7mE')
     expect(parse.isBatch).toBe(false)
   })
@@ -399,7 +414,7 @@ describe('parse store', () => {
     api.parseCreateSource.mockResolvedValue(container)
     expect(await parse.createSource('https://b23.tv/abc', { singleVideo: true })).toBe(false)
     expect(parse.activeSource).toBeNull()
-    expect(api.parseCloseSource).toHaveBeenCalledWith(container.source.id)
+    expect(parse.sourceOrder).toEqual([])
   })
 
   it('rejects an empty submission without treating an existing result as a new parse', async () => {
@@ -437,12 +452,12 @@ describe('parse store', () => {
       input: 'BV1',
       fetch_streams: false,
       expand_video_collection: false,
-    })
+    }, expect.any(String))
     expect(api.parseCreateSource).toHaveBeenNthCalledWith(2, {
       input: 'BV2',
       fetch_streams: false,
       expand_video_collection: false,
-    })
+    }, expect.any(String))
     expect(parse.sourceOrder).toEqual(['source:BV1', 'source:BV2'])
     expect(parse.selectedSourceIds).toEqual(['source:BV1', 'source:BV2'])
     expect(parse.selectedBatchEntryIds).toHaveLength(2)
@@ -471,19 +486,17 @@ describe('parse store', () => {
 
   it('replaces the previous workspace after a new source parses successfully', async () => {
     api.parseCreateSource.mockResolvedValue(sourceTree('source:new', '新来源'))
-    api.parseCloseSource.mockResolvedValue(undefined)
     const parse = useParseStore()
     parse.upsertSource(sourceTree('source:old', '旧来源'))
 
     await parse.createSource('BV-new')
 
-    expect(api.parseCloseSource).toHaveBeenCalledWith('source:old')
+    expect(parse.sources['source:old']).toBeUndefined()
     expect(parse.sourceOrder).toEqual(['source:new'])
     expect(parse.activeSource?.source.title).toBe('新来源')
   })
 
   it('clears the entire parse workspace when returning to the source step', async () => {
-    api.parseCloseSource.mockResolvedValue(undefined)
     const parse = useParseStore()
     parse.input = 'BV-old'
     parse.upsertSource(sourceTree('source:one', '来源一'))
@@ -499,8 +512,7 @@ describe('parse store', () => {
     expect(parse.selectionBySource).toEqual({})
     expect(parse.errorsBySource).toEqual({})
     expect(parse.activeSource).toBeNull()
-    expect(api.parseCloseSource).toHaveBeenCalledTimes(2)
-    expect(api.parseCloseSource.mock.calls.flat()).toEqual(expect.arrayContaining(['source:one', 'source:two']))
+    expect(parse.operationsBySource).toEqual({})
   })
 
   it('aggregates duplicate confirmation across selected sources', async () => {
@@ -547,7 +559,7 @@ describe('parse store', () => {
       namingTemplate: '{title} - P{part_index} - {part_title}.{ext}',
     })
 
-    expect(api.selectionCreateTasks).toHaveBeenCalledWith(
+    expect(api.selectionCreateTasks.mock.calls[0]?.[0]).toEqual(
       expect.objectContaining({
         naming_template: '{title} - P{part_index} - {part_title}.{ext}',
       }),
@@ -569,7 +581,7 @@ describe('parse store', () => {
 
     await parse.createTasksForSelection('source:saved-naming')
 
-    expect(api.selectionCreateTasks).toHaveBeenCalledWith(
+    expect(api.selectionCreateTasks.mock.calls[0]?.[0]).toEqual(
       expect.objectContaining({
         naming_template: '{publish_date} - {date} - {title}.{ext}',
       }),
@@ -597,7 +609,7 @@ describe('parse store', () => {
       mediaPreferences: settings.saved.media_preferences,
     })
 
-    expect(api.selectionCreateTasks).toHaveBeenCalledWith(
+    expect(api.selectionCreateTasks.mock.calls[0]?.[0]).toEqual(
       expect.objectContaining({
         quality: '64',
         codec: 'avc',
@@ -630,7 +642,7 @@ describe('parse store', () => {
       mediaPreferences: settings.saved.media_preferences,
     })
 
-    expect(api.selectionEstimateSize).toHaveBeenCalledWith(
+    expect(api.selectionEstimateSize.mock.calls[0]?.[0]).toEqual(
       expect.objectContaining({
         quality: '64',
         codec: 'avc',

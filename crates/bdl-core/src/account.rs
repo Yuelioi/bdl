@@ -176,7 +176,7 @@ pub async fn account_library_page(
     let client = BpiClient::builder()
         .cookie(cookie)
         .build()
-        .map_err(|error| BdlError::Bpi(error.to_string()))?;
+        .map_err(|error| crate::error::bpi_error(error))?;
 
     match kind {
         AccountLibraryFolderKind::CreatedFavorite => {
@@ -184,7 +184,7 @@ pub async fn account_library_page(
                 .fav()
                 .created_list(FavCreatedListParams::new(mid))
                 .await
-                .map_err(|error| BdlError::Bpi(error.to_string()))?;
+                .map_err(|error| crate::error::bpi_error(error))?;
             Ok(AccountLibraryPage::from_created(data, page, page_size))
         }
         AccountLibraryFolderKind::CollectedFavorite => {
@@ -198,7 +198,7 @@ pub async fn account_library_page(
                 .fav()
                 .collected_list(params)
                 .await
-                .map_err(|error| BdlError::Bpi(error.to_string()))?;
+                .map_err(|error| crate::error::bpi_error(error))?;
             Ok(AccountLibraryPage::from_collected(
                 page, page_size, data.count, data.list,
             ))
@@ -298,12 +298,12 @@ impl AccountSummary {
 }
 
 pub async fn start_qr_login() -> BdlResult<QrLoginSession> {
-    let client = BpiClient::new().map_err(|error| BdlError::Bpi(error.to_string()))?;
+    let client = BpiClient::new().map_err(|error| crate::error::bpi_error(error))?;
     let data = client
         .login()
         .qr_generate()
         .await
-        .map_err(|error| BdlError::Bpi(error.to_string()))?;
+        .map_err(|error| crate::error::bpi_error(error))?;
 
     Ok(QrLoginSession {
         qr_image_svg: render_qr_svg(&data.url)?,
@@ -314,14 +314,14 @@ pub async fn start_qr_login() -> BdlResult<QrLoginSession> {
 }
 
 pub async fn poll_qr_login(qrcode_key: &str) -> BdlResult<QrLoginPollOutcome> {
-    let client = BpiClient::new().map_err(|error| BdlError::Bpi(error.to_string()))?;
+    let client = BpiClient::new().map_err(|error| crate::error::bpi_error(error))?;
     let params =
-        LoginQrPollParams::new(qrcode_key).map_err(|error| BdlError::Bpi(error.to_string()))?;
+        LoginQrPollParams::new(qrcode_key).map_err(|error| crate::error::bpi_error(error))?;
     let data = client
         .login()
         .qr_poll(params)
         .await
-        .map_err(|error| BdlError::Bpi(error.to_string()))?;
+        .map_err(|error| crate::error::bpi_error(error))?;
     let status = QrLoginStatus::from_bilibili_code(data.code);
     let cookie_header = if status == QrLoginStatus::Confirmed {
         Some(cookie_header_from_pairs(&data.cookies)?)
@@ -340,11 +340,11 @@ pub async fn verify_cookie_session(cookie: &str) -> BdlResult<AccountSummary> {
     let client = BpiClient::builder()
         .cookie(cookie)
         .build()
-        .map_err(|error| BdlError::Bpi(error.to_string()))?;
+        .map_err(|error| crate::error::bpi_error(error))?;
     let nav = match client.login().nav().await {
         Ok(nav) => nav,
         Err(error) if error.requires_login() => return Ok(AccountSummary::default()),
-        Err(error) => return Err(BdlError::Bpi(error.to_string())),
+        Err(error) => return Err(crate::error::bpi_error(error)),
     };
 
     Ok(AccountSummary::from_login_nav(&nav))
@@ -533,17 +533,30 @@ fn redact_url(raw_url: &str) -> String {
     let Ok(parsed) = url::Url::parse(raw_url) else {
         return raw_url.to_owned();
     };
+    let safe_url = if !parsed.username().is_empty() || parsed.password().is_some() {
+        let host_start = raw_url
+            .find('@')
+            .expect("parsed URL credentials have a separator")
+            + 1;
+        format!(
+            "{}://<redacted>@{}",
+            parsed.scheme(),
+            &raw_url[host_start..]
+        )
+    } else {
+        raw_url.to_owned()
+    };
     let Some(query) = parsed.query() else {
-        return raw_url.to_owned();
+        return safe_url;
     };
     if query.len() < 32 && !signed_query_like(query) {
-        return raw_url.to_owned();
+        return safe_url;
     }
 
-    raw_url
+    safe_url
         .find('?')
-        .map(|query_start| format!("{}?<redacted>", &raw_url[..query_start]))
-        .unwrap_or_else(|| raw_url.to_owned())
+        .map(|query_start| format!("{}?<redacted>", &safe_url[..query_start]))
+        .unwrap_or(safe_url)
 }
 
 fn signed_query_like(query: &str) -> bool {

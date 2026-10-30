@@ -6,6 +6,15 @@ use serde::{Deserialize, Serialize};
 use crate::error::{BdlError, BdlResult};
 
 pub const DEFAULT_NAMING_TEMPLATE: &str = "{title}/P{part_index} - {part_title}";
+pub const MAX_FILE_NAME_BYTES: usize = 255;
+
+pub(crate) fn utf8_prefix(value: &str, max_bytes: usize) -> &str {
+    let mut end = value.len().min(max_bytes);
+    while !value.is_char_boundary(end) {
+        end -= 1;
+    }
+    &value[..end]
+}
 
 /// Output reservations use conservative case-insensitive keys on Windows,
 /// including before the output files exist. Other platforms retain path case.
@@ -107,6 +116,11 @@ pub fn render_output_path(template: &str, context: &NamingContext<'_>) -> BdlRes
     }
 
     let extension = sanitize_variable_value(context.ext);
+    if extension.len() + 1 >= MAX_FILE_NAME_BYTES {
+        return Err(BdlError::Planning {
+            message: "文件扩展名过长。".into(),
+        });
+    }
     if !extension.is_empty()
         && !path
             .extension()
@@ -119,6 +133,8 @@ pub fn render_output_path(template: &str, context: &NamingContext<'_>) -> BdlRes
         file_name.push(extension);
         path.set_file_name(file_name);
     }
+
+    path = with_counter_suffix(&path, 0, MAX_FILE_NAME_BYTES);
 
     Ok(path)
 }
@@ -159,11 +175,19 @@ pub fn validate_template(template: &str) -> BdlResult<()> {
 }
 
 pub fn unique_path(path: PathBuf, reserved: &mut ReservedPaths) -> PathBuf {
-    let mut candidate = path.clone();
+    unique_path_with_stem_limit(path, reserved, MAX_FILE_NAME_BYTES)
+}
+
+pub fn unique_path_with_stem_limit(
+    path: PathBuf,
+    reserved: &mut ReservedPaths,
+    max_stem_bytes: usize,
+) -> PathBuf {
+    let mut candidate = with_counter_suffix(&path, 0, max_stem_bytes);
     let mut suffix = 1;
 
     while candidate.exists() || reserved.contains(&candidate) {
-        candidate = with_counter_suffix(&path, suffix);
+        candidate = with_counter_suffix(&path, suffix, max_stem_bytes);
         suffix += 1;
     }
 
@@ -176,22 +200,39 @@ pub fn resolve_duplicate_path(
     reserved: &mut ReservedPaths,
     strategy: DuplicateNamingStrategy,
 ) -> Option<PathBuf> {
+    resolve_duplicate_path_with_stem_limit(path, reserved, strategy, MAX_FILE_NAME_BYTES)
+}
+
+pub fn resolve_duplicate_path_with_stem_limit(
+    path: PathBuf,
+    reserved: &mut ReservedPaths,
+    strategy: DuplicateNamingStrategy,
+    max_stem_bytes: usize,
+) -> Option<PathBuf> {
     match strategy {
         DuplicateNamingStrategy::SkipExisting if path.exists() => None,
         DuplicateNamingStrategy::SkipExisting | DuplicateNamingStrategy::OverwriteExisting => {
-            Some(overwrite_existing_path(path, reserved))
+            Some(if reserved.contains(&path) {
+                unique_path_with_stem_limit(path, reserved, max_stem_bytes)
+            } else {
+                reserved.insert(path.clone());
+                path
+            })
         }
-        DuplicateNamingStrategy::AppendSuffix => Some(unique_path(path, reserved)),
+        DuplicateNamingStrategy::AppendSuffix => {
+            Some(unique_path_with_stem_limit(path, reserved, max_stem_bytes))
+        }
     }
 }
 
 pub fn sanitize_path_component(value: &str) -> String {
     let trimmed = sanitize_variable_value(value);
+    let trimmed = utf8_prefix(&trimmed, MAX_FILE_NAME_BYTES).trim_end_matches([' ', '.']);
 
     if trimmed.is_empty() {
         "untitled".to_owned()
     } else {
-        trimmed
+        trimmed.to_owned()
     }
 }
 
@@ -208,15 +249,6 @@ fn sanitize_variable_value(value: &str) -> String {
         })
         .collect();
     sanitized.trim().trim_matches('.').to_owned()
-}
-
-fn overwrite_existing_path(path: PathBuf, reserved: &mut ReservedPaths) -> PathBuf {
-    if reserved.contains(&path) {
-        return unique_path(path, reserved);
-    }
-
-    reserved.insert(path.clone());
-    path
 }
 
 fn render_template(template: &str, context: &NamingContext<'_>) -> BdlResult<String> {
@@ -323,17 +355,26 @@ fn optional_usize(value: Option<usize>) -> String {
     value.map(|value| value.to_string()).unwrap_or_default()
 }
 
-fn with_counter_suffix(path: &Path, suffix: usize) -> PathBuf {
+pub(crate) fn with_counter_suffix(path: &Path, suffix: usize, max_stem_bytes: usize) -> PathBuf {
     let parent = path.parent();
     let stem = path
         .file_stem()
         .and_then(|value| value.to_str())
         .unwrap_or("untitled");
-    let extension = path.extension().and_then(|value| value.to_str());
-    let file_name = match extension {
-        Some(extension) if !extension.is_empty() => format!("{stem} ({suffix}).{extension}"),
-        _ => format!("{stem} ({suffix})"),
+    let extension = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .filter(|value| !value.is_empty())
+        .map(|value| format!(".{value}"))
+        .unwrap_or_default();
+    let counter = if suffix == 0 {
+        String::new()
+    } else {
+        format!(" ({suffix})")
     };
+    let budget = max_stem_bytes.min(MAX_FILE_NAME_BYTES.saturating_sub(extension.len()));
+    let stem = utf8_prefix(stem, budget.saturating_sub(counter.len()));
+    let file_name = format!("{stem}{counter}{extension}");
 
     parent
         .map(|parent| parent.join(&file_name))

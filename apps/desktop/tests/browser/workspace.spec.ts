@@ -38,6 +38,7 @@ const installTauriMock = async (
           ],
         }));
       const invocations: string[] = [];
+      const preparationJobs: Array<Record<string, unknown>> = [];
       Object.assign(window, {
         __BDL_TEST_INVOKES__: invocations,
         __TAURI_INTERNALS__: {
@@ -303,6 +304,24 @@ const installTauriMock = async (
                 page_size: 20,
                 has_more: false,
               };
+            }
+            if (command === 'mobile_write_clipboard_text' || command === 'desktop_write_clipboard_text') return navigator.clipboard.writeText((args as { text: string }).text);
+            if (command === 'preparation_list') return preparationJobs;
+            if (command === 'selection_submit_tasks') {
+              const id = `preparation:${preparationJobs.length + 1}`;
+              const typed = args as { request: { source_id: string; part_ids: string[] }; snapshot: NormalizedSourceTree; origin: string };
+              const job = { id, title: typed.snapshot.source.title, source_id: typed.request.source_id,
+                input: typed.snapshot.source.input, origin: typed.origin, status: taskCreationFails ? 'failed' : 'completed',
+                total: typed.request.part_ids.length, processed: typed.request.part_ids.length,
+                created: 0, skipped_existing: 0, duplicates: [], created_at: new Date().toISOString(),
+                error: taskCreationFails ? { code: 'bilibili_request_rejected', message: 'Bilibili 暂时拒绝了请求（HTTP 412）', detail: 'HTTP 412; stage=prepare_selection' } : null };
+              preparationJobs.unshift(job);
+              return job;
+            }
+            if (command === 'preparation_cancel' || command === 'preparation_dismiss') {
+              const index = preparationJobs.findIndex(job => job.id === (args as { jobId: string }).jobId);
+              if (index >= 0) preparationJobs.splice(index, 1);
+              return null;
             }
             if (command === 'selection_estimate_size')
               return { estimated_bytes: 0, estimated_parts: 0, unknown_streams: 1 };
@@ -1399,6 +1418,7 @@ test('single video mode uses one input and disables collection expansion', async
   await expect(page.locator('.source-media-row')).toBeVisible();
   expect(await page.evaluate(() => (window as unknown as { __SINGLE_REQUEST__: unknown }).__SINGLE_REQUEST__)).toEqual({
     request: { input: 'BV1xx411c7mD', fetch_streams: false, expand_video_collection: false },
+    operationId: expect.any(String),
   });
 });
 
@@ -1476,7 +1496,7 @@ test('saved defaults download directly and reuse startup environment health', as
       page.evaluate(
         () =>
           (window as unknown as { __BDL_TEST_INVOKES__: string[] }).__BDL_TEST_INVOKES__.filter(
-            (name) => name === 'selection_create_tasks',
+            (name) => name === 'selection_submit_tasks',
           ).length,
       ),
     )
@@ -1701,7 +1721,7 @@ test('library omits redundant category headings and makes the whole folder card 
   await expect(page.getByRole('button', { name: '返回内容集合' })).toBeVisible();
 });
 
-test('task-creation errors stay inside download settings instead of the parse page', async ({ page }) => {
+test('preparation errors remain globally accessible after leaving the parse page', async ({ page }) => {
   await installTauriMock(page, 'light', true, false, true);
   await page.goto('/');
   await expect(page.getByRole('button', { name: '开始解析' })).toBeEnabled();
@@ -1711,14 +1731,18 @@ test('task-creation errors stay inside download settings instead of the parse pa
   await page.getByRole('button', { name: '选择 测试视频' }).click();
   await page.getByRole('button', { name: '下载所选 (1)' }).click();
 
-  const dialog = page.getByRole('dialog', { name: '下载设置' });
-  await expect(dialog.locator('.inline-notice > p').filter({ hasText: 'Bilibili 暂时拒绝了请求' })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: '下载设置' })).toHaveCount(0);
+  await page.getByRole('button', { name: '传输 队列与恢复' }).click();
+  await page.getByRole('button', { name: '查看准备任务' }).click();
+  const dialog = page.getByRole('dialog', { name: '任务准备', exact: true });
+  await expect(dialog.getByText('Bilibili 暂时拒绝了请求（HTTP 412）', { exact: true })).toBeVisible();
   await expect(dialog.getByRole('button', { name: '复制诊断信息' })).toBeVisible();
   await dialog.getByText('错误详情', { exact: true }).click();
   await expect(dialog.locator('.error-details pre')).toContainText('bilibili_request_rejected');
 
-  await dialog.getByRole('button', { name: '取消' }).click();
-  await expect(page.getByText(/Bilibili 暂时拒绝了请求/)).toHaveCount(0);
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+  await page.getByRole('button', { name: '查看准备任务' }).click();
+  await expect(dialog.getByText('Bilibili 暂时拒绝了请求（HTTP 412）', { exact: true })).toBeVisible();
 });
 
 test('collected favorite folders open through the collection resolver with matching totals', async ({ page }) => {
@@ -1908,7 +1932,7 @@ test('media preferences reorder combinations while download keeps optimal qualit
         target.__BDL_MEDIA_SETTINGS__ = args?.settings;
         return args?.settings;
       }
-      if (command === 'selection_create_tasks') target.__BDL_MEDIA_REQUEST__ = args?.request;
+      if (command === 'selection_submit_tasks') target.__BDL_MEDIA_REQUEST__ = args?.request;
       return invoke(command, args);
     };
   });
@@ -2030,7 +2054,7 @@ test('missing directory allows parsing and explicit SDR task creation', async ({
           media_preferences: { video: [], audio: ['30280'] },
         };
       }
-      if (command === 'selection_create_tasks') target.__BDL_SDR_REQUEST__ = args?.request;
+      if (command === 'selection_submit_tasks') target.__BDL_SDR_REQUEST__ = args?.request;
       return result;
     };
   });
@@ -2074,7 +2098,7 @@ test('download options remember naming presets and keep duplicate overrides loca
           naming_template: '{title}/{part_title}.{ext}',
           naming_presets: [{ id: 'favorites', name: '我的收藏', template: '{title}.{ext}' }],
         };
-      if (command === 'selection_create_tasks') target.__BDL_PRESET_REQUEST__ = args?.request;
+      if (command === 'selection_submit_tasks') target.__BDL_PRESET_REQUEST__ = args?.request;
       return result;
     };
   });
@@ -2174,7 +2198,7 @@ test('download archive settings inherit defaults and override processing per tas
           embed_cover: true,
           embed_subtitles: true,
         };
-      if (command === 'selection_create_tasks') target.__BDL_ARCHIVE_REQUEST__ = args?.request;
+      if (command === 'selection_submit_tasks') target.__BDL_ARCHIVE_REQUEST__ = args?.request;
       return result;
     };
   });
@@ -2243,7 +2267,7 @@ const installPresetPersistence = async (page: Page) => {
         localStorage.setItem('fixture-download-settings', JSON.stringify(args?.settings));
         return args?.settings;
       }
-      if (command === 'selection_create_tasks') target.__FORMAT_REQUEST__ = args?.request;
+      if (command === 'selection_submit_tasks') target.__FORMAT_REQUEST__ = args?.request;
       return invoke(command, args);
     };
   });
@@ -2312,7 +2336,7 @@ for (const theme of ['light', 'dark'] as const) {
       };
       const invoke = target.__TAURI_INTERNALS__.invoke;
       target.__TAURI_INTERNALS__.invoke = async (command, args) => {
-        if (command === 'selection_create_tasks') target.__CLEAN_REQUEST__ = args?.request;
+        if (command === 'selection_submit_tasks') target.__CLEAN_REQUEST__ = args?.request;
         return invoke(command, args);
       };
     });
@@ -3254,9 +3278,8 @@ for (const device of ['desktop', 'android'] as const) {
           };
         if (command === 'selection_estimate_size')
           return { estimated_bytes: 1000, estimated_parts: 20, unknown_streams: 0 };
-        if (command === 'selection_create_tasks') {
+        if (command === 'selection_submit_tasks') {
           (window as unknown as { __WATCH_DOWNLOADS__: unknown[] }).__WATCH_DOWNLOADS__.push(args);
-          return { created: [], duplicates: [], skipped_existing: 0, requires_confirmation: false };
         }
         if (
           command === 'parse_create_source' &&
@@ -3860,11 +3883,20 @@ test('recent failure report survives page changes and can be cleared', async ({ 
       exportedErrors?: string;
       __TAURI_INTERNALS__: { invoke: (cmd: string, args?: unknown) => Promise<unknown> };
     };
+    const records: Array<Record<string, unknown>> = [];
     const invoke = target.__TAURI_INTERNALS__.invoke;
     target.__TAURI_INTERNALS__.invoke = async (cmd, args) => {
+      if (cmd === 'diagnostics_record_operation_error') {
+        const value = args as { command: string; error: Record<string, unknown> };
+        records.unshift({ id: records.length + 1, command: value.command, ...value.error, environment: {}, created_at: new Date().toISOString() });
+        return records.length;
+      }
+      if (cmd === 'diagnostics_operation_errors') return records;
+      if (cmd === 'maintenance_log_usage') return { log_count: records.length, log_bytes: 100, cleanable_log_count: records.length, diagnostic_files: 0, diagnostic_bytes: 0 };
+      if (cmd === 'maintenance_cleanup_logs') { records.length = 0; return { removed_logs: 1, task_ids: [] }; }
       if (cmd === 'diagnostics_export') {
-        target.exportedErrors = (args as { recentErrors: string }).recentErrors;
-        return { path: 'fixture-diagnostics.json' };
+        target.exportedErrors = JSON.stringify(records);
+        return { path: 'fixture-diagnostics.json', saved: true };
       }
       if (cmd === 'parse_create_source')
         throw { code: 'bilibili_api_error', message: '失败', detail: 'API diagnostic sentinel; token=do-not-copy' };
@@ -3888,7 +3920,8 @@ test('recent failure report survives page changes and can be cleared', async ({ 
   const exported = await page.evaluate(() => (window as unknown as { exportedErrors: string }).exportedErrors);
   expect(exported).toContain('API diagnostic sentinel');
   expect(exported).not.toContain('do-not-copy');
-  await page.getByRole('button', { name: '清空错误记录' }).click();
+  await page.getByRole('button', { name: '清理日志', exact: true }).click();
+  await page.getByRole('dialog', { name: '清理日志', exact: true }).getByRole('button', { name: '确认清理', exact: true }).click();
   await expect(page.getByText('最近的操作错误', { exact: true })).toHaveCount(0);
 });
 

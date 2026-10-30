@@ -19,8 +19,9 @@ import UiStatusBadge from './StatusBadge.vue'
 import UiTabs from './Tabs.vue'
 import ExternalLinkButton from './ExternalLinkButton.vue'
 import { bilibiliTaskUrl } from '../utils/bilibiliLinks'
-import { isMobilePlatform } from '../platform/environment'
+import { isMobilePlatform, isAndroidPlatform } from '../platform/environment'
 import { captureDiagnosticEnvironment } from '../utils/diagnosticEnvironment'
+import { writeClipboardText } from '../utils/clipboard'
 
 const { task, progress, logs, logsLoading = false } = defineProps<{
   task: DownloadTask | null
@@ -111,7 +112,7 @@ const copyDiagnostics = async () => {
 
   try {
     const environment = await captureDiagnosticEnvironment()
-    await navigator.clipboard.writeText(`${environment}\n\n${text}`)
+    await writeClipboardText(`${environment}\n\n${text}`)
     copied.value = true
     window.setTimeout(() => {
       copied.value = false
@@ -127,7 +128,7 @@ const exportDiagnostics = async () => {
   exportingDiagnostics.value = true
   try {
     const result = await diagnosticsExport(task.id)
-    exportNotice.value = `诊断已导出：${result.path}`
+    exportNotice.value = result.saved ? (isAndroidPlatform() ? '诊断已保存到所选位置。' : `诊断已导出：${result.path}`) : '已取消保存诊断。'
     window.setTimeout(() => {
       exportNotice.value = ''
     }, 3000)

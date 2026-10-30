@@ -195,6 +195,53 @@ impl DownloadTask {
 }
 
 impl DownloadTask {
+    /// Keep one shared stem so resources can still be retargeted and exported.
+    /// Reserve the actual track, temporary-download and artifact-copy suffixes.
+    pub fn file_stem_byte_limit(&self) -> BdlResult<usize> {
+        let stem = self
+            .output_path
+            .file_stem()
+            .and_then(|value| value.to_str())
+            .ok_or_else(|| BdlError::Planning {
+                message: "输出文件名无效。".into(),
+            })?;
+        let mut longest_suffix = 0;
+        let paths = std::iter::once((&self.output_path, ".bdl-mux.backup".len()))
+            .chain(
+                self.resources
+                    .iter()
+                    .flat_map(|resource| [(&resource.target_path, 0), (&resource.temp_path, 0)]),
+            )
+            .chain(
+                self.media_selection
+                    .artifacts
+                    .iter()
+                    .map(|artifact| (&artifact.path, ".bdl-copy.tmp".len())),
+            );
+        for (path, extra) in paths {
+            let suffix = path
+                .file_name()
+                .and_then(|value| value.to_str())
+                .and_then(|value| value.strip_prefix(stem))
+                .ok_or_else(|| BdlError::Planning {
+                    message: "资源路径与输出文件名不匹配。".into(),
+                })?;
+            longest_suffix = longest_suffix.max(suffix.len() + extra);
+        }
+        crate::naming::MAX_FILE_NAME_BYTES
+            .checked_sub(longest_suffix)
+            .filter(|limit| *limit > 0)
+            .ok_or_else(|| BdlError::Planning {
+                message: "文件后缀过长。".into(),
+            })
+    }
+
+    pub(crate) fn limit_file_names(self) -> BdlResult<Self> {
+        let limit = self.file_stem_byte_limit()?;
+        let output = crate::naming::with_counter_suffix(&self.output_path, 0, limit);
+        self.with_output_path(output)
+    }
+
     pub fn file_paths(&self) -> Vec<PathBuf> {
         let mut paths = vec![self.output_path.clone()];
         paths.extend(

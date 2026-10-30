@@ -21,6 +21,7 @@ use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::{Mutex, Notify};
 use tokio::time::Instant;
 
+use crate::error::IoResultExt;
 use crate::error::{BdlError, BdlResult};
 use crate::queue::DownloadResource;
 
@@ -325,12 +326,22 @@ impl ReqwestFetcher {
                 {
                     Ok(outcome) => return Ok(outcome),
                     Err(error) => {
+                        if error.is_local_io()
+                            || matches!(error.root_cause(), BdlError::Serialization(_))
+                        {
+                            return Err(error.with_context(format!(
+                                "[stage=download_local] resource={} target={} temp={} source={} attempt={} segment_count={} max_retries={} proxy_mode={}",
+                                resource.id, resource.target_path.display(), resource.temp_path.display(),
+                                source_index + 1, attempted, self.config.segment_count,
+                                self.config.max_retries, self.config.proxy_mode.as_str(),
+                            )));
+                        }
                         if self.stop_on_restriction
                             && crate::resolver::pacing::is_source_restriction(&error.to_string())
                         {
                             return Err(error);
                         }
-                        let message = crate::account::redact_sensitive(&error.to_string());
+                        let message = crate::account::redact_diagnostic(&error.to_string());
                         let host = url::Url::parse(url)
                             .ok()
                             .and_then(|url| url.host_str().map(str::to_owned))
@@ -427,7 +438,8 @@ impl ReqwestFetcher {
             .append(resume_from > 0)
             .truncate(resume_from == 0)
             .open(&resource.temp_path)
-            .await?;
+            .await
+            .path_context("open_temp", &resource.temp_path)?;
 
         let mut downloaded_bytes = resume_from;
         let mut stream = response.bytes_stream();
@@ -446,7 +458,9 @@ impl ReqwestFetcher {
             })?;
             self.wait_for_bandwidth(chunk.len() as u64, &cancel_token)
                 .await?;
-            file.write_all(&chunk).await?;
+            file.write_all(&chunk)
+                .await
+                .path_context("write_temp", &resource.temp_path)?;
             downloaded_bytes += chunk.len() as u64;
 
             persist_fetch_progress(&resource.temp_path, &metadata, downloaded_bytes).await?;
@@ -457,7 +471,9 @@ impl ReqwestFetcher {
             persist_fetch_progress(&resource.temp_path, &metadata, downloaded_bytes).await?;
             send_progress(&progress, resource, metadata.total_bytes, downloaded_bytes);
         }
-        file.flush().await?;
+        file.flush()
+            .await
+            .path_context("flush_temp", &resource.temp_path)?;
         drop(file);
 
         if let Some(total_bytes) = metadata.total_bytes
@@ -469,9 +485,13 @@ impl ReqwestFetcher {
         }
 
         if resource.target_path.exists() {
-            fs::remove_file(&resource.target_path).await?;
+            fs::remove_file(&resource.target_path)
+                .await
+                .path_context("remove_old_target", &resource.target_path)?;
         }
-        fs::rename(&resource.temp_path, &resource.target_path).await?;
+        fs::rename(&resource.temp_path, &resource.target_path)
+            .await
+            .path_context("rename_temp_to_target", &resource.target_path)?;
         remove_if_exists(&state_path_for(&resource.temp_path)).await?;
 
         Ok(FetchOutcome {
@@ -521,11 +541,17 @@ impl ReqwestFetcher {
         }
 
         let decoded = decode_deflate_body(&encoded)?;
-        fs::write(&resource.temp_path, &decoded).await?;
+        fs::write(&resource.temp_path, &decoded)
+            .await
+            .path_context("write_decoded_temp", &resource.temp_path)?;
         if resource.target_path.exists() {
-            fs::remove_file(&resource.target_path).await?;
+            fs::remove_file(&resource.target_path)
+                .await
+                .path_context("remove_old_target", &resource.target_path)?;
         }
-        fs::rename(&resource.temp_path, &resource.target_path).await?;
+        fs::rename(&resource.temp_path, &resource.target_path)
+            .await
+            .path_context("rename_temp_to_target", &resource.target_path)?;
         remove_if_exists(&state_path_for(&resource.temp_path)).await?;
 
         Ok(FetchOutcome {
@@ -609,26 +635,46 @@ impl ReqwestFetcher {
             .write(true)
             .truncate(true)
             .open(&resource.temp_path)
-            .await?;
+            .await
+            .path_context("open_stitch_temp", &resource.temp_path)?;
         for (index, (start, end)) in ranges.iter().enumerate() {
             let segment_path = segment_path_for(&resource.temp_path, index);
-            let mut segment_file = fs::File::open(&segment_path).await?;
-            let copied = tokio::io::copy(&mut segment_file, &mut temp_file).await?;
+            let mut segment_file = fs::File::open(&segment_path)
+                .await
+                .path_context("open_segment_for_stitch", &segment_path)?;
+            let copied = tokio::io::copy(&mut segment_file, &mut temp_file)
+                .await
+                .path_context("stitch_segment", &segment_path)
+                .map_err(|error| {
+                    error.with_context(format!("destination={}", resource.temp_path.display()))
+                })?;
             if copied != end - start + 1 {
                 return Err(fetch_error("分段文件长度异常，已停止拼接，请重试下载。"));
             }
         }
-        temp_file.flush().await?;
+        temp_file
+            .flush()
+            .await
+            .path_context("flush_stitch_temp", &resource.temp_path)?;
         drop(temp_file);
 
-        if fs::metadata(&resource.temp_path).await?.len() != total_bytes {
+        if fs::metadata(&resource.temp_path)
+            .await
+            .path_context("stat_stitch_temp", &resource.temp_path)?
+            .len()
+            != total_bytes
+        {
             return Err(fetch_error("拼接后的文件长度异常，请重试下载。"));
         }
 
         if resource.target_path.exists() {
-            fs::remove_file(&resource.target_path).await?;
+            fs::remove_file(&resource.target_path)
+                .await
+                .path_context("remove_old_target", &resource.target_path)?;
         }
-        fs::rename(&resource.temp_path, &resource.target_path).await?;
+        fs::rename(&resource.temp_path, &resource.target_path)
+            .await
+            .path_context("rename_stitched_to_target", &resource.target_path)?;
         for index in 0..ranges.len() {
             remove_if_exists(&segment_path_for(&resource.temp_path, index)).await?;
         }
@@ -687,7 +733,8 @@ impl ReqwestFetcher {
             .append(resume_from > 0)
             .truncate(resume_from == 0)
             .open(&segment_path)
-            .await?;
+            .await
+            .path_context("open_segment", &segment_path)?;
         let mut downloaded_bytes = resume_from;
         let mut stream = response.bytes_stream();
         loop {
@@ -701,7 +748,9 @@ impl ReqwestFetcher {
             ), error))?;
             self.wait_for_bandwidth(chunk.len() as u64, &cancel_token)
                 .await?;
-            file.write_all(&chunk).await?;
+            file.write_all(&chunk)
+                .await
+                .path_context("write_segment", &segment_path)?;
             downloaded_bytes += chunk.len() as u64;
             let total_downloaded = {
                 let mut progress_guard = progress_by_segment.lock().await;
@@ -711,7 +760,9 @@ impl ReqwestFetcher {
 
             send_progress(&progress, resource, metadata.total_bytes, total_downloaded);
         }
-        file.flush().await?;
+        file.flush()
+            .await
+            .path_context("flush_segment", &segment_path)?;
 
         if downloaded_bytes != expected_len {
             return Err(fetch_error(format!(
@@ -811,7 +862,7 @@ fn request_send_error(phase: &str, context: &str, error: reqwest::Error) -> BdlE
     let code = if error.is_timeout() {
         "network_timeout"
     } else {
-        "download_failed"
+        "network_request_failed"
     };
     fetch_error(crate::account::redact_sensitive(&format!(
         "[stage=request_send code={code}] {phase}: {error}; {context}; is_connect={} is_timeout={} is_request={}; cause={}",
@@ -823,16 +874,7 @@ fn request_send_error(phase: &str, context: &str, error: reqwest::Error) -> BdlE
 }
 
 fn request_error_causes(error: &reqwest::Error) -> String {
-    let mut causes = Vec::new();
-    let mut current = std::error::Error::source(error);
-    while let Some(cause) = current {
-        causes.push(cause.to_string());
-        if causes.len() >= 8 {
-            break;
-        }
-        current = cause.source();
-    }
-    causes.join(" <- ")
+    crate::error::error_causes(error)
 }
 
 fn response_body_error(phase: &str, context: &str, error: reqwest::Error) -> BdlError {
@@ -903,8 +945,12 @@ pub async fn write_fetch_state(temp_path: &Path, state: &FetchState) -> BdlResul
     let bytes = serde_json::to_vec(state)
         .map_err(|error| fetch_error(format!("序列化下载状态失败: {error}")))?;
     let temporary = state_temp_path_for(temp_path);
-    fs::write(&temporary, bytes).await?;
-    fs::rename(temporary, path).await?;
+    fs::write(&temporary, bytes)
+        .await
+        .path_context("write_checkpoint", &temporary)?;
+    fs::rename(&temporary, &path)
+        .await
+        .path_context("publish_checkpoint", &path)?;
     Ok(())
 }
 
@@ -988,11 +1034,16 @@ pub async fn completed_media_needs_redownload(resource: &DownloadResource) -> Bd
     {
         return Ok(false);
     }
-    let Ok(mut file) = fs::File::open(&resource.target_path).await else {
-        return Ok(true);
+    let mut file = match fs::File::open(&resource.target_path).await {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(true),
+        Err(error) => return Err(error).path_context("open_media_header", &resource.target_path),
     };
     let mut header = [0; 16];
-    let count = file.read(&mut header).await?;
+    let count = file
+        .read(&mut header)
+        .await
+        .path_context("read_media_header", &resource.target_path)?;
     let bytes = &header[..count];
     let iso_bmff = bytes.len() >= 8
         && matches!(
@@ -1103,7 +1154,10 @@ async fn resume_offset(temp_path: &Path, metadata: &RemoteResourceMetadata) -> B
         return Ok(0);
     }
 
-    let temp_len = fs::metadata(temp_path).await?.len();
+    let temp_len = fs::metadata(temp_path)
+        .await
+        .path_context("stat_resume_temp", temp_path)?
+        .len();
     let state = read_fetch_state(&state_path).await?;
     if state.total_bytes == metadata.total_bytes
         && state.downloaded_bytes == temp_len
@@ -1127,9 +1181,11 @@ fn validator_matches(previous: &Option<String>, current: &Option<String>) -> boo
 }
 
 async fn read_fetch_state(path: &Path) -> BdlResult<FetchState> {
-    let bytes = fs::read(path).await?;
-    serde_json::from_slice(&bytes)
-        .map_err(|error| fetch_error(format!("读取下载状态失败，需要重新下载: {error}")))
+    let bytes = fs::read(path).await.path_context("read_checkpoint", path)?;
+    serde_json::from_slice(&bytes).map_err(|error| {
+        BdlError::from(error)
+            .with_context(format!("[stage=checkpoint_decode] path={}", path.display()))
+    })
 }
 
 fn request_headers(resource: &DownloadResource) -> BdlResult<HeaderMap> {
@@ -1179,21 +1235,19 @@ async fn ensure_parent_dir(path: &Path) -> BdlResult<()> {
         .parent()
         .filter(|parent| !parent.as_os_str().is_empty())
     {
-        fs::create_dir_all(parent).await.map_err(|error| {
-            fetch_error(format!(
-                "无法创建下载目录 `{}`：{error}。请检查路径和写入权限，或更换保存目录后重试。",
-                parent.display()
-            ))
-        })?;
+        fs::create_dir_all(parent)
+            .await
+            .path_context("create_download_directory", parent)?;
     }
     Ok(())
 }
 
 async fn remove_if_exists(path: &Path) -> BdlResult<()> {
-    if path.exists() {
-        fs::remove_file(path).await?;
+    match fs::remove_file(path).await {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error).path_context("remove_download_temp", path),
     }
-    Ok(())
 }
 
 fn fetch_error(message: impl Into<String>) -> BdlError {
@@ -1228,11 +1282,14 @@ mod directory_tests {
             .to_string();
         assert_eq!(fs::read(&blocker).await.unwrap(), b"preserve");
         fs::remove_dir_all(&root).await.unwrap();
-        assert!(error.contains("无法创建下载目录"), "{error}");
+        assert!(
+            error.contains("operation=create_download_directory"),
+            "{error}"
+        );
         assert!(
             error.contains(&blocker.to_string_lossy().to_string()),
             "{error}"
         );
-        assert!(error.contains("更换保存目录"), "{error}");
+        assert!(error.contains("os_code="), "{error}");
     }
 }

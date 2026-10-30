@@ -9,7 +9,7 @@ use bdl_core::account::{
     account_library_page, verify_cookie_session,
 };
 use bdl_core::fetcher::{BandwidthLimiter, FetchCancelToken};
-use bdl_core::ids::{PartId, SourceId};
+use bdl_core::ids::PartId;
 use bdl_core::input::{ClassifiedInput, classify_input};
 use bdl_core::model::{
     MediaKind, MediaStream, NormalizedPart, NormalizedSourceTree, SourceKind, StreamQuality,
@@ -39,10 +39,13 @@ use crate::mobile_storage::MobileStorage;
 #[cfg(test)]
 use crate::parse_session::{PartHydrationRequest, find_part};
 use crate::parse_session::{
-    append_source_page, cheese_season_id, collection_ids, favorite_media_id,
-    hydrate_placeholder_part, merge_browsed_page, next_page_request, normalize_selected_part_ids,
-    remap_selected_part_ids, selected_hydration_requests, series_ids, should_continue_loading,
-    should_expand_initial_source, uploader_mid,
+    append_source_page, cheese_season_id, collection_ids, favorite_media_id, next_page_request,
+    series_ids, should_expand_initial_source, uploader_mid,
+};
+#[cfg(test)]
+use crate::parse_session::{
+    hydrate_placeholder_part, merge_browsed_page, normalize_selected_part_ids,
+    remap_selected_part_ids, selected_hydration_requests, should_continue_loading,
 };
 pub use crate::queue_coordinator::{
     DuplicateTaskEnqueueResult, DuplicateTaskMatch, StartupRecoverySnapshot,
@@ -56,12 +59,12 @@ use crate::secure_store::SecureStore;
 use crate::task_execution::TaskExecutionBackend;
 
 pub struct AppState {
-    parse_pacer: crate::parse_pacing::ParsePacer,
-    parse_control: crate::parse_control::ParseControl,
+    pub(crate) parse_pacer: crate::parse_pacing::ParsePacer,
+    pub(crate) parse_control: crate::parse_control::ParseControl,
     resolver_client: Mutex<Option<(u64, Arc<bpi_rs::BpiClient>)>>,
-    parse_sources: Mutex<HashMap<SourceId, NormalizedSourceTree>>,
     pub(crate) queue: Mutex<Vec<DownloadTask>>,
-    storage: Mutex<TaskStorage>,
+    pub(crate) storage: Mutex<TaskStorage>,
+    pub(crate) preparations: crate::preparation::PreparationRegistry,
     settings: Mutex<SettingsSnapshot>,
     global_limiter: Arc<BandwidthLimiter>,
     settings_path: PathBuf,
@@ -200,6 +203,7 @@ impl AppState {
         if !startup_recovery.task_ids.is_empty() {
             storage.replace_tasks(&queue)?;
         }
+        let preparations = crate::preparation::PreparationRegistry::restore(&mut storage)?;
         let account = load_account_snapshot(&storage)?;
         let account_cookie = if account.logged_in {
             AccountCookieCache::Unloaded
@@ -215,9 +219,9 @@ impl AppState {
             parse_pacer: Default::default(),
             parse_control: Default::default(),
             resolver_client: Default::default(),
-            parse_sources: Mutex::new(HashMap::new()),
             queue: Mutex::new(queue),
             storage: Mutex::new(storage),
+            preparations,
             global_limiter: Arc::new(BandwidthLimiter::new(
                 settings.global_speed_limit_bytes_per_second,
             )),
@@ -368,10 +372,6 @@ impl AppState {
                 |_| {},
             )
             .await?;
-        self.parse_sources
-            .lock()
-            .map_err(|_| state_poisoned("parse_sources"))?
-            .insert(tree.source.id.clone(), tree.clone());
         Ok(tree)
     }
 
@@ -382,7 +382,8 @@ impl AppState {
     ) -> BdlResult<NormalizedSourceTree> {
         let tree = self.parse_source(input, fetch_streams).await?;
         if tree.source.has_more {
-            self.load_all(&tree.source.id, None).await
+            self.load_all(tree, None, &uuid::Uuid::new_v4().to_string())
+                .await
         } else {
             Ok(tree)
         }
@@ -396,255 +397,17 @@ impl AppState {
     ) -> BdlResult<NormalizedSourceTree> {
         let tree = self
             .parse_source_with_options(input, fetch_streams, expand_video_collection)
-            .await?;
+            .await
+            .map_err(|error| error.with_context(format!(
+                "[stage=parse_source] request_id={} input={} fetch_streams={fetch_streams} expand_video_collection={expand_video_collection}",
+                uuid::Uuid::new_v4(), bdl_core::account::redact_sensitive(input)
+            )))?;
         if should_expand_initial_source(tree.source.kind, tree.source.has_more) {
-            self.load_all(&tree.source.id, None).await
+            self.load_all(tree, None, &uuid::Uuid::new_v4().to_string())
+                .await
         } else {
             Ok(tree)
         }
-    }
-
-    pub fn close_source(&self, source_id: &SourceId) -> BdlResult<bool> {
-        self.cancel_parse(&source_id.0);
-        Ok(self
-            .parse_sources
-            .lock()
-            .map_err(|_| state_poisoned("parse_sources"))?
-            .remove(source_id)
-            .is_some())
-    }
-
-    pub fn source_snapshot(&self, source_id: &SourceId) -> BdlResult<NormalizedSourceTree> {
-        self.parse_sources
-            .lock()
-            .map_err(|_| state_poisoned("parse_sources"))?
-            .get(source_id)
-            .cloned()
-            .ok_or_else(|| BdlError::Planning {
-                message: format!("解析源 `{}` 不存在，请重新解析。", source_id.0),
-            })
-    }
-
-    pub async fn refresh_source(&self, source_id: &SourceId) -> BdlResult<NormalizedSourceTree> {
-        let current = self.source_snapshot(source_id)?;
-        self.parse_source_for_workspace(&current.source.input, false, false)
-            .await
-    }
-
-    pub async fn load_more(&self, source_id: &SourceId) -> BdlResult<NormalizedSourceTree> {
-        let mut tree = self.source_snapshot(source_id)?;
-        self.append_next_page(&mut tree).await?;
-        self.store_source_tree(&tree)?;
-
-        Ok(tree)
-    }
-
-    pub async fn load_page(
-        &self,
-        source_id: &SourceId,
-        page_number: u32,
-    ) -> BdlResult<(NormalizedSourceTree, Vec<String>)> {
-        if page_number == 0 {
-            return Err(BdlError::Planning {
-                message: "页码必须大于 0。".to_owned(),
-            });
-        }
-        let current = self.source_snapshot(source_id)?;
-        let request = PageRequest {
-            page_number,
-            page_size: 20,
-        };
-        let operation = self.parse_control.begin(&source_id.0);
-        let page = operation
-            .run(self.parse_pacer.run_retry(
-                self.settings()?.parse_rules,
-                || self.resolve_source_page(&current, request),
-                |_| 1,
-                |phase| operation.phase(phase),
-            ))
-            .await?;
-        let item_ids = page
-            .groups
-            .iter()
-            .flat_map(|group| &group.items)
-            .map(|item| item.id.0.clone())
-            .collect();
-        // Re-read after the request so hydrated selections survive browsing.
-        let mut tree = self.source_snapshot(source_id)?;
-        merge_browsed_page(&mut tree, page)?;
-        self.store_source_tree(&tree)?;
-        Ok((tree, item_ids))
-    }
-
-    pub async fn load_all(
-        &self,
-        source_id: &SourceId,
-        limit: Option<usize>,
-    ) -> BdlResult<NormalizedSourceTree> {
-        let mut tree = self.source_snapshot(source_id)?;
-        while should_continue_loading(tree.source.has_more, tree.source.loaded_count, limit) {
-            let page_before = next_page_request(&tree)?;
-            self.append_next_page(&mut tree).await?;
-            self.store_source_tree(&tree)?;
-            if tree.source.has_more && next_page_request(&tree)? == page_before {
-                break;
-            }
-        }
-
-        self.store_source_tree(&tree)?;
-
-        Ok(tree)
-    }
-
-    pub async fn prepare_selection(
-        &self,
-        source_id: &SourceId,
-        selected_part_ids: &[PartId],
-    ) -> BdlResult<PreparedSelection> {
-        self.prepare_selection_with_refresh(source_id, selected_part_ids, false)
-            .await
-    }
-
-    pub async fn refresh_selection(
-        &self,
-        source_id: &SourceId,
-        selected_part_ids: &[PartId],
-    ) -> BdlResult<PreparedSelection> {
-        self.prepare_selection_with_refresh(source_id, selected_part_ids, true)
-            .await
-    }
-
-    async fn prepare_selection_with_refresh(
-        &self,
-        source_id: &SourceId,
-        selected_part_ids: &[PartId],
-        force: bool,
-    ) -> BdlResult<PreparedSelection> {
-        self.prepare_selection_requested(source_id, selected_part_ids, force, true, true)
-            .await
-    }
-
-    pub async fn prepare_selection_for_options(
-        &self,
-        source_id: &SourceId,
-        selected_part_ids: &[PartId],
-        options: &bdl_core::planner::DownloadOptions,
-    ) -> BdlResult<PreparedSelection> {
-        let media = options.media_mode.includes_video() || options.media_mode.includes_audio();
-        let subtitles = options.selected_archive_assets().subtitles
-            || options
-                .processing
-                .is_some_and(|processing| processing.embed_subtitles);
-        self.prepare_selection_requested(source_id, selected_part_ids, false, media, subtitles)
-            .await
-    }
-
-    async fn prepare_selection_requested(
-        &self,
-        source_id: &SourceId,
-        selected_part_ids: &[PartId],
-        force: bool,
-        media: bool,
-        subtitles: bool,
-    ) -> BdlResult<PreparedSelection> {
-        let mut tree = self.source_snapshot(source_id)?;
-        let selected_part_ids = normalize_selected_part_ids(&tree, selected_part_ids);
-        let mut requests = if force {
-            crate::parse_session::selection_hydration_requests(&tree, &selected_part_ids, true)?
-        } else {
-            selected_hydration_requests(&tree, &selected_part_ids)?
-        };
-        if !media && !subtitles {
-            requests.retain(|request| request.target_cid.is_none());
-        }
-        if requests.is_empty() {
-            return Ok(PreparedSelection {
-                tree,
-                part_ids: selected_part_ids,
-                tree_updated: false,
-            });
-        }
-
-        let mut part_ids = selected_part_ids;
-        let operation = self.parse_control.begin(&source_id.0);
-
-        for request in requests {
-            let hydrated = operation
-                .run(self.parse_pacer.run_retry(
-                    self.settings()?.parse_rules,
-                    || async {
-                        if media {
-                            self.resolve_media_input_with_streams_unpaced(
-                                request.input.clone(),
-                                request.target_cid,
-                            )
-                            .await
-                        } else {
-                            match request.input.source_kind() {
-                                SourceKind::Video => {
-                                    self.video_resolver()?
-                                        .resolve_assets(
-                                            request.input.clone(),
-                                            request.target_cid,
-                                            subtitles,
-                                        )
-                                        .await
-                                }
-                                SourceKind::Bangumi => {
-                                    self.bangumi_resolver()?
-                                        .resolve(
-                                            request.input.clone(),
-                                            ResolveOptions {
-                                                fetch_streams: subtitles,
-                                            },
-                                        )
-                                        .await
-                                }
-                                SourceKind::Cheese => {
-                                    self.cheese_resolver()?
-                                        .resolve(
-                                            request.input.clone(),
-                                            ResolveOptions {
-                                                fetch_streams: subtitles,
-                                            },
-                                        )
-                                        .await
-                                }
-                                kind => Err(BdlError::UnsupportedSource {
-                                    kind: source_kind_name(kind).into(),
-                                }),
-                            }
-                        }
-                    },
-                    |_| 0,
-                    |phase| operation.phase(phase),
-                ))
-                .await?;
-            let mut sources = self
-                .parse_sources
-                .lock()
-                .map_err(|_| state_poisoned("parse_sources"))?;
-            let latest = sources
-                .get_mut(source_id)
-                .ok_or_else(|| BdlError::Planning {
-                    message: "解析来源已关闭。".into(),
-                })?;
-            let current_ids =
-                normalize_selected_part_ids(latest, std::slice::from_ref(&request.part_id));
-            let current_id = current_ids.first().ok_or_else(|| BdlError::Planning {
-                message: "选中的内容已移除。".into(),
-            })?;
-            let hydrated_part_ids =
-                hydrate_placeholder_part(latest, current_id, request.target_cid, hydrated)?;
-            remap_selected_part_ids(&mut part_ids, &request.part_id, &hydrated_part_ids);
-            tree = latest.clone();
-        }
-
-        Ok(PreparedSelection {
-            tree,
-            part_ids,
-            tree_updated: true,
-        })
     }
 
     pub fn enqueue_tasks_with_duplicate_policy(
@@ -776,6 +539,20 @@ impl AppState {
             .map_err(|_| state_poisoned("queue"))?
             .iter()
             .any(|task| task.can_start_at(Utc::now())))
+    }
+
+    pub(crate) fn sync_download_activity(&self) -> BdlResult<bool> {
+        // Serialize the native activity decision with queue writes. An old worker
+        // must not switch off protection after a new batch has been enqueued.
+        let queue = self.queue.lock().map_err(|_| state_poisoned("queue"))?;
+        let cancellations = self
+            .queue_cancellations
+            .lock()
+            .map_err(|_| state_poisoned("queue_cancellations"))?;
+        let active =
+            !cancellations.is_empty() || queue.iter().any(|task| task.can_start_at(Utc::now()));
+        self.task_execution().set_active(active)?;
+        Ok(active)
     }
 
     pub fn next_scheduled_at(&self) -> BdlResult<Option<DateTime<Utc>>> {
@@ -1212,6 +989,30 @@ impl AppState {
         Ok(entry)
     }
 
+    pub fn append_operation_error(
+        &self,
+        command: &str,
+        code: &str,
+        message: &str,
+        detail: Option<&str>,
+        environment: &serde_json::Value,
+    ) -> BdlResult<i64> {
+        self.storage
+            .lock()
+            .map_err(|_| state_poisoned("storage"))?
+            .append_operation_error(command, code, message, detail, environment)
+    }
+
+    pub fn operation_errors(
+        &self,
+        limit: usize,
+    ) -> BdlResult<Vec<bdl_core::storage::OperationErrorRecord>> {
+        self.storage
+            .lock()
+            .map_err(|_| state_poisoned("storage"))?
+            .operation_errors(limit)
+    }
+
     pub fn task_logs(&self, task_id: &str, limit: usize) -> BdlResult<Vec<QueueLogEntry>> {
         self.storage
             .lock()
@@ -1396,6 +1197,7 @@ impl AppState {
             AccountCookieCache::Loaded(Some(imported_cookie.as_header().to_owned()));
         *self.account.lock().map_err(|_| state_poisoned("account"))? = account.clone();
         self.account_session_revision.fetch_add(1, Ordering::SeqCst);
+        self.cancel_account_preparations();
         self.cancel_qr_login_locked()?;
 
         Ok(account)
@@ -1508,6 +1310,7 @@ impl AppState {
             .map_err(|_| state_poisoned("account_cookie"))? = AccountCookieCache::Loaded(None);
         *self.account.lock().map_err(|_| state_poisoned("account"))? = AccountSnapshot::default();
         self.account_session_revision.fetch_add(1, Ordering::SeqCst);
+        self.cancel_account_preparations();
         self.cancel_qr_login_locked()?;
 
         self.account()
@@ -1640,16 +1443,17 @@ impl AppState {
             .apply_queue_changes(previous, next)
     }
 
-    fn store_source_tree(&self, tree: &NormalizedSourceTree) -> BdlResult<()> {
-        self.parse_sources
-            .lock()
-            .map_err(|_| state_poisoned("parse_sources"))?
-            .insert(tree.source.id.clone(), tree.clone());
-        Ok(())
-    }
-
-    async fn append_next_page(&self, tree: &mut NormalizedSourceTree) -> BdlResult<()> {
-        let operation = self.parse_control.begin(&tree.source.id.0);
+    pub(crate) async fn append_next_page(
+        &self,
+        tree: &mut NormalizedSourceTree,
+        operation_id: &str,
+    ) -> BdlResult<()> {
+        let operation = self.parse_control.begin(operation_id, "load_more");
+        let request = next_page_request(tree)?;
+        operation.target(format!(
+            "page_number={} page_size={}",
+            request.page_number, request.page_size
+        ));
         let next = operation
             .run(self.parse_pacer.run_retry(
                 self.settings()?.parse_rules,
@@ -1675,7 +1479,7 @@ impl AppState {
         append_source_page(tree, page)
     }
 
-    async fn resolve_source_page(
+    pub(crate) async fn resolve_source_page(
         &self,
         tree: &NormalizedSourceTree,
         request: PageRequest,
@@ -1762,15 +1566,31 @@ impl AppState {
         }
     }
 
-    pub fn cancel_parse(&self, source_id: &str) {
-        self.parse_control.cancel(source_id);
+    pub(crate) fn account_revision(&self) -> u64 {
+        self.account_session_revision.load(Ordering::SeqCst)
+    }
+
+    pub(crate) fn check_account_revision(&self, revision: u64) -> BdlResult<()> {
+        if self.account_revision() != revision {
+            return Err(BdlError::ParseCancelled {
+                context: format!(
+                    "[stage=parse_cancelled] cancel_reason=account_changed account_revision={revision} current_account_revision={}",
+                    self.account_revision()
+                ),
+            });
+        }
+        Ok(())
+    }
+
+    pub fn cancel_parse(&self, source_id: &str, reason: crate::parse_control::CancelReason) {
+        self.parse_control.cancel(source_id, reason);
     }
 
     pub fn parse_progress(&self, source_id: &str) -> crate::parse_control::ParseProgress {
         self.parse_control.progress(source_id)
     }
 
-    fn shared_resolver_client(&self) -> BdlResult<Arc<bpi_rs::BpiClient>> {
+    pub(crate) fn shared_resolver_client(&self) -> BdlResult<Arc<bpi_rs::BpiClient>> {
         let revision = self.account_session_revision.load(Ordering::SeqCst);
         let mut cached = self
             .resolver_client
@@ -3612,7 +3432,25 @@ mod tests {
         assert!(!log.message.contains("private-cookie"));
         assert!(!log.message.contains("private-token"));
         assert!(!log.message.contains("<truncated>"));
+        state
+            .append_operation_error(
+                "selection_create_tasks",
+                &failure.code,
+                &failure.message,
+                failure.detail.as_deref(),
+                &serde_json::json!({"app_version":"fixture"}),
+            )
+            .unwrap();
         drop(state);
+        let reopened = TaskStorage::open(data_dir.join("tasks.sqlite")).unwrap();
+        let persisted = reopened.operation_errors(20).unwrap();
+        let detail = persisted[0].detail.as_deref().unwrap();
+        for source in 1..=3 {
+            assert!(detail.contains(&format!("cause=source-{source}-end")));
+        }
+        assert!(!detail.contains("private-cookie"));
+        assert!(!detail.contains("private-token"));
+        drop(reopened);
         std::fs::remove_dir_all(data_dir).expect("test data should be removed");
     }
 
@@ -3628,9 +3466,9 @@ mod tests {
             parse_pacer: Default::default(),
             parse_control: Default::default(),
             resolver_client: Default::default(),
-            parse_sources: Mutex::new(HashMap::new()),
             queue: Mutex::new(tasks),
             storage: Mutex::new(storage),
+            preparations: Default::default(),
             settings: Mutex::new(AppSettings::default()),
             global_limiter: std::sync::Arc::new(BandwidthLimiter::new(None)),
             settings_path: data_dir.join("settings.json"),

@@ -3,6 +3,7 @@ package com.yueli.bdl.storage
 import android.Manifest
 import android.app.Activity
 import android.content.ClipboardManager
+import android.content.ClipData
 import android.content.ContentValues
 import android.content.Context
 import android.content.ActivityNotFoundException
@@ -26,6 +27,16 @@ import app.tauri.plugin.JSObject
 import app.tauri.plugin.Plugin
 import java.io.File
 import java.io.FileInputStream
+
+@InvokeArg
+class ClipboardTextArgs {
+  lateinit var text: String
+}
+
+@InvokeArg
+class DiagnosticSaveArgs {
+  lateinit var sourcePath: String
+}
 
 @InvokeArg
 class ExportFileArgs {
@@ -82,7 +93,7 @@ class StoragePlugin(private val activity: Activity) : Plugin(activity) {
 
   private fun documentCommand(invoke: Invoke, delete: Boolean) {
     val args = try { invoke.parseArgs(DocumentArgs::class.java) } catch (error: Exception) {
-      invoke.reject(error.message ?: "文件参数无效"); return
+      invoke.reject(diagnosticError(error, "文件参数无效")); return
     }
     Thread {
       try {
@@ -118,8 +129,8 @@ class StoragePlugin(private val activity: Activity) : Plugin(activity) {
         result.put("document", document ?: org.json.JSONObject.NULL)
         invoke.resolve(result)
       } catch (error: SecurityException) {
-        invoke.reject("保存目录权限已失效或没有删除权限，请重新选择目录；任务记录已保留")
-      } catch (error: Exception) { invoke.reject(error.message ?: "无法检查或删除文件，任务记录已保留") }
+        invoke.reject(diagnosticError(error, "保存目录权限已失效或没有删除权限，请重新选择目录；任务记录已保留"))
+      } catch (error: Exception) { invoke.reject(diagnosticError(error, "无法检查或删除文件，任务记录已保留")) }
     }.start()
   }
 
@@ -156,8 +167,64 @@ class StoragePlugin(private val activity: Activity) : Plugin(activity) {
       response.put("text", text)
       invoke.resolve(response)
     } catch (error: Exception) {
-      invoke.reject(error.message ?: "无法读取剪贴板")
+      invoke.reject(diagnosticError(error, "无法读取剪贴板"))
     }
+  }
+
+  @Command
+  fun writeClipboardText(invoke: Invoke) {
+    try {
+      val args = invoke.parseArgs(ClipboardTextArgs::class.java)
+      val clipboard = activity.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+      clipboard.setPrimaryClip(ClipData.newPlainText("BDL", args.text))
+      invoke.resolve(JSObject())
+    } catch (error: Exception) {
+      invoke.reject(diagnosticError(error, "无法写入剪贴板"))
+    }
+  }
+
+  private fun diagnosticSource(path: String): File {
+    val source = File(path).canonicalFile
+    val root = File(activity.applicationInfo.dataDir, "diagnostics").canonicalFile
+    require(source.parentFile == root && source.name.startsWith("bdl-diagnostics-") && source.name.endsWith(".json") && source.isFile) {
+      "诊断文件不在应用诊断目录中"
+    }
+    return source
+  }
+
+  @Command
+  fun saveDiagnosticFile(invoke: Invoke) {
+    try {
+      val args = invoke.parseArgs(DiagnosticSaveArgs::class.java)
+      val source = diagnosticSource(args.sourcePath)
+      val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+        addCategory(Intent.CATEGORY_OPENABLE)
+        type = "application/json"
+        putExtra(Intent.EXTRA_TITLE, source.name)
+      }
+      startActivityForResult(invoke, intent, "saveDiagnosticFileResult")
+    } catch (error: Exception) {
+      invoke.reject(diagnosticError(error, "无法选择诊断保存位置"))
+    }
+  }
+
+  @ActivityCallback
+  fun saveDiagnosticFileResult(invoke: Invoke, result: ActivityResult) {
+    if (result.resultCode == Activity.RESULT_CANCELED) {
+      val response = JSObject(); response.put("saved", false); invoke.resolve(response); return
+    }
+    Thread {
+      try {
+        require(result.resultCode == Activity.RESULT_OK) { "系统未能选择诊断保存位置" }
+        val uri = result.data?.data ?: throw IllegalStateException("系统未返回诊断保存位置")
+        val source = diagnosticSource(invoke.parseArgs(DiagnosticSaveArgs::class.java).sourcePath)
+        val output = activity.contentResolver.openOutputStream(uri, "w") ?: throw IllegalStateException("无法打开诊断保存位置")
+        output.use { destination -> FileInputStream(source).use { it.copyTo(destination) } }
+        val response = JSObject(); response.put("saved", true); invoke.resolve(response)
+      } catch (error: Exception) {
+        invoke.reject(diagnosticError(error, "保存诊断文件失败，应用内原诊断已保留"))
+      }
+    }.start()
   }
 
   @Command
@@ -172,7 +239,7 @@ class StoragePlugin(private val activity: Activity) : Plugin(activity) {
     val args = try {
       invoke.parseArgs(SaveImageArgs::class.java)
     } catch (error: Exception) {
-      invoke.reject(error.message ?: "图片保存参数无效")
+      invoke.reject(diagnosticError(error, "图片保存参数无效"))
       return
     }
 
@@ -181,9 +248,9 @@ class StoragePlugin(private val activity: Activity) : Plugin(activity) {
         val response = saveImage(args)
         invoke.resolve(response)
       } catch (error: SecurityException) {
-        invoke.reject("没有相册写入权限")
+        invoke.reject(diagnosticError(error, "没有相册写入权限"))
       } catch (error: Exception) {
-        invoke.reject(error.message ?: "保存图片到相册失败")
+        invoke.reject(diagnosticError(error, "保存图片到相册失败"))
       }
     }.start()
   }
@@ -227,7 +294,7 @@ class StoragePlugin(private val activity: Activity) : Plugin(activity) {
       response.put("display_name", displayName(treeUri))
       invoke.resolve(response)
     } catch (error: Exception) {
-      invoke.reject(error.message ?: "无法保存目录访问权限")
+      invoke.reject(diagnosticError(error, "无法保存目录访问权限"))
     }
   }
 
@@ -236,7 +303,7 @@ class StoragePlugin(private val activity: Activity) : Plugin(activity) {
     val args = try {
       invoke.parseArgs(ExportFileArgs::class.java)
     } catch (error: Exception) {
-      invoke.reject(error.message ?: "导出参数无效")
+      invoke.reject(diagnosticError(error, "导出参数无效"))
       return
     }
 
@@ -244,9 +311,9 @@ class StoragePlugin(private val activity: Activity) : Plugin(activity) {
       try {
         invoke.resolve(export(args))
       } catch (error: SecurityException) {
-        invoke.reject("保存目录权限已失效，请重新选择目录")
+        invoke.reject(diagnosticError(error, "保存目录权限已失效，请重新选择目录"))
       } catch (error: Exception) {
-        invoke.reject(error.message ?: "文件导出失败")
+        invoke.reject(diagnosticError(error, "文件导出失败"))
       }
     }.start()
   }
@@ -256,7 +323,7 @@ class StoragePlugin(private val activity: Activity) : Plugin(activity) {
     val args = try {
       invoke.parseArgs(OpenExportArgs::class.java)
     } catch (error: Exception) {
-      invoke.reject(error.message ?: "打开文件参数无效")
+      invoke.reject(diagnosticError(error, "打开文件参数无效"))
       return
     }
 
@@ -274,9 +341,9 @@ class StoragePlugin(private val activity: Activity) : Plugin(activity) {
       }
       invoke.resolve(JSObject())
     } catch (error: SecurityException) {
-      invoke.reject("保存目录权限已失效，请重新选择目录")
+      invoke.reject(diagnosticError(error, "保存目录权限已失效，请重新选择目录"))
     } catch (error: Exception) {
-      invoke.reject(error.message ?: "无法打开导出文件")
+      invoke.reject(diagnosticError(error, "无法打开导出文件"))
     }
   }
 
@@ -285,7 +352,7 @@ class StoragePlugin(private val activity: Activity) : Plugin(activity) {
     val args = try {
       invoke.parseArgs(OpenExportArgs::class.java)
     } catch (error: Exception) {
-      invoke.reject(error.message ?: "打开目录参数无效")
+      invoke.reject(diagnosticError(error, "打开目录参数无效"))
       return
     }
 
@@ -293,9 +360,9 @@ class StoragePlugin(private val activity: Activity) : Plugin(activity) {
       openDirectoryIntent(resolveExportDirectory(args))
       invoke.resolve(JSObject())
     } catch (error: SecurityException) {
-      invoke.reject("保存目录权限已失效，请重新选择目录")
+      invoke.reject(diagnosticError(error, "保存目录权限已失效，请重新选择目录"))
     } catch (error: Exception) {
-      invoke.reject(error.message ?: "无法打开导出目录")
+      invoke.reject(diagnosticError(error, "无法打开导出目录"))
     }
   }
 
@@ -332,7 +399,7 @@ class StoragePlugin(private val activity: Activity) : Plugin(activity) {
     }
     val overwritten =
       if (args.duplicateNamingStrategy == "overwrite_existing") existing else null
-    val tempName = ".bdl-${System.nanoTime()}-$finalName"
+    val tempName = ".bdl-${System.nanoTime()}.tmp"
     val tempUri = DocumentsContract.createDocument(
       activity.contentResolver,
       parent,
@@ -352,7 +419,7 @@ class StoragePlugin(private val activity: Activity) : Plugin(activity) {
       }
 
       if (overwritten != null) {
-        val backupName = ".bdl-backup-${System.nanoTime()}-$finalName"
+        val backupName = ".bdl-backup-${System.nanoTime()}.tmp"
         backupUri = DocumentsContract.renameDocument(
           activity.contentResolver,
           overwritten,
@@ -624,5 +691,18 @@ class StoragePlugin(private val activity: Activity) : Plugin(activity) {
     response.put("relative_path", relativePath)
     response.put("document_uri", uri.toString())
     return response
+  }
+
+  private fun diagnosticError(error: Throwable, summary: String): String {
+    val code = when (error) {
+      is SecurityException -> "storage_unavailable"
+      is java.io.FileNotFoundException -> "file_not_found"
+      is java.io.IOException -> "local_io_failed"
+      else -> "platform_error"
+    }
+    val causes = generateSequence(error) { it.cause }.take(8)
+      .joinToString(" <- ") { "${it.javaClass.name}: ${it.message}" }
+    val frames = error.stackTrace.take(8).joinToString(" <- ") { it.toString() }
+    return "$summary\n[stage=android_storage code=$code] cause=$causes stack=$frames"
   }
 }

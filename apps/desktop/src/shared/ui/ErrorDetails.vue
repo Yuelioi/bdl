@@ -5,6 +5,7 @@ import { openExternalUrl } from '../api/tauri'
 import { captureDiagnosticEnvironment } from '../utils/diagnosticEnvironment'
 import { redactDiagnosticMessage } from '../stores/transferView'
 import { classifyFailure } from '../utils/failureDiagnostic'
+import { writeClipboardText } from '../utils/clipboard'
 
 const props = defineProps<{ detail: string; showAdvice?: boolean }>()
 const detail = computed(() => redactDiagnosticMessage(props.detail))
@@ -20,7 +21,7 @@ const copy = async () => {
   const failure = detail.value
   try {
     const environment = await captureDiagnosticEnvironment()
-    await navigator.clipboard.writeText(redactDiagnosticMessage(`${failure}\n\n${environment}`))
+    await writeClipboardText(redactDiagnosticMessage(`${failure}\n\n${environment}`))
     if (failure === detail.value) copied.value = true
   } catch {
     actionError.value = '复制失败，请展开错误详情后手动复制。'

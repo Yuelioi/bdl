@@ -4,12 +4,11 @@ import ErrorDetails from '../../ui/ErrorDetails.vue';
 import { open } from '@tauri-apps/plugin-dialog';
 import { computed, ref, watch } from 'vue';
 
-import type { SettingsSnapshot, DuplicateTaskMatch, DuplicateTaskPolicy, DocumentTreeDirectory } from '../../api/dto';
+import type { SettingsSnapshot, DocumentTreeDirectory } from '../../api/dto';
 import { mobilePickExportDirectory } from '../../api/tauri';
 import { useParseStore } from '../../stores/parse';
 import { validateNamingTemplate, useSettingsStore } from '../../stores/settings';
 import type { InlineNotice } from '../../stores/feedback';
-import { statusBadge, statusLabel } from '../../stores/transferView';
 import { duplicateNamingOptions } from '../settings/settingsCatalog';
 import NamingPresetSelect from '../settings/NamingPresetSelect.vue';
 import DownloadPresetDialog from '../settings/DownloadPresetDialog.vue';
@@ -22,7 +21,6 @@ import UiDialog from '../../ui/Dialog.vue';
 import UiIconButton from '../../ui/IconButton.vue';
 import UiInlineNotice from '../../ui/InlineNotice.vue';
 import UiSelect from '../../ui/Select.vue';
-import UiStatusBadge from '../../ui/StatusBadge.vue';
 import UiTextField from '../../ui/TextField.vue';
 import { workflowError, workflowExtension, workflowOutputs } from '../../utils/downloadWorkflow';
 
@@ -36,15 +34,12 @@ const rememberTrigger = () => {
   dialogTrigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
 };
 const restoreTrigger = (event: Event) => {
-  if (!downloadDialogOpen.value && !duplicateDialogOpen.value && dialogTrigger?.isConnected) {
+  if (!downloadDialogOpen.value && dialogTrigger?.isConnected) {
     event.preventDefault();
     dialogTrigger.focus();
   }
 };
 const downloadDialogOpen = ref(false);
-const duplicateDialogOpen = ref(false);
-const duplicateMatches = ref<DuplicateTaskMatch[]>([]);
-const duplicatePendingSourceIds = ref<string[]>([]);
 const downloadNotice = ref<InlineNotice | null>(null);
 const downloadDir = ref('');
 const documentTreeOutput = ref<DocumentTreeDirectory | null>(null);
@@ -132,8 +127,6 @@ const presetError = computed(() => {
     return 'Android 暂不支持此预设中的嵌入，请到设置中改为保存独立文件';
   return workflowError(flow);
 });
-const duplicatePreview = computed(() => duplicateMatches.value.slice(0, 6));
-const duplicateRemaining = computed(() => Math.max(duplicateMatches.value.length - duplicatePreview.value.length, 0));
 const formatEstimatedBytes = (bytes: number) => {
   const units = ['B', 'KB', 'MB', 'GB', 'TB'];
   let value = Math.max(0, bytes);
@@ -203,8 +196,6 @@ const prepareOptions = async () => {
     return false;
   }
   restoreDefaults();
-  duplicateMatches.value = [];
-  duplicatePendingSourceIds.value = [];
   downloadNotice.value = null;
   sizeEstimate.value = null;
   sizeEstimateError.value = '';
@@ -226,9 +217,9 @@ const updateDownloadDir = (value: string) => {
   downloadDir.value = value;
 };
 
-const submitTasks = async (duplicatePolicy: DuplicateTaskPolicy) => {
+const submitTasks = async () => {
   downloadNotice.value = null;
-  const sourceIds = duplicatePolicy === 'ask' ? selectedSourceIds.value : duplicatePendingSourceIds.value;
+  const sourceIds = [...selectedSourceIds.value];
   if (sourceIds.length === 0) return;
   if (namingError.value || presetError.value) {
     downloadNotice.value = {
@@ -244,18 +235,17 @@ const submitTasks = async (duplicatePolicy: DuplicateTaskPolicy) => {
     };
     return;
   }
-  downloadDialogOpen.value = false;
-  parse.setNotice('正在加入传输队列…', 'info');
+  parse.setNotice('正在提交下载…', 'info');
   if (isMobilePlatform() && rememberDocumentTreeOutput.value && documentTreeOutput.value) {
     void settings.saveDefaultDocumentTreeOutput({ ...documentTreeOutput.value });
   }
-  const result = await parse.createTasksForSources(sourceIds, {
+  const result = await parse.submitTasksForSources(sourceIds, {
     downloadDir: isMobilePlatform() ? null : downloadDir.value.trim() || 'downloads',
     documentTreeOutput: isMobilePlatform() ? documentTreeOutput.value : null,
     downloadPresetId: downloadPresetId.value,
     namingTemplate: namingTemplate.value,
     duplicateNamingStrategy: duplicateNamingStrategy.value,
-    duplicatePolicy,
+    duplicatePolicy: 'ask',
   });
   if (result?.failures.length) {
     const firstFailure = result.failures[0];
@@ -264,33 +254,21 @@ const submitTasks = async (duplicatePolicy: DuplicateTaskPolicy) => {
         result.failures.length === 1
           ? firstFailure.message
           : `${result.failures.length} 个来源创建任务失败：${firstFailure.message}`,
-      tone: result.created.length > 0 ? 'warning' : 'danger',
+      tone: result.submitted > 0 ? 'warning' : 'danger',
       detail: result.failures.map((failure) => failure.detail ?? failure.message).join('\n\n'),
     };
     downloadDialogOpen.value = true;
     return;
   }
-  if (result?.requires_confirmation) {
-    duplicateMatches.value = result.duplicates;
-    duplicatePendingSourceIds.value = result.pendingSourceIds;
-    downloadDialogOpen.value = false;
-    duplicateDialogOpen.value = true;
-    return;
-  }
-  if (!result) {
-    downloadDialogOpen.value = true;
-    return;
-  }
-  duplicateDialogOpen.value = false;
-  duplicateMatches.value = [];
-  duplicatePendingSourceIds.value = [];
+  if (!result) { downloadDialogOpen.value = true; return; }
+  downloadDialogOpen.value = false;
 };
 
-const createTasks = async (duplicatePolicy: DuplicateTaskPolicy = 'ask') => {
+const createTasks = async () => {
   if (submitting.value) return;
   submitting.value = true;
   try {
-    await submitTasks(duplicatePolicy);
+    await submitTasks();
   } finally {
     submitting.value = false;
   }
@@ -411,6 +389,8 @@ defineExpose({ openDialog, downloadSaved });
   </footer>
   <UiDialog
     v-model="downloadDialogOpen"
+    :dismissible="!submitting"
+    :show-close="!submitting"
     title="下载设置"
     :content="{ onCloseAutoFocus: restoreTrigger }"
     :description="`${selectionTitle.length > (isMobilePlatform() ? 18 : 36) ? selectionTitle.slice(0, isMobilePlatform() ? 18 : 36) + '…' : selectionTitle} · ${selectedCount} ${selectionUnit}`"
@@ -427,11 +407,11 @@ defineExpose({ openDialog, downloadSaved });
               v-model="downloadPresetId"
               label="下载预设"
               :options="settings.saved.download_presets.map((preset) => ({ label: preset.name, value: preset.id }))"
-              :disabled="activeLoading"
+              :disabled="activeLoading || submitting"
             />
             <PresetSelectActions
               manage-label="管理下载预设"
-              :disabled="activeLoading"
+              :disabled="activeLoading || submitting"
               :create-disabled="settings.saved.download_presets.length >= 32"
               @create="openDownloadPreset()"
               @manage="managePresets"
@@ -453,7 +433,7 @@ defineExpose({ openDialog, downloadSaved });
             <UiIconButton
               icon="folder-open"
               :label="documentTreeOutput ? '更换导出目录' : '选择导出目录'"
-              :disabled="activeLoading"
+              :disabled="activeLoading || submitting"
               @click="chooseDocumentTreeOutput"
             />
           </div>
@@ -467,13 +447,13 @@ defineExpose({ openDialog, downloadSaved });
               placeholder="留空时使用 downloads"
               @update:model-value="updateDownloadDir"
             />
-            <UiButton variant="secondary" :disabled="activeLoading" @click="chooseDownloadDir">选择</UiButton>
+            <UiButton variant="secondary" :disabled="activeLoading || submitting" @click="chooseDownloadDir">选择</UiButton>
           </div>
           <NamingPresetSelect
             @manage="downloadDialogOpen = false"
             :key="defaultsRevision"
             v-model="namingTemplate"
-            :disabled="activeLoading"
+            :disabled="activeLoading || submitting"
             :extension="effectiveOutputExtension"
           />
           <UiSelect v-model="duplicateNamingStrategy" label="重名处理" :options="duplicateNamingOptions">
@@ -502,8 +482,8 @@ defineExpose({ openDialog, downloadSaved });
     </div>
     <template #footer>
       <div class="planner-dialog-footer">
-        <UiButton variant="secondary" :disabled="activeLoading" @click="downloadDialogOpen = false">取消</UiButton>
-        <UiButton class="planner-restore" variant="ghost" :disabled="activeLoading" @click="restoreDefaults"
+        <UiButton variant="secondary" :disabled="activeLoading || submitting" @click="downloadDialogOpen = false">取消</UiButton>
+        <UiButton class="planner-restore" variant="ghost" :disabled="activeLoading || submitting" @click="restoreDefaults"
           ><span class="restore-wide">恢复默认偏好</span><span class="restore-short">恢复</span></UiButton
         >
         <span class="planner-estimate" title="按媒体轨道码率与时长估算，附加文件大小可能未知。">{{
@@ -530,41 +510,7 @@ defineExpose({ openDialog, downloadSaved });
       }
     "
   />
-  <UiDialog v-model="duplicateDialogOpen" title="发现重复任务" :content="{ onCloseAutoFocus: restoreTrigger }">
-    <section class="flex items-start gap-3">
-      <span
-        class="grid size-9 shrink-0 place-items-center rounded-lg border border-(--color-border) bg-(--color-accent-soft) text-(--color-accent-strong)"
-        aria-hidden="true"
-      >
-        <UIcon class="size-4" name="i-tabler-copy" />
-      </span>
-      <div>
-        <strong>{{ duplicateMatches.length }} 个分集已在传输记录中</strong>
-        <p class="mt-1 mb-0 text-(--color-muted)">可以跳过这些分集，或创建使用独立文件名的新任务。</p>
-      </div>
-    </section>
-    <ul
-      class="m-0 max-h-60 list-none overflow-auto rounded-lg border border-(--color-border) p-0"
-      aria-label="重复任务"
-    >
-      <li
-        v-for="match in duplicatePreview"
-        :key="match.proposed_task_id"
-        class="flex min-h-11 items-center justify-between gap-3 border-b border-(--color-border) px-2.5 py-2 last:border-b-0"
-      >
-        <span class="truncate">{{ match.title }}</span>
-        <UiStatusBadge :status="statusBadge(match.existing_status)">{{
-          statusLabel(match.existing_status)
-        }}</UiStatusBadge>
-      </li>
-    </ul>
-    <p v-if="duplicateRemaining > 0" class="mt-1 mb-0 text-(--color-muted)">另有 {{ duplicateRemaining }} 项未展开</p>
-    <template #footer>
-      <UiButton variant="ghost" :disabled="activeLoading" @click="duplicateDialogOpen = false">取消</UiButton>
-      <UiButton variant="secondary" :disabled="activeLoading" @click="createTasks('skip')">跳过重复项</UiButton>
-      <UiButton :disabled="activeLoading" @click="createTasks('create')">仍然创建</UiButton>
-    </template>
-  </UiDialog>
+
 </template>
 
 <style scoped>

@@ -2,7 +2,7 @@ import { commandDiagnostic } from '../utils/commandDiagnostic'
 import { defineStore } from 'pinia'
 
 import type { LibraryCategory, LibraryBrowsePage, LibraryBrowseItem } from '../api/dto'
-import { accountLibraryList, parseCreateSource, parseCloseSource } from '../api/tauri'
+import { accountLibraryList, parseCreateSource } from '../api/tauri'
 
 const PAGE_SIZE = 20
 
@@ -56,9 +56,8 @@ export const useLibraryStore = defineStore('library', {
         if (targetKind === 'watch_later') {
           let entries = this.watchLaterItems
           if (page === 1 || !entries) {
-            const tree = await parseCreateSource({ input: 'https://www.bilibili.com/list/watchlater', fetch_streams: false, expand_video_collection: false })
-            try {
-              entries = tree.groups.flatMap(group => group.items).map(item => {
+            const tree = await parseCreateSource({ input: 'https://www.bilibili.com/list/watchlater', fetch_streams: false, expand_video_collection: false }, crypto.randomUUID())
+            entries = tree.groups.flatMap(group => group.items).map(item => {
                 const part = item.parts[0]
                 return {
                   kind: 'watch_later' as const, media_id: item.id, title: item.title,
@@ -67,9 +66,6 @@ export const useLibraryStore = defineStore('library', {
                   source_url: part?.bvid ? `https://www.bilibili.com/video/${part.bvid}` : `https://www.bilibili.com/video/av${part?.aid}`,
                 }
               })
-            } finally {
-              await parseCloseSource(tree.source.id)
-            }
             if (generation === this.requestGeneration) this.watchLaterItems = entries
           }
           const currentPage = Math.min(Math.max(1, page), Math.max(1, Math.ceil(entries.length / PAGE_SIZE)))

@@ -6,12 +6,24 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 
 use crate::account::{AccountSummary, redact_sensitive};
-use crate::error::{BdlError, BdlResult};
+use crate::error::{BdlError, BdlResult, IoResultExt};
 use crate::queue::{DownloadResource, DownloadTask, QueueLogEntry, QueueLogLevel};
 
 const MAX_COMPLETION_ERROR_SUMMARY_CHARS: usize = 2000;
 const TASK_LOG_RETENTION_DAYS: i64 = 30;
 const MAX_TASK_LOGS_PER_TASK: usize = 1000;
+const MAX_OPERATION_ERRORS: usize = 200;
+
+#[derive(Debug, Clone, Serialize)]
+pub struct OperationErrorRecord {
+    pub id: i64,
+    pub command: String,
+    pub code: String,
+    pub message: String,
+    pub detail: Option<String>,
+    pub environment: serde_json::Value,
+    pub created_at: String,
+}
 
 pub struct TaskStorage {
     conn: Connection,
@@ -42,16 +54,23 @@ impl TaskStorage {
     pub fn open(path: impl AsRef<Path>) -> BdlResult<Self> {
         let path = path.as_ref();
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
+            std::fs::create_dir_all(parent).path_context("create_database_directory", parent)?;
         }
 
-        let conn = Connection::open(path)?;
+        let conn = Connection::open(path).map_err(|error| {
+            BdlError::from(error)
+                .with_context(format!("[stage=database_open] path={}", path.display()))
+        })?;
         conn.pragma_update(None, "journal_mode", "WAL")?;
         conn.pragma_update(None, "foreign_keys", "ON")?;
-        run_migrations(&conn)?;
+        run_migrations(&conn).map_err(|error| {
+            error.with_context(format!("[stage=database_schema] path={}", path.display()))
+        })?;
 
         let mut storage = Self { conn };
         storage.prune_expired_task_logs()?;
+        prune_operation_errors(&storage.conn)?;
+        prune_preparation_records(&storage.conn)?;
         Ok(storage)
     }
 
@@ -62,6 +81,97 @@ impl TaskStorage {
         let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
 
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    }
+
+    pub fn save_preparation_record(
+        &mut self,
+        id: &str,
+        status: &str,
+        record: &serde_json::Value,
+    ) -> BdlResult<()> {
+        let tx = self.conn.transaction()?;
+        tx.execute(
+            "INSERT INTO task_preparations (id, status, record, updated_at) VALUES (?1, ?2, ?3, ?4) ON CONFLICT(id) DO UPDATE SET status=excluded.status, record=excluded.record, updated_at=excluded.updated_at",
+            params![id, status, serde_json::to_string(record)?, Utc::now().to_rfc3339()],
+        )?;
+        prune_preparation_records(&tx)?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn preparation_records(&self) -> BdlResult<Vec<serde_json::Value>> {
+        let mut statement = self
+            .conn
+            .prepare("SELECT record FROM task_preparations ORDER BY updated_at DESC")?;
+        let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
+        rows.map(|row| Ok(serde_json::from_str(&row?)?)).collect()
+    }
+
+    pub fn delete_preparation_record(&mut self, id: &str) -> BdlResult<()> {
+        self.conn
+            .execute("DELETE FROM task_preparations WHERE id=?1", [id])?;
+        Ok(())
+    }
+
+    pub fn append_operation_error(
+        &mut self,
+        command: &str,
+        code: &str,
+        message: &str,
+        detail: Option<&str>,
+        environment: &serde_json::Value,
+    ) -> BdlResult<i64> {
+        let tx = self.conn.transaction()?;
+        tx.execute(
+            "INSERT INTO operation_errors (command, code, message, detail, environment, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![redact_sensitive(command), redact_sensitive(code), redact_sensitive(message),
+                detail.map(crate::account::redact_diagnostic), serde_json::to_string(environment)?, Utc::now().to_rfc3339()],
+        )?;
+        let id = tx.last_insert_rowid();
+        prune_operation_errors(&tx)?;
+        tx.commit()?;
+        Ok(id)
+    }
+
+    pub fn operation_errors(&self, limit: usize) -> BdlResult<Vec<OperationErrorRecord>> {
+        let mut statement = self.conn.prepare(
+            "SELECT id, command, code, message, detail, environment, created_at FROM operation_errors ORDER BY id DESC LIMIT ?1",
+        )?;
+        let rows = statement.query_map([limit.min(MAX_OPERATION_ERRORS) as i64], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, Option<String>>(4)?,
+                row.get::<_, String>(5)?,
+                row.get::<_, String>(6)?,
+            ))
+        })?;
+        rows.map(|row| {
+            let (id, command, code, message, detail, environment, created_at) = row?;
+            Ok(OperationErrorRecord {
+                id,
+                command,
+                code,
+                message,
+                detail,
+                environment: serde_json::from_str(&environment)?,
+                created_at,
+            })
+        })
+        .collect()
+    }
+
+    pub fn operation_error_usage(&self) -> BdlResult<(u64, u64)> {
+        Ok(self.conn.query_row(
+            "SELECT COUNT(*), COALESCE(SUM(length(CAST(command || code || message || COALESCE(detail, '') || environment AS BLOB))), 0) FROM operation_errors",
+            [], |row| Ok((row.get(0)?, row.get(1)?)),
+        )?)
+    }
+
+    pub fn clear_operation_errors(&mut self) -> BdlResult<usize> {
+        Ok(self.conn.execute("DELETE FROM operation_errors", [])?)
     }
 
     pub fn save_task(&mut self, task: &DownloadTask) -> BdlResult<()> {
@@ -480,13 +590,19 @@ impl TaskStorage {
     }
 
     pub fn task_log_usage(&self) -> BdlResult<(u64, u64, u64)> {
-        Ok(self.conn.query_row(
+        let (operations, operation_bytes) = self.operation_error_usage()?;
+        let (count, bytes, cleanable): (u64, u64, u64) = self.conn.query_row(
             "SELECT COUNT(*), COALESCE(SUM(length(CAST(message AS BLOB))), 0),
                     COALESCE(SUM(CASE WHEN tasks.status IN ('\"completed\"', '\"failed\"', '\"cancelled\"') THEN 1 ELSE 0 END), 0)
              FROM task_logs JOIN tasks ON tasks.id = task_logs.task_id",
             [],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-        )?)
+        )?;
+        Ok((
+            count + operations,
+            bytes + operation_bytes,
+            cleanable + operations,
+        ))
     }
 
     /// Keep active, queued and paused attempts intact: queue recovery reads their logs.
@@ -505,7 +621,7 @@ impl TaskStorage {
             "DELETE FROM task_logs WHERE task_id IN
              (SELECT id FROM tasks WHERE status IN ('\"completed\"', '\"failed\"', '\"cancelled\"'))",
             [],
-        )?;
+        )? + transaction.execute("DELETE FROM operation_errors", [])?;
         transaction.commit()?;
         Ok(TaskLogCleanup {
             removed_logs,
@@ -542,6 +658,19 @@ impl TaskStorage {
         )?;
         Ok(())
     }
+}
+
+fn prune_preparation_records(conn: &Connection) -> BdlResult<()> {
+    conn.execute("DELETE FROM task_preparations WHERE status IN ('completed','failed','cancelled','interrupted') AND (updated_at < ?1 OR id IN (SELECT id FROM task_preparations WHERE status IN ('completed','failed','cancelled','interrupted') ORDER BY updated_at DESC LIMIT -1 OFFSET 100))", [(Utc::now() - Duration::days(30)).to_rfc3339()])?;
+    Ok(())
+}
+
+fn prune_operation_errors(conn: &Connection) -> BdlResult<()> {
+    conn.execute(
+        "DELETE FROM operation_errors WHERE datetime(created_at) < datetime(?1) OR id NOT IN (SELECT id FROM operation_errors ORDER BY id DESC LIMIT ?2)",
+        params![(Utc::now() - Duration::days(TASK_LOG_RETENTION_DAYS)).to_rfc3339(), MAX_OPERATION_ERRORS as i64],
+    )?;
+    Ok(())
 }
 
 struct TaskRow {
@@ -640,6 +769,23 @@ fn run_migrations(conn: &Connection) -> BdlResult<()> {
             message TEXT NOT NULL,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS operation_errors (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            command TEXT NOT NULL,
+            code TEXT NOT NULL,
+            message TEXT NOT NULL,
+            detail TEXT,
+            environment TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS task_preparations (
+            id TEXT PRIMARY KEY,
+            status TEXT NOT NULL,
+            record TEXT NOT NULL,
+            updated_at TEXT NOT NULL
         );
 
         CREATE TABLE IF NOT EXISTS account_summary (

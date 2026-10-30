@@ -36,7 +36,9 @@ class MediaMuxPlugin(private val activity: Activity) : Plugin(activity) {
         muxMedia(args)
         invoke.resolve(JSObject())
       } catch (error: Exception) {
-        invoke.reject(error.message ?: "媒体合并失败")
+        invoke.reject("[stage=android_media code=mux_failed] " +
+          generateSequence<Throwable>(error) { it.cause }.take(8).joinToString(" <- ") { "${it.javaClass.name}: ${it.message}" } +
+          " stack=" + error.stackTrace.take(8).joinToString(" <- ") { it.toString() })
       }
     }
   }

@@ -149,7 +149,7 @@ impl CollectionResolver<BpiCollectionApi> {
             .cookie(cookie)
             .build()
             .map(Self::from_bpi_client)
-            .map_err(|error| BdlError::Bpi(error.to_string()))
+            .map_err(|error| crate::error::bpi_error(error))
     }
 
     pub fn from_bpi_client(client: impl Into<Arc<BpiClient>>) -> Self {
@@ -167,7 +167,7 @@ impl SeriesResolver<BpiSeriesApi> {
             .cookie(cookie)
             .build()
             .map(Self::from_bpi_client)
-            .map_err(|error| BdlError::Bpi(error.to_string()))
+            .map_err(|error| crate::error::bpi_error(error))
     }
 
     pub fn from_bpi_client(client: impl Into<Arc<BpiClient>>) -> Self {
@@ -278,7 +278,7 @@ impl BpiCollectionApi {
     pub fn new() -> BdlResult<Self> {
         BpiClient::new()
             .map(Self::from_client)
-            .map_err(|error| BdlError::Bpi(error.to_string()))
+            .map_err(|error| crate::error::bpi_error(error))
     }
 
     pub fn from_client(client: impl Into<Arc<BpiClient>>) -> Self {
@@ -292,7 +292,7 @@ impl BpiSeriesApi {
     pub fn new() -> BdlResult<Self> {
         BpiClient::new()
             .map(Self::from_client)
-            .map_err(|error| BdlError::Bpi(error.to_string()))
+            .map_err(|error| crate::error::bpi_error(error))
     }
 
     pub fn from_client(client: impl Into<Arc<BpiClient>>) -> Self {
@@ -309,21 +309,21 @@ impl CollectionApi for BpiCollectionApi {
         ids: CollectionInputIds,
         request: PageRequest,
     ) -> BdlResult<ResolvedCollectionPage> {
-        let mid = Mid::new(ids.mid).map_err(|error| BdlError::Bpi(error.to_string()))?;
+        let mid = Mid::new(ids.mid).map_err(|error| crate::error::bpi_error(error))?;
         let season_id =
-            SeasonId::new(ids.season_id).map_err(|error| BdlError::Bpi(error.to_string()))?;
+            SeasonId::new(ids.season_id).map_err(|error| crate::error::bpi_error(error))?;
         let params = VideoCollectionSeasonsArchivesParams::new(mid, season_id)
             .with_sort_reverse(false)
             .with_page_num(u64::from(request.page_number))
-            .map_err(|error| BdlError::Bpi(error.to_string()))?
+            .map_err(|error| crate::error::bpi_error(error))?
             .with_page_size(u64::from(request.page_size))
-            .map_err(|error| BdlError::Bpi(error.to_string()))?;
+            .map_err(|error| crate::error::bpi_error(error))?;
         let data = self
             .client
             .video()
             .seasons_archives_list(params)
             .await
-            .map_err(|error| BdlError::Bpi(error.to_string()))?;
+            .map_err(|error| crate::error::bpi_error(error))?;
 
         let mut page = ResolvedCollectionPage::from_bpi(data, request);
         // Enrichment failure must never make an otherwise downloadable page fail.
@@ -350,30 +350,30 @@ impl SeriesApi for BpiSeriesApi {
         request: PageRequest,
     ) -> BdlResult<ResolvedSeriesPage> {
         let info_params = VideoCollectionSeriesInfoParams::new(ids.series_id)
-            .map_err(|error| BdlError::Bpi(error.to_string()))?;
+            .map_err(|error| crate::error::bpi_error(error))?;
         let info = self
             .client
             .video()
             .series_info(info_params)
             .await
-            .map_err(|error| BdlError::Bpi(error.to_string()))?;
+            .map_err(|error| crate::error::bpi_error(error))?;
         let mid = ids.mid.unwrap_or(info.meta.mid);
         let params = VideoCollectionSeriesArchivesParams::new(
-            Mid::new(mid).map_err(|error| BdlError::Bpi(error.to_string()))?,
+            Mid::new(mid).map_err(|error| crate::error::bpi_error(error))?,
             ids.series_id,
         )
-        .map_err(|error| BdlError::Bpi(error.to_string()))?
+        .map_err(|error| crate::error::bpi_error(error))?
         .with_sort(CollectionArchiveSort::Asc)
         .with_page_num(u64::from(request.page_number))
-        .map_err(|error| BdlError::Bpi(error.to_string()))?
+        .map_err(|error| crate::error::bpi_error(error))?
         .with_page_size(u64::from(request.page_size))
-        .map_err(|error| BdlError::Bpi(error.to_string()))?;
+        .map_err(|error| crate::error::bpi_error(error))?;
         let archives = self
             .client
             .video()
             .series_archives(params)
             .await
-            .map_err(|error| BdlError::Bpi(error.to_string()))?;
+            .map_err(|error| crate::error::bpi_error(error))?;
 
         Ok(ResolvedSeriesPage::from_bpi(info, archives, request))
     }

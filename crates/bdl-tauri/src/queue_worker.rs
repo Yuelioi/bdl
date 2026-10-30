@@ -25,13 +25,21 @@ pub(crate) fn start(app: &AppHandle) {
         }
 
         let result = run(&app, state.inner()).await;
-        if let Err(error) = state.task_execution().set_active(false) {
+        if let Err(error) = state.sync_download_activity() {
             tracing::warn!("failed to stop platform task execution: {error}");
+            crate::commands::report_runtime_error(
+                &app,
+                &state,
+                "stop_task_execution",
+                error.into(),
+            )
+            .await;
         }
         state.finish_queue_worker();
 
         if let Err(error) = result {
             tracing::error!("queue worker failed: {}", error.diagnostic_message());
+            crate::commands::report_runtime_error(&app, &state, "queue_worker", error).await;
         }
 
         let should_restart = matches!(state.has_startable_task(), Ok(true))
@@ -64,6 +72,13 @@ async fn run(app: &AppHandle, state: &AppState) -> CommandResult<()> {
                         Ok(()) => execution_active = true,
                         Err(error) => {
                             tracing::warn!("failed to activate platform task execution: {error}");
+                            crate::commands::report_runtime_error(
+                                app,
+                                state,
+                                "start_task_execution",
+                                error.into(),
+                            )
+                            .await;
                         }
                     }
                 }
@@ -94,12 +109,26 @@ async fn run(app: &AppHandle, state: &AppState) -> CommandResult<()> {
                 .sync_scheduled_wakeups(&scheduled_wakeup_millis)
             {
                 tracing::warn!("failed to sync platform scheduled wakeups: {error}");
+                crate::commands::report_runtime_error(
+                    app,
+                    state,
+                    "sync_scheduled_wakeups",
+                    error.into(),
+                )
+                .await;
             }
 
             if running.is_empty() {
                 if execution_active {
-                    if let Err(error) = state.task_execution().set_active(false) {
+                    if let Err(error) = state.sync_download_activity() {
                         tracing::warn!("failed to stop platform task execution: {error}");
+                        crate::commands::report_runtime_error(
+                            app,
+                            state,
+                            "stop_task_execution",
+                            error.into(),
+                        )
+                        .await;
                     } else {
                         execution_active = false;
                     }

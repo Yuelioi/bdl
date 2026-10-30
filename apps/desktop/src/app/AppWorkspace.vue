@@ -2,6 +2,7 @@
 import { computed, defineAsyncComponent } from 'vue';
 import { useUiStore } from '../shared/stores/ui';
 import BackgroundParseStatus from '../shared/ui/BackgroundParseStatus.vue';
+import PreparationStatus from '../shared/ui/PreparationStatus.vue';
 const { mobile = false } = defineProps<{ mobile?: boolean }>();
 const ui = useUiStore();
 const desktopPages = {
@@ -22,7 +23,10 @@ const activePageComponent = computed(() => (mobile ? mobilePages : desktopPages)
 </script>
 <template>
   <section class="main-region" :data-page="ui.activeTab" :class="{ 'workspace-mobile': mobile }">
-    <BackgroundParseStatus />
+    <div class="workspace-status">
+      <PreparationStatus />
+      <BackgroundParseStatus />
+    </div>
     <Suspense>
       <Transition name="workspace" mode="out-in">
         <KeepAlive>
@@ -45,12 +49,12 @@ const activePageComponent = computed(() => (mobile ? mobilePages : desktopPages)
   min-width: 0;
   min-height: 0;
   display: grid;
-  grid-template-rows: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
 }
 
-.main-region:has(> [aria-label='后台解析下载']) {
-  grid-template-rows: auto minmax(0, 1fr);
+.workspace-status {
+  min-width: 0;
 }
 
 .workspace-loading {

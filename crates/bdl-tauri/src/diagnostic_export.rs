@@ -11,6 +11,7 @@ pub struct DiagnosticEnvironment {
     pub arch: String,
     pub device: crate::task_execution::DeviceEnvironment,
     pub device_info_available: bool,
+    pub device_info_error: Option<String>,
     pub segment_count: usize,
     pub concurrent_tasks: usize,
     pub retry_count: usize,
@@ -23,16 +24,24 @@ pub(crate) async fn collect_environment(
     let settings = state.settings()?;
     let backend = state.task_execution();
     let device = tauri::async_runtime::spawn_blocking(move || backend.device_environment()).await;
-    let (device, device_info_available) = match device {
-        Ok(Ok(device)) => (device, true),
-        _ => (Default::default(), false),
+    let (device, device_info_error) = match device {
+        Ok(Ok(device)) => (device, None),
+        Ok(Err(error)) => (
+            Default::default(),
+            Some(bdl_core::account::redact_diagnostic(&error.to_string())),
+        ),
+        Err(error) => (
+            Default::default(),
+            Some(bdl_core::account::redact_diagnostic(&error.to_string())),
+        ),
     };
     Ok(DiagnosticEnvironment {
         app_version: crate::version().to_owned(),
         os: std::env::consts::OS.to_owned(),
         arch: std::env::consts::ARCH.to_owned(),
         device,
-        device_info_available,
+        device_info_available: device_info_error.is_none(),
+        device_info_error,
         segment_count: settings.segment_count,
         concurrent_tasks: settings.concurrent_tasks,
         retry_count: settings.retry_count,

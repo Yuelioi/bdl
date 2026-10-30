@@ -2,6 +2,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
+use bdl_core::error::IoResultExt;
 use bdl_core::{BdlError, BdlResult};
 use chrono::Utc;
 
@@ -20,11 +21,11 @@ fn files(data_dir: &Path) -> BdlResult<Vec<(PathBuf, u64)>> {
     let entries = match std::fs::read_dir(&directory) {
         Ok(entries) => entries,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(error) => return Err(error.into()),
+        Err(error) => return Err(error).path_context("read_diagnostics_directory", &directory),
     };
     let mut files = Vec::new();
     for entry in entries {
-        let entry = entry?;
+        let entry = entry.path_context("read_diagnostics_entry", &directory)?;
         let name = entry.file_name();
         let Some(stamp) = name
             .to_str()
@@ -41,7 +42,9 @@ fn files(data_dir: &Path) -> BdlResult<Vec<(PathBuf, u64)>> {
             continue;
         }
         crate::file_removal::validate_ancestors(&entry.path())?;
-        let metadata = entry.metadata()?;
+        let metadata = entry
+            .metadata()
+            .path_context("stat_diagnostic_file", &entry.path())?;
         if metadata.is_file() {
             files.push((entry.path(), metadata.len()));
         }
@@ -61,7 +64,7 @@ pub(crate) fn clear(data_dir: &Path) -> BdlResult<usize> {
     let files = files(data_dir)?;
     for (path, _) in &files {
         crate::file_removal::validate_ancestors(path)?;
-        std::fs::remove_file(path)?;
+        std::fs::remove_file(path).path_context("clear_diagnostic_file", path)?;
     }
     Ok(files.len())
 }
@@ -70,7 +73,7 @@ pub(crate) fn write(data_dir: &Path, report: &[u8]) -> BdlResult<PathBuf> {
     let _guard = FILES_LOCK.lock().map_err(|_| lock_error())?;
     let directory = data_dir.join("diagnostics");
     crate::file_removal::validate_ancestors(&directory)?;
-    std::fs::create_dir_all(&directory)?;
+    std::fs::create_dir_all(&directory).path_context("create_diagnostics_directory", &directory)?;
     let path = directory.join(format!(
         "bdl-diagnostics-{}.json",
         Utc::now().format("%Y%m%d-%H%M%S-%f")
@@ -79,12 +82,13 @@ pub(crate) fn write(data_dir: &Path, report: &[u8]) -> BdlResult<PathBuf> {
     let mut file = std::fs::OpenOptions::new()
         .write(true)
         .create_new(true)
-        .open(&path)?;
-    std::io::Write::write_all(&mut file, report)?;
+        .open(&path)
+        .path_context("create_diagnostic_report", &path)?;
+    std::io::Write::write_all(&mut file, report).path_context("write_diagnostic_report", &path)?;
     drop(file);
     for (expired, _) in files(data_dir)?.into_iter().skip(MAX_DIAGNOSTIC_FILES) {
         crate::file_removal::validate_ancestors(&expired)?;
-        std::fs::remove_file(expired)?;
+        std::fs::remove_file(&expired).path_context("prune_diagnostic_report", &expired)?;
     }
     Ok(path)
 }

@@ -1,10 +1,10 @@
 use async_trait::async_trait;
+use bpi_rs::BpiClient;
 use bpi_rs::bangumi::{BangumiDetailParams, BangumiVideoStreamParams};
 use bpi_rs::danmaku::DanmakuXmlListParams;
 use bpi_rs::ids::{Aid, Bvid, Cid, EpisodeId, SeasonId};
 use bpi_rs::models::{DashTrack, Fnval, VideoQuality};
 use bpi_rs::video::VideoPlayerInfoParams;
-use bpi_rs::{BpiClient, BpiError};
 use chrono::{DateTime, Utc};
 use std::sync::Arc;
 use url::Url;
@@ -98,7 +98,7 @@ impl BangumiResolver<BpiBangumiApi> {
             .cookie(cookie)
             .build()
             .map(Self::from_bpi_client)
-            .map_err(|error| BdlError::Bpi(error.to_string()))
+            .map_err(|error| crate::error::bpi_error(error))
     }
 
     pub fn from_bpi_client(client: impl Into<Arc<BpiClient>>) -> Self {
@@ -214,7 +214,7 @@ impl BpiBangumiApi {
     pub fn new() -> BdlResult<Self> {
         BpiClient::new()
             .map(Self::from_client)
-            .map_err(|error| BdlError::Bpi(error.to_string()))
+            .map_err(|error| crate::error::bpi_error(error))
     }
 
     pub fn from_client(client: impl Into<Arc<BpiClient>>) -> Self {
@@ -232,7 +232,7 @@ impl BangumiApi for BpiBangumiApi {
                 self.client
                     .bangumi()
                     .detail(BangumiDetailParams::from_season_id(
-                        SeasonId::new(season_id).map_err(bpi_error)?,
+                        SeasonId::new(season_id).map_err(|error| crate::error::bpi_error(error))?,
                     ))
                     .await
             }
@@ -240,12 +240,12 @@ impl BangumiApi for BpiBangumiApi {
                 self.client
                     .bangumi()
                     .detail(BangumiDetailParams::from_episode_id(
-                        EpisodeId::new(ep_id).map_err(bpi_error)?,
+                        EpisodeId::new(ep_id).map_err(|error| crate::error::bpi_error(error))?,
                     ))
                     .await
             }
         }
-        .map_err(bpi_error)?;
+        .map_err(|error| crate::error::bpi_error(error))?;
 
         let cover_url = non_empty(detail.cover.clone());
         let owner_name = detail
@@ -282,7 +282,8 @@ impl BangumiApi for BpiBangumiApi {
             .bangumi()
             .video_stream(
                 BangumiVideoStreamParams::from_episode_id(
-                    EpisodeId::new(episode.ep_id).map_err(bpi_error)?,
+                    EpisodeId::new(episode.ep_id)
+                        .map_err(|error| crate::error::bpi_error(error))?,
                 )
                 .with_quality(VideoQuality::P8K)
                 .with_fnval(
@@ -296,7 +297,7 @@ impl BangumiApi for BpiBangumiApi {
                 ),
             )
             .await
-            .map_err(bpi_error)?;
+            .map_err(|error| crate::error::bpi_error(error))?;
 
         let subtitles = match self
             .client
@@ -460,18 +461,18 @@ fn map_episode_item(
 fn bangumi_player_info_params(
     episode: &ResolvedBangumiEpisode,
 ) -> BdlResult<VideoPlayerInfoParams> {
-    let cid = Cid::new(episode.cid).map_err(bpi_error)?;
+    let cid = Cid::new(episode.cid).map_err(|error| crate::error::bpi_error(error))?;
     if !episode.bvid.trim().is_empty() {
         return episode
             .bvid
             .parse::<Bvid>()
             .map(|bvid| VideoPlayerInfoParams::from_bvid(bvid, cid))
-            .map_err(bpi_error);
+            .map_err(|error| crate::error::bpi_error(error));
     }
 
     Aid::new(episode.aid)
         .map(|aid| VideoPlayerInfoParams::from_aid(aid, cid))
-        .map_err(bpi_error)
+        .map_err(|error| crate::error::bpi_error(error))
 }
 
 fn archive_assets(cid: u64, subtitles: &[ResolvedBangumiSubtitle]) -> Vec<DerivedAsset> {
@@ -675,8 +676,4 @@ fn source_kind_name(kind: SourceKind) -> &'static str {
 
 fn non_empty(value: String) -> Option<String> {
     (!value.trim().is_empty()).then_some(value)
-}
-
-fn bpi_error(error: BpiError) -> BdlError {
-    BdlError::Bpi(error.to_string())
 }

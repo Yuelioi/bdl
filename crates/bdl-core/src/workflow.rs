@@ -492,16 +492,12 @@ pub fn reserve_task_paths(
 ) -> BdlResult<Option<crate::queue::DownloadTask>> {
     use crate::naming::DuplicateNamingStrategy;
     let base = task.output_path.clone();
-    let stem = base
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("output");
-    let extension = base.extension().and_then(|s| s.to_str()).unwrap_or("bin");
+    let stem_limit = task.file_stem_byte_limit()?;
     let mut candidate = task;
     for index in 0..10000 {
         if index > 0 {
             candidate = candidate
-                .with_output_path(base.with_file_name(format!("{stem} ({index}).{extension}")))?;
+                .with_output_path(crate::naming::with_counter_suffix(&base, index, stem_limit))?;
         }
         let live_collision = candidate
             .file_paths()

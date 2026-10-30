@@ -194,14 +194,14 @@ impl SourceResolver {
             .redirect(reqwest::redirect::Policy::none())
             .retry(reqwest::retry::never())
             .build()
-            .map_err(|error| BdlError::Bpi(error.to_string()))?;
+            .map_err(|error| crate::error::bpi_error(error))?;
         let mut builder = BpiClient::builder().reqwest_client(http);
         if let Some(cookie) = cookie.filter(|value| !value.trim().is_empty()) {
             builder = builder.cookie(cookie);
         }
         let client = builder
             .build()
-            .map_err(|error| BdlError::Bpi(error.to_string()))?;
+            .map_err(|error| crate::error::bpi_error(error))?;
         Ok(Self::from_bpi_client(client))
     }
 
@@ -339,7 +339,7 @@ impl SourceResolver {
             .redirect(reqwest::redirect::Policy::none())
             .retry(reqwest::retry::never())
             .build()
-            .map_err(|error| BdlError::Bpi(error.to_string()))?;
+            .map_err(|error| crate::error::bpi_error(error))?;
         let mut url = url::Url::parse(input).map_err(|_| source_error("invalid short link"))?;
         url.set_scheme("https")
             .map_err(|_| source_error("invalid short link scheme"))?;
@@ -360,7 +360,7 @@ impl SourceResolver {
                     guard
                         .before()
                         .await
-                        .map_err(|error| BdlError::Bpi(error.to_string()))?,
+                        .map_err(|error| crate::error::bpi_error(error))?,
                 )
             } else {
                 None
@@ -369,11 +369,11 @@ impl SourceResolver {
                 .get(url.clone())
                 .send()
                 .await
-                .map_err(|error| BdlError::Bpi(error.to_string()))?;
+                .map_err(|error| crate::error::bpi_error(error))?;
             if let Some(permit) = &mut permit {
                 permit
                     .observe(response.status().as_u16(), response.headers(), &[])
-                    .map_err(|error| BdlError::Bpi(error.to_string()))?;
+                    .map_err(|error| crate::error::bpi_error(error))?;
             }
             if !response.status().is_redirection() {
                 return Err(source_error(

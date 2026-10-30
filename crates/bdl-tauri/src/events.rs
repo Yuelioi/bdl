@@ -11,6 +11,7 @@ pub const QUEUE_PROGRESS_UPDATED: &str = "queue://progress-updated";
 pub const QUEUE_LOG_APPENDED: &str = "queue://log-appended";
 pub const SETTINGS_UPDATED: &str = "settings://updated";
 pub const ACCOUNT_UPDATED: &str = "account://updated";
+pub const OPERATION_ERROR: &str = "diagnostic://operation-error";
 
 pub fn emit<R, T>(app: &AppHandle<R>, event: &str, payload: &T) -> Result<(), CommandError>
 where

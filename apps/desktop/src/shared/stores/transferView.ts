@@ -768,7 +768,9 @@ const humanLogTitle = (message: string): string => {
 const redactUrl = (rawUrl: string): string => {
   try {
     const parsed = new URL(rawUrl)
-    return parsed.search ? `${parsed.origin}${parsed.pathname}?<redacted>` : rawUrl
+    const safe = parsed.username || parsed.password
+      ? `${parsed.protocol}//<redacted>@${parsed.host}${parsed.pathname}` : `${parsed.origin}${parsed.pathname}`
+    return parsed.search ? `${safe}?<redacted>` : parsed.username || parsed.password ? safe : rawUrl
   } catch {
     return rawUrl
   }

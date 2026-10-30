@@ -146,6 +146,14 @@ fn latest_attempt_does_not_inherit_previous_login_failure() {
         diagnose_task(&failed_task(ResourceStatus::Failed), &logs).summary,
         "源站拒绝访问"
     );
+    let mut old_error = log(QueueLogLevel::Error, "Cookie 已失效");
+    let mut retry = log(QueueLogLevel::Info, "重试任务");
+    old_error.created_at = "2026-07-09T12:03:00Z".into();
+    retry.created_at = old_error.created_at.clone();
+    assert_eq!(
+        diagnose_task(&failed_task(ResourceStatus::Failed), &[retry, old_error]).summary,
+        "任务失败"
+    );
 }
 
 fn failed_task(audio_status: ResourceStatus) -> DownloadTask {

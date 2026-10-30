@@ -1,8 +1,8 @@
 use async_trait::async_trait;
+use bpi_rs::BpiClient;
 use bpi_rs::cheese::{CheeseEpListParams, CheeseInfoParams, CheeseVideoStreamParams};
 use bpi_rs::ids::{Aid, Cid, EpisodeId, SeasonId};
 use bpi_rs::models::{DashTrack, Fnval, VideoQuality};
-use bpi_rs::{BpiClient, BpiError};
 use chrono::{DateTime, Utc};
 use std::sync::Arc;
 use url::Url;
@@ -90,7 +90,7 @@ impl CheeseResolver<BpiCheeseApi> {
             .cookie(cookie)
             .build()
             .map(Self::from_bpi_client)
-            .map_err(|error| BdlError::Bpi(error.to_string()))
+            .map_err(|error| crate::error::bpi_error(error))
     }
 
     pub fn from_bpi_client(client: impl Into<Arc<BpiClient>>) -> Self {
@@ -231,7 +231,7 @@ impl BpiCheeseApi {
     pub fn new() -> BdlResult<Self> {
         BpiClient::new()
             .map(Self::from_client)
-            .map_err(|error| BdlError::Bpi(error.to_string()))
+            .map_err(|error| crate::error::bpi_error(error))
     }
 
     pub fn from_client(client: impl Into<Arc<BpiClient>>) -> Self {
@@ -249,7 +249,7 @@ impl CheeseApi for BpiCheeseApi {
                 self.client
                     .cheese()
                     .info(CheeseInfoParams::from_season_id(
-                        SeasonId::new(season_id).map_err(bpi_error)?,
+                        SeasonId::new(season_id).map_err(|error| crate::error::bpi_error(error))?,
                     ))
                     .await
             }
@@ -257,12 +257,12 @@ impl CheeseApi for BpiCheeseApi {
                 self.client
                     .cheese()
                     .info(CheeseInfoParams::from_episode_id(
-                        EpisodeId::new(ep_id).map_err(bpi_error)?,
+                        EpisodeId::new(ep_id).map_err(|error| crate::error::bpi_error(error))?,
                     ))
                     .await
             }
         }
-        .map_err(bpi_error)?;
+        .map_err(|error| crate::error::bpi_error(error))?;
 
         let focused_ep_id = match id {
             CheeseInputId::Episode(ep_id) => Some(ep_id),
@@ -278,19 +278,19 @@ impl CheeseApi for BpiCheeseApi {
         }
 
         let season_id =
-            SeasonId::new(info.season_id).map_err(|error| BdlError::Bpi(error.to_string()))?;
+            SeasonId::new(info.season_id).map_err(|error| crate::error::bpi_error(error))?;
         let ep_list = self
             .client
             .cheese()
             .ep_list(
                 CheeseEpListParams::new(season_id)
                     .with_page_size(request.page_size)
-                    .map_err(bpi_error)?
+                    .map_err(|error| crate::error::bpi_error(error))?
                     .with_page(request.page_number)
-                    .map_err(bpi_error)?,
+                    .map_err(|error| crate::error::bpi_error(error))?,
             )
             .await
-            .map_err(bpi_error)?;
+            .map_err(|error| crate::error::bpi_error(error))?;
 
         Ok(ResolvedCheesePage::from_info_and_list(
             info, ep_list, request,
@@ -303,9 +303,10 @@ impl CheeseApi for BpiCheeseApi {
             .cheese()
             .video_stream(
                 CheeseVideoStreamParams::new(
-                    Aid::new(episode.aid).map_err(bpi_error)?,
-                    EpisodeId::new(episode.ep_id).map_err(bpi_error)?,
-                    Cid::new(episode.cid).map_err(bpi_error)?,
+                    Aid::new(episode.aid).map_err(|error| crate::error::bpi_error(error))?,
+                    EpisodeId::new(episode.ep_id)
+                        .map_err(|error| crate::error::bpi_error(error))?,
+                    Cid::new(episode.cid).map_err(|error| crate::error::bpi_error(error))?,
                 )
                 .with_quality(VideoQuality::P8K)
                 .with_fnval(
@@ -319,7 +320,7 @@ impl CheeseApi for BpiCheeseApi {
                 ),
             )
             .await
-            .map_err(bpi_error)?;
+            .map_err(|error| crate::error::bpi_error(error))?;
 
         ResolvedCheesePlayUrl::from_bpi(data)
     }
@@ -637,10 +638,6 @@ fn source_kind_name(kind: SourceKind) -> &'static str {
 
 fn non_empty(value: String) -> Option<String> {
     (!value.trim().is_empty()).then_some(value)
-}
-
-fn bpi_error(error: BpiError) -> BdlError {
-    BdlError::Bpi(error.to_string())
 }
 
 #[cfg(test)]

@@ -17,6 +17,33 @@ fn desktop_read_clipboard_text(app: tauri::AppHandle) -> Result<String, String> 
     }
 }
 
+#[tauri::command]
+fn desktop_write_clipboard_text(
+    app: tauri::AppHandle,
+    text: String,
+) -> Result<(), bdl_tauri::commands::CommandError> {
+    #[cfg(desktop)]
+    {
+        use tauri_plugin_clipboard_manager::ClipboardExt;
+        app.clipboard()
+            .write_text(text)
+            .map_err(|error| bdl_tauri::commands::CommandError {
+                code: "clipboard_write_failed".into(),
+                message: "无法写入剪贴板。".into(),
+                detail: Some(bdl_core::account::redact_diagnostic(&error.to_string())),
+            })
+    }
+    #[cfg(mobile)]
+    {
+        let _ = (app, text);
+        Err(bdl_tauri::commands::CommandError {
+            code: "unsupported_platform".into(),
+            message: "当前平台使用原生移动剪贴板。".into(),
+            detail: None,
+        })
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default();
@@ -72,6 +99,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             desktop_read_clipboard_text,
+            desktop_write_clipboard_text,
             updates::update_distribution,
             updates::update_check,
             updates::update_open_download,
@@ -81,13 +109,18 @@ pub fn run() {
             bdl_tauri::commands::parse_cancel,
             bdl_tauri::commands::parse_progress,
             bdl_tauri::commands::parse_load_all,
-            bdl_tauri::commands::parse_close_source,
             bdl_tauri::commands::parse_refresh_source,
             bdl_tauri::commands::selection_create_tasks,
+            bdl_tauri::preparation::selection_submit_tasks,
+            bdl_tauri::preparation::preparation_list,
+            bdl_tauri::preparation::preparation_cancel,
+            bdl_tauri::preparation::preparation_confirm,
+            bdl_tauri::preparation::preparation_dismiss,
             bdl_tauri::commands::selection_estimate_size,
             bdl_tauri::commands::selection_prepare,
             bdl_tauri::commands::mobile_pick_export_directory,
             bdl_tauri::commands::mobile_read_clipboard_text,
+            bdl_tauri::commands::mobile_write_clipboard_text,
             bdl_tauri::commands::mobile_save_image_to_gallery,
             bdl_tauri::commands::mobile_prepare_notifications,
             bdl_tauri::commands::queue_list,
@@ -125,6 +158,8 @@ pub fn run() {
             bdl_tauri::commands::maintenance_cleanup_temp,
             bdl_tauri::commands::diagnostics_export,
             bdl_tauri::commands::diagnostics_environment,
+            bdl_tauri::commands::diagnostics_record_operation_error,
+            bdl_tauri::commands::diagnostics_operation_errors,
             bdl_tauri::commands::maintenance_log_usage,
             bdl_tauri::commands::maintenance_cleanup_logs,
             bdl_tauri::commands::maintenance_cleanup_diagnostics,

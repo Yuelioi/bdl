@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { parseProgress } from '../api/tauri'
+import { useParseStore } from '../stores/parse'
 
 const props = defineProps<{ sourceId: string; stopping?: boolean }>()
+const parse = useParseStore()
 const now = ref(Date.now())
 const waitingUntil = ref(0)
 const seconds = computed(() => Math.max(0, Math.ceil((waitingUntil.value - now.value) / 1000)))
@@ -25,7 +27,8 @@ watch(() => props.sourceId, (sourceId) => {
   const poll = async () => {
     try {
       const requestedAt = Date.now()
-      const progress = await parseProgress(sourceId)
+      const operationId = parse.operationsBySource[sourceId]?.[0]
+      const progress = operationId ? await parseProgress(operationId) : { active: false, waiting_seconds: 0, queued: false }
       if (current !== generation) return
       waitingUntil.value = progress.active ? requestedAt + progress.waiting_seconds * 1000 : 0
       updateClock()

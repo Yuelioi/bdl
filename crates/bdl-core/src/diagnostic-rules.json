@@ -1,5 +1,69 @@
 [
   {
+    "code": "download_error",
+    "summary": "下载失败",
+    "detail": "下载过程未能完成，请查看具体阶段与原始错误。",
+    "recommended_action": "inspect_raw_log",
+    "contains": [],
+    "http_statuses": []
+  },
+  {
+    "code": "network_request_failed",
+    "summary": "网络请求失败",
+    "detail": "无法完成网络请求，请查看日志中的连接、代理隧道或底层网络错误。",
+    "recommended_action": "inspect_raw_log",
+    "contains": [],
+    "http_statuses": []
+  },
+  {
+    "code": "bilibili_request_failed",
+    "summary": "接口请求失败",
+    "detail": "无法完成 Bilibili 接口请求，具体阶段和底层原因见错误详情。",
+    "recommended_action": "inspect_raw_log",
+    "contains": [],
+    "http_statuses": []
+  },
+  {
+    "code": "data_format_error",
+    "summary": "应用数据格式异常",
+    "detail": "读取或保存的数据格式不符合要求，请查看错误中的阶段与位置。",
+    "recommended_action": "inspect_raw_log",
+    "contains": [],
+    "http_statuses": []
+  },
+  {
+    "code": "database_error",
+    "summary": "本地数据读写失败",
+    "detail": "任务或设置数据无法读取或保存，请查看原始数据库错误。",
+    "recommended_action": "inspect_raw_log",
+    "contains": [],
+    "http_statuses": []
+  },
+  {
+    "code": "local_io_failed",
+    "summary": "本地文件操作失败",
+    "detail": "请查看原始日志中的操作、路径和系统错误码。",
+    "recommended_action": "inspect_raw_log",
+    "contains": [],
+    "http_statuses": []
+  },
+  {
+    "code": "file_path_invalid",
+    "summary": "文件路径不可用",
+    "detail": "文件操作遇到路径冲突或无效路径，请查看具体操作和路径。",
+    "recommended_action": "inspect_raw_log",
+    "contains": [],
+    "http_statuses": []
+  },
+  {
+    "code": "file_not_found",
+    "summary": "文件或目录不存在",
+    "detail": "请查看日志中的文件操作和路径，确认保存位置仍可访问。",
+    "recommended_action": "inspect_raw_log",
+    "contains": [],
+    "http_statuses": []
+  },
+  {
     "code": "file_in_use",
     "summary": "文件被占用",
     "detail": "文件正在被其他程序使用。关闭正在使用该文件的程序后重试。",

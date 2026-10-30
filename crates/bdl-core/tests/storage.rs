@@ -25,7 +25,9 @@ fn task_storage_creates_expected_tables() -> BdlResult<()> {
     assert!(tables.contains(&"segments".to_owned()));
     assert!(tables.contains(&"history".to_owned()));
     assert!(tables.contains(&"task_logs".to_owned()));
+    assert!(tables.contains(&"operation_errors".to_owned()));
     assert!(tables.contains(&"account_summary".to_owned()));
+    assert!(tables.contains(&"task_preparations".to_owned()));
     Ok(())
 }
 
