@@ -33,6 +33,7 @@ struct AndroidMediaMuxBackend<R: Runtime> {
 struct MuxPayload {
     video_path: Option<String>,
     audio_path: Option<String>,
+    cover_path: Option<String>,
     output_path: String,
     format_name: String,
 }
@@ -40,15 +41,17 @@ struct MuxPayload {
 #[async_trait]
 impl<R: Runtime> MediaMuxBackendImpl for AndroidMediaMuxBackend<R> {
     async fn mux(&self, request: &MuxRequest, _ffmpeg_path: Option<PathBuf>) -> BdlResult<()> {
-        if request.cover_path.is_some() || !request.subtitle_paths.is_empty() {
-            return Err(BdlError::Platform {
-                message: "Android 内置 FFmpeg 当前暂不开放嵌入封面或字幕。".to_owned(),
-            });
-        }
         let format_name =
             output_format_name(&request.output_path).ok_or_else(|| BdlError::Platform {
                 message: "Android 内置 FFmpeg 当前支持 MP4、MKV 与 MP3。".to_owned(),
             })?;
+        if (request.cover_path.is_some() && format_name != "mp3")
+            || !request.subtitle_paths.is_empty()
+        {
+            return Err(BdlError::Platform {
+                message: "Android 仅支持在 MP3 中嵌入封面，视频附件请保存独立文件。".to_owned(),
+            });
+        }
         if request.video_path.is_none() && request.audio_path.is_none() {
             return Err(BdlError::Platform {
                 message: "Android 媒体合并缺少视频或音频输入。".to_owned(),
@@ -67,6 +70,11 @@ impl<R: Runtime> MediaMuxBackendImpl for AndroidMediaMuxBackend<R> {
                 .map(android_path)
                 .transpose()?,
             output_path: android_path(&request.output_path)?,
+            cover_path: request
+                .cover_path
+                .as_deref()
+                .map(android_path)
+                .transpose()?,
             format_name: format_name.to_owned(),
         };
 

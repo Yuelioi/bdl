@@ -153,6 +153,10 @@ fn ffmpeg_args(request: &MuxRequest) -> Result<Vec<OsString>, MuxError> {
         return Err(MuxError::MissingMediaInput);
     }
 
+    if lower_extension(&request.output_path).as_deref() == Some("mp3") {
+        return basic_mux_args(request);
+    }
+
     let cover_path = request
         .cover_path
         .as_deref()
@@ -256,21 +260,44 @@ fn basic_mux_args(request: &MuxRequest) -> Result<Vec<OsString>, MuxError> {
             .as_ref()
             .filter(|_| request.video_path.is_none())
             .ok_or(MuxError::MissingMediaInput)?;
-        return Ok(vec![
-            os("-y"),
-            os("-i"),
-            audio.as_os_str().to_owned(),
+        let mut args = vec![os("-y"), os("-i"), audio.as_os_str().to_owned()];
+        let cover = request
+            .cover_path
+            .as_deref()
+            .filter(|path| supports_cover_embedding(&request.output_path, path));
+        if let Some(path) = cover {
+            args.extend([os("-i"), path.as_os_str().to_owned()]);
+        }
+        args.extend([
             os("-map"),
             os("0:a:0"),
-            os("-vn"),
             os("-c:a"),
             os("libmp3lame"),
             os("-q:a"),
             os("2"),
             os("-ac"),
             os("2"),
-            request.output_path.as_os_str().to_owned(),
         ]);
+        if cover.is_some() {
+            args.extend([
+                os("-map"),
+                os("1:v:0"),
+                os("-c:v"),
+                os("copy"),
+                os("-disposition:v:0"),
+                os("attached_pic"),
+                os("-metadata:s:v:0"),
+                os("title=Cover"),
+                os("-metadata:s:v:0"),
+                os("comment=Cover (front)"),
+                os("-id3v2_version"),
+                os("3"),
+            ]);
+        } else {
+            args.push(os("-vn"));
+        }
+        push_output(&mut args, &request.output_path);
+        return Ok(args);
     }
     let mut args = vec![os("-y")];
     let mut next_input_index = 0usize;
@@ -299,7 +326,9 @@ fn push_output(args: &mut Vec<OsString>, output_path: &Path) {
 }
 
 pub fn supports_cover_embedding(output_path: &Path, cover_path: &Path) -> bool {
-    (is_mp4_like(output_path) || is_mkv(output_path))
+    (is_mp4_like(output_path)
+        || is_mkv(output_path)
+        || lower_extension(output_path).as_deref() == Some("mp3"))
         && matches!(
             lower_extension(cover_path).as_deref(),
             Some("jpg" | "jpeg" | "png")

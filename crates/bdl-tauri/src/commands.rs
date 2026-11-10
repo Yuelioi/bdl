@@ -784,11 +784,14 @@ pub(crate) fn download_options_from_request(
             })?
             .workflow;
         #[cfg(target_os = "android")]
-        if (workflow.cover.enabled && workflow.cover.embed)
+        if (workflow.cover.enabled
+            && workflow.cover.embed
+            && (!workflow.has_mp3_output()
+                || (workflow.has_media_output() && workflow.container == "mkv")))
             || (workflow.subtitles.enabled && workflow.subtitles.embed)
         {
             return Err(BdlError::Planning {
-                message: "Android 暂不支持嵌入，请在设置中使用独立保存的预设。".into(),
+                message: "Android 仅支持在 MP3 中嵌入封面，视频附件请保存独立文件。".into(),
             }
             .into());
         }

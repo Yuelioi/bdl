@@ -92,6 +92,8 @@ export const migrateDownloadPresets = (settings: SettingsSnapshot): Pick<Setting
   return { download_presets: presets, selected_download_preset: matching?.id ?? 'migrated' }
 }
 
+export const hasMp3Output = (flow: DownloadWorkflow): boolean => flow.audio.enabled && flow.audio.save && flow.audio.format === 'mp3'
+
 export const workflowError = (flow: DownloadWorkflow): string | null => {
   if (flow.nfo) { const error = nfoOptionsError(normalizeNfoOptions(flow.nfo_options)); if (error) return error }
   const merge = flow.merge_media && flow.video.enabled
@@ -99,8 +101,10 @@ export const workflowError = (flow: DownloadWorkflow): string | null => {
   for (const media of [flow.video, flow.audio]) if (media.enabled && !media.save && !media.retain_original && !merge) return '未生成媒体成品时，请保存独立音视频文件'
   for (const asset of [flow.cover, flow.subtitles, flow.danmaku]) {
     if (asset.enabled && !asset.save && !asset.embed && !asset.retain_original) return '所选内容需要独立保存、嵌入或保留原始文件'
-    if (asset.enabled && asset.embed && (!merge || flow.container !== 'mkv')) return '嵌入需要生成 MKV 视频成品'
   }
+  const mkv = merge && flow.container === 'mkv'
+  if (flow.cover.enabled && flow.cover.embed && !mkv && !hasMp3Output(flow)) return '嵌入封面需要生成 MKV 视频成品或 MP3 音频'
+  if (flow.subtitles.enabled && flow.subtitles.embed && !mkv) return '嵌入字幕需要生成 MKV 视频成品'
   if (flow.subtitles.enabled && flow.subtitles.embed && flow.subtitles.format === 'original') return '嵌入字幕请选择 SRT 或 ASS'
   return null
 }
@@ -122,11 +126,11 @@ export const downloadPresetsError = (presets: DownloadPreset[], selected: string
 export const workflowOutputs = (flow: DownloadWorkflow): string[] => {
   const outputs: string[] = []
   if (flow.merge_media && flow.video.enabled) {
-    const embedded = [flow.cover.enabled && flow.cover.embed ? '封面' : '', flow.subtitles.enabled && flow.subtitles.embed ? '字幕' : ''].filter(Boolean)
+    const embedded = [flow.cover.enabled && flow.cover.embed && flow.container === 'mkv' ? '封面' : '', flow.subtitles.enabled && flow.subtitles.embed ? '字幕' : ''].filter(Boolean)
     outputs.push(`${flow.container.toUpperCase()} ${flow.audio.enabled ? '音频+视频' : '视频'}${embedded.length ? `（内含${embedded.join('、')}）` : ''}`)
   }
   if (flow.video.enabled && flow.video.save) outputs.push('独立视频 m4s')
-  if (flow.audio.enabled && flow.audio.save) outputs.push(`独立音频 ${flow.audio.format.toUpperCase()}`)
+  if (flow.audio.enabled && flow.audio.save) outputs.push(`独立音频 ${flow.audio.format.toUpperCase()}${hasMp3Output(flow) && flow.cover.enabled && flow.cover.embed ? '（内含封面）' : ''}`)
   for (const [rule, name] of [[flow.cover, '封面'], [flow.subtitles, '字幕'], [flow.danmaku, '弹幕']] as const) {
     if (rule.enabled && rule.save) outputs.push(`${name}${rule.format === 'original' ? '原文件' : ` ${rule.format.toUpperCase()}`}`)
     if (rule.enabled && rule.retain_original && ((!['original', 'xml'].includes(rule.format)) || !rule.save)) outputs.push(`原始${name}`)

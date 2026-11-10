@@ -17,6 +17,15 @@ pub(crate) async fn select_mux_attachments(
     embed_cover: bool,
     embed_subtitles: bool,
 ) -> MuxAttachmentSelection {
+    select_mux_attachments_for_output(task, embed_cover, embed_subtitles, &task.output_path).await
+}
+
+pub(crate) async fn select_mux_attachments_for_output(
+    task: &DownloadTask,
+    embed_cover: bool,
+    embed_subtitles: bool,
+    output_path: &std::path::Path,
+) -> MuxAttachmentSelection {
     let mut selection = MuxAttachmentSelection {
         cover_path: None,
         subtitle_paths: Vec::new(),
@@ -25,9 +34,7 @@ pub(crate) async fn select_mux_attachments(
 
     if embed_cover && task_has_resource_intent(task, DownloadResourceIntent::Cover) {
         match completed_resource_by_intent(task, DownloadResourceIntent::Cover) {
-            Some(resource)
-                if supports_cover_embedding(&task.output_path, &resource.target_path) =>
-            {
+            Some(resource) if supports_cover_embedding(output_path, &resource.target_path) => {
                 selection.cover_path = Some(resource.target_path.clone());
             }
             Some(_) => selection
@@ -61,13 +68,13 @@ pub(crate) async fn select_mux_attachments(
             } else {
                 &resource.target_path
             };
-            if supports_subtitle_embedding(&task.output_path, path) {
+            if supports_subtitle_embedding(output_path, path) {
                 selection.subtitle_paths.push(path.clone());
             } else if path
                 .extension()
                 .and_then(|ext| ext.to_str())
                 .is_some_and(|ext| ext.eq_ignore_ascii_case("json"))
-                && supports_subtitle_embedding(&task.output_path, &path.with_extension("srt"))
+                && supports_subtitle_embedding(output_path, &path.with_extension("srt"))
             {
                 match convert_subtitle(path).await {
                     Ok(srt_path) => selection.subtitle_paths.push(srt_path),

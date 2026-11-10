@@ -153,9 +153,13 @@ impl DownloadWorkflow {
             if rule.enabled && !rule.save && !rule.embed && !rule.retain_original {
                 return Err(invalid("所选内容需要独立保存、嵌入或保留原始文件。"));
             }
-            if rule.enabled && rule.embed && (!merge || self.container != "mkv") {
-                return Err(invalid("嵌入封面或字幕需要生成 MKV 视频成品。"));
-            }
+        }
+        let mkv = merge && self.container == "mkv";
+        if self.cover.enabled && self.cover.embed && !mkv && !self.has_mp3_output() {
+            return Err(invalid("嵌入封面需要生成 MKV 视频成品或 MP3 音频。"));
+        }
+        if self.subtitles.enabled && self.subtitles.embed && !mkv {
+            return Err(invalid("嵌入字幕需要生成 MKV 视频成品。"));
         }
         if self.subtitles.enabled && self.subtitles.embed && self.subtitles.format == "original" {
             return Err(invalid("嵌入字幕请选择 SRT 或 ASS。"));
@@ -190,6 +194,10 @@ impl DownloadWorkflow {
 
     pub fn has_media_output(&self) -> bool {
         self.merge_media && self.video.enabled
+    }
+
+    pub fn has_mp3_output(&self) -> bool {
+        self.audio.enabled && self.audio.save && self.audio.format == "mp3"
     }
 
     pub fn apply(&self, options: &mut DownloadOptions) -> BdlResult<()> {

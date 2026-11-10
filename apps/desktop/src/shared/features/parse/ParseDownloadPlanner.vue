@@ -22,7 +22,7 @@ import UiIconButton from '../../ui/IconButton.vue';
 import UiInlineNotice from '../../ui/InlineNotice.vue';
 import UiSelect from '../../ui/Select.vue';
 import UiTextField from '../../ui/TextField.vue';
-import { workflowError, workflowExtension, workflowOutputs } from '../../utils/downloadWorkflow';
+import { hasMp3Output, workflowError, workflowExtension, workflowOutputs } from '../../utils/downloadWorkflow';
 
 const parse = useParseStore();
 const settings = useSettingsStore();
@@ -123,8 +123,10 @@ watch(namingTemplate, (template) => {
 const presetError = computed(() => {
   const flow = selectedPreset.value?.workflow;
   if (!flow) return '请选择已保存的下载预设';
-  if (androidPlatform && ((flow.cover.enabled && flow.cover.embed) || (flow.subtitles.enabled && flow.subtitles.embed)))
-    return 'Android 暂不支持此预设中的嵌入，请到设置中改为保存独立文件';
+  if (androidPlatform && (
+    (flow.cover.enabled && flow.cover.embed && (!hasMp3Output(flow) || (flow.video.enabled && flow.merge_media && flow.container === 'mkv')))
+    || (flow.subtitles.enabled && flow.subtitles.embed)
+  )) return 'Android 仅支持在 MP3 中嵌入封面，视频附件请保存独立文件';
   return workflowError(flow);
 });
 const formatEstimatedBytes = (bytes: number) => {

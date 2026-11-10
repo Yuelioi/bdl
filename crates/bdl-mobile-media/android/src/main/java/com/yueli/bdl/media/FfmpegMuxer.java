@@ -1,6 +1,7 @@
 package com.yueli.bdl.media;
 
 import java.nio.charset.StandardCharsets;
+import java.io.File;
 import org.bytedeco.ffmpeg.avcodec.AVPacket;
 import org.bytedeco.ffmpeg.avformat.AVFormatContext;
 import org.bytedeco.ffmpeg.avformat.AVIOContext;
@@ -16,6 +17,7 @@ import static org.bytedeco.ffmpeg.global.avcodec.av_packet_rescale_ts;
 import static org.bytedeco.ffmpeg.global.avcodec.av_packet_unref;
 import static org.bytedeco.ffmpeg.global.avcodec.avcodec_parameters_copy;
 import static org.bytedeco.ffmpeg.global.avformat.AVFMT_NOFILE;
+import static org.bytedeco.ffmpeg.global.avformat.AV_DISPOSITION_ATTACHED_PIC;
 import static org.bytedeco.ffmpeg.global.avformat.AVIO_FLAG_WRITE;
 import static org.bytedeco.ffmpeg.global.avformat.av_interleaved_write_frame;
 import static org.bytedeco.ffmpeg.global.avformat.av_read_frame;
@@ -35,23 +37,39 @@ import static org.bytedeco.ffmpeg.global.avutil.AVERROR_EOF;
 import static org.bytedeco.ffmpeg.global.avutil.AV_NOPTS_VALUE;
 import static org.bytedeco.ffmpeg.global.avutil.av_compare_ts;
 import static org.bytedeco.ffmpeg.global.avutil.av_strerror;
+import static org.bytedeco.ffmpeg.global.avutil.av_dict_set;
 
 /**
  * Android stream-copy muxer backed by the FFmpeg libraries shipped in the APK.
  *
- * <p>The downloaded Bilibili DASH video/audio streams are already encoded, so this only remuxes
- * their first matching tracks into MP4 or Matroska. No decode or re-encode step is performed.</p>
+ * <p>MP4 and Matroska outputs copy the downloaded DASH tracks. MP3 outputs transcode audio;
+ * an optional cover is then muxed into its ID3 picture tag without re-encoding the audio.</p>
  */
 final class FfmpegMuxer {
   private FfmpegMuxer() {}
 
-  static void mux(String videoPath, String audioPath, String outputPath, String formatName) {
+  static void mux(String videoPath, String audioPath, String coverPath, String outputPath, String formatName) {
     if ("mp3".equals(formatName)) {
       if (videoPath != null || audioPath == null) {
         throw new IllegalArgumentException("MP3 输出需要仅音频输入");
       }
-      transcodeMp3(audioPath, outputPath);
+      if (coverPath == null) {
+        transcodeMp3(audioPath, outputPath);
+      } else {
+        File encoded = new File(outputPath + ".audio.mp3.tmp");
+        try {
+          transcodeMp3(audioPath, encoded.getPath());
+          remux(coverPath, encoded.getPath(), outputPath, "mp3");
+        } finally {
+          if (!encoded.delete() && encoded.exists()) {
+            android.util.Log.w("BDL.MediaMux", "无法清理 MP3 转换临时文件");
+          }
+        }
+      }
       return;
+    }
+    if (coverPath != null) {
+      throw new IllegalArgumentException("仅支持在 MP3 中嵌入封面");
     }
     if (videoPath == null && audioPath == null) {
       throw new IllegalArgumentException("缺少视频或音频输入");
@@ -59,6 +77,11 @@ final class FfmpegMuxer {
     if (!"mp4".equals(formatName) && !"matroska".equals(formatName)) {
       throw new IllegalArgumentException("不支持的媒体封装格式：" + formatName);
     }
+
+    remux(videoPath, audioPath, outputPath, formatName);
+  }
+
+  private static void remux(String videoPath, String audioPath, String outputPath, String formatName) {
 
     InputTrack video = null;
     InputTrack audio = null;
@@ -85,6 +108,13 @@ final class FfmpegMuxer {
 
       if (video != null) {
         addOutputStream(output, video, "视频");
+        if ("mp3".equals(formatName)) {
+          video.outputStream.disposition(AV_DISPOSITION_ATTACHED_PIC);
+          AVDictionary metadata = new AVDictionary(null);
+          check(av_dict_set(metadata, "title", "Cover", 0), "无法设置封面标题");
+          check(av_dict_set(metadata, "comment", "Cover (front)", 0), "无法设置封面类型");
+          video.outputStream.metadata(metadata);
+        }
       }
       if (audio != null) {
         addOutputStream(output, audio, "音频");

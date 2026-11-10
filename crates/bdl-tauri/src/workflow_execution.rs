@@ -105,12 +105,24 @@ pub(crate) async fn execute(
             continue;
         }
         if resource.intent == Intent::Audio && !artifact.original {
+            let attachments = crate::media_finalize::select_mux_attachments_for_output(
+                task,
+                workflow.cover.enabled && workflow.cover.embed && workflow.has_mp3_output(),
+                false,
+                &artifact.path,
+            )
+            .await;
+            if !attachments.warnings.is_empty() {
+                return Err(BdlError::Planning {
+                    message: attachments.warnings.join("\n"),
+                });
+            }
             mux.mux(
                 &MuxRequest {
                     video_path: None,
                     audio_path: Some(resource.target_path.clone()),
                     output_path: artifact.path.clone(),
-                    cover_path: None,
+                    cover_path: attachments.cover_path,
                     subtitle_paths: Vec::new(),
                 },
                 ffmpeg.clone(),
@@ -126,9 +138,11 @@ pub(crate) async fn execute(
         }
     }
     if workflow.has_media_output() {
+        let embed_cover =
+            workflow.cover.enabled && workflow.cover.embed && workflow.container == "mkv";
         let attachments = crate::media_finalize::select_mux_attachments(
             task,
-            workflow.cover.enabled && workflow.cover.embed,
+            embed_cover,
             workflow.subtitles.enabled && workflow.subtitles.embed,
         )
         .await;
@@ -138,10 +152,7 @@ pub(crate) async fn execute(
                 .find(|resource| resource.intent == intent)
                 .map(|resource| resource.target_path.clone())
         };
-        if (workflow.cover.enabled
-            && workflow.cover.embed
-            && path_for(Intent::Cover).is_some()
-            && attachments.cover_path.is_none())
+        if (embed_cover && path_for(Intent::Cover).is_some() && attachments.cover_path.is_none())
             || (workflow.subtitles.enabled
                 && workflow.subtitles.embed
                 && path_for(Intent::Subtitle).is_some()
@@ -723,6 +734,14 @@ mod tests {
         raw.audio.format = "m4s".into();
         let mut mp3 = presets[1].workflow.clone();
         mp3.audio.retain_original = true;
+        let mut mp3_cover = mp3.clone();
+        mp3_cover.audio.retain_original = false;
+        mp3_cover.cover.enabled = true;
+        mp3_cover.cover.embed = true;
+        mp3_cover.cover.save = false;
+        let mut video_and_mp3_cover = mp3_cover.clone();
+        video_and_mp3_cover.video.enabled = true;
+        video_and_mp3_cover.merge_media = true;
         let mut archive = presets[5].workflow.clone();
         archive.audio.save = true;
         archive.audio.format = "mp3".into();
@@ -745,6 +764,8 @@ mod tests {
         for (name, workflow, native) in [
             ("raw-audio", raw, false),
             ("mp3-audio", mp3, true),
+            ("mp3-cover", mp3_cover, true),
+            ("video-and-mp3-cover", video_and_mp3_cover, true),
             ("archive", archive, true),
             ("embedded-only", embedded, true),
             ("assets-only", assets, false),

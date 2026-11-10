@@ -2662,8 +2662,21 @@ for (const [format, width, theme, danmakuFormat] of [
 ] as const) {
   test(`download recipe remembers ${format} at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });
+    if (width === 375) await page.addInitScript(() =>
+      Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Linux; Android 12) Mobile' }),
+    );
     await installTauriMock(page, theme);
     await installPresetPersistence(page);
+    if (width === 375) await page.addInitScript(() => {
+      const target = window as unknown as { __TAURI_INTERNALS__: { invoke: (command: string, args?: unknown) => Promise<unknown> } };
+      const invoke = target.__TAURI_INTERNALS__.invoke;
+      target.__TAURI_INTERNALS__.invoke = async (command, args) => {
+        const result = await invoke(command, args);
+        return command === 'settings_get'
+          ? { ...(result as object), document_tree_output: { tree_uri: 'content://fixture/downloads', display_name: '下载' } }
+          : result;
+      };
+    });
     await page.goto('/');
     await openPresetSettings(page);
     await page.getByRole('button', { name: '新增预设', exact: true }).click();
@@ -2676,6 +2689,20 @@ for (const [format, width, theme, danmakuFormat] of [
     await editor.getByRole('tab', { name: '转换', exact: true }).click();
     await editor.getByRole('combobox', { name: '独立音频格式', exact: true }).click();
     await page.getByRole('option', { name: format === 'm4s' ? '不转换（m4s）' : '转为 MP3', exact: true }).click();
+    if (format === 'mp3') {
+      await editor.getByRole('checkbox', { name: '嵌入封面', exact: true }).check();
+      await expect(editor.getByRole('checkbox', { name: '下载封面', exact: true })).toBeChecked();
+      await editor.getByRole('checkbox', { name: '保存独立封面', exact: true }).uncheck();
+      await editor.getByRole('combobox', { name: '独立音频格式', exact: true }).click();
+      await page.getByRole('option', { name: '不转换（m4s）', exact: true }).click();
+      await expect(editor.getByRole('checkbox', { name: '嵌入封面', exact: true })).toBeHidden();
+      await expect(editor.getByRole('checkbox', { name: '保存独立封面', exact: true })).toBeChecked();
+      await editor.getByRole('combobox', { name: '独立音频格式', exact: true }).click();
+      await page.getByRole('option', { name: '转为 MP3', exact: true }).click();
+      await expect(editor.getByRole('checkbox', { name: '嵌入封面', exact: true })).not.toBeChecked();
+      await editor.getByRole('checkbox', { name: '嵌入封面', exact: true }).check();
+      await editor.getByRole('checkbox', { name: '保存独立封面', exact: true }).uncheck();
+    }
     await editor.getByRole('combobox', { name: '字幕格式', exact: true }).click();
     await page.getByRole('option', { name: 'ASS', exact: true }).click();
     await editor.getByRole('combobox', { name: '弹幕格式', exact: true }).click();
@@ -2700,6 +2727,7 @@ for (const [format, width, theme, danmakuFormat] of [
     const preset = dialog.getByRole('combobox', { name: /^下载预设/ });
     await expect(preset).toContainText('我的音频与字幕');
     await expect(dialog.getByLabel('本次输出预览')).toContainText(`独立音频 ${format.toUpperCase()}`);
+    if (format === 'mp3') await expect(dialog.getByLabel('本次输出预览')).toContainText('内含封面');
     await expect(dialog.getByLabel('本次输出预览')).toContainText(`弹幕 ${danmakuFormat.split('（')[0]}`);
     await expect(dialog.getByLabel('本次输出预览')).toContainText('原始弹幕');
     await dialog.getByRole('button', { name: '取消', exact: true }).click();

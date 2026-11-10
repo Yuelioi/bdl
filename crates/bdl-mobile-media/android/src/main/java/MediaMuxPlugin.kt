@@ -14,6 +14,7 @@ import java.util.concurrent.Executors
 class MuxArgs {
   var videoPath: String? = null
   var audioPath: String? = null
+  var coverPath: String? = null
   lateinit var outputPath: String
   lateinit var formatName: String
 }
@@ -72,7 +73,7 @@ class MediaMuxPlugin(private val activity: Activity) : Plugin(activity) {
     try {
       try {
         muxWithNativeErrorHandling {
-          FfmpegMuxer.mux(args.videoPath, args.audioPath, temporary.absolutePath, args.formatName)
+          FfmpegMuxer.mux(args.videoPath, args.audioPath, args.coverPath, temporary.absolutePath, args.formatName)
         }
       } catch (error: Exception) {
         throw IllegalStateException(

@@ -2,13 +2,13 @@
 import SettingsCard from './SettingsCard.vue';
 import NfoOptionsEditor from './NfoOptionsEditor.vue';
 import { createNfoOptions } from '../../utils/nfo';
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import type { DownloadWorkflow, WorkflowAssetOutput } from '../../api/dto';
 import UiCheckbox from '../../ui/Checkbox.vue';
 import UiSelect from '../../ui/Select.vue';
 import UiInlineNotice from '../../ui/InlineNotice.vue';
 import UiTabs from '../../ui/Tabs.vue';
-import { workflowError, workflowOutputs } from '../../utils/downloadWorkflow';
+import { hasMp3Output, workflowError, workflowOutputs } from '../../utils/downloadWorkflow';
 import { isAndroidPlatform } from '../../platform/environment';
 
 const flow = defineModel<DownloadWorkflow>({ required: true });
@@ -27,16 +27,24 @@ const tabs = [
   { label: '封装', value: 'packaging' },
 ];
 const error = computed(() => workflowError(flow.value));
+const mp3Output = computed(() => hasMp3Output(flow.value));
+const clearUnsupportedEmbeds = () => {
+  const mkv = flow.value.video.enabled && flow.value.merge_media && flow.value.container === 'mkv';
+  for (const key of ['cover', 'subtitles'] as const) {
+    if (mkv || (key === 'cover' && mp3Output.value)) continue;
+    const rule = flow.value[key];
+    if (rule.embed && !rule.save && !rule.retain_original) rule.save = true;
+    rule.embed = false;
+  }
+};
+watch(() => [mp3Output.value, flow.value.video.enabled, flow.value.merge_media, flow.value.container], clearUnsupportedEmbeds, { flush: 'sync' });
 const merge = computed({
   get: () => flow.value.merge_media && flow.value.video.enabled,
   set: (value: boolean) => {
     flow.value.merge_media = value;
     if (!value) {
       for (const rule of [flow.value.video, flow.value.audio]) if (rule.enabled) rule.save = true;
-      for (const rule of [flow.value.cover, flow.value.subtitles]) {
-        if (rule.embed && !rule.save) rule.save = true;
-        rule.embed = false;
-      }
+      clearUnsupportedEmbeds();
     }
   },
 });
@@ -55,11 +63,7 @@ const format = computed({
   get: () => flow.value.container,
   set: (value: string) => {
     flow.value.container = value === 'mkv' ? 'mkv' : 'mp4';
-    if (value !== 'mkv')
-      for (const rule of [flow.value.cover, flow.value.subtitles]) {
-        if (rule.embed && !rule.save) rule.save = true;
-        rule.embed = false;
-      }
+    clearUnsupportedEmbeds();
   },
 });
 const assetEnabled = (key: 'cover' | 'subtitles' | 'danmaku') =>
@@ -79,8 +83,12 @@ const embed = (key: 'cover' | 'subtitles') =>
     set: (value: boolean) => {
       flow.value[key].embed = value;
       if (value) {
-        flow.value.merge_media = true;
-        flow.value.container = 'mkv';
+        flow.value[key].enabled = true;
+        if (key !== 'cover' || !mp3Output.value) {
+          flow.value.container = 'mkv';
+          flow.value.merge_media = true;
+          flow.value[key].embed = true;
+        }
         if (key === 'subtitles' && flow.value.subtitles.format === 'original') flow.value.subtitles.format = 'srt';
       }
     },
@@ -146,6 +154,15 @@ const subtitleFormat = computed({
               ]"
               :disabled="disabled"
             />
+            <UiCheckbox
+              v-if="mp3Output"
+              v-model="embedCover"
+              label="嵌入封面"
+              :disabled="disabled || (android && video && merge && format === 'mkv' && !flow.cover.embed)"
+            />
+            <p v-if="mp3Output && android && video && merge && format === 'mkv'" class="settings-note">
+              Android 的视频附件请独立保存。如需为 MP3 嵌入封面，请改用 MP4 视频或取消下载视频。
+            </p>
             <UiCheckbox
               v-if="!flow.audio.save || flow.audio.format === 'mp3' || flow.audio.retain_original"
               v-model="flow.audio.retain_original"
@@ -214,14 +231,14 @@ const subtitleFormat = computed({
               :disabled="disabled || (android && !flow.subtitles.embed)"
             />
             <UiCheckbox
-              v-if="cover"
+              v-if="cover && !mp3Output"
               v-model="embedCover"
               label="嵌入封面"
               :disabled="disabled || (android && !flow.cover.embed)"
             />
-            <p class="settings-note">嵌入字幕或封面时自动使用 MKV。</p>
-            <UiInlineNotice v-if="android && (cover || subtitles)" tone="warning"
-              >Android 暂不支持嵌入，请保存独立文件。</UiInlineNotice
+            <p class="settings-note">视频嵌入字幕或封面时使用 MKV。</p>
+            <UiInlineNotice v-if="android && ((cover && (!mp3Output || (merge && format === 'mkv'))) || subtitles)" tone="warning"
+              >Android 仅支持在 MP3 中嵌入封面，视频附件请保存独立文件。</UiInlineNotice
             >
           </template>
           <p v-else class="settings-note">没有视频时，按转换设置保存独立文件。</p>

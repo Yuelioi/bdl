@@ -138,7 +138,7 @@ async fn mp3_output_encodes_audio_instead_of_copying_aac() {
 
 #[tokio::test]
 #[ignore = "requires local FFmpeg and ffprobe"]
-async fn real_mp3_output_has_mp3_codec_and_audio_only() {
+async fn real_mp3_output_has_mp3_codec_and_optional_cover() {
     let dir = temp_case_dir("real-mp3").await;
     let input = dir.join("original.m4s");
     let mut generator = std::process::Command::new("ffmpeg");
@@ -165,51 +165,95 @@ async fn real_mp3_output_has_mp3_codec_and_audio_only() {
         .output()
         .unwrap();
     assert!(generated.status.success());
-    let request = MuxRequest {
-        video_path: None,
-        audio_path: Some(input),
-        output_path: dir.join("converted.mp3"),
-        cover_path: None,
-        subtitle_paths: Vec::new(),
-    };
-    MediaMuxer::new(MediaMuxerConfig::default())
-        .unwrap()
-        .mux(&request)
-        .await
-        .unwrap();
-    let mut probe = std::process::Command::new("ffprobe");
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        probe.creation_flags(0x08000000);
+    for extension in [None, Some("jpg"), Some("png")] {
+        let cover_path = if let Some(extension) = extension {
+            let path = dir.join(format!("cover.{extension}"));
+            let mut image = std::process::Command::new("ffmpeg");
+            #[cfg(windows)]
+            {
+                use std::os::windows::process::CommandExt;
+                image.creation_flags(0x08000000);
+            }
+            let generated = image
+                .args([
+                    "-y",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "color=c=pink:s=160x160",
+                    "-frames:v",
+                    "1",
+                ])
+                .arg(&path)
+                .output()
+                .unwrap();
+            assert!(
+                generated.status.success(),
+                "{}",
+                String::from_utf8_lossy(&generated.stderr)
+            );
+            Some(path)
+        } else {
+            None
+        };
+        let request = MuxRequest {
+            video_path: None,
+            audio_path: Some(input.clone()),
+            output_path: dir.join(format!("converted-{}.mp3", extension.unwrap_or("audio"))),
+            cover_path,
+            subtitle_paths: Vec::new(),
+        };
+        MediaMuxer::new(MediaMuxerConfig::default())
+            .unwrap()
+            .mux(&request)
+            .await
+            .unwrap();
+        let mut probe = std::process::Command::new("ffprobe");
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            probe.creation_flags(0x08000000);
+        }
+        let output = probe
+            .args([
+                "-v",
+                "error",
+                "-show_streams",
+                "-show_format",
+                "-of",
+                "json",
+            ])
+            .arg(&request.output_path)
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        let data: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(data["format"]["format_name"], "mp3");
+        assert_eq!(
+            data["streams"].as_array().unwrap().len(),
+            if extension.is_some() { 2 } else { 1 }
+        );
+        assert_eq!(data["streams"][0]["codec_name"], "mp3");
+        if let Some(extension) = extension {
+            let cover = &data["streams"][1];
+            assert_eq!(
+                cover["codec_name"],
+                if extension == "png" { "png" } else { "mjpeg" }
+            );
+            assert_eq!(cover["disposition"]["attached_pic"], 1);
+            assert_eq!(cover["tags"]["comment"], "Cover (front)");
+        }
+        let duration: f64 = data["format"]["duration"]
+            .as_str()
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert!((2.9..3.2).contains(&duration));
+        println!(
+            "Verified MP3 codec and duration: {}",
+            request.output_path.display()
+        );
     }
-    let output = probe
-        .args([
-            "-v",
-            "error",
-            "-show_streams",
-            "-show_format",
-            "-of",
-            "json",
-        ])
-        .arg(&request.output_path)
-        .output()
-        .unwrap();
-    assert!(output.status.success());
-    let data: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(data["format"]["format_name"], "mp3");
-    assert_eq!(data["streams"].as_array().unwrap().len(), 1);
-    assert_eq!(data["streams"][0]["codec_name"], "mp3");
-    let duration: f64 = data["format"]["duration"]
-        .as_str()
-        .unwrap()
-        .parse()
-        .unwrap();
-    assert!((2.9..3.2).contains(&duration));
-    println!(
-        "Verified MP3 codec and duration: {}",
-        request.output_path.display()
-    );
 }
 
 #[tokio::test]
