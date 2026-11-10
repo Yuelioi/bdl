@@ -28,7 +28,7 @@ jobs:
           - runner: ubuntu-22.04
             target: linux-x64
             binary: bdl
-          - runner: macos-14
+          - runner: macos-15
             target: macos-arm64
             binary: bdl
           - runner: macos-15-intel
