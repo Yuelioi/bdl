@@ -143,9 +143,7 @@ const openDirectory = (view: TransferTaskView) => view.secondaryActions.find((ac
                 @click="emit('toggleTaskSelection', row.view.id)"
                 >{{ row.view.displayTitle }}</UButton
               >
-              <span class="task-subtitle" :title="row.view.isCompleted ? row.view.fullLocation : row.view.mediaLabel">{{
-                row.view.isCompleted ? row.view.shortLocation : row.view.mediaLabel || row.view.subtitle
-              }}</span>
+              <span v-if="row.view.mediaLabel" class="task-subtitle" :title="row.view.mediaLabel">{{ row.view.mediaLabel }}</span>
             </div>
           </div>
           <div class="task-progress">
@@ -176,7 +174,7 @@ const openDirectory = (view: TransferTaskView) => view.secondaryActions.find((ac
               @click="emit('taskAction', row.view.id, row.view.primaryAction)"
             />
             <UiIconButton
-              v-else-if="row.view.isCompleted && openDirectory(row.view)"
+              v-if="openDirectory(row.view)"
               icon="folder"
               label="打开所在目录"
               variant="ghost"
@@ -209,7 +207,7 @@ const openDirectory = (view: TransferTaskView) => view.secondaryActions.find((ac
 
 .transfer-columns {
   display: grid;
-  grid-template-columns: 1.25rem minmax(0, 2.5fr) minmax(7rem, 1.1fr) minmax(5.5rem, 0.8fr) 5.25rem 4rem;
+  grid-template-columns: 1.25rem minmax(0, 2.5fr) minmax(7rem, 1.1fr) minmax(5.5rem, 0.8fr) 5.25rem 5.5rem;
   align-items: center;
   gap: 0.75rem;
 }
@@ -378,7 +376,7 @@ const openDirectory = (view: TransferTaskView) => view.secondaryActions.find((ac
 
 @media (width <= 920px) {
   .transfer-columns {
-    grid-template-columns: 1.25rem minmax(0, 2fr) minmax(5rem, 1fr) 5rem 4rem;
+    grid-template-columns: 1.25rem minmax(0, 2fr) minmax(5rem, 1fr) 5rem 5.5rem;
     gap: 0.5rem;
   }
 

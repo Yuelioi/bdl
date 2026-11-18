@@ -5,7 +5,6 @@ import { createTransferTaskView } from '../../stores/transferView';
 import { useUiStore } from '../../stores/ui';
 import { matchesTransferSearch, sortTransferTasks, type TransferSortMode } from './transferQueries';
 import { useTransferBulkActions } from './useTransferBulkActions';
-import { useTransferDialogs } from './useTransferDialogs';
 import { contextIcon, useTransferContextMenu } from './useTransferContextMenu';
 import { useTransferPageLifecycle } from './useTransferPageLifecycle';
 import { useTransferTaskDetail } from './useTransferTaskDetail';
@@ -34,22 +33,7 @@ export function useTransferPage() {
     openTaskDetail,
     refreshSelectedLogs,
   } = useTransferTaskDetail(queue);
-  const {
-    scheduleDialogOpen,
-    scheduleLocal,
-    scheduleMin,
-    scheduleError,
-    speedLimitDialogOpen,
-    speedLimitMb,
-    speedLimitError,
-    openScheduleDialog,
-    submitSchedule,
-    openSpeedLimitDialog,
-    submitSpeedLimit,
-  } = useTransferDialogs(queue);
   const { runTaskAction: handleTaskAction } = useTransferTaskActions(queue, {
-    openScheduleDialog,
-    openSpeedLimitDialog,
     openDeletionDialog: (taskId) => removal.show([taskId]),
   });
   const queueFilter = computed({
@@ -162,15 +146,6 @@ export function useTransferPage() {
     selectedDetailTitle,
     openTaskDetail,
     refreshSelectedLogs,
-    scheduleDialogOpen,
-    scheduleLocal,
-    scheduleMin,
-    scheduleError,
-    speedLimitDialogOpen,
-    speedLimitMb,
-    speedLimitError,
-    submitSchedule,
-    submitSpeedLimit,
     handleTaskAction,
     queueFilter,
     tabs,

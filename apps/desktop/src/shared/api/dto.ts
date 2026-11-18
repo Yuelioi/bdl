@@ -187,6 +187,7 @@ export interface DownloadTaskMediaSelection {
   audio_quality: string;
   video_codec: string;
   audio_codec?: string | null;
+  audio_bandwidth?: number | null;
   container: string;
   processing?: {
     retain_raw_streams: boolean;

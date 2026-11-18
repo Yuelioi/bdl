@@ -4,7 +4,6 @@ import UiDialog from '../../shared/ui/Dialog.vue';
 import UiEmptyState from '../../shared/ui/EmptyState.vue';
 import UiInlineNotice from '../../shared/ui/InlineNotice.vue';
 import UiTabs from '../../shared/ui/Tabs.vue';
-import UiTextField from '../../shared/ui/TextField.vue';
 import BulkActionBar from '../../shared/ui/BulkActionBar.vue';
 import TaskInspector from '../../shared/ui/TaskInspector.vue';
 import TransferTaskTable from '../components/transfer/TransferTaskTable.vue';
@@ -22,15 +21,6 @@ const {
   selectedDetailTitle,
   openTaskDetail,
   refreshSelectedLogs,
-  scheduleDialogOpen,
-  scheduleLocal,
-  scheduleMin,
-  scheduleError,
-  speedLimitDialogOpen,
-  speedLimitMb,
-  speedLimitError,
-  submitSchedule,
-  submitSpeedLimit,
   handleTaskAction,
   queueFilter,
   tabs,
@@ -156,34 +146,6 @@ const {
         />
     </UiDialog>
 
-    <UiDialog v-model="scheduleDialogOpen" title="设置开始时间">
-      <UiTextField
-        v-model="scheduleLocal"
-        type="datetime-local"
-        label="任务开始时间"
-        :min="scheduleMin"
-        :error="scheduleError"
-        helper="到点后应用会自动把任务加入下载队列"
-      />
-      <template #footer>
-        <UiButton variant="secondary" @click="scheduleDialogOpen = false">取消</UiButton>
-        <UiButton :disabled="Boolean(scheduleError) || queue.loading" @click="submitSchedule">保存定时</UiButton>
-      </template>
-    </UiDialog>
-
-    <UiDialog v-model="speedLimitDialogOpen" title="设置单任务限速">
-      <UiTextField
-        v-model="speedLimitMb"
-        label="最大下载速度（MB/s）"
-        placeholder="留空时不单独限速"
-        :error="speedLimitError ?? undefined"
-        helper="留空时仅受全局限速影响；同一任务的所有分段共享此额度"
-      />
-      <template #footer>
-        <UiButton variant="secondary" @click="speedLimitDialogOpen = false">取消</UiButton>
-        <UiButton :disabled="Boolean(speedLimitError) || queue.loading" @click="submitSpeedLimit"> 保存限速 </UiButton>
-      </template>
-    </UiDialog>
 
     <Teleport to="body">
       <div v-if="contextMenu" class="context-menu-scrim" @pointerdown="closeContextMenu">
@@ -191,7 +153,7 @@ const {
           class="task-context-menu"
           role="menu"
           :aria-label="`${contextTaskView?.displayTitle ?? '任务'}操作`"
-          :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }"
+          :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px`, maxHeight: `calc(100dvh - ${contextMenu.y}px - 8px)` }"
           @pointerdown.stop
         >
           <div class="context-menu-heading">

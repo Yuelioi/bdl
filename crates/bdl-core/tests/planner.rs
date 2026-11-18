@@ -445,6 +445,7 @@ fn plan_selected_parts_video_only_creates_video_resource_only() {
     assert_eq!(intents, vec![DownloadResourceIntent::Video]);
     assert_eq!(tasks[0].media_selection.video_quality, "80");
     assert_eq!(tasks[0].media_selection.audio_quality, "none");
+    assert_eq!(tasks[0].media_selection.audio_bandwidth, None);
     assert_eq!(tasks[0].media_selection.video_codec, "avc");
 }
 
@@ -465,6 +466,7 @@ fn plan_selected_parts_audio_only_creates_audio_resource_only() {
     assert_eq!(intents, vec![DownloadResourceIntent::Audio]);
     assert_eq!(tasks[0].media_selection.video_quality, "none");
     assert_eq!(tasks[0].media_selection.audio_quality, "30280");
+    assert_eq!(tasks[0].media_selection.audio_bandwidth, Some(192_000));
     assert_eq!(tasks[0].media_selection.video_codec, "none");
 }
 

@@ -7,7 +7,6 @@ import UiEmptyState from '../../shared/ui/EmptyState.vue';
 import UiInlineNotice from '../../shared/ui/InlineNotice.vue';
 import UiSelect from '../../shared/ui/Select.vue';
 import UiTabs from '../components/MobileTabs.vue';
-import UiTextField from '../../shared/ui/TextField.vue';
 import BulkActionBar from '../../shared/ui/BulkActionBar.vue';
 import TaskInspector from '../../shared/ui/TaskInspector.vue';
 import MobileTransferList from '../components/MobileTransferList.vue';
@@ -29,15 +28,6 @@ const {
   selectedDetailTitle,
   openTaskDetail,
   refreshSelectedLogs,
-  scheduleDialogOpen,
-  scheduleLocal,
-  scheduleMin,
-  scheduleError,
-  speedLimitDialogOpen,
-  speedLimitMb,
-  speedLimitError,
-  submitSchedule,
-  submitSpeedLimit,
   handleTaskAction,
   queueFilter,
   tabs,
@@ -178,34 +168,6 @@ const beginManaging = (taskId: string) => {
         />
     </UiDialog>
 
-    <UiDialog v-model="scheduleDialogOpen" title="设置开始时间">
-      <UiTextField
-        v-model="scheduleLocal"
-        type="datetime-local"
-        label="任务开始时间"
-        :min="scheduleMin"
-        :error="scheduleError"
-        helper="到点后应用会自动把任务加入下载队列"
-      />
-      <template #footer>
-        <UiButton variant="secondary" @click="scheduleDialogOpen = false">取消</UiButton>
-        <UiButton :disabled="Boolean(scheduleError) || queue.loading" @click="submitSchedule">保存定时</UiButton>
-      </template>
-    </UiDialog>
-
-    <UiDialog v-model="speedLimitDialogOpen" title="设置单任务限速">
-      <UiTextField
-        v-model="speedLimitMb"
-        label="最大下载速度（MB/s）"
-        placeholder="留空时不单独限速"
-        :error="speedLimitError ?? undefined"
-        helper="留空时仅受全局限速影响；同一任务的所有分段共享此额度"
-      />
-      <template #footer>
-        <UiButton variant="secondary" @click="speedLimitDialogOpen = false">取消</UiButton>
-        <UiButton :disabled="Boolean(speedLimitError) || queue.loading" @click="submitSpeedLimit"> 保存限速 </UiButton>
-      </template>
-    </UiDialog>
 
     <MobileSheet v-model="toolsOpen" title="传输选项">
       <UiSelect v-model="transferSort" label="列表排序" :options="transferSortOptions" />

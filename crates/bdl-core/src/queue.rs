@@ -366,6 +366,9 @@ pub struct DownloadTaskMediaSelection {
     pub video_codec: String,
     #[serde(default)]
     pub audio_codec: Option<String>,
+    /// Source audio bitrate in bits per second, as reported by the selected stream.
+    #[serde(default)]
+    pub audio_bandwidth: Option<u64>,
     pub container: String,
     #[serde(default)]
     pub processing: Option<TaskProcessingOptions>,
@@ -385,6 +388,7 @@ impl Default for DownloadTaskMediaSelection {
             audio_quality: "unknown".to_owned(),
             video_codec: "unknown".to_owned(),
             audio_codec: None,
+            audio_bandwidth: None,
             container: "unknown".to_owned(),
         }
     }

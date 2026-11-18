@@ -569,6 +569,7 @@ fn plan_part(
                 .unwrap_or_else(|| "none".to_owned()),
             video_codec: video.map(stream_codec_label).unwrap_or("none").to_owned(),
             audio_codec: audio.map(|stream| stream_codec_label(stream).to_owned()),
+            audio_bandwidth: audio.and_then(|stream| stream.bandwidth),
             container: effective_options.output_extension.clone(),
         },
         scheduled_at: None,

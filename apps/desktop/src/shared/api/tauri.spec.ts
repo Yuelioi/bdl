@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { invoke } from '@tauri-apps/api/core'
-import { accountLibraryList, parseCreateSource, queueResume, diagnosticsExport } from './tauri'
+import { accountLibraryList, parseCreateSource, queueResume, diagnosticsExport, diagnosticsOpenDirectory } from './tauri'
 import { clearRecentFailures, recentFailureReport } from '../utils/recentFailures'
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }))
@@ -55,6 +55,8 @@ describe('user-facing BPI failures', () => {
     expect(JSON.stringify(stored)).toContain('HTTP 412')
     expect(JSON.stringify(stored)).not.toContain('hidden-export-token')
     expect(invoke).toHaveBeenLastCalledWith('diagnostics_export', { taskId: null })
+    await diagnosticsOpenDirectory()
+    expect(invoke).toHaveBeenLastCalledWith('diagnostics_open_directory', undefined)
     clearRecentFailures()
   })
   it('preserves actionable login errors', async () => {

@@ -975,6 +975,8 @@ impl AppState {
             }
         }
 
+        queue[task_index].media_selection.audio_bandwidth =
+            audio.and_then(|stream| stream.bandwidth);
         let task = queue[task_index].clone();
         self.persist_queue_edit(&mut queue)?;
         Ok(task)
@@ -2641,10 +2643,15 @@ mod tests {
             .unwrap_err();
         assert!(old_refresh.to_string().contains("重新创建任务"));
         let video = media_stream(MediaKind::Video, "https://cdn.example/new-video.m4s");
-        let audio = media_stream(MediaKind::Audio, "https://cdn.example/new-audio.m4s");
+        let mut audio = media_stream(MediaKind::Audio, "https://cdn.example/new-audio.m4s");
+        audio.bandwidth = Some(192_000);
         let refreshed_task = state
             .replace_task_media_urls("task:refresh", Some(&video), Some(&audio))
             .expect("refresh should replace media urls");
+        assert_eq!(
+            refreshed_task.media_selection.audio_bandwidth,
+            Some(192_000)
+        );
         assert_eq!(
             refreshed_task.resources[0].current_urls,
             ["https://cdn.example/new-video.m4s"]

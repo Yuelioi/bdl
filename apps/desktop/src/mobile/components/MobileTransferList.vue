@@ -34,7 +34,7 @@ const artwork = computed(() => {
             .filter((part) => part.cid != null)
             .map(
               (part) =>
-                [part.cid, { src: item.cover_url, duration: part.duration_seconds ?? item.duration_seconds }] as const,
+                [part.cid, { src: item.cover_url }] as const,
             ),
         ),
       ),
@@ -50,7 +50,6 @@ const artwork = computed(() => {
             task.refresh_intent?.cover_url ??
             metadata?.src ??
             task.resources.find((resource) => resource.intent === 'cover')?.current_urls[0],
-          duration: task.refresh_intent?.duration_seconds ?? metadata?.duration,
         },
       ];
     }),
@@ -144,11 +143,7 @@ const artworkActionIcon = (view: TransferTaskView) =>
 const hasProgress = (view: TransferTaskView) =>
   ['downloading', 'paused'].includes(view.statusBadge) && view.stageProgressLabel !== '';
 const taskMetaLabel = (view: TransferTaskView) =>
-  view.isCompleted
-    ? [view.statusLabel, view.subtitle || view.shortLocation].filter(Boolean).join(' · ')
-    : hasProgress(view)
-      ? `${view.statusLabel} · ${view.progressLabel}`
-      : view.statusLabel;
+  [view.statusLabel, view.mediaLabel, hasProgress(view) ? view.progressLabel : ''].filter(Boolean).join(' · ');
 const taskMetaValue = (view: TransferTaskView) =>
   view.isCompleted ? (view.sizeLabel === '--' ? '' : view.sizeLabel) : view.speedLabel === '--' ? '' : view.speedLabel;
 </script>
@@ -187,7 +182,6 @@ const taskMetaValue = (view: TransferTaskView) =>
             <MediaArtwork
               class="task-artwork"
               :src="artwork.get(view.id)?.src"
-              :duration="artwork.get(view.id)?.duration"
             />
           </div>
 

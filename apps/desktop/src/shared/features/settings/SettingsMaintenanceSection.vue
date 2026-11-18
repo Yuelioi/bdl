@@ -12,10 +12,16 @@ import { useFileRemoval } from '../transfer/useFileRemoval';
 import FileRemovalDialog from '../transfer/FileRemovalDialog.vue';
 import { maintenanceTempPreview } from '../../api/tauri';
 import LogMaintenance from './LogMaintenance.vue';
+import UiInlineNotice from '../../ui/InlineNotice.vue';
+import { useDiagnosticExport } from '../diagnostics/useDiagnosticExport';
 
 const { form, desktopPaths = true } = defineProps<{ form: SettingsForm; desktopPaths?: boolean }>();
 const { settings, settingsProxyMode, settingsProxyDescription, settingsProxyUrl, settingsLogLevel, settingsDataDir } = form;
 const cleanup = useFileRemoval('temp', maintenanceTempPreview, (token) => settings.cleanupTemp(token));
+const {
+  busy: diagnosticsBusy, folderReady, notice: diagnosticNotice, noticeTone: diagnosticNoticeTone,
+  run: exportDiagnostics,
+} = useDiagnosticExport(() => undefined);
 </script>
 
 <template>
@@ -70,11 +76,12 @@ const cleanup = useFileRemoval('temp', maintenanceTempPreview, (token) => settin
         <UiButton
           class="maintenance-action"
           variant="secondary"
-          :disabled="settings.loading || settings.saving"
-          @click="settings.exportDiagnostics"
-          ><UIcon name="i-tabler-file-export" class="size-4" aria-hidden="true" />导出全部诊断</UiButton
+          :disabled="settings.loading || settings.saving || diagnosticsBusy"
+          @click="exportDiagnostics"
+          ><UIcon :name="folderReady ? 'i-tabler-folder' : 'i-tabler-file-export'" class="size-4" aria-hidden="true" />{{ folderReady ? '打开诊断文件夹' : diagnosticsBusy ? '导出中' : '导出全部诊断' }}</UiButton
         >
       </div>
+      <UiInlineNotice v-if="diagnosticNotice" :tone="diagnosticNoticeTone">{{ diagnosticNotice }}</UiInlineNotice>
     </SettingsCard>
     <FileRemovalDialog :controller="cleanup" />
   </section>

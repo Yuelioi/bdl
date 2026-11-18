@@ -1643,6 +1643,11 @@ pub async fn diagnostics_export(
     })
 }
 
+#[tauri::command]
+pub fn diagnostics_open_directory(app: AppHandle, state: State<'_, AppState>) -> CommandResult<()> {
+    open_path(&app, &state.data_dir().join("diagnostics"))
+}
+
 pub async fn diagnostic_report(
     state: &AppState,
     task_id: Option<&str>,

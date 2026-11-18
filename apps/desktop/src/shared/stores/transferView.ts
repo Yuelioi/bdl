@@ -2,6 +2,8 @@ import type { DownloadResourceIntent, DownloadTask, QueueLogEntry, TaskStatus } 
 import { formatSpeedLimit } from '../utils/speedLimit'
 import { bilibiliTaskUrl } from '../utils/bilibiliLinks'
 import { classifyFailure, latestFailure } from '../utils/failureDiagnostic'
+import { videoQualityLevels } from '../features/settings/settingsCatalog'
+import { formatDuration } from '../utils/duration'
 
 export type QueueFilter = 'active' | 'failed' | 'completed' | 'all'
 
@@ -18,8 +20,6 @@ export type TaskActionKind =
   | 'copy_source'
   | 'open_source'
   | 'unschedule'
-  | 'schedule'
-  | 'speed_limit'
   | 'none'
 
 export interface TaskActionDescriptor {
@@ -107,13 +107,20 @@ export const createTransferTaskView = (
   const scheduled = isScheduledTask(task)
   const activelyTransferring = task.status === 'downloading'
   const displayOutputPath = task.export_target?.relative_path ?? task.output_path
+  const selection = task.media_selection
+  const videoQuality = videoQualityLevels.find((option) => option.value === selection?.video_quality)?.label
+  const duration = task.refresh_intent?.duration_seconds
+  const mediaLabel = [
+    videoQuality,
+    duration != null && duration > 0 ? formatDuration(duration) : null,
+  ].filter(Boolean).join(' · ')
 
   return {
     id: task.id,
     coverUrl: task.refresh_intent?.cover_url,
     durationSeconds: task.refresh_intent?.duration_seconds,
     sourceUrl: bilibiliTaskUrl(task),
-    mediaLabel: [titleParts.subtitle, task.media_selection?.video_codec?.toUpperCase(), task.media_selection?.container?.toUpperCase()].filter(Boolean).join(' · '),
+    mediaLabel,
     isCompleted: task.status === 'completed',
     displayTitle: titleParts.displayTitle,
     subtitle: titleParts.subtitle,
@@ -583,18 +590,18 @@ const secondaryActionsForTask = (
   capabilities: TransferPlatformCapabilities,
 ): TaskActionDescriptor[] => {
   const actions: TaskActionDescriptor[] = []
+  if (capabilities.canOpenOutput) actions.push(actionDescriptor('open_dir'))
+  actions.push(actionDescriptor('copy_source'))
 
   if (isScheduledTask(task)) {
-    actions.push(actionDescriptor('schedule', '修改时间'), actionDescriptor('speed_limit'), actionDescriptor('cancel'), actionDescriptor('remove'), actionDescriptor('delete_files'))
+    actions.push(actionDescriptor('cancel'), actionDescriptor('remove'), actionDescriptor('delete_files'))
     return actions
   }
 
   if (task.status === 'completed') {
     actions.push(
-      ...(capabilities.canOpenOutput ? [actionDescriptor('open_dir')] : []),
       actionDescriptor('retry', '重新下载'),
       ...(taskSourcePageAvailable(task) ? [actionDescriptor('open_source')] : []),
-      actionDescriptor('copy_source'),
       actionDescriptor('remove'),
       actionDescriptor('delete_files'),
     )
@@ -603,16 +610,12 @@ const secondaryActionsForTask = (
 
   if (task.status === 'failed' || task.status === 'cancelled') {
     actions.push(actionDescriptor('retry'))
-    if (task.status === 'failed') actions.push(actionDescriptor('speed_limit'))
-    if (capabilities.canOpenOutput) actions.push(actionDescriptor('open_dir'))
     actions.push(actionDescriptor('remove'), actionDescriptor('delete_files'))
     return uniqueActions(actions).filter((action) => action.kind !== primaryAction)
   }
 
   if (task.status === 'paused') {
     actions.push(
-      actionDescriptor('schedule'),
-      actionDescriptor('speed_limit'),
       actionDescriptor('cancel'),
       actionDescriptor('remove'),
       actionDescriptor('delete_files'),
@@ -621,10 +624,9 @@ const secondaryActionsForTask = (
   }
 
   if (task.status === 'muxing') {
-    return [actionDescriptor('remove'), actionDescriptor('delete_files')]
+    return [...actions, actionDescriptor('remove'), actionDescriptor('delete_files')]
   }
 
-  if (task.status === 'waiting') actions.push(actionDescriptor('speed_limit'))
   actions.push(actionDescriptor('cancel'), actionDescriptor('remove'), actionDescriptor('delete_files'))
   return actions.filter((action) => action.kind !== primaryAction)
 }
@@ -662,8 +664,6 @@ const actionLabel = (action: TaskActionKind): string => {
     copy_source: '复制来源',
     open_source: '打开来源页面',
     unschedule: '立即开始',
-    schedule: '定时开始',
-    speed_limit: '设置限速',
     none: '',
   }
 
@@ -684,8 +684,6 @@ const actionIcon = (action: TaskActionKind): string => {
     copy_source: 'copy',
     open_source: 'external-link',
     unschedule: 'play',
-    schedule: 'clock',
-    speed_limit: 'gauge',
     none: 'more',
   }
 

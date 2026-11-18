@@ -204,16 +204,8 @@ export const queuePause = (taskId: string) => invokeCommand<DownloadTask>('queue
 
 export const queueResume = (taskId: string) => invokeCommand<DownloadTask>('queue_resume', { taskId })
 
-export const queueSchedule = (taskId: string, scheduledAt: string) =>
-  invokeCommand<DownloadTask>('queue_schedule', { request: { task_id: taskId, scheduled_at: scheduledAt } })
-
 export const queueUnschedule = (taskId: string) =>
   invokeCommand<DownloadTask>('queue_unschedule', { taskId })
-
-export const queueSetSpeedLimit = (taskId: string, speedLimitBytesPerSecond?: number) =>
-  invokeCommand<DownloadTask>('queue_set_speed_limit', {
-    request: { task_id: taskId, speed_limit_bytes_per_second: speedLimitBytesPerSecond },
-  })
 
 export const queueCancel = (taskId: string) => invokeCommand<DownloadTask>('queue_cancel', { taskId })
 
@@ -297,6 +289,7 @@ export const maintenanceCleanupLogs = async () => {
 }
 export const maintenanceCleanupDiagnostics = () => invokeCommand<number>('maintenance_cleanup_diagnostics')
 export const diagnosticsExport = (taskId?: string) => invokeCommand<DiagnosticsExportResponse>('diagnostics_export', { taskId: taskId ?? null })
+export const diagnosticsOpenDirectory = () => invokeCommand<void>('diagnostics_open_directory')
 export const refreshOperationErrors = async () => {
   const records = await invokeCommand<OperationErrorRecord[]>('diagnostics_operation_errors')
   replaceRecentFailures(records)

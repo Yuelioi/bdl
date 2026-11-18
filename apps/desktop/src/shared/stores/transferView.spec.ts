@@ -89,14 +89,15 @@ describe('scheduled transfer task view', () => {
     expect(diagnostic.recommendedAction).toBe('unschedule')
   })
 
-  it('exposes and explains a task-specific speed limit', () => {
+  it('explains a persisted task limit without offering task configuration', () => {
     const task = scheduledTask()
     task.speed_limit_bytes_per_second = 2 * 1024 * 1024
 
     const view = createTransferTaskView(task, 0)
     const diagnostic = createTaskDiagnosticView(task)
 
-    expect(view.secondaryActions.map((action) => action.kind)).toContain('speed_limit')
+    expect(view.secondaryActions.map((action) => action.kind)).not.toContain('speed_limit')
+    expect(view.secondaryActions.map((action) => action.kind)).not.toContain('schedule')
     expect(diagnostic.impact).toContain('限速 2.1 MB/s')
   })
 })
@@ -124,6 +125,20 @@ describe('active transfer stages', () => {
     expect(createTransferTaskView(activeTask('video'), 99, [], null, undefined, 99).statusLabel).toBe('下载视频中')
     expect(createTransferTaskView(activeTask('audio'), 85, [], null, undefined, 85).statusLabel).toBe('下载音频中')
     expect(createTransferTaskView(activeTask('video', 'muxing'), 99).statusLabel).toBe('合并中')
+    for (const status of ['waiting', 'parsing', 'downloading', 'paused', 'muxing', 'failed', 'cancelled', 'completed'] as const) {
+      const task = activeTask('video', status)
+      task.media_selection.video_quality = '120'
+      task.refresh_intent = { input: { kind: 'video_bvid', bvid: 'BV1xx411c7mD' }, cid: 1, duration_seconds: 125 }
+      const view = createTransferTaskView(task, 50)
+      expect(view.mediaLabel).toContain('4K')
+      expect(view.mediaLabel).toContain('2:05')
+      expect(view.mediaLabel).not.toContain('AVC')
+      expect(view.secondaryActions.filter((action) => action.kind === 'open_dir')).toHaveLength(1)
+      expect(view.secondaryActions.map((action) => action.kind)).not.toContain('schedule')
+      expect(view.secondaryActions.map((action) => action.kind)).not.toContain('speed_limit')
+      expect(view.secondaryActions.filter((action) => action.kind === 'copy_source')).toHaveLength(1)
+      expect(createTransferTaskView(task, 50, [], null, { canOpenOutput: false }).secondaryActions.some((action) => action.kind === 'open_dir')).toBe(false)
+    }
   })
 
   it('shows the current track percentage instead of the changing aggregate', () => {

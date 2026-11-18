@@ -376,6 +376,7 @@ test.describe('specific failure diagnostics', () => {
           __TAURI_INTERNALS__: { invoke: (command: string, args?: Record<string, unknown>) => Promise<unknown> };
           __COPIED_DIAGNOSTIC__: string;
           __EMPTY_LOGS__?: boolean;
+          __DIAGNOSTIC_FOLDER_OPENS__?: number;
         };
         Object.defineProperty(navigator, 'clipboard', {
           configurable: true,
@@ -411,6 +412,11 @@ test.describe('specific failure diagnostics', () => {
               proxy_mode: 'system',
             };
           if (command === 'queue_list') return [task];
+          if (command === 'diagnostics_export') return { path: 'fixture-diagnostics.json', saved: true };
+          if (command === 'diagnostics_open_directory') {
+            target.__DIAGNOSTIC_FOLDER_OPENS__ = (target.__DIAGNOSTIC_FOLDER_OPENS__ ?? 0) + 1;
+            return null;
+          }
           if (command === 'queue_logs')
             return target.__EMPTY_LOGS__
               ? []
@@ -435,11 +441,12 @@ test.describe('specific failure diagnostics', () => {
         .filter({ hasText: '源站拒绝访问测试' });
       await expect(row).toContainText('源站拒绝访问');
       await row.getByRole('button', { name: /更多操作/ }).click();
+      await expect(page.getByRole(device === 'desktop' ? 'menuitem' : 'button', { name: /设置限速|定时开始/ })).toHaveCount(0);
       await page.getByRole(device === 'desktop' ? 'menuitem' : 'button', { name: '详情和诊断', exact: true }).click();
       const dialog = page.getByRole('dialog', { name: '源站拒绝访问测试', exact: true });
       await expect(dialog.getByRole('heading', { name: '任务失败：源站拒绝访问' })).toBeVisible();
       await expect(dialog).toContainText('单凭 403 无法判断');
-      await dialog.getByRole('button', { name: '查看日志', exact: true }).click();
+      await dialog.getByRole('tab', { name: /日志/ }).click();
       await dialog.getByRole('button', { name: '复制诊断信息', exact: true }).click();
       const copied = await page.evaluate(
         () => (window as unknown as { __COPIED_DIAGNOSTIC__: string }).__COPIED_DIAGNOSTIC__,
@@ -476,6 +483,14 @@ test.describe('specific failure diagnostics', () => {
       await dialog.getByRole('button', { name: /^(已复制|复制诊断信息)$/ }).click();
       await expect(page.getByText('复制失败，请重试', { exact: true })).toBeVisible();
       await expect(dialog.getByRole('button', { name: '复制诊断信息', exact: true })).toBeVisible();
+      await dialog.getByRole('button', { name: '导出任务诊断', exact: true }).click();
+      if (device === 'desktop') {
+        await dialog.getByRole('button', { name: '打开诊断文件夹', exact: true }).click();
+        expect(await page.evaluate(() => (window as unknown as { __DIAGNOSTIC_FOLDER_OPENS__: number }).__DIAGNOSTIC_FOLDER_OPENS__)).toBe(1);
+        await expect(dialog.getByRole('button', { name: '导出任务诊断', exact: true })).toBeVisible({ timeout: 7000 });
+      } else {
+        await expect(dialog.getByRole('button', { name: '导出任务诊断', exact: true })).toBeVisible();
+      }
       await page.addInitScript(() => {
         (window as unknown as { __EMPTY_LOGS__: boolean }).__EMPTY_LOGS__ = true;
       });
@@ -1483,6 +1498,28 @@ test('settings header is concise and existing outputs are skipped by default', a
 
 test('saved defaults download directly and reuse startup environment health', async ({ page }) => {
   await installTauriMock(page, 'light');
+  await page.addInitScript(() => {
+    const target = window as unknown as {
+      __TAURI_INTERNALS__: { invoke: (command: string, args?: Record<string, unknown>) => Promise<unknown> };
+      __PREPARATION_PHASE__: string;
+      __PREPARATION_PHASES_SEEN__: string[];
+    };
+    target.__PREPARATION_PHASE__ = 'preparing';
+    target.__PREPARATION_PHASES_SEEN__ = [];
+    const invoke = target.__TAURI_INTERNALS__.invoke;
+    let submitted: Record<string, unknown> | undefined;
+    target.__TAURI_INTERNALS__.invoke = async (command, args) => {
+      if (command === 'selection_submit_tasks') {
+        submitted = await invoke(command, args) as Record<string, unknown>;
+        return { ...submitted, status: 'queued' };
+      }
+      if (command === 'preparation_list' && submitted) {
+        target.__PREPARATION_PHASES_SEEN__.push(target.__PREPARATION_PHASE__);
+        return [{ ...submitted, status: target.__PREPARATION_PHASE__ }];
+      }
+      return invoke(command, args);
+    };
+  });
   await page.goto('/');
   await expect(page.getByRole('button', { name: '开始解析' })).toBeEnabled();
 
@@ -1509,6 +1546,17 @@ test('saved defaults download directly and reuse startup environment health', as
       ).length,
   );
   expect(environmentChecks).toBe(1);
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __PREPARATION_PHASES_SEEN__: string[] }).__PREPARATION_PHASES_SEEN__)).toContain('preparing');
+  await expect(page.getByRole('region', { name: '下载任务准备' })).toHaveCount(0);
+  await page.getByRole('button', { name: '传输 队列与恢复' }).click();
+  await expect(page.getByRole('heading', { name: '传输', exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: '下载任务准备' })).toHaveCount(0);
+  await page.getByRole('button', { name: '设置 偏好与维护' }).click();
+  const queueReadsBeforeCompletion = await page.evaluate(() => (window as unknown as { __BDL_TEST_INVOKES__: string[] }).__BDL_TEST_INVOKES__.filter(command => command === 'queue_list').length);
+  await page.evaluate(() => { (window as unknown as { __PREPARATION_PHASE__: string }).__PREPARATION_PHASE__ = 'completed'; });
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __PREPARATION_PHASES_SEEN__: string[] }).__PREPARATION_PHASES_SEEN__)).toContain('completed');
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __BDL_TEST_INVOKES__: string[] }).__BDL_TEST_INVOKES__.filter(command => command === 'queue_list').length)).toBeGreaterThan(queueReadsBeforeCompletion);
+  await expect(page.getByRole('region', { name: '下载任务准备' })).toHaveCount(0);
 });
 
 test('parse result checkbox controls download selection', async ({ page }) => {
@@ -1733,16 +1781,19 @@ test('preparation errors remain globally accessible after leaving the parse page
 
   await expect(page.getByRole('dialog', { name: '下载设置' })).toHaveCount(0);
   await page.getByRole('button', { name: '传输 队列与恢复' }).click();
-  await page.getByRole('button', { name: '查看准备任务' }).click();
-  const dialog = page.getByRole('dialog', { name: '任务准备', exact: true });
+  await page.getByRole('region', { name: '下载任务准备' }).getByRole('button', { name: '查看详情' }).click();
+  const dialog = page.getByRole('dialog', { name: '待处理任务', exact: true });
   await expect(dialog.getByText('Bilibili 暂时拒绝了请求（HTTP 412）', { exact: true })).toBeVisible();
   await expect(dialog.getByRole('button', { name: '复制诊断信息' })).toBeVisible();
   await dialog.getByText('错误详情', { exact: true }).click();
   await expect(dialog.locator('.error-details pre')).toContainText('bilibili_request_rejected');
 
   await dialog.getByRole('button', { name: 'Close', exact: true }).click();
-  await page.getByRole('button', { name: '查看准备任务' }).click();
+  await page.getByRole('region', { name: '下载任务准备' }).getByRole('button', { name: '查看详情' }).click();
   await expect(dialog.getByText('Bilibili 暂时拒绝了请求（HTTP 412）', { exact: true })).toBeVisible();
+  await dialog.getByRole('button', { name: '关闭记录', exact: true }).click();
+  await expect(dialog.getByText('暂无待处理任务', { exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: '下载任务准备' })).toHaveCount(0);
 });
 
 test('collected favorite folders open through the collection resolver with matching totals', async ({ page }) => {

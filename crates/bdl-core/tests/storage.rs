@@ -417,6 +417,7 @@ fn sample_task() -> DownloadTask {
             }),
             video_quality: "80".to_owned(),
             audio_quality: "30280".to_owned(),
+            audio_bandwidth: Some(192_000),
             video_codec: "avc".to_owned(),
             container: "mp4".to_owned(),
             ..Default::default()

@@ -157,6 +157,7 @@ pub fn run() {
             bdl_tauri::commands::maintenance_cleanup_cache,
             bdl_tauri::commands::maintenance_cleanup_temp,
             bdl_tauri::commands::diagnostics_export,
+            bdl_tauri::commands::diagnostics_open_directory,
             bdl_tauri::commands::diagnostics_environment,
             bdl_tauri::commands::diagnostics_record_operation_error,
             bdl_tauri::commands::diagnostics_operation_errors,

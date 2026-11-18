@@ -36,8 +36,6 @@ describe('transfer task actions', () => {
   ])('dispatches %s to queue.%s', (action, method) => {
     const store = queue();
     const taskActions = useTransferTaskActions(store, {
-      openScheduleDialog: vi.fn(),
-      openSpeedLimitDialog: vi.fn(),
     });
 
     taskActions.runTaskAction('task:one', action);
@@ -45,20 +43,14 @@ describe('transfer task actions', () => {
     expect(store[method]).toHaveBeenCalledWith('task:one');
   });
 
-  it('routes local configuration actions to their dialogs', () => {
+  it('routes file deletion to its confirmation dialog', () => {
     const dialogs = {
-      openScheduleDialog: vi.fn(),
-      openSpeedLimitDialog: vi.fn(),
       openDeletionDialog: vi.fn(),
     };
     const taskActions = useTransferTaskActions(queue(), dialogs);
 
-    taskActions.runTaskAction('task:schedule', 'schedule');
-    taskActions.runTaskAction('task:speed', 'speed_limit');
     taskActions.runTaskAction('task:delete', 'delete_files');
 
-    expect(dialogs.openScheduleDialog).toHaveBeenCalledWith('task:schedule');
-    expect(dialogs.openSpeedLimitDialog).toHaveBeenCalledWith('task:speed');
     expect(dialogs.openDeletionDialog).toHaveBeenCalledWith('task:delete');
   });
 });

@@ -17,8 +17,6 @@ export interface TransferTaskActionQueue {
 }
 
 export interface TransferTaskActionDialogs {
-  openScheduleDialog(taskId: string): void;
-  openSpeedLimitDialog(taskId: string): void;
   openDeletionDialog?(taskId: string): void;
 }
 
@@ -42,15 +40,6 @@ export const useTransferTaskActions = (queue: TransferTaskActionQueue, dialogs: 
       dialogs.openDeletionDialog?.(taskId);
       return;
     }
-    if (action === 'schedule') {
-      dialogs.openScheduleDialog(taskId);
-      return;
-    }
-    if (action === 'speed_limit') {
-      dialogs.openSpeedLimitDialog(taskId);
-      return;
-    }
-
     const queueAction = queueActionByKind[action];
     void queue[queueAction](taskId);
   };

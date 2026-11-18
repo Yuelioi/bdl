@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 
 import type { DownloadResource, DownloadTask, QueueLogEntry, ResourceStatus } from '../api/dto'
-import { diagnosticsExport } from '../api/tauri'
+import { useDiagnosticExport } from '../features/diagnostics/useDiagnosticExport'
 import { useUiStore } from '../stores/ui'
 import {
   createTaskDiagnosticView,
@@ -17,11 +17,10 @@ import UiEmptyState from './EmptyState.vue'
 import UiInlineNotice from './InlineNotice.vue'
 import UiStatusBadge from './StatusBadge.vue'
 import UiTabs from './Tabs.vue'
-import ExternalLinkButton from './ExternalLinkButton.vue'
-import { bilibiliTaskUrl } from '../utils/bilibiliLinks'
-import { isMobilePlatform, isAndroidPlatform } from '../platform/environment'
+import { isMobilePlatform } from '../platform/environment'
 import { captureDiagnosticEnvironment } from '../utils/diagnosticEnvironment'
 import { writeClipboardText } from '../utils/clipboard'
+import { audioCodecOptions, audioQualityOptions, codecOptions, videoQualityOptions } from '../features/settings/settingsCatalog'
 
 const { task, progress, logs, logsLoading = false } = defineProps<{
   task: DownloadTask | null
@@ -37,8 +36,10 @@ const emit = defineEmits<{
 const ui = useUiStore()
 const selectedTab = ref('overview')
 const copied = ref(false)
-const exportingDiagnostics = ref(false)
-const exportNotice = ref('')
+const {
+  busy: exportingDiagnostics, folderReady, notice: exportNotice, noticeTone,
+  run: exportDiagnostics, reset: resetExport,
+} = useDiagnosticExport(() => task?.id)
 const transferCapabilities = { canOpenOutput: !isMobilePlatform() }
 
 const tabs = computed(() => [
@@ -53,10 +54,33 @@ const failedTrackCount = computed(
 const completedTrackCount = computed(
   () => task?.resources.filter((resource) => resource.status === 'completed').length ?? 0,
 )
-const overviewFacts = computed(() => [
-  { label: '输出文件', value: task?.output_path ?? '--' },
-])
-const taskPageUrl = computed(() => (task ? bilibiliTaskUrl(task) : null))
+const selectionLabel = (options: readonly { value: string; label: string }[], value?: string | null) =>
+  options.find((option) => option.value === value)?.label ?? (value && value !== 'unknown' ? value : '未记录')
+const overviewFacts = computed(() => {
+  const facts = [{ label: '输出文件', value: task?.output_path ?? '--' }]
+  if (!task?.media_selection) return facts
+  const selection = task.media_selection
+  if (task.resources.some((resource) => resource.intent === 'video')) {
+    facts.push(
+      { label: '视频清晰度', value: selectionLabel(videoQualityOptions, selection.video_quality) },
+      { label: '视频编码', value: selectionLabel(codecOptions, selection.video_codec) },
+    )
+  }
+  if (task.resources.some((resource) => resource.intent === 'audio')) {
+    const bandwidth = selection.audio_bandwidth
+    facts.push(
+      { label: '音频质量', value: selectionLabel(audioQualityOptions, selection.audio_quality) },
+      {
+        label: '源音频码率',
+        value: bandwidth && bandwidth > 0
+          ? `${(bandwidth / 1000).toLocaleString('zh-CN', { maximumFractionDigits: 1 })} kbps`
+          : '未记录',
+      },
+      { label: '源音频编码', value: selectionLabel(audioCodecOptions, selection.audio_codec) },
+    )
+  }
+  return facts
+})
 const redactedLogs = computed(() =>
   logs.map((log) => ({
     ...log,
@@ -94,7 +118,7 @@ watch(
   () => task?.id,
   () => {
     copied.value = false
-    exportNotice.value = ''
+    resetExport()
     selectedTab.value = 'overview'
   },
   { immediate: true },
@@ -120,22 +144,6 @@ const copyDiagnostics = async () => {
   } catch {
     copied.value = false
     ui.pushToast('复制失败，请重试', 'danger')
-  }
-}
-
-const exportDiagnostics = async () => {
-  if (!task) return
-  exportingDiagnostics.value = true
-  try {
-    const result = await diagnosticsExport(task.id)
-    exportNotice.value = result.saved ? (isAndroidPlatform() ? '诊断已保存到所选位置。' : `诊断已导出：${result.path}`) : '已取消保存诊断。'
-    window.setTimeout(() => {
-      exportNotice.value = ''
-    }, 3000)
-  } catch (error) {
-    ui.pushToast(errorMessage(error), 'danger')
-  } finally {
-    exportingDiagnostics.value = false
   }
 }
 
@@ -171,13 +179,6 @@ const resourceStatusText = (status: ResourceStatus): string => {
 
 const trackTitle = (resource: DownloadResource): string => resourceIntentText(resource.intent)
 
-const errorMessage = (error: unknown): string => {
-  if (error instanceof Error) {
-    return error.message
-  }
-
-  return String(error)
-}
 </script>
 
 <template>
@@ -205,10 +206,6 @@ const errorMessage = (error: unknown): string => {
           </div>
         </div>
         <UiDefinitionList :items="overviewFacts" />
-        <div class="diagnosis-actions">
-          <ExternalLinkButton v-if="taskPageUrl" :href="taskPageUrl" label="在 Bilibili 打开来源页面">查看来源</ExternalLinkButton>
-          <UiButton variant="secondary" @click="setTab('raw_logs')">查看日志</UiButton>
-        </div>
       </section>
 
       <section v-else-if="selectedTab === 'tracks'" class="tab-panel tracks-panel">
@@ -236,13 +233,13 @@ const errorMessage = (error: unknown): string => {
           <div class="diagnosis-actions">
             <UiButton variant="secondary" :disabled="logsLoading || !redactedLogs.length" @click="copyDiagnostics">{{ copied ? '已复制' : '复制诊断信息' }}</UiButton>
             <UiButton variant="ghost" :disabled="exportingDiagnostics" @click="exportDiagnostics">
-              {{ exportingDiagnostics ? '导出中' : '导出任务诊断' }}
+              {{ folderReady ? '打开诊断文件夹' : exportingDiagnostics ? '导出中' : '导出任务诊断' }}
             </UiButton>
             <UiButton variant="ghost" :disabled="logsLoading" @click="emit('refreshLogs')">刷新</UiButton>
           </div>
         </div>
         <div class="log-list">
-          <UiInlineNotice v-if="exportNotice" tone="success">{{ exportNotice }}</UiInlineNotice>
+          <UiInlineNotice v-if="exportNotice" :tone="noticeTone">{{ exportNotice }}</UiInlineNotice>
           <div v-for="log in redactedLogs" :key="`${log.created_at}-${log.message}`" class="log-row">
             <span :class="`level-${log.level}`">{{ log.level }} · {{ new Date(log.created_at).toLocaleString('zh-CN') }}</span>
             <p>{{ redactLogMessage(log.message) }}</p>
