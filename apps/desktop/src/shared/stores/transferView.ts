@@ -100,7 +100,9 @@ export const createTransferTaskView = (
   stageProgress: number | null = null,
   outputSizeBytes: number | null = null,
 ): TransferTaskView => {
-  const titleParts = splitTaskTitle(task.title)
+  const titleParts = task.refresh_intent?.input.kind === 'bangumi_episode'
+    ? { displayTitle: task.title, subtitle: '' }
+    : splitTaskTitle(task.title)
   const issue = classifyTaskIssue(task, logs)
   const primaryAction = primaryActionForTask(task, issue, capabilities)
   const completedWithWarnings = task.status === 'completed' && hasWarningLogs(logs)

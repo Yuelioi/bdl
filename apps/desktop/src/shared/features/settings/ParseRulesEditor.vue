@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import UiDisclosure from '../../ui/Disclosure.vue';
 import { computed, ref } from 'vue';
 import type { ParseRules } from '../../api/dto';
 import UiSelect from '../../ui/Select.vue';
@@ -36,19 +35,16 @@ const fields = computed(() => [
     key: 'pages_per_round' as const,
     label: '每批解析',
     options: batchOptions.value,
-    help: '分批获取内容，避免短时间内请求过多。条数按每页约20条估算，实际随B站返回结果变化。',
   },
   {
     key: 'interval_seconds' as const,
     label: '批间等待',
     options: seconds(model.value.interval_seconds),
-    help: '一批完成后稍等再继续，减少连续请求触发B站风控的机会；不会对每个视频单独等待。',
   },
   {
     key: 'rest_seconds' as const,
     label: '每100条休息',
     options: seconds(model.value.rest_seconds),
-    help: '累计约100条后多休息一下，再继续下一段。它替代这一次批间等待，不叠加；最后解析完立即结束。遇到风控仍会停止解析。',
   },
 ]);
 const update = (key: keyof ParseRules, value: string) => {
@@ -75,23 +71,40 @@ const estimatedWait = computed(() => {
 </script>
 
 <template>
-  <UiDisclosure class="settings-parse-rules" title="解析节奏" description="分批数量、等待与休息">
+  <section class="settings-parse-rules" aria-labelledby="parse-rules-title">
     <div class="flex items-center gap-1">
-      <h3 class="m-0 text-sm font-bold">解析节奏</h3>
-      <UTooltip
-        text="B站可能限制连续请求。分批解析并适当等待可以降低触发风控的机会，但不能保证完全避免；所有来源共用这个节奏。"
-        :delay-duration="150"
-        :content="{ side: 'top' }"
-        :ui="{ content: 'max-w-72 h-auto py-2', text: 'whitespace-normal leading-5' }"
-      >
+      <h3 id="parse-rules-title" class="m-0 text-sm font-medium text-(--color-text)">解析节奏</h3>
+      <UPopover :content="{ side: 'bottom', align: 'start', sideOffset: 4, collisionPadding: 12 }">
         <button
           type="button"
-          aria-label="为什么解析需要等待"
+          aria-label="解析节奏说明"
           class="grid size-6 place-items-center text-(--color-muted)"
         >
           <UIcon name="i-tabler-help-circle" class="size-4" />
         </button>
-      </UTooltip>
+        <template #content>
+          <section class="max-w-80 p-3" aria-label="解析节奏参数">
+            <dl class="m-0 grid gap-2 text-xs">
+              <div>
+                <dt class="font-medium">解析预设</dt>
+                <dd class="m-0 text-(--color-muted)">快速套用下方三项参数。</dd>
+              </div>
+              <div>
+                <dt class="font-medium">每批解析</dt>
+                <dd class="m-0 text-(--color-muted)">连续获取多少条再等待，条数为估算值。</dd>
+              </div>
+              <div>
+                <dt class="font-medium">批间等待</dt>
+                <dd class="m-0 text-(--color-muted)">只在两批之间暂停，不逐条等待。</dd>
+              </div>
+              <div>
+                <dt class="font-medium">每100条休息</dt>
+                <dd class="m-0 text-(--color-muted)">替代该次批间等待，不叠加；全部完成后不再等。</dd>
+              </div>
+            </dl>
+          </section>
+        </template>
+      </UPopover>
     </div>
     <div class="settings-inline-grid">
       <UiSelect
@@ -99,36 +112,23 @@ const estimatedWait = computed(() => {
         label="解析预设"
         :options="[...presets, { label: '自定义', value: 'custom' }]"
       />
-      <div v-for="field in fields" :key="field.key" class="relative min-w-0">
-        <UiSelect
-          :model-value="String(model[field.key])"
-          :label="field.label"
-          :options="field.options"
-          @update:model-value="update(field.key, $event)"
-        />
-        <UTooltip
-          :text="field.help"
-          :delay-duration="150"
-          :content="{ side: 'top' }"
-          :ui="{ content: 'max-w-72 h-auto py-2', text: 'whitespace-normal leading-5' }"
-        >
-          <button
-            type="button"
-            :aria-label="`${field.label}说明`"
-            class="absolute top-0 right-0 grid size-5 place-items-center text-(--color-muted)"
-          >
-            <UIcon name="i-tabler-help-circle" class="size-3.5" />
-          </button>
-        </UTooltip>
-      </div>
+      <UiSelect
+        v-for="field in fields"
+        :key="field.key"
+        :model-value="String(model[field.key])"
+        :label="field.label"
+        :options="field.options"
+        @update:model-value="update(field.key, $event)"
+      />
     </div>
     <p class="m-0 text-xs text-(--color-muted)">解析约 200 条，额外等待约 {{ estimatedWait }} 秒，不含网络耗时。</p>
-  </UiDisclosure>
+  </section>
 </template>
 
 <style scoped>
 .settings-parse-rules {
-  padding-top: 0;
-  border-top: 0;
+  min-width: 0;
+  display: grid;
+  gap: var(--space-12);
 }
 </style>

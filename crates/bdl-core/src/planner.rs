@@ -959,8 +959,10 @@ fn select_target_quality<'a>(
         MissingQualityPolicy::Lower => unreachable!("lower policy handled above"),
     };
 
+    let target = target.to_string();
+    let target_label = crate::naming::quality_label(&target);
     Err(BdlError::Planning {
-        message: format!("`{part_title}` 没有 {target} 的{stream_label}流，{action}。"),
+        message: format!("`{part_title}` 没有 {target_label} 的{stream_label}流，{action}。"),
     })
 }
 

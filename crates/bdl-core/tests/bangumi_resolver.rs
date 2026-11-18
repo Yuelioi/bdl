@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use bdl_core::error::BdlError;
 use bdl_core::input::ClassifiedInput;
 use bdl_core::model::{AssetKind, FetchPolicy, MediaKind, SourceKind};
+use bdl_core::planner::{DownloadOptions, plan_selected_parts};
 use bdl_core::resolver::bangumi::{
     BangumiApi, BangumiInputId, BangumiResolver, ResolvedBangumiDashStream, ResolvedBangumiEpisode,
     ResolvedBangumiPlayUrl, ResolvedBangumiSeason, ResolvedBangumiSubtitle, bangumi_id_from_url,
@@ -154,6 +155,45 @@ async fn bangumi_resolver_fetches_streams_for_episode_input_only() -> Result<(),
         vec!["https://subtitle.example.invalid/zh.json".to_owned()]
     );
 
+    let mut movie_paths = Vec::new();
+    for (movie_title, episode_title, task_title, file_name) in [
+        ("变形金刚", "正片", "变形金刚 · 正片", "变形金刚 · 正片.mp4"),
+        (
+            "电影 - 修复版",
+            "正片",
+            "电影 - 修复版 · 正片",
+            "电影 - 修复版 · 正片.mp4",
+        ),
+        ("同名电影", "同名电影", "同名电影", "同名电影.mp4"),
+    ] {
+        let mut api = fake_api(BangumiInputId::Episode(456));
+        api.season.is_movie = true;
+        api.season.title = movie_title.to_owned();
+        api.season.episodes[1].title = episode_title.to_owned();
+        let movie_tree = BangumiResolver::with_api(api)
+            .resolve(
+                ClassifiedInput::Bangumi {
+                    raw_url: "https://www.bilibili.com/bangumi/play/ep456".to_owned(),
+                },
+                ResolveOptions {
+                    fetch_streams: true,
+                },
+            )
+            .await?;
+        let item = &movie_tree.groups[0].items[1];
+        let part = &item.parts[0];
+        assert_eq!(item.title, task_title);
+        assert_eq!(part.title, task_title);
+
+        let mut options = DownloadOptions::new("downloads".into());
+        options.naming_template = "{part_title}".to_owned();
+        let tasks = plan_selected_parts(&movie_tree, std::slice::from_ref(&part.id), &options)?;
+        assert_eq!(tasks[0].title, task_title);
+        assert!(tasks[0].output_path.ends_with(file_name));
+        movie_paths.push(tasks[0].output_path.clone());
+    }
+    assert_ne!(movie_paths[0], movie_paths[1]);
+
     Ok(())
 }
 
@@ -210,6 +250,7 @@ fn fake_api(expected_id: BangumiInputId) -> FakeBangumiApi {
         season: ResolvedBangumiSeason {
             season_id: 123,
             title: "fixture season".to_owned(),
+            is_movie: false,
             owner_name: Some("fixture studio".to_owned()),
             cover_url: Some("https://example.invalid/season.jpg".to_owned()),
             total_count: Some(2),

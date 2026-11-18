@@ -1,5 +1,13 @@
 # BDL HTTP observation patch
 
+## Bangumi playback parameters
+
+Expose optional `drm_tech_type` on `BangumiVideoStreamParams`; existing SDK
+defaults are unchanged. BDL requests mode 2 because the playback API can omit
+movie 4K tracks without it. The parameter does not establish whether a returned
+track is encrypted; the content-level `is_drm` flag alone does not establish that
+either. This patch adds no license or decryption handling.
+
 ## Course response compatibility (BDL #5 / bpi-rs #15)
 
 Synced targeted model fixes from the sibling SDK: nullable course coupons,

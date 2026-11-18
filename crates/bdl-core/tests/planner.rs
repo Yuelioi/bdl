@@ -846,14 +846,21 @@ fn plan_selected_parts_chooses_lower_quality_when_target_is_unavailable() {
 fn plan_selected_parts_rejects_missing_quality_when_policy_requires_user_action() {
     let tree = fixture_tree(true);
     let mut options = DownloadOptions::new(PathBuf::from("downloads"));
-    options.video_quality = StreamPreference::Quality(120);
     options.missing_quality_policy = MissingQualityPolicy::Ask;
 
-    let error = plan_selected_parts(&tree, &[PartId("part:BV1:100".to_owned())], &options)
-        .expect_err("ask policy should block missing target quality");
-
-    assert!(error.to_string().contains("没有 120"));
-    assert!(error.to_string().contains("需要用户确认"));
+    for (quality, label) in [
+        (120, "4K"),
+        (125, "HDR"),
+        (126, "Dolby Vision"),
+        (127, "8K"),
+    ] {
+        options.video_quality = StreamPreference::Quality(quality);
+        let error = plan_selected_parts(&tree, &[PartId("part:BV1:100".to_owned())], &options)
+            .expect_err("ask policy should block missing target quality");
+        assert!(error.to_string().contains(label));
+        assert!(!error.to_string().contains(&quality.to_string()));
+        assert!(error.to_string().contains("需要用户确认"));
+    }
 }
 
 fn fixture_tree(include_audio: bool) -> NormalizedSourceTree {

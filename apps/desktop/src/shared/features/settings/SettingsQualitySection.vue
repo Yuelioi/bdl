@@ -135,7 +135,7 @@ const video = computed({
   set: (value: string) => {
     const wasAutomatic = ['best', 'sdr'].includes(settings.draft.quality);
     settings.setVideoQuality(value);
-    if (wasAutomatic && !['best', 'sdr'].includes(value)) settings.setMissingQualityPolicy('skip');
+    if (wasAutomatic && !['best', 'sdr'].includes(value)) settings.setMissingQualityPolicy('lower');
   },
 });
 const audio = computed({
@@ -143,7 +143,7 @@ const audio = computed({
   set: (value: string) => {
     const wasAutomatic = settings.draft.audio_quality === 'best';
     settings.setAudioQuality(value);
-    if (wasAutomatic && value !== 'best') settings.setMissingQualityPolicy('skip');
+    if (wasAutomatic && value !== 'best') settings.setMissingQualityPolicy('lower');
   },
 });
 const needsMissingPolicy = computed(
@@ -156,8 +156,8 @@ const missingPolicy = computed({
   },
 });
 const policyOptions = [
-  { label: '不换档（推荐）', value: 'skip' },
   { label: '允许自动换档', value: 'lower' },
+  { label: '不换档', value: 'skip' },
 ];
 const videoLabel = (quality: string) =>
   videoQualityOptions.find((option) => option.value === quality)?.label ?? quality;
@@ -236,6 +236,7 @@ const audioSummary = computed(() => {
       <UiSelect
         v-if="needsMissingPolicy"
         v-model="missingPolicy"
+        class="col-span-full max-w-md"
         label="指定档位不可用时"
         :options="policyOptions"
         :disabled="disabled"

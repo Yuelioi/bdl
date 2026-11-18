@@ -87,6 +87,7 @@ pub struct BangumiVideoStreamParams {
     id: BangumiVideoStreamId,
     quality: Option<VideoQuality>,
     fnval: Option<Fnval>,
+    drm_tech_type: Option<u32>,
 }
 
 impl BangumiVideoStreamParams {
@@ -95,6 +96,7 @@ impl BangumiVideoStreamParams {
             id: BangumiVideoStreamId::Episode(episode_id),
             quality: None,
             fnval: None,
+            drm_tech_type: None,
         }
     }
 
@@ -103,6 +105,7 @@ impl BangumiVideoStreamParams {
             id: BangumiVideoStreamId::Content(cid),
             quality: None,
             fnval: None,
+            drm_tech_type: None,
         }
     }
 
@@ -113,6 +116,12 @@ impl BangumiVideoStreamParams {
 
     pub fn with_fnval(mut self, fnval: Fnval) -> Self {
         self.fnval = Some(fnval);
+        self
+    }
+
+    /// Sets the playback API's `drm_tech_type` request parameter.
+    pub fn with_drm_tech_type(mut self, drm_tech_type: u32) -> Self {
+        self.drm_tech_type = Some(drm_tech_type);
         self
     }
 
@@ -138,6 +147,10 @@ impl BangumiVideoStreamParams {
 
         if let Some(fnval) = self.fnval {
             params.push(("fnval", fnval.bits().to_string()));
+        }
+
+        if let Some(drm_tech_type) = self.drm_tech_type {
+            params.push(("drm_tech_type", drm_tech_type.to_string()));
         }
 
         params
@@ -248,7 +261,8 @@ mod tests {
     fn bangumi_video_stream_params_serializes_cid_and_fourk_flag() -> BpiResult<()> {
         let params = BangumiVideoStreamParams::from_cid(Cid::new(91_549_662)?)
             .with_quality(VideoQuality::P4K)
-            .with_fnval(Fnval::DASH | Fnval::FOURK);
+            .with_fnval(Fnval::DASH | Fnval::FOURK)
+            .with_drm_tech_type(2);
 
         assert_eq!(
             params.query_pairs(),
@@ -258,6 +272,7 @@ mod tests {
                 ("cid", "91549662".to_string()),
                 ("qn", "120".to_string()),
                 ("fnval", "144".to_string()),
+                ("drm_tech_type", "2".to_string()),
             ]
         );
         Ok(())

@@ -2014,7 +2014,7 @@ test('media preferences reorder combinations while download keeps optimal qualit
   await page.getByRole('combobox', { name: '视频清晰度', exact: true }).click();
   await expect(page.getByRole('option')).toHaveText(['最佳可用', '仅 SDR', 'HDR', '8K', '杜比视界', '4K', '1080P60', '1080P+', '1080P', '720P60', '720P', '480P', '360P']);
   await page.getByRole('option', { name: '4K', exact: true }).click();
-  await expect(page.getByRole('combobox', { name: '指定档位不可用时', exact: true })).toContainText('不换档');
+  await expect(page.getByRole('combobox', { name: '指定档位不可用时', exact: true })).toContainText('允许自动换档');
   await page.getByRole('combobox', { name: '视频清晰度', exact: true }).click();
   await page.getByRole('option', { name: '最佳可用', exact: true }).click();
   await page.getByRole('button', { name: '编排音质优先级', exact: true }).click();
@@ -2460,12 +2460,13 @@ test('pagination presets save rules and allow custom cooldown', async ({ page })
   });
   await page.goto('/');
   await page.getByRole('button', { name: '设置 偏好与维护' }).click();
-  await page.locator('summary').filter({ hasText: '解析节奏' }).click();
   await expect(page.getByRole('combobox', { name: '解析预设', exact: true })).toContainText('标准');
   await expect(page.getByText('解析约 200 条，额外等待约 5 秒，不含网络耗时。')).toBeVisible();
-  await page.getByRole('button', { name: '为什么解析需要等待' }).hover();
-  await expect(page.locator('[data-slot="text"]').filter({ hasText: 'B站可能限制连续请求' })).toBeVisible();
-  await page.getByRole('heading', { name: '解析节奏' }).hover();
+  await page.getByRole('button', { name: '解析节奏说明', exact: true }).click();
+  const parseHelp = page.getByRole('region', { name: '解析节奏参数', exact: true });
+  await expect(parseHelp).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(parseHelp).not.toBeVisible();
   await page.getByRole('combobox', { name: '解析预设', exact: true }).click();
   await page.getByRole('option', { name: '快速', exact: true }).click();
   await expect(page.getByRole('combobox', { name: '每批解析', exact: true })).toContainText('100 条');

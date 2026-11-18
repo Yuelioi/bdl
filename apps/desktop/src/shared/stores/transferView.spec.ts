@@ -138,6 +138,9 @@ describe('active transfer stages', () => {
       expect(view.secondaryActions.map((action) => action.kind)).not.toContain('speed_limit')
       expect(view.secondaryActions.filter((action) => action.kind === 'copy_source')).toHaveLength(1)
       expect(createTransferTaskView(task, 50, [], null, { canOpenOutput: false }).secondaryActions.some((action) => action.kind === 'open_dir')).toBe(false)
+      task.title = '电影 - 修复版 · 正片'
+      task.refresh_intent.input = { kind: 'bangumi_episode', ep_id: 251427 }
+      expect(createTransferTaskView(task, 50).displayTitle).toBe('电影 - 修复版 · 正片')
     }
   })
 

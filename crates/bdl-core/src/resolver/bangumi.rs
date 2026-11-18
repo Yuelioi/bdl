@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use bpi_rs::BpiClient;
+use bpi_rs::bangumi::info::BangumiType;
 use bpi_rs::bangumi::{BangumiDetailParams, BangumiVideoStreamParams};
 use bpi_rs::danmaku::DanmakuXmlListParams;
 use bpi_rs::ids::{Aid, Bvid, Cid, EpisodeId, SeasonId};
@@ -33,6 +34,7 @@ pub enum BangumiInputId {
 pub struct ResolvedBangumiSeason {
     pub season_id: u64,
     pub title: String,
+    pub is_movie: bool,
     pub owner_name: Option<String>,
     pub cover_url: Option<String>,
     pub total_count: Option<usize>,
@@ -157,7 +159,10 @@ where
         let source_key = format!("bangumi:{}", season.season_id);
         let mut items = Vec::with_capacity(season.episodes.len());
 
-        for episode in season.episodes {
+        for mut episode in season.episodes {
+            if season.is_movie && episode.title != title {
+                episode.title = format!("{title} · {}", episode.title);
+            }
             let should_fetch_streams =
                 options.fetch_streams && focused_ep_id == Some(episode.ep_id);
             let part_key = format!(
@@ -265,6 +270,7 @@ impl BangumiApi for BpiBangumiApi {
         Ok(ResolvedBangumiSeason {
             season_id: detail.season_id,
             title: first_non_empty(&[&detail.season_title, &detail.title]),
+            is_movie: detail.r#type == BangumiType::Movie.as_u32(),
             owner_name,
             cover_url,
             total_count: usize::try_from(detail.total).ok(),
@@ -286,6 +292,8 @@ impl BangumiApi for BpiBangumiApi {
                         .map_err(|error| crate::error::bpi_error(error))?,
                 )
                 .with_quality(VideoQuality::P8K)
+                // Some movie 4K tracks are omitted without the web playback mode.
+                .with_drm_tech_type(2)
                 .with_fnval(
                     Fnval::DASH
                         | Fnval::FOURK
