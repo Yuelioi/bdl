@@ -8,6 +8,7 @@ import android.content.ContentValues
 import android.content.Context
 import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.database.Cursor
 import android.media.MediaScannerConnection
 import android.net.Uri
 import android.os.Build
@@ -137,19 +138,69 @@ class StoragePlugin(private val activity: Activity) : Plugin(activity) {
   private fun inspectOwnedDocument(tree: Uri, uri: Uri): JSObject? {
     val columns = arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME, DocumentsContract.Document.COLUMN_MIME_TYPE,
       DocumentsContract.Document.COLUMN_SIZE, DocumentsContract.Document.COLUMN_LAST_MODIFIED, DocumentsContract.Document.COLUMN_FLAGS)
+    if (tree.authority == "com.android.externalstorage.documents") {
+      return inspectExternalStorageDocument(tree, uri, columns)
+    }
     val cursor = try { activity.contentResolver.query(uri, columns, null, null, null) }
       catch (error: java.io.FileNotFoundException) { return null }
     check(cursor != null) { "文件提供程序未返回文件信息" }
     cursor.use {
       if (!it.moveToFirst()) return null
-      require(it.getString(1) != DocumentsContract.Document.MIME_TYPE_DIR) { "不能删除目录" }
-      require(DocumentsContract.isChildDocument(activity.contentResolver, treeRoot(tree), uri)) { "无法确认文件属于授权目录" }
-      require(!it.isNull(2) && !it.isNull(3)) { "文件提供程序无法核对文件大小和修改时间" }
-      require(it.getInt(4) and DocumentsContract.Document.FLAG_SUPPORTS_DELETE != 0) { "文件提供程序不支持删除此文件" }
-      val result = JSObject()
-      result.put("document_uri", uri.toString()); result.put("display_name", it.getString(0))
-      result.put("size", it.getLong(2)); result.put("last_modified", it.getLong(3))
-      return result
+      return documentSnapshot(tree, uri, it)
+    }
+  }
+
+  private fun inspectExternalStorageDocument(tree: Uri, uri: Uri, columns: Array<String>): JSObject? {
+    val rootId = DocumentsContract.getTreeDocumentId(tree)
+    val documentId = DocumentsContract.getDocumentId(uri)
+    val prefix = if (rootId.substringAfter(':').isEmpty()) rootId else "$rootId/"
+    require(documentId.startsWith(prefix)) { "文件不在授权目录中" }
+    val segments = documentId.removePrefix(prefix).split('/')
+    require(segments.none { it.isEmpty() || it == "." || it == ".." }) { "文件标识无效" }
+
+    // ExternalStorageProvider uses volume:path IDs. Query existing directories:
+    // querying a missing leaf URI can fail Android's tree check before returning metadata.
+    val idColumn = DocumentsContract.Document.COLUMN_DOCUMENT_ID
+    var parentId = rootId
+    var childId = prefix
+    for ((index, segment) in segments.withIndex()) {
+      val isLeaf = index == segments.lastIndex
+      childId += segment
+      val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, parentId)
+      val projection = if (isLeaf) columns + idColumn else arrayOf(idColumn)
+      val cursor = checkNotNull(activity.contentResolver.query(children, projection, null, null, null)) {
+        "文件提供程序未返回目录内容"
+      }
+      cursor.use {
+        check(!it.extras.getBoolean(DocumentsContract.EXTRA_LOADING) &&
+          it.extras.getString(DocumentsContract.EXTRA_ERROR) == null) { "文件提供程序无法读取完整目录内容" }
+        val idIndex = it.getColumnIndexOrThrow(idColumn)
+        var found = false
+        while (it.moveToNext()) {
+          if (it.getString(idIndex) == childId) {
+            found = true
+            break
+          }
+        }
+        if (!found) return null
+        if (isLeaf) return documentSnapshot(tree, uri, it)
+      }
+      parentId = childId
+      childId += '/'
+    }
+    error("文件标识无效")
+  }
+
+  private fun documentSnapshot(tree: Uri, uri: Uri, cursor: Cursor): JSObject {
+    require(cursor.getString(1) != DocumentsContract.Document.MIME_TYPE_DIR) { "不能删除目录" }
+    require(DocumentsContract.isChildDocument(activity.contentResolver, treeRoot(tree), uri)) { "无法确认文件属于授权目录" }
+    require(!cursor.isNull(2) && !cursor.isNull(3)) { "文件提供程序无法核对文件大小和修改时间" }
+    require(cursor.getInt(4) and DocumentsContract.Document.FLAG_SUPPORTS_DELETE != 0) { "文件提供程序不支持删除此文件" }
+    return JSObject().apply {
+      put("document_uri", uri.toString())
+      put("display_name", cursor.getString(0))
+      put("size", cursor.getLong(2))
+      put("last_modified", cursor.getLong(3))
     }
   }
   @Command
