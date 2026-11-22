@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
+import { useMobileBack } from '../../app/useMobileBack';
 import CollectionTree from '../../../shared/ui/CollectionTree.vue';
 import { hasCollectionSections } from '../../../shared/features/parse/collectionTree';
 import UiButton from '../../../shared/ui/Button.vue';
-import UiIconButton from '../../../shared/ui/IconButton.vue';
 import UiCheckbox from '../../../shared/ui/Checkbox.vue';
 import UiEmptyState from '../../../shared/ui/EmptyState.vue';
 import UiInlineNotice from '../../../shared/ui/InlineNotice.vue';
@@ -13,14 +13,14 @@ import ParseResultListMobile from './ParseResultListMobile.vue';
 import MobileSourceMenu from '../MobileSourceMenu.vue';
 import { useParseResultWorkspace } from '../../../shared/features/parse/useParseResultWorkspace';
 const { embedded = false, inlineDownload = false } = defineProps<{ embedded?: boolean; inlineDownload?: boolean }>();
-const emit = defineEmits<{ download: [] }>();
+const emit = defineEmits<{ download: []; openCollection: [] }>();
 const {
   parse,
-  downloadAllLoaded,
   loadBatchSize,
   activeSource,
   selectedIds,
   selectedCount,
+  totalPartCount,
   tableRows,
   query,
   sort,
@@ -28,7 +28,7 @@ const {
   sourceRequestLoading,
   pacedParsing,
   pacedStopping,
-  activeLoading,
+  activeLoading: sourceLoading,
   activeError,
   activeErrorDetail,
   hasMore,
@@ -38,68 +38,67 @@ const {
   loadMore,
   parseAll,
   stopParsing,
-  parseAndDownload,
-  returnToSource,
   toggleNode,
 } = useParseResultWorkspace(() => emit('download'));
-const toolsOpen = ref(false);
+const activeLoading = computed(() => sourceLoading.value || Boolean(parse.loadingBySource.__create__));
+const selectAllLabel = computed(() => query.value.trim() ? '全选搜索结果' : '全选已加载');
+const searching = ref(false);
+useMobileBack('parse', () => {
+  if (!searching.value) return false;
+  searching.value = false;
+  query.value = '';
+  return true;
+}, 1);
 </script>
 
 <template>
   <section v-if="activeSource" class="mobile-result-workspace" :class="{ embedded }">
-    <header class="result-source-heading">
-      <ParseSourceSummary :source="activeSource" />
-      <UiIconButton
-        icon="x"
-        label="返回解析首页"
+    <div class="result-source-row">
+      <div class="result-source"><ParseSourceSummary :source="activeSource" wrap-metadata /></div>
+      <UiButton
+        v-if="activeSource.source.kind === 'video'"
+        class="collection-link"
         variant="ghost"
-        size="compact"
         :disabled="activeLoading"
-        @click="returnToSource"
+        @click="emit('openCollection')"
+      >
+        所属合集
+        <UIcon name="i-tabler-chevron-right" class="size-4" aria-hidden="true" />
+      </UiButton>
+      <MobileSourceMenu
+        v-model:batch-size="loadBatchSize"
+        :has-more="hasMore"
+        :busy="sourceRequestLoading"
+        :parsing="pacedParsing"
+        :stopping="pacedStopping"
+        @load="loadMore"
+        @all="parseAll"
+        @stop="stopParsing"
       />
-    </header>
+    </div>
     <ParseResultFilters
+      v-if="totalPartCount > 1 || hasMore"
       v-model:query="query"
       v-model:sort="sort"
-      :loaded="tableRows.length"
+      v-model:searching="searching"
+      mobile
       :grouped="hasCollectionSections(activeSource)"
       :disabled="activeLoading"
       :apply-range="selectRange"
-    />
-    <div class="result-selection-toolbar">
-      <UiCheckbox
-        :model-value="allRowsSelected ? true : selectedCount > 0 ? 'indeterminate' : false"
-        label="全选已加载"
-        :disabled="activeLoading"
-        @update:model-value="toggleAllResults"
-      />
-      <span>已选 {{ selectedCount }} 项</span>
-      <UButton
-        class="result-content-actions"
-        variant="link"
-        color="neutral"
-        size="xs"
-        trailing-icon="i-tabler-chevron-down"
-        :disabled="activeLoading"
-        aria-label="内容操作"
-        @click="toolsOpen = true"
-        >内容操作</UButton
-      >
-    </div>
-    <MobileSourceMenu
-      v-model:open="toolsOpen"
-      v-model:batch-size="loadBatchSize"
-      :has-more="hasMore"
-      :busy="sourceRequestLoading"
-      :parsing="pacedParsing"
-      :stopping="pacedStopping"
-      @load="loadMore"
-      @all="parseAll"
-      @download-all="hasMore ? parseAndDownload() : downloadAllLoaded()"
-      @stop="stopParsing"
-    />
+    >
+      <template #selection>
+        <UiCheckbox
+          :key="selectAllLabel"
+          :model-value="allRowsSelected ? true : selectedCount > 0 ? 'indeterminate' : false"
+          :label="selectAllLabel"
+          :disabled="activeLoading || !tableRows.length"
+          @update:model-value="toggleAllResults"
+        />
+      </template>
+    </ParseResultFilters>
     <CollectionTree
       v-if="hasCollectionSections(activeSource)"
+      class="result-collection"
       :source="activeSource"
       :selected-ids="selectedIds"
       :disabled="activeLoading"
@@ -108,26 +107,14 @@ const toolsOpen = ref(false);
     />
     <ParseResultListMobile
       v-else-if="tableRows.length"
+      roomy
       managing
       :rows="tableRows"
       :source="activeSource"
       :selected-ids="selectedIds"
       :disabled="activeLoading"
       @toggle="toggleNode"
-    >
-      <UButton
-        variant="ghost"
-        color="neutral"
-        :ui="{ base: 'p-0', label: 'contents' }"
-        v-if="hasMore || pacedParsing"
-        type="button"
-        class="mobile-load-more"
-        :disabled="activeLoading"
-        @click="loadMore"
-      >
-        {{ pacedParsing ? '正在加载更多内容…' : sourceRequestLoading ? '加载中…' : '继续加载内容' }}
-      </UButton>
-    </ParseResultListMobile>
+    />
     <UiEmptyState
       v-else
       :title="query ? '没有匹配的视频' : '没有可选择内容'"
@@ -136,13 +123,6 @@ const toolsOpen = ref(false);
       compact
       embedded
     />
-    <UiButton
-      v-if="hasCollectionSections(activeSource) && hasMore"
-      variant="secondary"
-      :disabled="activeLoading"
-      @click="loadMore"
-      >继续加载内容</UiButton
-    >
     <UiInlineNotice v-if="activeError" tone="danger" :detail="activeErrorDetail ?? undefined">{{
       activeError
     }}</UiInlineNotice>
@@ -163,33 +143,44 @@ const toolsOpen = ref(false);
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 0.375rem;
+  gap: var(--space-12);
   overflow: hidden;
 }
 
-.result-source-heading {
+.result-source-row {
   display: flex;
-  align-items: flex-start;
-  gap: 0.5rem;
+  align-items: center;
+  gap: var(--space-8);
   flex-shrink: 0;
+  padding-block: var(--space-4);
 }
 
-.result-source-heading > :first-child {
+.result-source {
   flex: 1;
   min-width: 0;
 }
 
-.result-selection-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
+.collection-link {
   flex-shrink: 0;
-  min-height: 1.875rem;
-  color: var(--color-muted);
-  font-size: var(--font-12);
+  min-height: 2.75rem;
+  padding-inline: var(--space-4);
 }
 
-.result-content-actions {
-  margin-left: auto;
+@media (orientation: landscape) and (height <= 480px) {
+  .mobile-result-workspace {
+    --result-list-flex: 0 0 auto;
+    --result-list-overflow: visible;
+
+    gap: var(--space-6);
+    overflow: hidden auto;
+  }
+
+  .result-source-row {
+    padding-block: 0;
+  }
+
+  .result-collection {
+    flex: 0 0 auto;
+  }
 }
 </style>

@@ -5,7 +5,7 @@ import { coverUrl } from '../../utils/coverUrl';
 import UiDialog from '../../ui/Dialog.vue';
 import { sourceKindLabels } from './parseResultTree';
 
-const props = defineProps<{ source: NormalizedSourceTree }>();
+const props = defineProps<{ source: NormalizedSourceTree; wrapMetadata?: boolean }>();
 const item = computed(() => props.source.groups.flatMap((group) => group.items)[0]);
 const countLabel = computed(() =>
   props.source.source.kind === 'video'
@@ -45,9 +45,11 @@ watch(
       >
         <span class="source-summary-title-text">{{ source.source.title }}</span>
       </UButton>
-      <span class="source-summary-owner"
-        >{{ item?.owner_name || sourceKindLabels[source.source.kind] }} · {{ countLabel }}</span
-      >
+      <span class="source-summary-owner" :class="{ 'wrap-metadata': wrapMetadata }">
+        <span>{{ item?.owner_name || sourceKindLabels[source.source.kind] }}</span>
+        <span v-if="!wrapMetadata"> · </span>
+        <span class="source-summary-count">{{ countLabel }}</span>
+      </span>
     </div>
   </div>
   <UiDialog v-model="detailsOpen" title="来源详情">
@@ -120,6 +122,18 @@ watch(
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: var(--font-12);
+}
+
+.source-summary-owner.wrap-metadata {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: var(--space-8);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.wrap-metadata .source-summary-count {
+  white-space: nowrap;
 }
 
 .source-detail-title,

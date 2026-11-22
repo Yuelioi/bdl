@@ -6,7 +6,7 @@ import { computed, ref, watch } from 'vue';
 
 import type { SettingsSnapshot, DocumentTreeDirectory } from '../../api/dto';
 import { mobilePickExportDirectory } from '../../api/tauri';
-import { useParseStore } from '../../stores/parse';
+import { collectPartIds, useParseStore, type CreateTaskOptions } from '../../stores/parse';
 import { validateNamingTemplate, useSettingsStore } from '../../stores/settings';
 import type { InlineNotice } from '../../stores/feedback';
 import { duplicateNamingOptions } from '../settings/settingsCatalog';
@@ -18,7 +18,6 @@ import { isAndroidPlatform, isMobilePlatform } from '../../platform/environment'
 import UiCheckbox from '../../ui/Checkbox.vue';
 import UiButton from '../../ui/Button.vue';
 import UiDialog from '../../ui/Dialog.vue';
-import UiIconButton from '../../ui/IconButton.vue';
 import UiInlineNotice from '../../ui/InlineNotice.vue';
 import UiSelect from '../../ui/Select.vue';
 import UiTextField from '../../ui/TextField.vue';
@@ -26,6 +25,7 @@ import { hasMp3Output, workflowError, workflowExtension, workflowOutputs } from 
 
 const parse = useParseStore();
 const settings = useSettingsStore();
+const mobile = isMobilePlatform();
 const { inline = false } = defineProps<{ inline?: boolean }>();
 const preparing = ref(false);
 const submitting = ref(false);
@@ -40,6 +40,8 @@ const restoreTrigger = (event: Event) => {
   }
 };
 const downloadDialogOpen = ref(false);
+const allSourceId = ref<string | null>(null);
+const advancedOpen = ref(false);
 const downloadNotice = ref<InlineNotice | null>(null);
 const downloadDir = ref('');
 const documentTreeOutput = ref<DocumentTreeDirectory | null>(null);
@@ -84,6 +86,20 @@ const selectedSourceIds = computed(() =>
 const selectedCount = computed(() =>
   parse.isBatch ? parse.selectedBatchEntryIds.length : parse.activeSelection.length,
 );
+const allSource = computed(() => allSourceId.value ? parse.sources[allSourceId.value] : undefined);
+const dialogSourceIds = computed(() => allSourceId.value ? (allSource.value ? [allSourceId.value] : []) : selectedSourceIds.value);
+const allInBackground = computed(() => Boolean(allSource.value?.source.has_more));
+const backgroundUnavailable = computed(() => allInBackground.value && parse.backgroundJob?.status === 'running');
+const dialogDescription = computed(() => {
+  const source = allSource.value;
+  if (source) {
+    const count = source.source.has_more ? source.source.total_count : collectPartIds(source).length;
+    return `${source.source.title} · ${count != null ? `全部 ${count} 项` : '全部内容'}`;
+  }
+  const titleLimit = mobile ? 18 : 36;
+  const title = selectionTitle.value;
+  return `${title.length > titleLimit ? title.slice(0, titleLimit) + '…' : title} · ${selectedCount.value} ${selectionUnit.value}`;
+});
 const savedPreset = computed(() =>
   settings.saved.download_presets.find((preset) => preset.id === settings.saved.selected_download_preset),
 );
@@ -95,10 +111,12 @@ const savedDirectory = computed(() =>
     ? settings.saved.document_tree_output?.display_name || '选择导出目录'
     : settings.saved.download_dir || 'downloads',
 );
-const downloadBusy = computed(() => preparing.value || submitting.value || activeLoading.value || settings.loading);
+const downloadBusy = computed(() => preparing.value || submitting.value || activeLoading.value || settings.loading ||
+  (mobile && Boolean(parse.loadingBySource.__create__)));
 const selectionUnit = computed(() => (parse.isBatch ? '个视频' : '个分集'));
 const selectionTitle = computed(() => (parse.isBatch ? '批量链接' : (activeSource.value?.source.title ?? '')));
-const activeLoading = computed(() => selectedSourceIds.value.some((sourceId) => parse.loadingBySource[sourceId]));
+const activeLoading = computed(() => (downloadDialogOpen.value ? dialogSourceIds.value : selectedSourceIds.value)
+  .some((sourceId) => parse.loadingBySource[sourceId] || (mobile && parse.pacedParsingBySource[sourceId])));
 watch(downloadPresetId, (id) => {
   if (downloadDialogOpen.value && id && id !== settings.saved.selected_download_preset)
     void settings.saveAppPreferences({ selected_download_preset: id });
@@ -150,7 +168,7 @@ const sizeEstimateLabel = computed(() => {
   return `预计下载 ${formatEstimatedBytes(sizeEstimate.value.estimated_bytes)}${unknown}`;
 });
 const refreshSizeEstimate = async () => {
-  if (!downloadDialogOpen.value || selectedSourceIds.value.length === 0) return;
+  if (!downloadDialogOpen.value || allSourceId.value || selectedSourceIds.value.length === 0) return;
   const revision = ++sizeEstimateRevision;
   sizeEstimateLoading.value = true;
   sizeEstimateError.value = '';
@@ -187,7 +205,7 @@ const restoreDefaults = () => {
 };
 
 const prepareOptions = async () => {
-  if (selectedSourceIds.value.length === 0 || selectedCount.value === 0) {
+  if (dialogSourceIds.value.length === 0 || (!allSourceId.value && selectedCount.value === 0)) {
     parse.setNotice('请选择要下载的内容', 'warning');
     return false;
   }
@@ -204,9 +222,11 @@ const prepareOptions = async () => {
   return true;
 };
 
-const openDialog = async () => {
+const openPlanner = async (sourceId: string | null, showAdvanced = false) => {
   if (preparing.value || submitting.value) return;
   rememberTrigger();
+  allSourceId.value = sourceId;
+  advancedOpen.value = showAdvanced;
   preparing.value = true;
   try {
     if (await prepareOptions()) downloadDialogOpen.value = true;
@@ -214,6 +234,8 @@ const openDialog = async () => {
     preparing.value = false;
   }
 };
+const openDialog = () => openPlanner(null);
+const openAllDialog = (sourceId: string) => openPlanner(sourceId);
 
 const updateDownloadDir = (value: string) => {
   downloadDir.value = value;
@@ -221,7 +243,7 @@ const updateDownloadDir = (value: string) => {
 
 const submitTasks = async () => {
   downloadNotice.value = null;
-  const sourceIds = [...selectedSourceIds.value];
+  const sourceIds = [...dialogSourceIds.value];
   if (sourceIds.length === 0) return;
   if (namingError.value || presetError.value) {
     downloadNotice.value = {
@@ -237,18 +259,27 @@ const submitTasks = async () => {
     };
     return;
   }
-  parse.setNotice('正在提交下载…', 'info');
+  const source = allSource.value;
+  if (backgroundUnavailable.value) return;
   if (isMobilePlatform() && rememberDocumentTreeOutput.value && documentTreeOutput.value) {
     void settings.saveDefaultDocumentTreeOutput({ ...documentTreeOutput.value });
   }
-  const result = await parse.submitTasksForSources(sourceIds, {
+  const options: CreateTaskOptions = {
     downloadDir: isMobilePlatform() ? null : downloadDir.value.trim() || 'downloads',
     documentTreeOutput: isMobilePlatform() ? documentTreeOutput.value : null,
     downloadPresetId: downloadPresetId.value,
     namingTemplate: namingTemplate.value,
     duplicateNamingStrategy: duplicateNamingStrategy.value,
     duplicatePolicy: 'ask',
-  });
+  };
+  if (source?.source.has_more) {
+    downloadDialogOpen.value = false;
+    void parse.startBackgroundDownload(source.source.id, false, { ...options, duplicatePolicy: 'skip', silent: true });
+    return;
+  }
+  if (source) options.partIdsBySource = { [source.source.id]: collectPartIds(source) };
+  parse.setNotice('正在提交下载…', 'info');
+  const result = await parse.submitTasksForSources(sourceIds, options);
   if (result?.failures.length) {
     const firstFailure = result.failures[0];
     downloadNotice.value = {
@@ -279,14 +310,12 @@ const createTasks = async () => {
 const downloadSaved = async () => {
   if (downloadBusy.value) return;
   rememberTrigger();
+  allSourceId.value = null;
+  advancedOpen.value = false;
   preparing.value = true;
   try {
     if (!(await prepareOptions())) return;
     if (presetError.value || namingError.value || (isMobilePlatform() && !documentTreeOutput.value)) {
-      downloadNotice.value = {
-        message: presetError.value ?? namingError.value ?? '请选择 Android 导出目录。',
-        tone: 'warning',
-      };
       downloadDialogOpen.value = true;
       return;
     }
@@ -330,20 +359,29 @@ const chooseDocumentTreeOutput = async () => {
   }
 };
 
-defineExpose({ openDialog, downloadSaved });
+defineExpose({ openDialog, openAllDialog, downloadSaved });
 </script>
 
 <template>
   <footer
     v-if="inline"
     class="parse-download-summary"
-    :class="{ 'is-mobile': isMobilePlatform() }"
+    :class="{ 'is-mobile': mobile }"
     aria-label="下载所选内容"
   >
-    <div class="download-summary-copy">
-      <span class="download-selection"
-        >已选 <strong>{{ selectedCount }}</strong> 项</span
-      >
+    <UiButton
+      v-if="mobile"
+      class="mobile-download-settings"
+      variant="ghost"
+      aria-label="调整下载设置"
+      :disabled="downloadBusy || !selectedCount"
+      @click="openPlanner(null, true)"
+    >
+      <UIcon name="i-tabler-adjustments-horizontal" class="size-5 shrink-0" aria-hidden="true" />
+      下载设置
+    </UiButton>
+    <div v-else class="download-summary-copy">
+      <span class="download-selection">已选 <strong>{{ selectedCount }}</strong> 项</span>
       <UButton
         class="download-summary-preset"
         variant="link"
@@ -352,15 +390,14 @@ defineExpose({ openDialog, downloadSaved });
         :disabled="downloadBusy"
         :title="savedOutput"
         aria-label="调整下载设置"
-        :icon="isMobilePlatform() ? undefined : 'i-tabler-adjustments-horizontal'"
-        :label="isMobilePlatform() ? savedPreset?.name || '下载预设' : `${savedPreset?.name || '下载预设'} · ${savedOutput}`"
+        icon="i-tabler-adjustments-horizontal"
+        :label="`${savedPreset?.name || '下载预设'} · ${savedOutput}`"
         :ui="{ label: 'truncate', leadingIcon: 'size-4' }"
         @click="openDialog"
       >
         <template #trailing><span class="summary-link">调整</span></template>
       </UButton>
       <UButton
-        v-if="!isMobilePlatform()"
         class="download-summary-directory"
         variant="link"
         color="neutral"
@@ -375,34 +412,58 @@ defineExpose({ openDialog, downloadSaved });
         ><template #trailing><span class="summary-link">更换</span></template></UButton
       >
     </div>
-    <UiButton
-      class="download-summary-submit"
-      :aria-label="`下载所选 (${selectedCount})`"
-      :disabled="downloadBusy || selectedCount === 0"
-      @click="downloadSaved"
-    >
-      <UIcon
-        :name="downloadBusy ? 'i-tabler-loader-2' : 'i-tabler-download'"
-        :class="{ 'animate-spin': downloadBusy }"
-        aria-hidden="true"
-      />
-      {{ downloadBusy ? '正在创建…' : `下载 ${selectedCount} 项` }}
-    </UiButton>
+    <div class="download-summary-actions" :class="{ split: mobile && $slots['download-scope'] }">
+      <UiButton
+        class="download-summary-submit"
+        :variant="mobile && !selectedCount ? 'secondary' : 'primary'"
+        :aria-label="`下载所选 (${selectedCount})`"
+        :disabled="downloadBusy || selectedCount === 0"
+        @click="downloadSaved"
+      >
+        <UIcon
+          :name="downloadBusy ? 'i-tabler-loader-2' : 'i-tabler-download'"
+          :class="{ 'animate-spin': downloadBusy }"
+          aria-hidden="true"
+        />
+        {{ downloadBusy ? '正在创建…' : mobile && !selectedCount ? '下载所选' : `下载 ${selectedCount} 项` }}
+      </UiButton>
+      <slot v-if="mobile" name="download-scope" :busy="downloadBusy" />
+    </div>
   </footer>
   <UiDialog
     v-model="downloadDialogOpen"
     :dismissible="!submitting"
     :show-close="!submitting"
-    title="下载设置"
+    :title="allSourceId ? '下载全部' : '下载设置'"
     :content="{ onCloseAutoFocus: restoreTrigger }"
-    :description="`${selectionTitle.length > (isMobilePlatform() ? 18 : 36) ? selectionTitle.slice(0, isMobilePlatform() ? 18 : 36) + '…' : selectionTitle} · ${selectedCount} ${selectionUnit}`"
+    :description="dialogDescription"
   >
     <div class="download-options-scroll">
       <UiInlineNotice v-if="downloadNotice" :tone="downloadNotice.tone" :detail="downloadNotice.detail">{{
         downloadNotice.message
       }}</UiInlineNotice>
-      <ErrorDetails v-if="sizeEstimateError && !downloadNotice" :detail="sizeEstimateError" />
-      <div class="grid content-start gap-4">
+      <ErrorDetails v-if="!allSourceId && sizeEstimateError && !downloadNotice" :detail="sizeEstimateError" />
+      <p v-if="allSourceId" class="download-scope-note">
+        {{ allInBackground ? '确认后会在后台继续加载，并将全部内容逐项加入传输。' : '确认后会将全部内容加入传输。' }}
+      </p>
+      <UiInlineNotice v-if="backgroundUnavailable" tone="warning">已有后台下载正在进行，请在传输中查看。</UiInlineNotice>
+      <div v-if="mobile" class="mobile-save-location">
+        <div class="mobile-save-location-copy">
+          <strong>保存位置</strong>
+          <span class="mobile-save-location-path">{{ documentTreeOutput?.display_name || '尚未选择目录' }}</span>
+        </div>
+        <UiButton :variant="documentTreeOutput ? 'secondary' : 'primary'" :disabled="activeLoading || submitting" @click="chooseDocumentTreeOutput">
+          <UIcon name="i-tabler-folder-open" class="size-4" aria-hidden="true" />
+          {{ documentTreeOutput ? '更换目录' : '选择目录' }}
+        </UiButton>
+      </div>
+      <UiCheckbox v-if="mobile && documentTreeOutput" v-model="rememberDocumentTreeOutput" label="设为默认保存位置" />
+      <UiButton v-if="mobile" variant="ghost" class="planner-advanced-toggle" :aria-expanded="advancedOpen" :disabled="submitting" @click="advancedOpen = !advancedOpen">
+        <UIcon name="i-tabler-adjustments-horizontal" class="size-4" aria-hidden="true" />
+        更多设置
+        <UIcon :name="advancedOpen ? 'i-tabler-chevron-up' : 'i-tabler-chevron-down'" class="size-4" aria-hidden="true" />
+      </UiButton>
+      <div v-show="!mobile || advancedOpen" class="grid content-start gap-4">
         <div class="grid gap-4">
           <div class="planner-preset-row">
             <UiSelect
@@ -424,23 +485,6 @@ defineExpose({ openDialog, downloadSaved });
             <ul class="m-0 grid list-none gap-1 p-0">
               <li v-for="item in outputPreview" :key="item">{{ item }}</li>
             </ul>
-          </div>
-          <div v-if="isMobilePlatform()" class="directory-row">
-            <UiTextField
-              :model-value="documentTreeOutput?.display_name ?? ''"
-              label="导出目录"
-              placeholder="请选择目录"
-              disabled
-            />
-            <UiIconButton
-              icon="folder-open"
-              :label="documentTreeOutput ? '更换导出目录' : '选择导出目录'"
-              :disabled="activeLoading || submitting"
-              @click="chooseDocumentTreeOutput"
-            />
-          </div>
-          <div v-if="isMobilePlatform() && documentTreeOutput" class="grid gap-1">
-            <UiCheckbox v-model="rememberDocumentTreeOutput" label="设为默认导出目录" />
           </div>
           <div v-if="!isMobilePlatform()" class="directory-row">
             <UiTextField
@@ -483,17 +527,19 @@ defineExpose({ openDialog, downloadSaved });
       <UiInlineNotice v-if="presetError || namingError" tone="danger">{{ presetError ?? namingError }}</UiInlineNotice>
     </div>
     <template #footer>
-      <div class="planner-dialog-footer">
+      <div class="planner-dialog-footer" :class="{ 'planner-mobile-footer': mobile }">
         <UiButton variant="secondary" :disabled="activeLoading || submitting" @click="downloadDialogOpen = false">取消</UiButton>
-        <UiButton class="planner-restore" variant="ghost" :disabled="activeLoading || submitting" @click="restoreDefaults"
+        <UiButton v-if="!mobile || advancedOpen" class="planner-restore" variant="ghost" :disabled="activeLoading || submitting" @click="restoreDefaults"
           ><span class="restore-wide">恢复默认偏好</span><span class="restore-short">恢复</span></UiButton
         >
-        <span class="planner-estimate" title="按媒体轨道码率与时长估算，附加文件大小可能未知。">{{
+        <span v-if="!allSourceId && (!mobile || advancedOpen)" class="planner-estimate" title="按媒体轨道码率与时长估算，附加文件大小可能未知。">{{
           sizeEstimateLabel
         }}</span>
         <UiButton
+          class="planner-confirm"
           :disabled="
-            downloadBusy || sizeEstimateLoading || selectedSourceIds.length === 0 || Boolean(namingError || presetError)
+            downloadBusy || (!allSourceId && sizeEstimateLoading) || dialogSourceIds.length === 0 || backgroundUnavailable ||
+            (mobile && !documentTreeOutput) || Boolean(namingError || presetError)
           "
           @click="createTasks()"
           >开始下载</UiButton
@@ -592,23 +638,87 @@ defineExpose({ openDialog, downloadSaved });
 }
 
 .parse-download-summary.is-mobile {
-  gap: 0.75rem;
-  padding-block: 0.5rem;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: stretch;
+  gap: var(--space-12);
+  padding-block: var(--space-12) var(--space-4);
 }
 
-.is-mobile .download-summary-copy {
+.is-mobile .mobile-download-settings,
+.is-mobile .download-summary-submit {
+  min-width: 0;
+  min-height: 3rem;
+}
+
+.is-mobile .download-summary-actions {
+  display: flex;
+  min-width: 0;
+}
+
+.is-mobile .download-summary-submit {
   flex: 1;
-  flex-wrap: nowrap;
-  gap: 0.5rem;
 }
 
-.is-mobile .download-summary-preset {
-  flex: 1;
-  max-width: none;
+.download-summary-actions.split .download-summary-submit {
+  border-start-end-radius: 0;
+  border-end-end-radius: 0;
 }
 
-.is-mobile .download-summary-copy button {
-  min-height: 1.75rem;
+.is-mobile .mobile-download-settings {
+  justify-content: flex-start;
+  gap: var(--space-8);
+  padding: var(--space-4) var(--space-8);
+  text-align: start;
+}
+
+.mobile-save-location {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-12);
+  padding: var(--space-12);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-6);
+}
+
+.mobile-save-location-copy {
+  min-width: 0;
+  display: grid;
+  gap: var(--space-4);
+  font-size: var(--font-13);
+}
+
+.mobile-save-location-copy strong {
+  font-weight: 500;
+}
+
+.mobile-save-location-path,
+.download-scope-note {
+  color: var(--color-muted);
+  overflow-wrap: anywhere;
+}
+
+.download-scope-note {
+  margin: 0;
+  font-size: var(--font-13);
+}
+
+.planner-advanced-toggle {
+  justify-self: start;
+  padding-inline: var(--space-4);
+}
+
+@media (orientation: landscape) and (height <= 480px) {
+  .parse-download-summary.is-mobile {
+    grid-template-columns: minmax(0, 12rem) max-content;
+    padding-block: var(--space-4) 0;
+  }
+
+  .is-mobile .mobile-download-settings,
+  .is-mobile .download-summary-submit {
+    min-height: 2.5rem;
+  }
 }
 
 .download-options-scroll {
@@ -699,6 +809,15 @@ defineExpose({ openDialog, downloadSaved });
   grid-template-columns: auto auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 0.5rem;
+}
+
+.planner-dialog-footer.planner-mobile-footer {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.planner-mobile-footer .planner-confirm {
+  grid-column: -2;
+  min-height: 2.75rem;
 }
 
 .planner-estimate {

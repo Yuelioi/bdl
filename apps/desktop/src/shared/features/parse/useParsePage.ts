@@ -13,7 +13,7 @@ export function useParsePage() {
   const inputMode = ref<'batch' | 'single'>('batch');
   const singleInput = ref('');
   const ui = useUiStore();
-  const downloadPlanner = useTemplateRef<{ openDialog: () => Promise<void>; downloadSaved: () => Promise<void> }>(
+  const downloadPlanner = useTemplateRef<{ openDialog: () => Promise<void>; openAllDialog: (sourceId: string) => Promise<void>; downloadSaved: () => Promise<void> }>(
     'download-planner',
   );
   const createLoading = computed(() => Boolean(parse.loadingBySource.__create__));
@@ -108,6 +108,7 @@ export function useParsePage() {
   const openDownloadSettings = () => {
     void downloadPlanner.value?.openDialog();
   };
+  const openAllDownloadSettings = (sourceId: string) => void downloadPlanner.value?.openAllDialog(sourceId);
   watch(inputMode, () => parse.clearNotice());
   const downloadSelected = () => {
     void downloadPlanner.value?.downloadSaved();
@@ -132,6 +133,7 @@ export function useParsePage() {
     pasteSingleInput,
     pasteInput,
     openDownloadSettings,
+    openAllDownloadSettings,
     downloadSelected,
     runNoticeAction,
   };

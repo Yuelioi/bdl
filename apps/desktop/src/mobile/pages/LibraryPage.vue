@@ -1,14 +1,19 @@
 <script setup lang="ts">
+import { computed, ref } from 'vue';
 import ErrorDetails from '../../shared/ui/ErrorDetails.vue';
 import { coverUrl } from '../../shared/utils/coverUrl';
 import UiButton from '../../shared/ui/Button.vue';
 import UiEmptyState from '../../shared/ui/EmptyState.vue';
 import MobileListCard from '../components/MobileListCard.vue';
+import MobileListActions from '../components/MobileListActions.vue';
+import MobileListHeader from '../components/MobileListHeader.vue';
+import MobileListSearch from '../components/MobileListSearch.vue';
 import UiPagination from '../components/MobilePagination.vue';
 import UiTabs from '../components/MobileTabs.vue';
 import LibraryFolderDetail from '../components/library/LibraryFolderDetail.vue';
 import ParseDownloadPlanner from '../../shared/features/parse/ParseDownloadPlanner.vue';
 import { useLibraryPage } from '../../shared/features/library/useLibraryPage';
+import { useMobileBack } from '../app/useMobileBack';
 const {
   account,
   library,
@@ -26,18 +31,40 @@ const {
   openFolder,
   closeFolder,
   openDownloadSettings,
+  openAllDownloadSettings,
 } = useLibraryPage();
+const searching = ref(false);
+const searchOpen = computed({
+  get: () => searching.value,
+  set: (open: boolean) => {
+    searching.value = open;
+    if (!open) query.value = '';
+  },
+});
+useMobileBack('library', () => {
+  if (detailFolder.value) {
+    closeFolder();
+    return true;
+  }
+  if (!searchOpen.value) return false;
+  searchOpen.value = false;
+  return true;
+});
 </script>
 <template>
   <section class="mobile-page" aria-label="账号内容库">
     <section class="library-panel">
-      <header v-if="!detailFolder" class="library-header">
-        <div>
-          <h2>内容库</h2>
-          <p v-if="account.profile.logged_in">{{ account.profile.name || 'Bilibili 用户' }}</p>
-        </div>
-      </header>
-      <UiTabs v-if="!detailFolder" v-model="categoryFilter" :tabs="categoryTabs" />
+      <MobileListHeader v-if="!detailFolder" class="library-header">
+        <h2>内容库</h2>
+        <template #actions>
+          <MobileListActions
+            v-if="account.profile.logged_in"
+            v-model:search-open="searchOpen"
+            search-label="搜索当前分类"
+          />
+        </template>
+      </MobileListHeader>
+      <UiTabs v-if="!detailFolder && account.profile.logged_in" v-model="categoryFilter" :tabs="categoryTabs" />
 
       <LibraryFolderDetail
         :category-label="activeCategory.label"
@@ -46,30 +73,27 @@ const {
         :loading-initial="detailLoading"
         @back="closeFolder"
         @download="openDownloadSettings"
+        @download-all="openAllDownloadSettings"
       />
 
       <section v-else class="library-content" aria-labelledby="library-heading" :aria-busy="library.loading">
         <h1 id="library-heading" class="sr-only">{{ activeCategory.label }}</h1>
 
-        <UInput
+        <MobileListSearch
           v-if="account.profile.logged_in"
           v-model="query"
-          class="w-full"
-          type="search"
-          aria-label="搜索当前分类"
-          icon="i-tabler-search"
+          v-model:open="searchOpen"
+          label="搜索当前分类"
           placeholder="搜索标题或创建者"
-          color="neutral"
-          size="sm"
         />
 
         <UiEmptyState
           v-if="!account.profile.logged_in"
-          title="登录后连接你的内容库"
-          description="浏览我的收藏、订阅合集和稍后再看，选择视频下载。"
+          title="登录后查看内容库"
+          description="可浏览收藏、订阅和稍后再看。"
           icon="i-tabler-lock"
         >
-          <template #action><UiButton @click="ui.openLoginDialog()">登录账号</UiButton></template>
+          <template #action><UiButton @click="ui.openLoginDialog()">登录 Bilibili</UiButton></template>
         </UiEmptyState>
 
         <div v-else-if="library.error" class="grid min-w-0 gap-3">
@@ -119,11 +143,9 @@ const {
               </div>
               <div class="library-card-copy">
                 <h3 :title="item.title">{{ item.title }}</h3>
-                <div class="library-card-meta">
-                  <span class="library-owner">{{ item.owner_name || '我的收藏夹' }}</span>
-                  <span class="library-count">{{
-                    item.kind === 'watch_later' ? '进入查看' : `${item.media_count} 个视频`
-                  }}</span>
+                <div v-if="item.owner_name || item.kind !== 'watch_later'" class="library-card-meta">
+                  <span v-if="item.owner_name" class="library-owner">{{ item.owner_name }}</span>
+                  <span v-if="item.kind !== 'watch_later'" class="library-count">{{ item.media_count }} 个视频</span>
                 </div>
               </div>
               <UIcon name="i-tabler-chevron-right" class="library-entry-chevron" aria-hidden="true" />
@@ -132,8 +154,8 @@ const {
 
         <UiEmptyState
           v-else-if="page"
-          :title="query ? '没有匹配的内容' : '这里还是空的'"
-          :description="query ? '尝试缩短关键词，或清除搜索条件。' : '在 Bilibili 添加内容后，重新进入内容库即可查看。'"
+          :title="query ? '未找到匹配内容' : '当前分类暂无内容'"
+          :description="query ? '换个关键词试试。' : '在 Bilibili 添加内容后，重新进入内容库即可查看。'"
           icon="i-tabler-folder-open"
         >
           <template v-if="query" #action
@@ -141,7 +163,7 @@ const {
           >
         </UiEmptyState>
 
-        <footer v-if="page && page.total > page.page_size" class="library-pagination">
+        <footer v-if="account.profile.logged_in && page && page.total > page.page_size" class="library-pagination">
           <UiPagination
             :page="page.page"
             :total="page.total"

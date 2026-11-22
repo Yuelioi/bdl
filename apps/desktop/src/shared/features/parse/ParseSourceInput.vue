@@ -6,7 +6,7 @@ import { extractBilibiliInputs } from '../../utils/bilibiliLinks';
 const mode = defineModel<'single' | 'batch'>('mode', { required: true });
 const input = defineModel<string>('input', { required: true });
 const singleInput = defineModel<string>('singleInput', { required: true });
-defineProps<{ busy: boolean; hasResults: boolean }>();
+defineProps<{ busy: boolean; hasResults: boolean; mobile?: boolean }>();
 const emit = defineEmits<{ submit: []; paste: []; singlePaste: [event: ClipboardEvent] }>();
 const modeOptions = [
   { label: '视频及所属合集', value: 'batch' },
@@ -39,42 +39,43 @@ const paste = (event: ClipboardEvent) => {
 </script>
 
 <template>
-  <form class="parse-source-input" @submit.prevent="emit('submit')" @keydown.ctrl.enter.prevent="emit('submit')">
-    <div class="source-input-row">
-      <UTextarea
-        v-if="mode === 'batch' && multiline"
-        v-model="value"
-        class="source-input-control"
-        aria-label="Bilibili 链接或 BV / AV"
-        placeholder="链接 / BV / AV，每行一个来源"
-        :rows="3"
-        :disabled="busy"
-        color="neutral"
-        variant="outline"
-        size="sm"
-        :ui="{ base: 'max-h-40 resize-y text-(length:--font-13)' }"
-        @paste="paste"
-      />
-      <UInput
-        v-else
-        v-model="value"
-        class="source-input-control"
-        type="text"
-        :aria-label="mode === 'single' ? '视频链接或 BV / AV' : 'Bilibili 链接或 BV / AV'"
-        placeholder="粘贴 Bilibili 链接 / BV / AV"
-        :disabled="busy"
-        color="neutral"
-        variant="outline"
-        size="sm"
-        :ui="{ base: 'min-h-[2.125rem] text-(length:--font-13)' }"
-        @paste="paste"
-      />
-      <UiButton class="source-submit" type="submit" :disabled="busy" :aria-label="busy ? '正在解析' : '开始解析'">
-        {{ busy ? '解析中…' : '解析' }}
-      </UiButton>
-    </div>
+  <form
+    class="parse-source-input"
+    :class="{ 'is-mobile': mobile }"
+    @submit.prevent="emit('submit')"
+    @keydown.ctrl.enter.prevent="emit('submit')"
+  >
+    <UTextarea
+      v-if="mode === 'batch' && multiline"
+      v-model="value"
+      class="source-input-control"
+      aria-label="Bilibili 链接或 BV / AV"
+      placeholder="链接 / BV / AV，每行一个来源"
+      :rows="3"
+      :disabled="busy"
+      color="neutral"
+      variant="outline"
+      size="sm"
+      :ui="{ base: 'max-h-40 resize-y text-(length:--font-13)' }"
+      @paste="paste"
+    />
+    <UInput
+      v-else
+      v-model="value"
+      class="source-input-control"
+      type="text"
+      :aria-label="mode === 'single' ? '视频链接或 BV / AV' : 'Bilibili 链接或 BV / AV'"
+      :placeholder="mobile ? 'Bilibili 链接或 BV / AV' : '粘贴 Bilibili 链接 / BV / AV'"
+      :icon="mobile ? 'i-tabler-link' : undefined"
+      :disabled="busy"
+      color="neutral"
+      variant="outline"
+      size="sm"
+      :ui="{ base: mobile ? 'min-h-12 text-(length:--font-14)' : 'min-h-[2.125rem] text-(length:--font-13)' }"
+      @paste="paste"
+    />
     <div class="source-input-tools">
-      <div class="source-range">
+      <div v-if="!mobile" class="source-range">
         <USelect
           v-model="mode"
           :items="modeOptions"
@@ -87,14 +88,29 @@ const paste = (event: ClipboardEvent) => {
           size="xs"
           :portal="true"
           :content="{ position: 'popper', align: 'start', sideOffset: 4, collisionPadding: 12 }"
-          :ui="{ base: 'min-h-7 text-(length:--font-12)', content: 'z-50', item: 'text-(length:--font-12)' }"
+          :ui="{
+            base: mobile ? 'min-h-11 text-(length:--font-13)' : 'min-h-7 text-(length:--font-12)',
+            content: 'z-50',
+            item: 'text-(length:--font-12)',
+          }"
         />
       </div>
       <div class="source-input-actions">
-        <UButton v-if="!hasResults" variant="link" size="xs" :disabled="busy" @click="emit('paste')">粘贴链接</UButton>
+        <UButton
+          v-if="!hasResults"
+          :variant="mobile ? 'ghost' : 'link'"
+          :color="mobile ? 'neutral' : undefined"
+          :icon="mobile ? 'i-tabler-clipboard' : undefined"
+          :aria-label="mobile ? '粘贴链接' : undefined"
+          size="xs"
+          :disabled="busy"
+          @click="emit('paste')"
+        >{{ mobile ? '粘贴' : '粘贴链接' }}</UButton>
         <UButton
           v-if="mode === 'batch'"
-          variant="link"
+          :variant="mobile ? 'ghost' : 'link'"
+          :color="mobile ? 'neutral' : undefined"
+          :icon="mobile ? 'i-tabler-align-left' : undefined"
           size="xs"
           :disabled="busy"
           :aria-expanded="multiline"
@@ -104,30 +120,32 @@ const paste = (event: ClipboardEvent) => {
         </UButton>
       </div>
     </div>
+    <UiButton class="source-submit" type="submit" :disabled="busy" :aria-label="busy ? '正在解析' : '开始解析'">
+      {{ busy ? '解析中…' : mobile ? '开始解析' : '解析' }}
+      <UIcon v-if="mobile && !busy" name="i-tabler-arrow-right" class="size-4" aria-hidden="true" />
+    </UiButton>
   </form>
 </template>
 
 <style scoped>
 .parse-source-input {
   display: grid;
-  flex-shrink: 0;
-  gap: 0.375rem;
-  min-width: 0;
-}
-
-.source-input-row {
-  display: flex;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 0.5rem;
+  flex-shrink: 0;
+  gap: 0.375rem var(--space-8);
   min-width: 0;
 }
 
 .source-input-control {
-  flex: 1;
+  grid-column: 1;
+  grid-row: 1;
   min-width: 0;
 }
 
 .source-submit {
+  grid-column: 2;
+  grid-row: 1;
   min-width: 4.5rem;
   min-height: var(--height-input);
   border-radius: var(--radius-6);
@@ -145,6 +163,7 @@ const paste = (event: ClipboardEvent) => {
 }
 
 .source-input-tools {
+  grid-column: 1 / -1;
   justify-content: flex-start;
   flex-wrap: wrap;
 }
@@ -152,5 +171,38 @@ const paste = (event: ClipboardEvent) => {
 .source-range {
   color: var(--color-muted);
   font-size: var(--font-12);
+}
+
+.parse-source-input.is-mobile {
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-8);
+}
+
+.is-mobile .source-submit {
+  grid-column: 1;
+  grid-row: 3;
+  justify-self: end;
+  min-height: 3rem;
+  min-width: 6rem;
+  margin-top: var(--space-8);
+}
+
+.is-mobile .source-input-tools {
+  grid-row: 2;
+}
+
+.is-mobile .source-input-actions {
+  gap: var(--space-4);
+}
+
+.is-mobile .source-input-actions > button {
+  min-height: 2.75rem;
+  font-size: var(--font-13);
+}
+
+@media (width <= 360px) {
+  .is-mobile .source-input-actions > button {
+    padding-inline: var(--space-4);
+  }
 }
 </style>

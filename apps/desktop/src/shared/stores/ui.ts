@@ -3,6 +3,7 @@ import { FEEDBACK_AUTO_DISMISS_MS } from './feedback'
 import type { SettingsSectionId } from '../features/settings/settingsSections'
 
 export type AppTab = 'parse' | 'library' | 'transfer' | 'settings' | 'about'
+export type MobileSettingsPage = 'overview' | 'saving' | 'tasks' | 'media' | 'presets' | 'links' | 'network' | 'storage' | 'update'
 type NavigationGuard = (leave: () => void) => void
 
 export interface ToastMessage {
@@ -21,6 +22,8 @@ export const useUiStore = defineStore('ui', {
   state: () => ({
     activeTab: 'parse' as AppTab,
     mobilePersonalPage: 'home' as 'home' | 'settings' | 'about',
+    mobileSettingsPath: ['overview'] as MobileSettingsPage[],
+    mobileSettingsReturnTab: null as 'parse' | 'library' | null,
     drawerOpen: false,
     dialogOpen: false,
     toasts: [] as ToastMessage[],
@@ -35,8 +38,18 @@ export const useUiStore = defineStore('ui', {
     openPresetSettings(kind: 'download' | 'naming') {
       this.settingsSection = 'settings-presets'
       this.settingsPresetKind = kind
-      this.mobilePersonalPage = 'settings'
+      if (this.activeTab === 'settings' && this.mobilePersonalPage === 'settings') {
+        if (this.mobileSettingsPath.at(-1) !== 'presets') this.mobileSettingsPath.push('presets')
+      } else {
+        this.openMobileSettings('presets')
+        if (this.activeTab === 'parse' || this.activeTab === 'library') this.mobileSettingsReturnTab = this.activeTab
+      }
       this.setTab('settings')
+    },
+    openMobileSettings(page: MobileSettingsPage) {
+      this.mobileSettingsPath = [page]
+      this.mobileSettingsReturnTab = null
+      this.mobilePersonalPage = 'settings'
     },
     setTab(tab: AppTab) {
       if (tab === this.activeTab) return

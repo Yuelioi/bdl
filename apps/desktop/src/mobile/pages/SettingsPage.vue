@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import UiTabs from '../../shared/ui/Tabs.vue';
-import type { SettingsSectionId } from '../../shared/features/settings/settingsSections';
+import { computed, ref, watch } from 'vue';
+import { useMobileBack } from '../app/useMobileBack';
 const emit = defineEmits<{ back: [] }>();
 import SettingsLeaveDialog from '../../shared/features/settings/SettingsLeaveDialog.vue';
 import UiButton from '../../shared/ui/Button.vue';
@@ -10,8 +10,10 @@ import SettingsMaintenanceSection from '../../shared/features/settings/SettingsM
 import SettingsMediaSection from '../../shared/features/settings/SettingsMediaSection.vue';
 import PresetManager from '../../shared/features/settings/PresetManager.vue';
 import SettingsUpdateSection from '../../shared/features/settings/SettingsUpdateSection.vue';
+import SettingsCard from '../../shared/features/settings/SettingsCard.vue';
+import ClipboardPreference from '../../shared/ui/ClipboardPreference.vue';
 
-import { useUiStore } from '../../shared/stores/ui';
+import { useUiStore, type MobileSettingsPage } from '../../shared/stores/ui';
 const ui = useUiStore();
 import { useSettingsPage } from '../../shared/features/settings/useSettingsPage';
 const {
@@ -28,9 +30,47 @@ const {
   resetSettingsDraft,
   saveSettings,
   restoreAllDefaults,
-  activeSettingsSection,
   availableSettingsSections,
 } = useSettingsPage();
+
+const sections = {
+  saving: { title: '下载与保存', icon: 'i-tabler-folder-down' },
+  tasks: { title: '下载速度与续传', icon: 'i-tabler-gauge' },
+  media: { title: '画质与编码', icon: 'i-tabler-adjustments' },
+  presets: { title: '下载与命名预设', icon: 'i-tabler-list-details' },
+  links: { title: '链接识别与解析', icon: 'i-tabler-link' },
+  network: { title: '下载代理', icon: 'i-tabler-network' },
+  storage: { title: '存储与诊断', icon: 'i-tabler-database' },
+  update: { title: '应用更新', icon: 'i-tabler-refresh' },
+} satisfies Record<Exclude<MobileSettingsPage, 'overview'>, { title: string; icon: string }>;
+type SettingsCategory = keyof typeof sections;
+const groups = computed<{ title: string; pages: SettingsCategory[] }[]>(() => [
+  { title: '下载', pages: ['saving', 'tasks', 'media', 'presets'] },
+  {
+    title: '应用',
+    pages: [
+      'links', 'network', 'storage',
+      ...(availableSettingsSections.value.some(({ id }) => id === 'settings-update') ? ['update' as const] : []),
+    ],
+  },
+]);
+const page = computed(() => ui.mobileSettingsPath.at(-1) ?? 'overview');
+const backLabel = computed(() => {
+  if (ui.mobileSettingsPath.length > 1) return '返回上一级设置';
+  if (ui.mobileSettingsReturnTab === 'parse') return '返回解析';
+  if (ui.mobileSettingsReturnTab === 'library') return '返回内容库';
+  return '返回我的';
+});
+const settingsContent = ref<HTMLElement>();
+watch(page, () => settingsContent.value?.scrollTo({ top: 0 }), { flush: 'post' });
+const goBack = () => requestSettingsLeave(() => {
+  if (ui.mobileSettingsPath.length > 1) ui.mobileSettingsPath.pop();
+  else emit('back');
+});
+useMobileBack('settings', () => {
+  goBack();
+  return true;
+});
 </script>
 <template>
   <section class="mobile-page settings-grid">
@@ -50,38 +90,41 @@ const {
           <button
             class="mobile-icon-button"
             type="button"
-            aria-label="返回我的"
-            @click="requestSettingsLeave(() => emit('back'))"
+            :aria-label="backLabel"
+            @click="goBack"
           >
             <UIcon name="i-tabler-arrow-left" />
           </button>
-          <h2>设置</h2>
+          <h2>{{ page === 'overview' ? '设置' : sections[page].title }}</h2>
         </div>
-        <div v-if="activeSettingsSection !== 'settings-presets' || settingsFormChanged" class="settings-actions">
-          <span v-if="settingsFormChanged" class="dirty-indicator">未保存</span>
+        <div v-if="page === 'overview' || settingsFormChanged" class="settings-actions">
           <UDropdownMenu
-            :items="[
+            :items="page === 'overview' ? [
               {
-                label: '撤销修改',
-                icon: 'i-tabler-arrow-back-up',
-                disabled: settings.loading || settings.saving || !settingsFormChanged,
-                onSelect: resetSettingsDraft,
-              },
-              {
-                label: '恢复默认',
+                label: '恢复全部默认设置',
                 icon: 'i-tabler-refresh',
                 disabled: settings.loading || settings.saving,
                 onSelect: restoreAllDefaults,
               },
+            ] : [
+              {
+                label: '撤销未保存的修改',
+                icon: 'i-tabler-arrow-back-up',
+                disabled: settings.loading || settings.saving || !settingsFormChanged,
+                onSelect: resetSettingsDraft,
+              },
             ]"
           >
-            <UiButton variant="ghost" aria-label="更多设置操作"><UIcon name="i-tabler-dots" class="size-4" /></UiButton>
+            <UiButton size="compact" variant="ghost" class="settings-more" aria-label="更多设置操作">
+              <UIcon name="i-tabler-dots" class="size-5" />
+            </UiButton>
           </UDropdownMenu>
           <UiButton
+            v-if="settingsFormChanged"
+            class="settings-save"
             :disabled="
               settings.loading ||
               settings.saving ||
-              !settingsFormChanged ||
               Boolean(settings.namingTemplateError) ||
               Boolean(settings.proxySettingsError) ||
               Boolean(settingsGlobalSpeedLimitError) ||
@@ -90,9 +133,9 @@ const {
             @click="saveSettings"
           >
             <UIcon
-              :name="settings.saving ? 'i-tabler-loader-2' : 'i-tabler-device-floppy'"
-              class="size-4"
-              :class="{ 'animate-spin': settings.saving }"
+              v-if="settings.saving"
+              name="i-tabler-loader-2"
+              class="size-4 animate-spin"
               aria-hidden="true"
             />
             {{ settings.saving ? '保存中' : '保存' }}
@@ -104,35 +147,42 @@ const {
         {{ settings.notice.message }}
       </UiInlineNotice>
 
-      <UiTabs
-        :model-value="activeSettingsSection"
-        :tabs="
-          availableSettingsSections.map((section) => ({
-            label: section.compactLabel,
-            value: section.id,
-          }))
-        "
-        stretch
-        @update:model-value="activeSettingsSection = $event as SettingsSectionId"
-      />
       <div class="settings-workspace">
-        <div class="settings-content">
+        <div ref="settingsContent" class="settings-content">
+          <div v-if="page === 'overview'" class="settings-index">
+            <section v-for="group in groups" :key="group.title" class="settings-index-group">
+              <h3>{{ group.title }}</h3>
+              <UButton
+                v-for="category in group.pages"
+                :key="category"
+                class="settings-index-row"
+                variant="ghost"
+                color="neutral"
+                :ui="{ label: 'contents' }"
+                @click="ui.mobileSettingsPath.push(category)"
+              >
+                <UIcon :name="sections[category].icon" class="size-5 text-(--color-muted)" aria-hidden="true" />
+                <span class="min-w-0 flex-1">{{ sections[category].title }}</span>
+                <UIcon name="i-tabler-chevron-right" class="size-4 text-(--color-muted)" aria-hidden="true" />
+              </UButton>
+            </section>
+          </div>
           <SettingsDownloadSection
-            v-if="activeSettingsSection === 'settings-download'"
+            v-else-if="page === 'saving' || page === 'tasks'"
             :form="settingsForm"
             :desktop-paths="supportsDesktopPaths"
+            :group="page"
           />
-
-          <SettingsMediaSection v-else-if="activeSettingsSection === 'settings-media'" :form="settingsForm" />
-
-          <PresetManager
-            v-else-if="activeSettingsSection === 'settings-presets'"
-            v-model:kind="ui.settingsPresetKind"
-          />
-
-          <SettingsUpdateSection v-else-if="activeSettingsSection === 'settings-update'" />
-
-          <SettingsMaintenanceSection v-else :form="settingsForm" :desktop-paths="supportsDesktopPaths" />
+          <SettingsMediaSection v-else-if="page === 'media'" :form="settingsForm" />
+          <PresetManager v-else-if="page === 'presets'" v-model:kind="ui.settingsPresetKind" />
+          <SettingsUpdateSection v-else-if="page === 'update'" />
+          <div v-else-if="page === 'links'" class="settings-block">
+            <SettingsCard title="剪贴板">
+              <ClipboardPreference />
+            </SettingsCard>
+            <SettingsDownloadSection :form="settingsForm" :desktop-paths="supportsDesktopPaths" group="links" />
+          </div>
+          <SettingsMaintenanceSection v-else :form="settingsForm" :desktop-paths="supportsDesktopPaths" :group="page" />
 
           <p v-if="settings.error" class="settings-error">{{ settings.error }}</p>
         </div>

@@ -18,6 +18,7 @@ const props = defineProps<{
   selectedIds: string[];
   disabled?: boolean;
   managing?: boolean;
+  roomy?: boolean;
 }>();
 const emit = defineEmits<{ toggle: [id: string] }>();
 const menuEntry = ref<{ id: string; title: string; url?: string | null; selected: boolean } | null>(null);
@@ -59,7 +60,7 @@ function toggleCard(event: MouseEvent, id?: string) {
 </script>
 
 <template>
-  <MobileListCard class="mobile-results" role="list" aria-label="解析结果">
+  <MobileListCard class="mobile-results" :class="{ roomy }" role="list" aria-label="解析结果">
     <div
       v-for="entry in entries"
       :key="entry.id"
@@ -131,7 +132,8 @@ function toggleCard(event: MouseEvent, id?: string) {
 
 <style scoped>
 .mobile-results {
-  flex: 1;
+  flex: var(--result-list-flex, 1);
+  overflow: var(--result-list-overflow, hidden auto);
   padding: 0;
   border-radius: 0;
   box-shadow: none;
@@ -216,4 +218,30 @@ function toggleCard(event: MouseEvent, id?: string) {
   width: 1rem;
   height: 1rem;
 }
+
+.roomy {
+  background: transparent;
+}
+
+.roomy .mobile-result {
+  min-height: 4rem;
+  gap: var(--space-8);
+  padding: var(--space-8) 0;
+}
+
+.roomy .mobile-result-content {
+  gap: var(--space-8);
+  min-height: 3rem;
+}
+
+.roomy .result-more {
+  flex-basis: 2.75rem;
+  width: 2.75rem;
+  height: 3rem;
+}
+
+.roomy .result-author {
+  font-size: var(--font-12);
+}
+
 </style>

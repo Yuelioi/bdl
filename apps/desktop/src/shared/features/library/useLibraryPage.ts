@@ -16,7 +16,7 @@ export function useLibraryPage() {
   const failedCoverIds = ref<string[]>([]);
   const detailFolder = ref<LibraryContentSource | null>(null);
   const detailLoading = ref(false);
-  const downloadPlanner = useTemplateRef<{ openDialog: () => Promise<void> }>('download-planner');
+  const downloadPlanner = useTemplateRef<{ openDialog: () => Promise<void>; openAllDialog: (sourceId: string) => Promise<void> }>('download-planner');
   let detailRequestId = 0;
   let pageActive = false;
   const categories: Array<{
@@ -87,6 +87,7 @@ export function useLibraryPage() {
   };
   const closeFolder = () => clearFolder('library_folder_closed');
   const openDownloadSettings = () => void downloadPlanner.value?.openDialog();
+  const openAllDownloadSettings = (sourceId: string) => void downloadPlanner.value?.openAllDialog(sourceId);
   onMounted(() => {
     if (pageActive) return;
     pageActive = true;
@@ -134,5 +135,6 @@ export function useLibraryPage() {
     openFolder,
     closeFolder,
     openDownloadSettings,
+    openAllDownloadSettings,
   };
 }

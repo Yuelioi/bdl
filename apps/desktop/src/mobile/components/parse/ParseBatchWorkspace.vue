@@ -16,29 +16,10 @@ const {
   loading,
   toggleAll,
 
-  returnToSource,
 } = useParseBatchWorkspace();
 </script>
 <template>
   <section class="mobile-batch" :class="{ embedded }">
-    <header class="mobile-detail-heading">
-      <UButton
-        variant="ghost"
-        color="neutral"
-        :ui="{ base: 'p-0', label: 'contents' }"
-        class="mobile-icon-button"
-        type="button"
-        aria-label="返回解析首页"
-        :disabled="loading"
-        @click="returnToSource"
-      >
-        <UIcon name="i-tabler-arrow-left" />
-      </UButton>
-      <div class="mobile-detail-copy">
-        <h2>批量视频</h2>
-        <p>{{ parse.batchEntries.length }} 个链接</p>
-      </div>
-    </header>
     <UiTextField
       v-if="parse.batchEntries.length > 8 || query"
       v-model="query"
@@ -52,7 +33,7 @@ const {
         label="全选全部"
         :disabled="loading"
         @update:model-value="toggleAll"
-      /><span>点选视频</span>
+      /><span>{{ parse.batchEntries.length }} 个链接</span>
     </div>
     <div class="batch-list" role="list" aria-label="批量解析结果">
       <div v-for="entry in entries" :key="entry.id" class="batch-row" role="listitem">

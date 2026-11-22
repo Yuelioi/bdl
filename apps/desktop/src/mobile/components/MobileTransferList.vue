@@ -143,7 +143,7 @@ const artworkActionIcon = (view: TransferTaskView) =>
 const hasProgress = (view: TransferTaskView) =>
   ['downloading', 'paused'].includes(view.statusBadge) && view.stageProgressLabel !== '';
 const taskMetaLabel = (view: TransferTaskView) =>
-  [view.statusLabel, view.mediaLabel, hasProgress(view) ? view.progressLabel : ''].filter(Boolean).join(' · ');
+  [view.statusLabel, hasProgress(view) ? view.progressLabel : view.mediaLabel].filter(Boolean).join(' · ');
 const taskMetaValue = (view: TransferTaskView) =>
   view.isCompleted ? (view.sizeLabel === '--' ? '' : view.sizeLabel) : view.speedLabel === '--' ? '' : view.speedLabel;
 </script>
@@ -161,7 +161,7 @@ const taskMetaValue = (view: TransferTaskView) =>
           role="listitem"
           tabindex="0"
           @click="clickTask(view, $event)"
-          @keydown.enter="activateTask(view)"
+          @keydown.enter.self="activateTask(view)"
           @pointerdown="startPress(view, $event)"
           @pointermove="movePress"
           @pointerup="cancelPress"
@@ -188,16 +188,19 @@ const taskMetaValue = (view: TransferTaskView) =>
           <div class="task-heading">
             <span class="task-title">{{ view.displayTitle }}</span>
           </div>
-          <div class="task-row-actions">
+          <div v-if="!managing" class="task-row-actions">
             <UiIconButton
               v-if="view.primaryAction !== 'none'"
+              class="task-action-button"
               :icon="artworkActionIcon(view)"
               :label="artworkActionLabel(view)"
               variant="ghost"
               size="compact"
               :disabled="loading"
               @click="emit('taskAction', view.id, view.primaryAction)"
-            /><UiIconButton
+            />
+            <UiIconButton
+              class="task-action-button"
               icon="dots"
               :label="`${view.displayTitle}：更多操作`"
               variant="ghost"
@@ -271,7 +274,7 @@ const taskMetaValue = (view: TransferTaskView) =>
 }
 
 .mobile-task.managing {
-  grid-template-columns: 1.25rem 4rem minmax(0, 1fr) auto;
+  grid-template-columns: 1.25rem 4rem minmax(0, 1fr);
 }
 
 .mobile-task:focus-visible {
@@ -320,25 +323,29 @@ const taskMetaValue = (view: TransferTaskView) =>
   overflow: hidden;
   color: var(--color-text);
   font-size: var(--font-13);
-  font-weight: 400;
+  font-weight: 500;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
 
 .task-row-actions {
   grid-column: 3;
-  grid-row: 1;
+  grid-row: 1 / -1;
   align-self: center;
   display: flex;
   align-items: center;
-  gap: 0.125rem;
+}
+
+.task-row-actions .task-action-button {
+  min-width: 2.5rem;
+  min-height: 3rem;
 }
 
 .task-row-progress {
-  position: absolute;
-  right: 0.5rem;
-  bottom: 0.25rem;
-  left: calc(0.5rem + 4rem + 0.625rem);
+  grid-column: 2;
+  grid-row: 2;
+  align-self: end;
+  transform: translateY(0.25rem);
 }
 
 .task-row-progress :deep(.progress-track) {
@@ -346,7 +353,7 @@ const taskMetaValue = (view: TransferTaskView) =>
 }
 
 .task-meta {
-  grid-column: 2 / -1;
+  grid-column: 2;
   grid-row: 2;
   display: flex;
   align-items: center;
@@ -376,19 +383,9 @@ const taskMetaValue = (view: TransferTaskView) =>
   color: var(--color-danger);
 }
 
-.managing .task-heading {
-  grid-column: 3;
-}
-
-.managing .task-meta {
-  grid-column: 3 / -1;
-}
-
-.managing .task-row-actions {
-  grid-column: 4;
-}
-
+.managing .task-heading,
+.managing .task-meta,
 .managing .task-row-progress {
-  left: calc(0.5rem + 1.25rem + 4rem + 1.25rem);
+  grid-column: 3;
 }
 </style>

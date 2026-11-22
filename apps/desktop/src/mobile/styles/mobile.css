@@ -141,17 +141,6 @@ html.bdl-mobile-density-scaled {
 .mobile-download-footer strong {
   color: var(--color-text);
 }
-.mobile-load-more {
-  width: 100%;
-  min-height: 2.25rem;
-  border: 0;
-  background: transparent;
-  color: var(--color-accent-strong);
-  font-size: var(--mobile-font-body);
-}
-.mobile-load-more:disabled {
-  color: var(--color-muted);
-}
 .mobile-page button:focus-visible {
   outline: none;
   border-color: var(--color-accent);

@@ -12,45 +12,38 @@
   min-width: 0;
   gap: 0.375rem;
 }
+.transfer-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+.transfer-mode-button,
+.transfer-sort-button {
+  min-width: 3rem;
+  min-height: 2.75rem;
+  color: var(--color-text);
+}
 .transfer-footer {
   display: flex;
-  flex-wrap: wrap;
   margin-top: auto;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
+  gap: var(--space-8);
   flex-shrink: 0;
   border-top: 0.0625rem solid var(--color-border);
-  padding-top: 0.3125rem;
+  padding-top: var(--space-4);
+}
+.transfer-select-all,
+.transfer-batch-button {
+  flex-shrink: 0;
+  min-height: 3rem;
 }
 .transfer-select-all {
-  flex-shrink: 0;
-  min-height: 1.875rem;
-  border: 0;
-  background: transparent;
+  min-width: 3rem;
   color: var(--color-text);
-  font-size: var(--mobile-font-body);
 }
-.transfer-footer :deep(.bulk-action-bar.selected) {
-  flex: 1 1 16rem;
-  min-height: 1.875rem;
-  flex-direction: row;
-  flex-wrap: nowrap;
-  gap: 0.25rem;
-  padding: 0;
-  border: 0;
-  background: transparent;
-}
-.transfer-footer :deep(.bulk-copy) {
-  display: none;
-}
-.transfer-footer :deep(.bulk-actions) {
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
-.transfer-footer :deep(.bulk-actions button) {
-  flex-shrink: 0;
-  min-height: 1.875rem;
-  padding: 0.25rem 0.5rem;
-  font-size: var(--mobile-font-body);
+.transfer-selection-count {
+  flex: 1;
+  color: var(--color-muted);
+  font-size: var(--font-13);
+  font-variant-numeric: tabular-nums;
 }

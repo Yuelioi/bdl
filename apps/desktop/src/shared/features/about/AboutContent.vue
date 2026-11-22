@@ -2,9 +2,10 @@
 import { useAboutPage } from './useAboutPage';
 import appIcon from '../../../../src-tauri/icons/128x128.png';
 const { version, links, openLink } = useAboutPage();
+defineProps<{ compact?: boolean }>();
 </script>
 <template>
-  <section class="about-content">
+  <section class="about-content" :class="{ 'is-compact': compact }">
     <header class="about-identity">
       <img :src="appIcon" alt="" />
       <div>
@@ -129,5 +130,16 @@ const { version, links, openLink } = useAboutPage();
   width: 1rem;
   height: 1rem;
   color: var(--color-muted);
+}
+
+.is-compact .about-version {
+  margin-block: var(--space-16);
+  gap: var(--space-8);
+}
+
+.is-compact .about-link {
+  min-height: 3.5rem;
+  gap: var(--space-8);
+  padding-block: var(--space-8);
 }
 </style>

@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, provide, readonly, ref } from 'vue';
 import { mobileRailLayoutKey } from './layout';
+import { mobileBackKey, type MobileBackHandler } from './useMobileBack';
 import { useUiStore } from '../../shared/stores/ui';
+import type { AppTab } from '../../shared/stores/ui';
 import { useNavigationStatus } from '../../shared/features/navigation';
 import { isAndroidPlatform } from '../../shared/platform/environment';
 import appIcon from '../../../src-tauri/icons/128x128.png';
@@ -49,6 +51,53 @@ const navItems = [
 ] as const;
 const ui = useUiStore();
 const { transferBadgeCount } = useNavigationStatus();
+const selectTab = (tab: AppTab) => {
+  if (tab !== 'settings') {
+    ui.setTab(tab);
+    return;
+  }
+  const showPersonalHome = () => {
+    ui.mobileSettingsReturnTab = null;
+    ui.mobilePersonalPage = 'home';
+  };
+  if (ui.activeTab === tab && ui.settingsNavigationGuard) {
+    ui.settingsNavigationGuard(showPersonalHome);
+  } else {
+    showPersonalHome();
+    ui.setTab(tab);
+  }
+};
+
+const backHandlers = new Set<{ tab: AppTab; handler: MobileBackHandler; priority: number }>();
+provide(mobileBackKey, (tab, handler, priority) => {
+  const entry = { tab, handler, priority };
+  backHandlers.add(entry);
+  return () => backHandlers.delete(entry);
+});
+
+const handleAndroidBack = (event: Event) => {
+  // Reuse the overlay library's Escape behavior, including non-dismissible dialogs.
+  const overlay = document.querySelector('[data-state="open"]:is([role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"])');
+  if (overlay) {
+    (document.activeElement ?? overlay).dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'Escape', code: 'Escape', bubbles: true, cancelable: true,
+    }));
+    event.preventDefault();
+    return;
+  }
+  const handled = [...backHandlers]
+    .filter(({ tab }) => tab === ui.activeTab)
+    .sort((left, right) => right.priority - left.priority)
+    .some(({ handler }) => handler());
+  if (handled) {
+    event.preventDefault();
+  } else if (ui.activeTab !== 'parse') {
+    ui.setTab('parse');
+    event.preventDefault();
+  }
+};
+onMounted(() => window.addEventListener('bdl:android-back', handleAndroidBack));
+onUnmounted(() => window.removeEventListener('bdl:android-back', handleAndroidBack));
 </script>
 
 <template>
@@ -76,10 +125,7 @@ const { transferBadgeCount } = useNavigationStatus();
         :class="{ active: ui.activeTab === item.value }"
         type="button"
         :aria-current="ui.activeTab === item.value ? 'page' : undefined"
-        @click="
-          ui.setTab(item.value);
-          if (item.value === 'settings') ui.mobilePersonalPage = 'home';
-        "
+        @click="selectTab(item.value)"
       >
         <UIcon :name="item.icon" class="mobile-nav-icon" aria-hidden="true" />
         <span>{{ item.label }}</span>

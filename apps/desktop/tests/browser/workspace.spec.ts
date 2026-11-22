@@ -649,7 +649,7 @@ test.describe('safe file removal', () => {
             .getByRole('navigation', { name: '主导航' })
             .getByRole('button', { name: '我的', exact: true })
             .click();
-          await page.getByRole('button', { name: /清理与维护/ }).click();
+          await page.getByRole('button', { name: '存储与诊断', exact: true }).click();
         }
         await page.getByRole('button', { name: '清理临时文件', exact: true }).click();
         const cleanup = page.getByRole('dialog', { name: '清理临时文件', exact: true });
@@ -707,7 +707,8 @@ test('mobile shell keeps navigation and downloads usable without desktop steps',
   await page.getByRole('button', { name: '下载所选 (1)' }).click();
   const downloadDialog = page.getByRole('dialog');
   await expect(downloadDialog).toBeVisible();
-  await expect(downloadDialog.getByText('请选择 Android 导出目录。', { exact: true })).toBeVisible();
+  await expect(downloadDialog.getByRole('button', { name: '选择目录', exact: true })).toBeVisible();
+  await expect(downloadDialog.getByRole('button', { name: '开始下载', exact: true })).toBeDisabled();
 });
 
 test.describe('adaptive Android workspace', () => {
@@ -769,26 +770,29 @@ test.describe('adaptive Android workspace', () => {
       await results.getByRole('listitem').first().locator('.mobile-result-content').click();
       const nav = page.getByRole('navigation', { name: '主导航' });
       const download = page.getByRole('button', { name: '下载所选 (1)', exact: true });
+      const search = page.getByRole('button', { name: '搜索', exact: true });
+      await search.click();
       const filter = page.getByRole('searchbox', { name: '搜索解析结果' });
       await filter.fill('no-match-fixture');
       await expect(page.getByText('没有匹配的视频', { exact: true })).toBeVisible();
       await filter.fill('分页视频 20');
       await expect(results.getByRole('listitem')).toHaveCount(1);
       await expect(download).toBeEnabled();
-      await page.getByRole('checkbox', { name: '全选已加载', exact: true }).check();
+      await page.getByRole('checkbox', { name: '全选搜索结果', exact: true }).check();
       await expect(page.getByRole('button', { name: '下载所选 (2)', exact: true })).toBeEnabled();
-      await page.getByRole('checkbox', { name: '全选已加载', exact: true }).uncheck();
-      await filter.fill('');
+      await page.getByRole('checkbox', { name: '全选搜索结果', exact: true }).uncheck();
+      await page.getByRole('button', { name: '关闭搜索', exact: true }).click();
       await expect(results.getByRole('listitem')).toHaveCount(40);
       await page.getByRole('checkbox', { name: '全选已加载', exact: true }).check();
       await page.getByRole('checkbox', { name: '全选已加载', exact: true }).uncheck();
       await expect(results.getByRole('checkbox')).toHaveCount(40);
       await expect(page.getByRole('button', { name: '下载所选 (0)', exact: true })).toBeDisabled();
-      const sort = page.getByRole('combobox', { name: '解析结果排序', exact: true });
+      const options = page.getByRole('button', { name: '排序与选择', exact: true });
+      await options.click();
+      const rangeDialog = page.getByRole('dialog', { name: '排序与选择', exact: true });
+      const sort = rangeDialog.getByRole('combobox', { name: '解析结果排序', exact: true });
       await sort.click();
       await page.getByRole('option', { name: '按时长', exact: true }).click();
-      await page.getByRole('button', { name: '范围选择', exact: true }).click();
-      const rangeDialog = page.getByRole('dialog', { name: '范围选择', exact: true });
       const rangeInput = rangeDialog.getByRole('textbox', { name: '选择序号', exact: true });
       await rangeInput.fill('41');
       await rangeDialog.getByRole('button', { name: '添加选择', exact: true }).click();
@@ -799,10 +803,12 @@ test.describe('adaptive Android workspace', () => {
       await expect(page.getByRole('button', { name: '下载所选 (2)', exact: true })).toBeEnabled();
       await page.getByRole('checkbox', { name: '全选已加载', exact: true }).check();
       await page.getByRole('checkbox', { name: '全选已加载', exact: true }).uncheck();
+      await options.click();
       await sort.click();
       await page.getByRole('option', { name: '原顺序', exact: true }).click();
-      await page.getByRole('button', { name: '内容操作', exact: true }).click();
-      const contentPanel = page.getByRole('dialog', { name: '内容操作' });
+      await rangeDialog.getByRole('button', { name: '完成', exact: true }).click();
+      await page.getByRole('button', { name: '加载选项', exact: true }).click();
+      const contentPanel = page.getByRole('dialog', { name: '加载选项' });
       await expect(contentPanel.locator('.tablet-action-body')).toBeVisible();
       await page.getByRole('combobox', { name: '每次加载' }).click();
       await page.getByRole('option', { name: '100 项', exact: true }).click();
@@ -992,16 +998,17 @@ test('mobile library supports selection and page actions', async ({ page }) => {
   for (const width of [390, 320]) {
     await page.setViewportSize({ width, height: 844 });
   }
-  await page.locator('.folder-download').getByRole('button').click();
+  await page.locator('.folder-download').getByRole('button', { name: '下载所选 (1)', exact: true }).click();
   await expect(page.getByRole('dialog')).toBeVisible();
   await page.keyboard.press('Escape');
   await nav.getByRole('button', { name: '我的' }).click();
   await expect(page.locator('.profile-card')).toBeVisible();
   await expect(page.locator('.workspace-enter-active, .workspace-leave-active')).toHaveCount(0);
-  await page.getByRole('button', { name: /下载设置/ }).click();
+  await page.getByRole('button', { name: '设置', exact: true }).click();
+  await page.getByRole('button', { name: '下载速度与续传', exact: true }).click();
   await page.getByLabel('全局下载限速（MB/s）', { exact: true }).fill('10');
   await page.getByRole('button', { name: '保存', exact: true }).click();
-  await expect(page.getByRole('button', { name: '保存', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: '保存', exact: true })).toHaveCount(0);
   await nav.getByRole('button', { name: '传输' }).click();
   await expect(page.locator('.transfer-main')).toBeVisible();
   await nav.getByRole('button', { name: '我的' }).click();
@@ -1170,8 +1177,8 @@ test.describe('populated Android interactions', () => {
     for (const width of [390, 320]) {
       await page.setViewportSize({ width, height: 844 });
     }
-    await page.getByRole('button', { name: '内容操作' }).click();
-    await expect(page.getByRole('dialog', { name: '内容操作' })).toBeVisible();
+    await page.getByRole('button', { name: '加载选项', exact: true }).click();
+    await expect(page.getByRole('dialog', { name: '加载选项' })).toBeVisible();
     await expect(page.getByLabel('每次加载')).toBeVisible();
     await page.keyboard.press('Escape');
     await nav.getByRole('button', { name: /传输/ }).click();
@@ -1210,8 +1217,8 @@ test.describe('populated Android interactions', () => {
       .click();
     await expect(page.getByRole('dialog', { name: '任务操作' })).toBeVisible();
     await page.keyboard.press('Escape');
-    await page.getByRole('button', { name: '传输选项' }).click();
-    await expect(page.getByRole('dialog', { name: '传输选项' })).toBeVisible();
+    await page.getByRole('button', { name: '排序', exact: true }).click();
+    await expect(page.getByRole('dialog', { name: '排序与刷新' })).toBeVisible();
     await page.keyboard.press('Escape');
     // Exercise virtualization with both row sizes, including its final window.
     const tasks = page.getByRole('list', { name: '传输任务' });
@@ -1234,10 +1241,11 @@ test.describe('populated Android interactions', () => {
     await nav.getByRole('button', { name: '我的' }).click();
     await expect(page.locator('.profile-card')).toBeVisible();
     await expect(page.locator('.workspace-enter-active, .workspace-leave-active')).toHaveCount(0);
-    await page.getByRole('button', { name: /下载设置/ }).click();
-    await expect(page.getByRole('tab', { name: '下载保存', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: '设置', exact: true }).click();
+    await page.getByRole('button', { name: '下载速度与续传', exact: true }).click();
     await expect(page.getByLabel('全局下载限速（MB/s）', { exact: true })).toBeVisible();
-    await page.getByRole('button', { name: '返回我的' }).click();
+    await page.getByRole('button', { name: '返回上一级设置', exact: true }).click();
+    await page.getByRole('button', { name: '返回我的', exact: true }).click();
     await page
       .getByRole('button', { name: /外观：/ })
       .first()
@@ -1246,7 +1254,7 @@ test.describe('populated Android interactions', () => {
     await page.keyboard.press('Escape');
     await expect(page.locator('html')).toHaveClass(/dark/);
     await expect(page.getByRole('alert')).toHaveCount(0);
-    await page.getByRole('button', { name: /下载设置/ }).click();
+    await page.getByRole('button', { name: '设置', exact: true }).click();
     await nav.getByRole('button', { name: /传输/ }).click();
     await expect(page.locator('.mobile-task-list')).toBeVisible();
     await expect(page.locator('.workspace-enter-active, .workspace-leave-active')).toHaveCount(0);
@@ -1373,7 +1381,7 @@ for (const width of [375, 900, 1280]) {
 test('native browser context menu is suppressed', async ({ page }) => {
   await installTauriMock(page, 'light');
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: '从一个链接开始' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^(解析链接|从一个链接开始)$/ })).toBeVisible();
 
   const contextMenuAllowed = await page.evaluate(() =>
     document.body.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })),
@@ -1440,7 +1448,7 @@ test('single video mode uses one input and disables collection expansion', async
 test('the QR placeholder starts a session without a duplicate footer action', async ({ page }) => {
   await installTauriMock(page, 'light');
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: '从一个链接开始' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^(解析链接|从一个链接开始)$/ })).toBeVisible();
 
   await page.getByRole('button', { name: '登录' }).click();
   await page.getByRole('menuitem', { name: '登录' }).click();
@@ -1600,7 +1608,7 @@ test('parse result clears the workspace while retaining the source input', async
   await expect(page.getByRole('button', { name: '下载所选 (0)' })).toBeVisible();
 
   await page.getByRole('button', { name: '返回解析首页' }).click();
-  await expect(page.getByRole('heading', { name: '从一个链接开始' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^(解析链接|从一个链接开始)$/ })).toBeVisible();
   await expect(input).toHaveValue('');
   await expect(page.getByText('测试视频', { exact: true })).toHaveCount(0);
 });
@@ -1671,6 +1679,8 @@ for (const theme of ['light', 'dark'] as const) {
         target.__TASK_ATTEMPTS__ = [];
         const invoke = target.__TAURI_INTERNALS__.invoke;
         target.__TAURI_INTERNALS__.invoke = async (command, args) => {
+          if (command === 'mobile_pick_export_directory')
+            return { tree_uri: 'content://fixture/downloads', display_name: '测试下载目录' };
           if (command === 'selection_create_tasks') {
             const id = (args?.request as { part_ids: string[] }).part_ids[0];
             target.__TASK_ATTEMPTS__.push(id);
@@ -1685,11 +1695,13 @@ for (const theme of ['light', 'dark'] as const) {
       await page.getByLabel('链接或 BV / AV').fill('favorite:fixture');
       await page.getByRole('button', { name: '开始解析' }).click();
       if (platform === 'mobile') {
-        await page.getByRole('button', { name: '内容操作', exact: true }).click();
-        await page
-          .getByRole('dialog', { name: '内容操作' })
-          .getByRole('button', { name: '下载整个集合', exact: true })
-          .click();
+        await page.getByRole('button', { name: '下载全部', exact: true }).click();
+        const dialog = page.getByRole('dialog', { name: '下载全部', exact: true });
+        const start = dialog.getByRole('button', { name: '开始下载', exact: true });
+        await expect(start).toBeDisabled();
+        await dialog.getByRole('button', { name: '选择目录', exact: true }).click();
+        await expect(dialog.getByText('测试下载目录', { exact: true })).toBeVisible();
+        await start.click();
       } else {
         await page.getByRole('button', { name: '更多解析方式' }).click();
         await page.getByRole('menuitem', { name: '后台解析全部并下载' }).click();
@@ -1766,7 +1778,7 @@ test('library omits redundant category headings and makes the whole folder card 
   await expect(enterFolder.locator('.library-card-meta')).toContainText('个视频');
 
   await enterFolder.click();
-  await expect(page.getByRole('button', { name: '返回内容集合' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '返回内容库' })).toBeVisible();
 });
 
 test('preparation errors remain globally accessible after leaving the parse page', async ({ page }) => {
@@ -1837,7 +1849,7 @@ test('leaving a library folder does not leak its parse session into the parse wo
 
   await page.getByRole('button', { name: '解析 添加与选择' }).click();
 
-  await expect(page.getByRole('heading', { name: '从一个链接开始' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^(解析链接|从一个链接开始)$/ })).toBeVisible();
   await expect(page.getByRole('heading', { name: /双赢之路/ })).toHaveCount(0);
   await expect(page.getByRole('list', { name: '解析结果' })).toHaveCount(0);
 });
@@ -1923,7 +1935,7 @@ test('folder detail opens immediately and shows a skeleton while collection data
 
   await page.getByRole('button', { name: '进入 双赢之路' }).click();
 
-  await expect(page.getByRole('button', { name: '返回内容集合' })).toBeVisible({ timeout: 250 });
+  await expect(page.getByRole('button', { name: '返回内容库' })).toBeVisible({ timeout: 250 });
   await expect(page.getByLabel('正在加载合集内容')).toBeVisible({ timeout: 250 });
   await expect(page.locator('.source-function-toolbar').getByText('已加载 5 / 5 项')).toBeVisible();
 });
@@ -2288,9 +2300,9 @@ const openPresetSettings = async (page: Page) => {
   if (await desktop.isVisible()) await desktop.click();
   else {
     await page.getByRole('navigation', { name: '主导航' }).getByRole('button', { name: '我的', exact: true }).click();
-    await page.getByRole('button', { name: /下载设置/ }).click();
+    await page.getByRole('button', { name: '设置', exact: true }).click();
   }
-  await selectSettingsSection(page, '预设管理');
+  await selectSettingsSection(page, await desktop.isVisible() ? '预设管理' : '下载与命名预设');
   await page.getByRole('region', { name: '预设管理', exact: true }).getByRole('tab', { name: '下载预设', exact: true }).click();
 };
 const openCurrentPresetEditor = async (page: Page) => {
@@ -2436,7 +2448,8 @@ for (const theme of ['light', 'dark'] as const) {
     await editor.getByRole('checkbox', { name: '保存独立字幕', exact: true }).check();
     await editor.getByRole('button', { name: '保存预设', exact: true }).click();
     await expect(editor).not.toBeVisible();
-    await page.getByRole('tab', { name: '下载保存', exact: true }).click();
+    await page.getByRole('button', { name: '返回上一级设置', exact: true }).click();
+    await page.getByRole('button', { name: '下载速度与续传', exact: true }).click();
     await expect(page.getByRole('combobox', { name: '单任务分段数', exact: true })).toBeVisible();
     await expect(page.getByRole('textbox', { name: 'FFmpeg 路径', exact: true })).toHaveCount(0);
   });
@@ -2983,13 +2996,15 @@ for (const theme of ['light', 'dark'] as const) {
     await page.goto('/');
     const nav = page.getByRole('navigation', { name: '主导航' });
     await nav.getByRole('button', { name: '我的', exact: true }).click();
-    await page.getByRole('button', { name: /下载设置/ }).click();
+    await page.getByRole('button', { name: '设置', exact: true }).click();
+    await page.getByRole('button', { name: '下载速度与续传', exact: true }).click();
     await page.getByRole('textbox', { name: '全局下载限速（MB/s）', exact: true }).fill('-1');
-    await page.getByRole('button', { name: '返回我的', exact: true }).click();
+    const back = () => page.evaluate(() => window.dispatchEvent(new Event('bdl:android-back', { cancelable: true })));
+    expect(await back()).toBe(false);
     const dialog = page.getByRole('dialog', { name: '设置尚未保存' });
     await expect(dialog).toBeVisible();
     await expect(dialog.getByRole('button', { name: '保存并离开' })).toBeDisabled();
-    await page.keyboard.press('Escape');
+    expect(await back()).toBe(false);
     await expect(dialog).not.toBeVisible();
     await nav.getByRole('button', { name: '解析', exact: true }).click();
     await expect(dialog).toBeVisible();
@@ -3074,7 +3089,7 @@ for (const theme of ['light', 'dark'] as const) {
     await page.goto('/');
     const nav = page.getByRole('navigation', { name: '主导航' });
     await nav.getByRole('button', { name: '我的', exact: true }).click();
-    await page.getByRole('button', { name: /下载设置/ }).click();
+    await page.getByRole('button', { name: '设置', exact: true }).click();
     await page
       .getByRole('button', { name: /应用更新/ })
       .or(page.getByRole('tab', { name: '更新', exact: true }))
@@ -3228,12 +3243,9 @@ for (const [width, theme] of [
     await page.goto('/');
     if (width === 390) {
       await page.getByRole('navigation', { name: '主导航' }).getByRole('button', { name: '我的', exact: true }).click();
-      await page.getByRole('button', { name: /下载设置/ }).click();
+      await page.getByRole('button', { name: '设置', exact: true }).click();
     } else await page.getByRole('button', { name: /^设置/ }).click();
-    await page
-      .getByRole('button', { name: /网络与维护/ })
-      .or(page.getByRole('tab', { name: '维护', exact: true }))
-      .click();
+    await page.getByRole('button', { name: width === 390 ? /链接识别与解析/ : /网络与维护/ }).click();
     const clipboard = page.getByRole('switch', { name: '返回应用时识别剪贴板链接' });
     await expect(clipboard).not.toBeChecked();
     await clipboard.focus();
@@ -3241,6 +3253,7 @@ for (const [width, theme] of [
     await expect(clipboard).toBeChecked();
     await clipboard.uncheck();
     await expect(clipboard).not.toBeChecked();
+    if (width === 390) await page.getByRole('button', { name: '返回上一级设置', exact: true }).click();
     await page
       .getByRole('button', { name: /应用更新/ })
       .or(page.getByRole('tab', { name: '更新', exact: true }))
@@ -3412,12 +3425,9 @@ for (const device of ['desktop', 'android'] as const) {
     await expect(page.getByRole('switch', { name: '返回应用时识别剪贴板链接' })).toHaveCount(0);
     if (device === 'android') {
       await page.getByRole('navigation', { name: '主导航' }).getByRole('button', { name: '我的', exact: true }).click();
-      await page.getByRole('button', { name: /下载设置/ }).click();
+      await page.getByRole('button', { name: '设置', exact: true }).click();
     } else await page.getByRole('button', { name: /^设置/ }).click();
-    await page
-      .getByRole('button', { name: /网络与维护/ })
-      .or(page.getByRole('tab', { name: '维护', exact: true }))
-      .click();
+    await page.getByRole('button', { name: device === 'android' ? /链接识别与解析/ : /网络与维护/ }).click();
     await page.getByRole('switch', { name: '返回应用时识别剪贴板链接' }).check();
     const prompt = page.getByRole('dialog', { name: '发现剪贴板中的 Bilibili 链接' });
     await expect(prompt).toBeVisible();
@@ -3728,11 +3738,11 @@ for (const device of ['desktop', 'android'] as const) {
         await expect(page.getByRole('menuitem', { name: '解析全部', exact: true })).toBeVisible();
         await page.keyboard.press('Escape');
       } else {
-        await page.getByRole('button', { name: '内容操作', exact: true }).click();
-        await expect(page.getByRole('button', { name: '加载全部内容', exact: true })).toBeVisible();
+        await page.getByRole('button', { name: '加载选项', exact: true }).click();
+        await expect(page.getByRole('button', { name: '提前加载全部视频', exact: true })).toBeVisible();
         await page.keyboard.press('Escape');
       }
-      await page.getByRole('button', { name: '返回内容集合', exact: true }).click();
+      await page.getByRole('button', { name: '返回内容库', exact: true }).click();
       await expect(cards).toHaveCount(20);
       await cards.nth(1).click();
       await expect(rows.first()).toContainText('分 P 1');
@@ -3745,7 +3755,7 @@ for (const device of ['desktop', 'android'] as const) {
       await page.getByRole('button', { name: '下载所选 (1)', exact: true }).click();
       await expect(page.getByRole('dialog', { name: '下载设置', exact: true })).toHaveCount(1);
       await page.keyboard.press('Escape');
-      await page.getByRole('button', { name: '返回内容集合', exact: true }).click();
+      await page.getByRole('button', { name: '返回内容库', exact: true }).click();
       await cards.nth(2).click();
       await expect(rows).toHaveCount(1);
       await expect(page.locator('h2').filter({ hasText: '普通视频' })).toBeVisible();

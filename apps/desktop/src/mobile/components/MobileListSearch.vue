@@ -39,4 +39,8 @@ defineProps<{ label: string; placeholder: string; disabled?: boolean }>();
   min-width: 0;
   flex-shrink: 0;
 }
+
+.mobile-list-search :deep(input::-webkit-search-cancel-button) {
+  appearance: none;
+}
 </style>

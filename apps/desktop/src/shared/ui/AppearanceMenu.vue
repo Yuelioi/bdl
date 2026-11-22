@@ -32,6 +32,8 @@ const items = computed(() => [
     :content="{ align: 'end', sideOffset: 6, collisionPadding: 12 }"
     :ui="{ content: 'min-w-36' }"
   >
-    <UiIconButton variant="ghost" :icon="theme.icon" :label="`外观：${theme.preferenceLabel}`" />
+    <slot :preference-label="theme.preferenceLabel">
+      <UiIconButton variant="ghost" :icon="theme.icon" :label="`外观：${theme.preferenceLabel}`" />
+    </slot>
   </UDropdownMenu>
 </template>

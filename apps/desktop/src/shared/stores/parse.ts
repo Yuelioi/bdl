@@ -226,7 +226,7 @@ export const useParseStore = defineStore('parse', {
         this.noticeTimer = null
       }
     },
-    async createSource(input?: string, options: { singleVideo?: boolean } = {}): Promise<boolean> {
+    async createSource(input?: string, options: { singleVideo?: boolean; expandVideoCollection?: boolean } = {}): Promise<boolean> {
       const inputs = splitParseInputs(input ?? this.input)
 
       if (inputs.length === 0) {
@@ -255,7 +255,7 @@ export const useParseStore = defineStore('parse', {
             const tree = await parseCreateSource({
               input: sourceInput,
               fetch_streams: false,
-              expand_video_collection: !batch && !options.singleVideo,
+              expand_video_collection: !batch && !options.singleVideo && options.expandVideoCollection !== false,
             }, operationId)
             return { input: sourceInput, tree, error: null, detail: '' }
           } catch (error) {
@@ -458,7 +458,7 @@ export const useParseStore = defineStore('parse', {
         if (owns()) this.pacedParsingBySource[sourceId] = false
       }
     },
-    async startBackgroundDownload(sourceId: string, retryFailed = false): Promise<void> {
+    async startBackgroundDownload(sourceId: string, retryFailed = false, confirmedOptions?: CreateTaskOptions): Promise<void> {
       if (this.backgroundJob?.status === 'running' || this.pacedParsingBySource[sourceId] || this.loadingBySource[sourceId]) return
       const source = this.sources[sourceId]
       if (!source) return
@@ -483,7 +483,7 @@ export const useParseStore = defineStore('parse', {
         const settings = useSettingsStore()
         await settings.ensureLoaded()
         const defaults: SettingsSnapshot = JSON.parse(JSON.stringify(settings.saved))
-        const options: CreateTaskOptions = previous && Object.keys(job.options).length ? job.options : {
+        const options: CreateTaskOptions = confirmedOptions ?? (previous && Object.keys(job.options).length ? job.options : {
           downloadDir: defaults.download_dir ?? 'downloads', archiveMode: defaults.archive_mode,
           mediaMode: defaults.media_mode,
           downloadPresetId: defaults.selected_download_preset,
@@ -496,7 +496,7 @@ export const useParseStore = defineStore('parse', {
           codec: defaults.media_preferences.video.length ? 'auto' : defaults.codec,
           audioQuality: defaults.media_preferences.audio.length ? 'best' : defaults.audio_quality,
           mediaPreferences: defaults.media_preferences, duplicatePolicy: 'skip', silent: true,
-        }
+        })
         job.options = options
         while (!stopped()) {
           const pending = (retryIds ?? collectPartIds(this.sources[sourceId])).filter((id) => !done.has(id) && !attempted.has(id))
@@ -937,7 +937,7 @@ const taskRequest = (
   }
 }
 
-const collectPartIds = (tree: NormalizedSourceTree): string[] =>
+export const collectPartIds = (tree: NormalizedSourceTree): string[] =>
   tree.groups.flatMap((group) => group.items.flatMap((item) => item.parts.map((part) => part.id)))
 
 const uniquePartIds = (partIds: string[]): string[] => Array.from(new Set(partIds))

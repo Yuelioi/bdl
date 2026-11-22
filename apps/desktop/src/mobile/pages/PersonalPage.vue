@@ -9,6 +9,7 @@ import UiButton from '../../shared/ui/Button.vue';
 import MobileSheet from '../components/MobileSheet.vue';
 import SettingsPage from './SettingsPage.vue';
 import AboutPage from './AboutPage.vue';
+import { useMobileBack } from '../app/useMobileBack';
 const ui = useUiStore();
 const queue = useQueueStore();
 const account = useAccountStore();
@@ -20,10 +21,17 @@ watch(
     avatarFailed.value = false;
   },
 );
-const showSettings = (cache = false) => {
-  ui.settingsSection = cache ? 'settings-maintenance' : 'settings-download';
-  ui.mobilePersonalPage = 'settings';
+const closePersonalPage = () => {
+  const returnTab = ui.mobileSettingsReturnTab;
+  ui.mobileSettingsReturnTab = null;
+  ui.mobilePersonalPage = 'home';
+  if (returnTab) ui.setTab(returnTab);
 };
+useMobileBack('settings', () => {
+  if (ui.mobilePersonalPage !== 'about') return false;
+  closePersonalPage();
+  return true;
+});
 const showTasks = (filter: QueueFilter) => {
   queue.setFilter(filter);
   ui.setTab('transfer');
@@ -38,21 +46,9 @@ const stats = [
   <div class="personal-workspace">
     <SettingsPage
       v-if="ui.mobilePersonalPage === 'settings'"
-      @back="ui.mobilePersonalPage = 'home'"
+      @back="closePersonalPage"
     />
-    <section v-else-if="ui.mobilePersonalPage === 'about'" class="personal-about">
-      <UButton
-        variant="ghost"
-        color="neutral"
-        :ui="{ label: 'contents' }"
-        class="personal-back mobile-icon-button"
-        type="button"
-        aria-label="返回我的"
-        @click="ui.mobilePersonalPage = 'home'"
-      >
-        <UIcon name="i-tabler-arrow-left" /></UButton
-      ><AboutPage />
-    </section>
+    <AboutPage v-else-if="ui.mobilePersonalPage === 'about'" @back="closePersonalPage" />
     <section v-else class="mobile-page personal-page">
       <section class="profile-card">
         <UButton
@@ -61,7 +57,7 @@ const stats = [
           :ui="{ label: 'contents' }"
           class="profile-account"
           type="button"
-          aria-label="账号管理"
+          :aria-label="account.profile.logged_in ? '账号管理' : '登录 Bilibili'"
           @click="account.profile.logged_in ? (accountOpen = true) : ui.openLoginDialog()"
         >
           <span class="profile-avatar"
@@ -76,10 +72,10 @@ const stats = [
             ><strong>{{
               account.profile.name || (account.profile.logged_in ? 'Bilibili 用户' : '登录 Bilibili')
             }}</strong
-            ><span>{{ account.profile.logged_in ? '已登录 · 本地下载管理' : '连接你的收藏与订阅' }}</span></span
+            ><span v-if="!account.profile.logged_in">查看收藏与订阅</span></span
           ><UIcon name="i-tabler-chevron-right" class="row-chevron" />
         </UButton>
-        <div class="profile-stats">
+        <nav class="profile-stats" aria-label="传输快捷入口">
           <UButton
             variant="ghost"
             color="neutral"
@@ -92,52 +88,46 @@ const stats = [
             <strong>{{ queue.countByFilter(stat.filter) }}</strong>
             <span>{{ stat.label }}</span>
           </UButton>
-        </div>
+        </nav>
       </section>
-      <h2>常用功能</h2>
-      <section class="personal-group">
+      <section class="personal-group" aria-label="应用选项">
         <UButton
           variant="ghost"
           color="neutral"
           :ui="{ label: 'contents' }"
           class="personal-row"
           type="button"
-          @click="showSettings()"
+          @click="ui.openMobileSettings('overview')"
         >
           <span class="row-icon"><UIcon name="i-tabler-settings" /></span
-          ><span class="row-copy"><strong>下载设置</strong><span>目录、并发与恢复</span></span
+          ><span class="row-label">设置</span
           ><UIcon name="i-tabler-chevron-right" class="row-chevron" />
         </UButton>
-        <div class="personal-row">
-          <span class="row-icon"><UIcon name="i-tabler-palette" /></span
-          ><span class="row-copy"><strong>外观</strong><span>主题与深色模式</span></span
-          ><AppearanceMenu />
-        </div>
+        <AppearanceMenu v-slot="{ preferenceLabel }">
+          <UButton
+            variant="ghost"
+            color="neutral"
+            :ui="{ label: 'contents' }"
+            class="personal-row"
+            type="button"
+            :aria-label="`外观：${preferenceLabel}`"
+          >
+            <span class="row-icon"><UIcon name="i-tabler-palette" /></span>
+            <span class="row-label">外观</span>
+            <span class="row-value">{{ preferenceLabel }}</span>
+            <UIcon name="i-tabler-chevron-down" class="row-chevron" aria-hidden="true" />
+          </UButton>
+        </AppearanceMenu>
         <UButton
           variant="ghost"
           color="neutral"
           :ui="{ label: 'contents' }"
           class="personal-row"
           type="button"
-          @click="showSettings(true)"
+          @click="ui.openMobileSettings('storage')"
         >
           <span class="row-icon"><UIcon name="i-tabler-trash" /></span
-          ><span class="row-copy"><strong>清理与维护</strong><span>缓存、临时文件与诊断</span></span
-          ><UIcon name="i-tabler-chevron-right" class="row-chevron" />
-        </UButton>
-      </section>
-      <h2>账号与应用</h2>
-      <section class="personal-group">
-        <UButton
-          variant="ghost"
-          color="neutral"
-          :ui="{ label: 'contents' }"
-          class="personal-row"
-          type="button"
-          @click="account.profile.logged_in ? (accountOpen = true) : ui.openLoginDialog()"
-        >
-          <span class="row-icon"><UIcon name="i-tabler-user" /></span
-          ><span class="row-copy"><strong>账号管理</strong><span>登录状态与账号信息</span></span
+          ><span class="row-label">存储与诊断</span
           ><UIcon name="i-tabler-chevron-right" class="row-chevron" />
         </UButton>
         <UButton
@@ -149,23 +139,30 @@ const stats = [
           @click="ui.mobilePersonalPage = 'about'"
         >
           <span class="row-icon"><UIcon name="i-tabler-info-circle" /></span
-          ><span class="row-copy"><strong>关于 BDL</strong><span>版本与项目链接</span></span
+          ><span class="row-label">关于 BDL</span
           ><UIcon name="i-tabler-chevron-right" class="row-chevron" />
         </UButton>
       </section>
     </section>
-    <MobileSheet v-model="accountOpen" title="账号管理" :description="account.profile.name || undefined"
-      ><UiButton variant="secondary" :disabled="account.loading" @click="account.verify()">刷新账号信息</UiButton
-      ><UiButton
-        variant="danger"
+    <MobileSheet v-model="accountOpen" title="账号管理" :description="account.profile.name || undefined">
+      <UiButton variant="secondary" :disabled="account.loading" @click="account.verify()">
+        <UIcon name="i-tabler-refresh" class="size-4" aria-hidden="true" />
+        刷新账号信息
+      </UiButton>
+      <UButton
+        class="account-logout-action"
+        color="error"
+        variant="outline"
         :disabled="account.loading"
         @click="
           account.logout();
           accountOpen = false;
         "
-        >退出登录</UiButton
-      ></MobileSheet
-    >
+      >
+        <UIcon name="i-tabler-logout" class="size-4" aria-hidden="true" />
+        退出登录
+      </UButton>
+    </MobileSheet>
   </div>
 </template>
 <style scoped>
@@ -176,33 +173,35 @@ const stats = [
   overflow: hidden;
 }
 
+.account-logout-action {
+  justify-content: center;
+  min-height: 2.25rem;
+}
+
 .personal-page {
   overflow-y: auto;
-  gap: 0.625rem;
+  gap: var(--space-16);
 }
 
 .profile-card {
-  background: var(--mobile-card);
-  border-radius: var(--radius-6);
-  padding: 0.625rem 0.75rem 0.4375rem;
-  box-shadow: var(--mobile-card-shadow);
+  flex-shrink: 0;
 }
 
 .profile-account {
   width: 100%;
   display: flex;
   align-items: center;
-  gap: 0.625rem;
+  gap: var(--space-12);
+  min-height: 4rem;
   border: 0;
-  padding: 0 0 0.5625rem;
-  background: transparent;
+  padding: var(--space-8);
   text-align: left;
   color: var(--color-text);
 }
 
 .profile-avatar {
-  width: 2.75rem;
-  height: 2.75rem;
+  width: 2.25rem;
+  height: 2.25rem;
   display: grid;
   place-items: center;
   border-radius: 50%;
@@ -219,12 +218,11 @@ const stats = [
 }
 
 .profile-avatar :deep(svg) {
-  width: 1.6875rem;
-  height: 1.6875rem;
+  width: 1.25rem;
+  height: 1.25rem;
 }
 
-.profile-copy,
-.row-copy {
+.profile-copy {
   display: grid;
   gap: 0.125rem;
   flex: 1;
@@ -237,71 +235,57 @@ const stats = [
 }
 
 .profile-copy > span,
-.row-copy > span {
-  font-size: var(--mobile-font-caption);
+.row-value {
+  font-size: var(--font-12);
   color: var(--color-muted);
 }
 
 .profile-stats {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  padding: 0.5rem 0 0;
-  border-top: 0.0625rem solid var(--color-border);
+  padding-block: var(--space-4);
+  border-block: 0.0625rem solid var(--color-border);
 }
 
 .profile-stats button {
-  display: grid;
+  display: flex;
   align-items: center;
   justify-content: center;
-  gap: 0.1875rem;
-  min-height: 2.375rem;
+  flex-wrap: wrap;
+  gap: 0 var(--space-6);
+  min-height: 3rem;
   border: 0;
-  border-right: 0.0625rem solid var(--color-border);
-  background: transparent;
   color: var(--color-text);
   text-align: center;
 }
 
-.profile-stats button:last-child {
-  border-right: 0;
-}
-
 .profile-stats strong {
-  font-family: inherit;
-  font-size: var(--mobile-font-page-title);
+  font-size: var(--font-14);
   font-variant-numeric: tabular-nums;
 }
 
 .profile-stats button > span {
-  font-size: var(--mobile-font-caption);
+  font-size: var(--font-12);
   color: var(--color-muted);
 }
 
-h2 {
-  font-size: var(--mobile-font-section-title);
-  margin: 0.4375rem 0.1875rem -0.125rem;
-  font-weight: var(--mobile-weight-item);
-}
-
 .personal-group {
-  padding: 0 0.75rem;
-  background: var(--mobile-card);
-  border-radius: var(--radius-6);
-  box-shadow: var(--mobile-card-shadow);
+  flex-shrink: 0;
+  display: grid;
 }
 
 .personal-row {
   width: 100%;
   display: flex;
   align-items: center;
-  gap: 0.5625rem;
-  min-height: 3.25rem;
+  gap: var(--space-8);
+  min-height: 3rem;
   border: 0;
   border-bottom: 0.0625rem solid var(--color-border);
-  background: transparent;
+  border-radius: 0;
   text-align: left;
   color: var(--color-text);
-  padding: 0.4375rem 0;
+  padding: var(--space-8);
 }
 
 .personal-row:last-child {
@@ -313,9 +297,7 @@ h2 {
   place-items: center;
   width: 1.5rem;
   height: 1.5rem;
-  color: var(--color-accent-strong);
-  background: transparent;
-  border-radius: 0;
+  color: var(--color-muted);
   flex-shrink: 0;
 }
 
@@ -324,8 +306,9 @@ h2 {
   height: 1.25rem;
 }
 
-.row-copy strong {
-  font-size: var(--mobile-font-item-title);
+.row-label {
+  flex: 1;
+  font-size: var(--font-14);
   font-weight: var(--mobile-weight-item);
 }
 
@@ -336,22 +319,4 @@ h2 {
   color: var(--color-muted);
 }
 
-.personal-about {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-
-.personal-back {
-  margin: 0.5rem 1rem 0;
-}
-
-.personal-row :deep(.ui-icon-button) {
-  width: 1.5rem;
-  height: 1.5rem;
-  min-width: 2.125rem;
-  min-height: 2.125rem;
-  border-color: var(--mobile-card-border);
-  border-radius: 0.6875rem;
-}
 </style>

@@ -1,25 +1,56 @@
 <script setup lang="ts">
+import { ref } from 'vue';
 import MobileSheet from './MobileSheet.vue';
 import UiButton from '../../shared/ui/Button.vue';
-import ExternalLinkButton from '../../shared/ui/ExternalLinkButton.vue';
 const batch = defineModel<string>('batchSize', { default: '50' });
-defineProps<{ href?: string; hasMore: boolean; busy: boolean; parsing: boolean; stopping?: boolean }>();
-const emit = defineEmits<{ load: []; all: []; downloadAll: []; stop: [] }>();
-const open = defineModel<boolean>('open', { default: false });
-const run = (action: 'load' | 'all' | 'downloadAll' | 'stop') => {
+defineProps<{ hasMore: boolean; busy: boolean; parsing: boolean; stopping?: boolean; preload?: boolean }>();
+const emit = defineEmits<{ load: []; all: []; stop: [] }>();
+const open = ref(false);
+const load = () => {
   open.value = false;
-  if (action === 'load') emit('load');
-  else if (action === 'all') emit('all');
-  else if (action === 'stop') emit('stop');
-  else emit('downloadAll');
+  emit('load');
+};
+const loadAll = () => {
+  open.value = false;
+  emit('all');
 };
 </script>
+
 <template>
-  <MobileSheet v-model="open" title="内容操作" description="分批加载内容，或将整个集合加入下载。">
+  <div v-if="hasMore || parsing" class="source-load-actions">
+    <UiButton v-if="parsing" variant="secondary" size="compact" :disabled="stopping" @click="emit('stop')">
+      <UIcon name="i-tabler-player-stop" class="size-4" aria-hidden="true" />
+      {{ stopping ? '正在停止…' : '停止加载' }}
+    </UiButton>
+    <UiButton v-else-if="preload" variant="secondary" size="compact" aria-haspopup="dialog" :disabled="busy" @click="open = true">
+      <UIcon name="i-tabler-list-details" class="size-4" aria-hidden="true" />
+      加载选项
+    </UiButton>
+    <template v-else>
+      <UiButton class="source-load-next" variant="secondary" size="compact" :disabled="busy" @click="emit('load')">
+        {{ busy ? '加载中…' : '加载更多' }}
+      </UiButton>
+      <UiButton
+        class="source-load-options"
+        variant="secondary"
+        size="compact"
+        aria-label="加载选项"
+        aria-haspopup="dialog"
+        :disabled="busy"
+        @click="open = true"
+      >
+        <UIcon name="i-tabler-chevron-down" class="size-4" aria-hidden="true" />
+      </UiButton>
+    </template>
+  </div>
+  <MobileSheet
+    v-model="open"
+    title="加载选项"
+    :description="preload ? '翻页时会自动加载，也可以在这里提前加载多页。' : undefined"
+  >
     <UFormField
       label="每次加载"
       orientation="horizontal"
-      class="batch-setting"
       :ui="{ root: 'flex items-center justify-between gap-4', container: 'mt-0' }"
     >
       <USelect
@@ -39,25 +70,36 @@ const run = (action: 'load' | 'all' | 'downloadAll' | 'stop') => {
         :content="{ position: 'popper', align: 'end', sideOffset: 4, collisionPadding: 12 }"
       />
     </UFormField>
-    <UiButton v-if="parsing" variant="secondary" :disabled="stopping" @click="run('stop')">{{
-      stopping ? '正在停止…' : '停止加载'
-    }}</UiButton>
-    <template v-else>
-      <UiButton v-if="hasMore" variant="secondary" :disabled="busy" @click="run('load')"
-        >再加载 {{ batch }} 项</UiButton
-      >
-      <UiButton v-if="hasMore" variant="secondary" :disabled="busy" @click="run('all')">加载全部内容</UiButton>
-      <UiButton :disabled="busy" @click="run('downloadAll')">下载整个集合</UiButton>
-    </template>
-    <ExternalLinkButton v-if="href" :href="href" label="在 Bilibili 打开来源">在 Bilibili 打开来源</ExternalLinkButton>
+    <UiButton variant="secondary" :disabled="busy || parsing || !hasMore" @click="load">
+      <UIcon name="i-tabler-list-check" class="size-4" aria-hidden="true" />
+      {{ preload ? '提前加载' : '加载' }} {{ batch }} 项
+    </UiButton>
+    <UiButton variant="secondary" :disabled="busy || parsing || !hasMore" @click="loadAll">
+      <UIcon name="i-tabler-list-details" class="size-4" aria-hidden="true" />
+      {{ preload ? '提前加载全部视频' : '加载全部内容' }}
+    </UiButton>
   </MobileSheet>
 </template>
+
 <style scoped>
-.batch-setting {
+.source-load-actions {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  font-size: var(--mobile-font-item-title);
+  flex-shrink: 0;
+}
+
+.source-load-actions > .ui-button {
+  min-height: 2.75rem;
+}
+
+.source-load-actions .source-load-next {
+  border-start-end-radius: 0;
+  border-end-end-radius: 0;
+}
+
+.source-load-actions .source-load-options {
+  min-width: 2.5rem;
+  border-inline-start: 0;
+  border-start-start-radius: 0;
+  border-end-start-radius: 0;
 }
 </style>

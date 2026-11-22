@@ -53,7 +53,7 @@ onMounted(refresh);
 <template>
   <div class="grid min-w-0 gap-3">
     <div class="flex flex-wrap items-center justify-between gap-2">
-      <span>日志与诊断文件</span>
+      <span>占用空间</span>
       <UiButton variant="ghost" :disabled="loading || busy" @click="refresh">{{ loading ? '读取中' : '刷新用量' }}</UiButton>
     </div>
     <UiInlineNotice v-if="error" tone="danger">{{ error }}</UiInlineNotice>
@@ -63,12 +63,14 @@ onMounted(refresh);
         <span class="text-(length:--font-13)">日志 {{ usage.log_count }} 条 · {{ size(usage.log_bytes) }}</span>
         <UiButton variant="secondary" :disabled="loading || busy || !usage.cleanable_log_count" @click="pending = 'logs'">清理日志</UiButton>
       </div>
-      <p class="settings-note">日志保留 30 天，每个任务最多 1000 条，操作错误最多 200 条。清理会删除操作错误和已结束任务的日志，保留任务记录与下载文件。</p>
       <div class="flex flex-wrap items-center justify-between gap-2">
         <span class="text-(length:--font-13)">诊断文件 {{ usage.diagnostic_files }} 份 · {{ size(usage.diagnostic_bytes) }}</span>
         <UiButton variant="secondary" :disabled="loading || busy || !usage.diagnostic_files" @click="pending = 'diagnostics'">清理诊断文件</UiButton>
       </div>
-      <p class="settings-note">导出时保留最近 10 份。只清理应用数据目录中的诊断导出文件。</p>
+      <details class="settings-note">
+        <summary class="cursor-pointer">保留期限</summary>
+        <p class="mb-0 mt-2">日志保留 30 天，每个任务最多 1000 条。操作错误最多保留 200 条，诊断文件保留最近 10 份。</p>
+      </details>
     </div>
     <UiDialog v-model="confirmationOpen" :title="pending === 'logs' ? '清理日志' : '清理诊断文件'" size="compact" :dismissible="!busy" :show-close="!busy">
       <p v-if="pending === 'logs'">将删除操作错误记录，以及已完成、失败和已取消任务的日志。排队、暂停和运行中的任务日志保留，任务记录和下载文件不受影响。</p>

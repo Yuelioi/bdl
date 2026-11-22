@@ -15,7 +15,11 @@ import LogMaintenance from './LogMaintenance.vue';
 import UiInlineNotice from '../../ui/InlineNotice.vue';
 import { useDiagnosticExport } from '../diagnostics/useDiagnosticExport';
 
-const { form, desktopPaths = true } = defineProps<{ form: SettingsForm; desktopPaths?: boolean }>();
+const { form, desktopPaths = true, group } = defineProps<{
+  form: SettingsForm;
+  desktopPaths?: boolean;
+  group?: 'network' | 'storage';
+}>();
 const { settings, settingsProxyMode, settingsProxyDescription, settingsProxyUrl, settingsLogLevel, settingsDataDir } = form;
 const cleanup = useFileRemoval('temp', maintenanceTempPreview, (token) => settings.cleanupTemp(token));
 const {
@@ -26,14 +30,14 @@ const {
 
 <template>
   <section class="settings-block">
-    <SettingsCard title="剪贴板识别">
+    <SettingsCard v-if="!group" title="剪贴板识别">
       <ClipboardPreference />
     </SettingsCard>
-    <SettingsCard title="网络与日志">
+    <SettingsCard v-if="!group || group === 'network'" :title="group ? undefined : '网络与日志'">
       <UiSelect v-model="settingsProxyMode" label="下载代理" :options="proxyModeOptions" :helper="settingsProxyDescription" />
       <UiTextField v-if="settingsProxyMode === 'custom'" v-model="settingsProxyUrl" label="代理地址" placeholder="例如 http://127.0.0.1:7890" :error="settings.proxySettingsError ?? undefined" />
-      <p class="settings-note">用于任务资源下载{{ desktopPaths ? '与桌面应用更新' : '' }}，保存后新启动的下载或检查生效。</p>
-      <UiSelect v-model="settingsLogLevel" label="任务日志级别" :options="logLevelOptions" />
+      <p class="settings-note">保存后用于新启动的下载{{ desktopPaths ? '和桌面应用更新' : '' }}。</p>
+      <UiSelect v-if="!group" v-model="settingsLogLevel" label="任务日志级别" :options="logLevelOptions" />
     </SettingsCard>
     <SettingsCard v-if="desktopPaths" title="应用数据">
       <div class="directory-row">
@@ -49,40 +53,36 @@ const {
       </div>
       <p v-if="desktopPaths" class="settings-note">数据目录影响任务库、账户摘要和维护文件，修改后下次启动生效。</p>
     </SettingsCard>
-    <SettingsCard title="清理与诊断">
-      <LogMaintenance />
-      <details v-if="recentFailureReport" class="min-w-0">
-        <summary class="cursor-pointer">最近的操作错误</summary>
-        <div class="grid min-w-0 gap-3 py-3">
-          <p class="settings-note">显示最近 20 条操作错误，重启后保留。完整记录可导出诊断，清理日志时一并删除。</p>
-          <ErrorDetails :detail="recentFailureReport" :show-advice="false" />
+    <template v-if="!group || group === 'storage'">
+      <SettingsCard title="清理空间">
+        <div class="maintenance-actions">
+          <UiButton class="maintenance-action" variant="secondary" :disabled="settings.loading || settings.saving" @click="settings.cleanupCache">
+            <UIcon name="i-tabler-database-off" class="size-4" aria-hidden="true" />清理缓存
+          </UiButton>
+          <UiButton class="maintenance-action" variant="secondary" :disabled="settings.loading || settings.saving" @click="cleanup.show()">
+            <UIcon name="i-tabler-eraser" class="size-4" aria-hidden="true" />清理临时文件
+          </UiButton>
         </div>
-      </details>
-      <div class="maintenance-actions">
-        <UiButton
-          class="maintenance-action"
-          variant="secondary"
-          :disabled="settings.loading || settings.saving"
-          @click="settings.cleanupCache"
-          ><UIcon name="i-tabler-database-off" class="size-4" aria-hidden="true" />清理缓存</UiButton
-        >
-        <UiButton
-          class="maintenance-action"
-          variant="secondary"
-          :disabled="settings.loading || settings.saving"
-          @click="cleanup.show()"
-          ><UIcon name="i-tabler-eraser" class="size-4" aria-hidden="true" />清理临时文件</UiButton
-        >
-        <UiButton
-          class="maintenance-action"
-          variant="secondary"
-          :disabled="settings.loading || settings.saving || diagnosticsBusy"
-          @click="exportDiagnostics"
-          ><UIcon :name="folderReady ? 'i-tabler-folder' : 'i-tabler-file-export'" class="size-4" aria-hidden="true" />{{ folderReady ? '打开诊断文件夹' : diagnosticsBusy ? '导出中' : '导出全部诊断' }}</UiButton
-        >
-      </div>
-      <UiInlineNotice v-if="diagnosticNotice" :tone="diagnosticNoticeTone">{{ diagnosticNotice }}</UiInlineNotice>
-    </SettingsCard>
+      </SettingsCard>
+      <SettingsCard title="日志与诊断">
+        <UiSelect v-if="group" v-model="settingsLogLevel" label="任务日志级别" :options="logLevelOptions" />
+        <LogMaintenance />
+        <details v-if="recentFailureReport" class="min-w-0">
+          <summary class="cursor-pointer">最近的操作错误</summary>
+          <div class="grid min-w-0 gap-3 py-3">
+            <p class="settings-note">显示最近 20 条操作错误。清理日志时会一并删除这些记录。</p>
+            <ErrorDetails :detail="recentFailureReport" :show-advice="false" />
+          </div>
+        </details>
+        <div class="maintenance-actions">
+          <UiButton class="maintenance-action" variant="secondary" :disabled="settings.loading || settings.saving || diagnosticsBusy" @click="exportDiagnostics">
+            <UIcon :name="folderReady ? 'i-tabler-folder' : 'i-tabler-file-export'" class="size-4" aria-hidden="true" />
+            {{ folderReady ? '打开诊断文件夹' : diagnosticsBusy ? '导出中' : '导出全部诊断' }}
+          </UiButton>
+        </div>
+        <UiInlineNotice v-if="diagnosticNotice" :tone="diagnosticNoticeTone">{{ diagnosticNotice }}</UiInlineNotice>
+      </SettingsCard>
+    </template>
     <FileRemovalDialog :controller="cleanup" />
   </section>
 </template>

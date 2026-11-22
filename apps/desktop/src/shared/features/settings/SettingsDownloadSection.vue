@@ -3,7 +3,6 @@ import SettingsCard from './SettingsCard.vue';
 import SettingsOutputDefaults from './SettingsOutputDefaults.vue';
 import ParseRulesEditor from './ParseRulesEditor.vue';
 import UiButton from '../../ui/Button.vue';
-import UiIconButton from '../../ui/IconButton.vue';
 import UiSelect from '../../ui/Select.vue';
 import UiTextField from '../../ui/TextField.vue';
 import SettingsEnvironmentSummary from './SettingsEnvironmentSummary.vue';
@@ -11,7 +10,11 @@ import FfmpegDownloadButton from '../../ui/FfmpegDownloadButton.vue';
 import { concurrentTaskOptions, retryCountOptions, segmentCountOptions } from './settingsCatalog';
 import type { SettingsForm } from './useSettingsForm';
 
-const { form, desktopPaths = true } = defineProps<{ form: SettingsForm; desktopPaths?: boolean }>();
+const { form, desktopPaths = true, group } = defineProps<{
+  form: SettingsForm;
+  desktopPaths?: boolean;
+  group?: 'saving' | 'tasks' | 'links';
+}>();
 const {
   settings,
   settingsEnvironmentHealth,
@@ -33,20 +36,17 @@ const {
 
 <template>
   <section class="settings-block">
-    <SettingsCard title="保存位置">
-      <div v-if="!desktopPaths" class="directory-row">
-        <UiTextField
-          :model-value="settings.draft.document_tree_output?.display_name ?? ''"
-          label="Android 导出目录"
-          placeholder="尚未选择"
-          disabled
-        />
-        <UiIconButton
-          icon="folder-open"
-          :label="settings.draft.document_tree_output ? '更换导出目录' : '选择导出目录'"
+    <SettingsCard v-if="!group || group === 'saving'" title="保存位置">
+      <div v-if="!desktopPaths" class="mobile-directory-row">
+        <span>{{ settings.draft.document_tree_output?.display_name ?? '尚未选择目录' }}</span>
+        <UiButton
+          variant="secondary"
           :disabled="settings.loading || settings.saving"
           @click="settings.chooseDocumentTreeOutput"
-        />
+        >
+          <UIcon name="i-tabler-folder-open" class="size-4" aria-hidden="true" />
+          {{ settings.draft.document_tree_output ? '更换目录' : '选择目录' }}
+        </UiButton>
       </div>
       <div v-if="desktopPaths" class="directory-row">
         <UiTextField v-model="settingsDownloadDir" label="保存目录" placeholder="未设置时使用 downloads" />
@@ -59,12 +59,12 @@ const {
         </UiButton>
       </div>
     </SettingsCard>
-    <SettingsOutputDefaults :form="form" />
-    <SettingsCard title="下载与恢复">
+    <SettingsOutputDefaults v-if="!group || group === 'saving'" :form="form" />
+    <SettingsCard v-if="!group || group === 'tasks'" :title="group ? '速度与并发' : '下载与恢复'">
       <div class="settings-inline-grid settings-download-options">
         <UiSelect v-model="settingsConcurrentTasks" label="同时下载任务数" :options="concurrentTaskOptions" />
         <UiSelect v-model="settingsSegmentCount" label="单任务分段数" :options="segmentCountOptions" />
-        <UiSelect v-model="settingsRetryCount" label="失败自动重试次数" :options="retryCountOptions" />
+        <UiSelect v-if="!group" v-model="settingsRetryCount" label="失败自动重试次数" :options="retryCountOptions" />
         <UiTextField
           :model-value="settingsGlobalSpeedLimitMb"
           label="全局下载限速（MB/s）"
@@ -72,6 +72,10 @@ const {
           :error="settingsGlobalSpeedLimitError ?? undefined"
           @update:model-value="updateGlobalSpeedLimit"
         />
+      </div>
+      <h3 v-if="group" class="settings-subheading">重试与续传</h3>
+      <div v-if="group" class="settings-inline-grid settings-download-options">
+        <UiSelect v-model="settingsRetryCount" label="失败自动重试次数" :options="retryCountOptions" />
       </div>
       <div class="settings-toggle-list">
         <label class="settings-toggle-row"
@@ -90,20 +94,8 @@ const {
         /></label>
       </div>
     </SettingsCard>
-    <ParseRulesEditor v-model="settings.draft.parse_rules" />
-    <SettingsCard v-if="!desktopPaths" title="FFmpeg">
-      <p class="settings-note">
-        Android 版内置，无需手动配置<span v-if="settingsEnvironmentHealth?.ffmpeg">
-          ·
-          {{
-            settingsEnvironmentHealth.ffmpeg.status === 'ready'
-              ? '可正常使用'
-              : settingsEnvironmentHealth.ffmpeg.message
-          }}</span
-        >
-      </p>
-    </SettingsCard>
-    <SettingsCard v-if="desktopPaths" title="FFmpeg">
+    <ParseRulesEditor v-if="!group || group === 'links'" v-model="settings.draft.parse_rules" />
+    <SettingsCard v-if="desktopPaths && !group" title="FFmpeg">
       <details class="text-xs leading-5 text-(--color-muted)">
         <summary
           class="cursor-pointer rounded-sm text-(--color-text) border border-transparent focus-visible:border-(--color-accent) focus-visible:outline-none"
@@ -150,5 +142,21 @@ const {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: end;
   gap: var(--space-8);
+}
+
+.mobile-directory-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+  overflow-wrap: anywhere;
+}
+
+.settings-subheading {
+  margin: var(--space-8) 0 0;
+  color: var(--color-text-strong);
+  font-size: var(--font-14);
+  font-weight: 600;
 }
 </style>
