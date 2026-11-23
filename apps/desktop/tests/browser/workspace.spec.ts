@@ -1560,7 +1560,11 @@ test('saved defaults download directly and reuse startup environment health', as
   await expect(page.getByRole('region', { name: '下载任务准备' })).toHaveCount(0);
   await page.getByRole('button', { name: '传输 队列与恢复' }).click();
   await expect(page.getByRole('heading', { name: '传输', exact: true })).toBeVisible();
-  await expect(page.getByRole('region', { name: '下载任务准备' })).toHaveCount(0);
+  await page.getByRole('region', { name: '下载任务准备' }).getByRole('button', { name: '查看详情' }).click();
+  const preparationDialog = page.getByRole('dialog', { name: '添加下载任务' });
+  await expect(preparationDialog.getByRole('button', { name: '停止添加' })).toBeEnabled();
+  await page.keyboard.press('Escape');
+  await expect(preparationDialog).toBeHidden();
   await page.getByRole('button', { name: '设置 偏好与维护' }).click();
   const queueReadsBeforeCompletion = await page.evaluate(() => (window as unknown as { __BDL_TEST_INVOKES__: string[] }).__BDL_TEST_INVOKES__.filter(command => command === 'queue_list').length);
   await page.evaluate(() => { (window as unknown as { __PREPARATION_PHASE__: string }).__PREPARATION_PHASE__ = 'completed'; });
@@ -1671,7 +1675,7 @@ test('parse all can stop at a page boundary', async ({ page }) => {
 const confirmDesktopBackgroundDownload = async (page: Page) => {
   await page.getByRole('button', { name: '下载全部', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: '下载全部', exact: true });
-  await dialog.getByRole('button', { name: '开始下载', exact: true }).click();
+  await dialog.getByRole('button', { name: '加入下载队列', exact: true }).click();
 };
 
 for (const theme of ['light', 'dark'] as const) {
@@ -1712,7 +1716,7 @@ for (const theme of ['light', 'dark'] as const) {
       if (platform === 'mobile') {
         await page.getByRole('button', { name: '下载全部', exact: true }).click();
         const dialog = page.getByRole('dialog', { name: '下载全部', exact: true });
-        const start = dialog.getByRole('button', { name: '开始下载', exact: true });
+        const start = dialog.getByRole('button', { name: '加入下载队列', exact: true });
         await expect(start).toBeDisabled();
         await dialog.getByRole('button', { name: '选择目录', exact: true }).click();
         await expect(dialog.getByText('测试下载目录', { exact: true })).toBeVisible();
@@ -1720,8 +1724,8 @@ for (const theme of ['light', 'dark'] as const) {
       } else {
         await confirmDesktopBackgroundDownload(page);
       }
-      const status = page.getByRole('region', { name: '后台解析下载' });
-      await expect(status).toContainText('后台解析下载已完成', { timeout: 15000 });
+      const status = page.getByRole('region', { name: '后台添加下载' });
+      await expect(status).toContainText('添加完成', { timeout: 15000 });
       await expect(status).toContainText('1 项失败');
       const before = await page.evaluate(
         () => (window as unknown as { __TASK_ATTEMPTS__: string[] }).__TASK_ATTEMPTS__.length,
@@ -1737,7 +1741,7 @@ for (const theme of ['light', 'dark'] as const) {
       });
       await status.getByRole('button', { name: '重试失败项' }).focus();
       await page.keyboard.press('Enter');
-      await expect(status).toContainText('后台解析下载已完成');
+      await expect(status).toContainText('添加完成');
       await expect(status.getByRole('button', { name: '重试失败项' })).not.toBeVisible();
       expect(
         await page.evaluate(() => (window as unknown as { __TASK_ATTEMPTS__: string[] }).__TASK_ATTEMPTS__.length),
@@ -1753,9 +1757,9 @@ test('background parsing downloads progressively and remains visible on another 
   await page.getByRole('button', { name: '开始解析' }).click();
   await confirmDesktopBackgroundDownload(page);
   await page.getByRole('button', { name: '设置 偏好与维护' }).click();
-  const status = page.getByRole('region', { name: '后台解析下载' });
+  const status = page.getByRole('region', { name: '后台添加下载' });
   await expect(status).toBeVisible();
-  await expect(status).toContainText('后台解析下载已完成', { timeout: 15000 });
+  await expect(status).toContainText('添加完成', { timeout: 15000 });
   await expect(page.getByRole('dialog', { name: '下载设置' })).not.toBeVisible();
   const commands = await page.evaluate(
     () => (window as unknown as { __BDL_TEST_INVOKES__: string[] }).__BDL_TEST_INVOKES__,
@@ -1807,7 +1811,7 @@ test('preparation errors remain globally accessible after leaving the parse page
   await expect(page.getByRole('dialog', { name: '下载设置' })).toHaveCount(0);
   await page.getByRole('button', { name: '传输 队列与恢复' }).click();
   await page.getByRole('region', { name: '下载任务准备' }).getByRole('button', { name: '查看详情' }).click();
-  const dialog = page.getByRole('dialog', { name: '待处理任务', exact: true });
+  const dialog = page.getByRole('dialog', { name: '添加下载任务', exact: true });
   await expect(dialog.getByText('Bilibili 暂时拒绝了请求（HTTP 412）', { exact: true })).toBeVisible();
   await expect(dialog.getByRole('button', { name: '复制诊断信息' })).toBeVisible();
   await dialog.getByText('错误详情', { exact: true }).click();
@@ -1817,7 +1821,7 @@ test('preparation errors remain globally accessible after leaving the parse page
   await page.getByRole('region', { name: '下载任务准备' }).getByRole('button', { name: '查看详情' }).click();
   await expect(dialog.getByText('Bilibili 暂时拒绝了请求（HTTP 412）', { exact: true })).toBeVisible();
   await dialog.getByRole('button', { name: '关闭记录', exact: true }).click();
-  await expect(dialog.getByText('暂无待处理任务', { exact: true })).toBeVisible();
+  await expect(dialog.getByText('没有需要处理的下载', { exact: true })).toBeVisible();
   await expect(page.getByRole('region', { name: '下载任务准备' })).toHaveCount(0);
 });
 
@@ -3977,8 +3981,8 @@ test('pagination and background keep real causes from transport to controls', as
   await page.locator('.error-details summary').click();
   await expect(page.locator('.error-details pre')).toContainText('HTTP 429');
   await confirmDesktopBackgroundDownload(page);
-  const status = page.getByRole('region', { name: '后台解析下载' });
-  await expect(status).toContainText('后台解析下载失败');
+  const status = page.getByRole('region', { name: '后台添加下载' });
+  await expect(status).toContainText('添加失败');
   await status.locator('summary').click();
   await expect(status.locator('pre')).toContainText('HTTP 429');
   await expect(status.locator('pre')).not.toContainText('hidden-cookie');

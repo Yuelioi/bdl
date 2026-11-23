@@ -52,7 +52,7 @@ pub struct PageState {
     pub has_more: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NormalizedItem {
     #[serde(default)]
     pub nfo_metadata: crate::nfo::NfoMetadata,
@@ -68,7 +68,7 @@ pub struct NormalizedItem {
     pub parts: Vec<NormalizedPart>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NormalizedPart {
     pub id: PartId,
     pub title: String,
@@ -81,7 +81,7 @@ pub struct NormalizedPart {
     pub assets: Vec<DerivedAsset>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MediaStream {
     pub id: String,
     pub kind: MediaKind,

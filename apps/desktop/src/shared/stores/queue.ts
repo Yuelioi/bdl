@@ -440,18 +440,18 @@ export const useQueueStore = defineStore('queue', {
       await this.runTaskCommand(() => queueCancel(taskId), '已取消')
     },
     async retry(taskId: string) {
-      await this.runTaskCommand(() => queueRetry(taskId), '已重新入队')
+      await this.runTaskCommand(() => queueRetry(taskId), '已放回下载队列')
       await this.loadLogs(taskId)
     },
     async refreshUrlsAndRetry(taskId: string) {
-      await this.runTaskCommand(() => queueRefreshUrlsAndRetry(taskId), '已刷新链接并重新入队')
+      await this.runTaskCommand(() => queueRefreshUrlsAndRetry(taskId), '已放回下载队列')
       await this.loadLogs(taskId)
     },
     async bulkPause(taskIds: string[]) {
       await this.runBulkCommand(() => queueBulkPause({ task_ids: taskIds }), '暂停')
     },
     async bulkCancel(taskIds: string[]) {
-      await this.runBulkCommand(() => queueBulkCancel({ task_ids: taskIds }), '取消')
+      await this.runBulkCommand(() => queueBulkCancel({ task_ids: taskIds }), '已取消')
     },
     async bulkResume(taskIds: string[]) {
       await this.runBulkCommand(() => queueBulkResume({ task_ids: taskIds }), '继续')
@@ -460,7 +460,7 @@ export const useQueueStore = defineStore('queue', {
       await this.runBulkCommand(() => queueBulkRetry({ task_ids: taskIds }), '重试')
     },
     async bulkRefreshUrlsAndRetry(taskIds: string[]) {
-      await this.runBulkCommand(() => queueBulkRefreshUrlsAndRetry({ task_ids: taskIds }), '刷新链接并重试')
+      await this.runBulkCommand(() => queueBulkRefreshUrlsAndRetry({ task_ids: taskIds }), '已安排重试')
     },
     async bulkRemove(taskIds: string[]) {
       await this.runBulkCommand(() => queueBulkRemove({ task_ids: taskIds }), '已移除', '保留成品，已清理临时文件')

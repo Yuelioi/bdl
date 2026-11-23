@@ -21,6 +21,13 @@ pub(crate) struct PreparationContext {
     pub client: Arc<bpi_rs::BpiClient>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SelectionPreparation {
+    Metadata,
+    MissingStreams,
+    Refresh,
+}
+
 impl AppState {
     pub(crate) fn preparation_context(
         &self,
@@ -104,20 +111,22 @@ impl AppState {
         selected: &[PartId],
         options: &DownloadOptions,
         context: &PreparationContext,
-        force: bool,
+        mode: SelectionPreparation,
         progress: impl Fn(usize, usize) -> BdlResult<()>,
     ) -> BdlResult<PreparedSelection> {
         let mut part_ids = normalize_selected_part_ids(&tree, selected);
-        let mut requests = if force {
+        let mut requests = if mode != SelectionPreparation::MissingStreams {
             crate::parse_session::selection_hydration_requests(&tree, &part_ids, true)?
         } else {
             selected_hydration_requests(&tree, &part_ids)?
         };
-        let media = options.media_mode.includes_video() || options.media_mode.includes_audio();
-        let subtitles = options.selected_archive_assets().subtitles
-            || options
-                .processing
-                .is_some_and(|processing| processing.embed_subtitles);
+        let media = mode != SelectionPreparation::Metadata
+            && (options.media_mode.includes_video() || options.media_mode.includes_audio());
+        let subtitles = mode != SelectionPreparation::Metadata
+            && (options.selected_archive_assets().subtitles
+                || options
+                    .processing
+                    .is_some_and(|processing| processing.embed_subtitles));
         if !media && !subtitles {
             requests.retain(|request| request.target_cid.is_none());
         }
@@ -129,7 +138,7 @@ impl AppState {
             .begin(&context.operation_id, "prepare_selection");
         for (index, request) in requests.into_iter().enumerate() {
             self.check_account_revision(context.account_revision)?;
-            operation.target(format!("source_id={} part_id={} target_cid={:?} item={}/{} selected_parts={} force_refresh={force} media={media} subtitles={subtitles}", tree.source.id.0, request.part_id.0, request.target_cid, index + 1, total, part_ids.len()));
+            operation.target(format!("source_id={} part_id={} target_cid={:?} item={}/{} selected_parts={} mode={mode:?} media={media} subtitles={subtitles}", tree.source.id.0, request.part_id.0, request.target_cid, index + 1, total, part_ids.len()));
             let hydrated = operation
                 .run(self.parse_pacer.run_retry(
                     context.rules,

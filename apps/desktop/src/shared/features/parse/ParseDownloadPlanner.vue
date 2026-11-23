@@ -430,10 +430,10 @@ defineExpose({ openDialog, openAllDialog, downloadSaved });
         downloadNotice.message
       }}</UiInlineNotice>
       <ErrorDetails v-if="!allSourceId && sizeEstimateError && !downloadNotice" :detail="sizeEstimateError" />
-      <p v-if="allSourceId" class="download-scope-note">
-        {{ allInBackground ? '确认后会在后台继续加载，并将全部内容逐项加入传输。' : '确认后会将全部内容加入传输。' }}
+      <p v-if="allInBackground" class="download-scope-note">
+        剩余内容会在后台继续添加，已加入队列的任务会陆续下载。
       </p>
-      <UiInlineNotice v-if="backgroundUnavailable" tone="warning">已有后台下载正在进行，请在传输中查看。</UiInlineNotice>
+      <UiInlineNotice v-if="backgroundUnavailable" tone="warning">还有一批内容正在添加，请到传输页查看或停止添加。</UiInlineNotice>
       <div v-if="mobile" class="mobile-save-location">
         <div class="mobile-save-location-copy">
           <strong>保存位置</strong>
@@ -529,7 +529,7 @@ defineExpose({ openDialog, openAllDialog, downloadSaved });
             (mobile && !documentTreeOutput) || Boolean(namingError || presetError)
           "
           @click="createTasks()"
-          >开始下载</UiButton
+          >{{ allSourceId ? '加入下载队列' : '开始下载' }}</UiButton
         >
       </div>
     </template>

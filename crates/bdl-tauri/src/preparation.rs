@@ -4,7 +4,7 @@ use std::sync::Mutex;
 use bdl_core::fetcher::FetchCancelToken;
 use bdl_core::ids::PartId;
 use bdl_core::model::NormalizedSourceTree;
-use bdl_core::planner::{DownloadOptions, missing_required_media_parts, plan_selected_parts};
+use bdl_core::planner::{DownloadOptions, defer_selected_parts};
 use bdl_core::queue::{
     DownloadExportTarget, DownloadTask, DuplicateTaskPolicy, portable_relative_path,
 };
@@ -19,7 +19,7 @@ use crate::commands::{
     CommandError, CommandResult, DuplicateTaskMatch, SelectionCreateTasksRequest,
     SelectionCreateTasksResult,
 };
-use crate::parse_owned::PreparationContext;
+use crate::parse_owned::{PreparationContext, SelectionPreparation};
 use crate::state::AppState;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -77,7 +77,6 @@ pub(crate) struct PreparationInput {
     pub options: DownloadOptions,
     pub context: PreparationContext,
     pub document_tree: Option<DocumentTreeDirectory>,
-    pub work_dir: Option<std::path::PathBuf>,
     pub scheduled_at: Option<DateTime<Utc>>,
     pub speed_limit: Option<u64>,
     pub policy: DuplicateTaskPolicy,
@@ -211,7 +210,6 @@ pub(crate) fn build_input(
         options,
         context: state.preparation_context(id)?,
         document_tree,
-        work_dir,
         scheduled_at,
         speed_limit,
         policy: request.duplicate_policy,
@@ -223,51 +221,73 @@ pub(crate) async fn plan_input(
     input: PreparationInput,
     progress: impl Fn(usize, usize) -> BdlResult<()>,
 ) -> CommandResult<(Vec<DownloadTask>, usize, PreparationInput)> {
-    let mut prepared = state
+    let prepared = state
         .prepare_selection_owned(
             input.tree.clone(),
             &input.selected,
             &input.options,
             &input.context,
-            false,
+            SelectionPreparation::Metadata,
             &progress,
         )
         .await?;
-    let missing = missing_required_media_parts(&prepared.tree, &prepared.part_ids, &input.options);
-    if !missing.is_empty() {
-        let refreshed = state
-            .prepare_selection_owned(
-                prepared.tree,
-                &missing,
-                &input.options,
-                &input.context,
-                true,
-                |_, _| Ok(()),
-            )
-            .await?;
-        prepared.tree = refreshed.tree;
-    }
-    let mut tasks = plan_selected_parts(&prepared.tree, &prepared.part_ids, &input.options)?;
+    let mut tasks = defer_selected_parts(
+        &prepared.tree,
+        &prepared.part_ids,
+        &input.options,
+        input.document_tree.as_ref(),
+    )?;
     let skipped = prepared.part_ids.len().saturating_sub(tasks.len());
     for task in &mut tasks {
         task.scheduled_at = input.scheduled_at;
         task.speed_limit_bytes_per_second = input.speed_limit;
-        if let (Some(directory), Some(work_dir)) = (&input.document_tree, &input.work_dir) {
-            let relative =
-                task.output_path
-                    .strip_prefix(work_dir)
-                    .map_err(|_| BdlError::Planning {
-                        message: "Android 工作路径超出应用私有目录。".into(),
-                    })?;
-            task.export_target = Some(DownloadExportTarget::DocumentTree {
-                tree_uri: directory.tree_uri.clone(),
-                relative_path: portable_relative_path(relative)?,
-                duplicate_naming_strategy: input.options.duplicate_naming_strategy,
-                document_uri: None,
-            });
-        }
     }
     Ok((tasks, skipped, input))
+}
+
+pub(crate) async fn materialize_queued_download(
+    state: &AppState,
+    queued: &DownloadTask,
+    token: &FetchCancelToken,
+) -> BdlResult<Option<DownloadTask>> {
+    let deferred = queued
+        .media_selection
+        .deferred
+        .as_ref()
+        .expect("deferred task");
+    let context = state.preparation_context(uuid::Uuid::new_v4().to_string())?;
+    let prepared = state
+        .prepare_selection_owned(
+            deferred.source_tree(),
+            std::slice::from_ref(deferred.part_id()),
+            &deferred.options,
+            &context,
+            SelectionPreparation::Refresh,
+            |_, _| Ok(()),
+        )
+        .await?;
+    let mut planned = deferred.plan(&prepared.tree)?;
+    if let (Some(task), Some(directory)) = (&mut planned, &deferred.document_tree) {
+        let relative = task
+            .output_path
+            .strip_prefix(&deferred.options.output_dir)
+            .map_err(|_| BdlError::Planning {
+                message: "Android 工作路径超出应用私有目录。".into(),
+            })?;
+        task.export_target = Some(DownloadExportTarget::DocumentTree {
+            tree_uri: directory.tree_uri.clone(),
+            relative_path: portable_relative_path(relative)?,
+            duplicate_naming_strategy: deferred.options.duplicate_naming_strategy,
+            document_uri: None,
+        });
+    }
+    state.check_account_revision(context.account_revision)?;
+    state.commit_queued_download(
+        queued,
+        planned,
+        deferred.options.duplicate_naming_strategy,
+        token,
+    )
 }
 
 pub(crate) fn commit(

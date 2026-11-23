@@ -365,9 +365,9 @@ export const redactDiagnosticMessage = (message: string): string =>
 export const filterTaskByWorkflow = (status: TaskStatus, filter: QueueFilter): boolean => {
   switch (filter) {
     case 'active':
-      return status !== 'completed'
+      return status !== 'completed' && status !== 'cancelled'
     case 'failed':
-      return status === 'failed' || status === 'cancelled'
+      return status === 'failed'
     case 'completed':
       return status === 'completed'
     case 'all':
@@ -376,7 +376,7 @@ export const filterTaskByWorkflow = (status: TaskStatus, filter: QueueFilter): b
 }
 
 export const defaultQueueFilter = (tasks: DownloadTask[]): QueueFilter => {
-  if (tasks.some((task) => task.status !== 'completed')) {
+  if (tasks.some((task) => filterTaskByWorkflow(task.status, 'active'))) {
     return 'active'
   }
 
@@ -390,7 +390,7 @@ export const defaultQueueFilter = (tasks: DownloadTask[]): QueueFilter => {
 export const statusLabel = (status: TaskStatus): string => {
   const labels: Record<TaskStatus, string> = {
     waiting: '队列中',
-    parsing: '解析中',
+    parsing: '正在获取下载地址',
     downloading: '下载中',
     muxing: '合并中',
     completed: '已完成',
@@ -408,7 +408,7 @@ export const statusBadge = (
   if (status === 'completed') {
     return 'done'
   }
-  if (status === 'failed' || status === 'cancelled') {
+  if (status === 'failed') {
     return 'error'
   }
   if (status === 'paused') {
@@ -465,7 +465,7 @@ const classifyTaskIssue = (task: DownloadTask, logs: QueueLogEntry[]): Classifie
   if (task.status === 'cancelled') {
     return {
       label: '已取消',
-      detail: '任务被取消，可以重新入队后继续尝试。',
+      detail: '点击重试可将任务放回下载队列。',
       trackLabel,
       recommendedAction: 'retry',
       recommendedActionLabel: actionLabel('retry'),

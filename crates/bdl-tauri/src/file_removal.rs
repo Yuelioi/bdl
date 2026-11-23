@@ -430,6 +430,9 @@ fn document_key(uri: &str) -> BdlResult<String> {
     ))
 }
 fn validate_task_paths(task: &DownloadTask) -> BdlResult<()> {
+    if task.media_selection.deferred.is_some() {
+        return Ok(());
+    }
     let parent = task
         .output_path
         .parent()
@@ -540,6 +543,46 @@ impl Drop for FileCleanupGuard<'_> {
 }
 
 impl AppState {
+    /// Pending plans have never owned files. Delete their records in one
+    /// transaction while holding the same lock that protects worker pickup.
+    pub(crate) fn remove_idle_download_plans(
+        &self,
+        requested: &[String],
+    ) -> BdlResult<Vec<String>> {
+        if requested.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut queue = self.queue_edit()?;
+        let mut ids = {
+            let active = self.queue_cancellations.lock().map_err(|_| lock_error())?;
+            let removals = self.removals.lock().map_err(|_| lock_error())?;
+            let requested = requested.iter().collect::<HashSet<_>>();
+            queue
+                .iter()
+                .filter(|task| {
+                    requested.contains(&task.id)
+                        && task.media_selection.deferred.is_some()
+                        && !active.contains_key(&task.id)
+                        && !removals.contains(&task.id)
+                })
+                .map(|task| task.id.clone())
+                .collect::<HashSet<_>>()
+        };
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        queue.retain(|task| !ids.contains(&task.id));
+        self.persist_queue_edit(&mut queue)?;
+        let removed = requested
+            .iter()
+            .filter(|id| ids.remove(*id))
+            .cloned()
+            .collect::<Vec<_>>();
+        self.invalidate_task_previews(&removed);
+        self.notify_queue_changed();
+        Ok(removed)
+    }
+
     fn invalidate_task_previews(&self, ids: &[String]) {
         // Removing a task ends its identity even if a later download reuses
         // the same ID and retained output. A poisoned store cannot issue tokens.

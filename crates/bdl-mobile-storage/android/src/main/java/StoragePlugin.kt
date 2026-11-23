@@ -602,6 +602,7 @@ class StoragePlugin(private val activity: Activity) : Plugin(activity) {
 
   private fun resolveExportDirectory(args: OpenExportArgs): Uri {
     val treeUri = Uri.parse(args.treeUri)
+    if (args.relativePath.isEmpty()) return treeRoot(treeUri)
     val parts = relativeParts(args.relativePath)
     var parent = treeRoot(treeUri)
     for (segment in parts.dropLast(1)) {

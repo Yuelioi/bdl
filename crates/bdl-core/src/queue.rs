@@ -124,6 +124,21 @@ pub struct DownloadTask {
 }
 
 impl DownloadTask {
+    pub fn can_resolve_media_urls(&self) -> bool {
+        self.refresh_intent.is_some()
+            && (self.media_selection.audio_codec.is_some()
+                || !self
+                    .resources
+                    .iter()
+                    .any(|resource| resource.intent == DownloadResourceIntent::Audio))
+            && self.resources.iter().any(|resource| {
+                matches!(
+                    resource.intent,
+                    DownloadResourceIntent::Audio | DownloadResourceIntent::Video
+                )
+            })
+    }
+
     pub fn can_start_at(&self, now: DateTime<Utc>) -> bool {
         self.status.can_start()
             && self
@@ -243,6 +258,9 @@ impl DownloadTask {
     }
 
     pub fn file_paths(&self) -> Vec<PathBuf> {
+        if self.media_selection.deferred.is_some() {
+            return Vec::new();
+        }
         let mut paths = vec![self.output_path.clone()];
         paths.extend(
             self.media_selection
@@ -348,6 +366,8 @@ pub struct TaskProcessingOptions {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DownloadTaskMediaSelection {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deferred: Option<Box<crate::planner::DeferredDownload>>,
     #[serde(default)]
     pub nfo_metadata: crate::nfo::NfoMetadata,
     /// SAF receipts distinguish files created here from "skip existing" files.
@@ -364,6 +384,8 @@ pub struct DownloadTaskMediaSelection {
     pub video_quality: String,
     pub audio_quality: String,
     pub video_codec: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub video_bandwidth: Option<u64>,
     #[serde(default)]
     pub audio_codec: Option<String>,
     /// Source audio bitrate in bits per second, as reported by the selected stream.
@@ -377,6 +399,7 @@ pub struct DownloadTaskMediaSelection {
 impl Default for DownloadTaskMediaSelection {
     fn default() -> Self {
         Self {
+            deferred: None,
             nfo_metadata: Default::default(),
             owned_document_uris: Vec::new(),
             preserved_document_uris: Vec::new(),
@@ -387,6 +410,7 @@ impl Default for DownloadTaskMediaSelection {
             video_quality: "unknown".to_owned(),
             audio_quality: "unknown".to_owned(),
             video_codec: "unknown".to_owned(),
+            video_bandwidth: None,
             audio_codec: None,
             audio_bandwidth: None,
             container: "unknown".to_owned(),

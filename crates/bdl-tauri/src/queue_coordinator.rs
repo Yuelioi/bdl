@@ -97,13 +97,21 @@ pub(crate) fn prepare_duplicate_copies(
             .iter()
             .any(|candidate| candidate.logical_id() == task.id)
         {
-            reserved_paths.insert(task.output_path.clone());
+            if task.media_selection.deferred.is_none() {
+                reserved_paths.insert(task.output_path.clone());
+            }
             prepared.push(task);
             continue;
         }
         let mut copy_index = 1;
         while !used_ids.insert(format!("{}:copy:{copy_index}", task.logical_id())) {
             copy_index += 1;
+        }
+        if task.media_selection.deferred.is_some() {
+            let mut copy = task;
+            copy.id = format!("{}:copy:{copy_index}", copy.logical_id());
+            prepared.push(copy);
+            continue;
         }
         let output_path = unique_path_with_stem_limit(
             task.output_path.clone(),
@@ -130,6 +138,10 @@ pub(crate) fn reserve_queued_paths(
         .collect::<ReservedPaths>();
     let mut prepared = Vec::with_capacity(tasks.len());
     for task in tasks {
+        if task.media_selection.deferred.is_some() {
+            prepared.push(task);
+            continue;
+        }
         if task.media_selection.workflow.is_some() {
             if let Some(task) =
                 bdl_core::workflow::reserve_task_paths(task, &mut reserved, strategy)?

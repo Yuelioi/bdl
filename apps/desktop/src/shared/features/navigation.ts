@@ -12,12 +12,8 @@ export const navItems: Array<{ value: AppTab; label: string; description: string
 
 export const useNavigationStatus = () => {
   const queue = useQueueStore();
-  const transferBadgeCount = computed(
-    () => queue.tasks.filter((task) => task.status !== 'completed' && task.status !== 'cancelled').length,
-  );
-  const attentionCount = computed(
-    () => queue.tasks.filter((task) => task.status === 'failed' || task.status === 'cancelled').length,
-  );
+  const transferBadgeCount = computed(() => queue.countByFilter('active'));
+  const attentionCount = computed(() => queue.countByFilter('failed'));
   const scheduledTaskCount = computed(
     () =>
       queue.tasks.filter(

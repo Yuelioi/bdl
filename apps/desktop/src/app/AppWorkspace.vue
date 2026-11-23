@@ -24,7 +24,7 @@ const activePageComponent = computed(() => (mobile ? mobilePages : desktopPages)
 <template>
   <section class="main-region" :data-page="ui.activeTab" :class="{ 'workspace-mobile': mobile }">
     <div class="workspace-status">
-      <PreparationStatus />
+      <PreparationStatus :show-active="ui.activeTab === 'transfer'" />
       <BackgroundParseStatus />
     </div>
     <Suspense>

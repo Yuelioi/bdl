@@ -2,7 +2,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use bdl_core::fetcher::{BandwidthLimiter, FetchCancelToken, FetchConfig, ReqwestFetcher};
-use bdl_core::queue::{DownloadTask, QueueLogLevel, TaskStatus};
+use bdl_core::queue::{
+    DownloadResourceIntent, DownloadTask, QueueLogLevel, ResourceStatus, TaskStatus,
+};
 use futures::stream::{FuturesUnordered, StreamExt};
 use tauri::{AppHandle, Manager};
 use tokio::time::Instant;
@@ -92,7 +94,12 @@ async fn run(app: &AppHandle, state: &AppState) -> CommandResult<()> {
                     queue_task_launch_context(state.settings()?, task.speed_limit_bytes_per_second);
 
                 events::emit(app, events::QUEUE_TASK_UPDATED, &task)?;
-                emit_queue_log(app, state, &task.id, QueueLogLevel::Info, "开始下载任务")?;
+                let message = if task.status == TaskStatus::Parsing {
+                    "正在获取下载地址"
+                } else {
+                    "开始下载任务"
+                };
+                emit_queue_log(app, state, &task.id, QueueLogLevel::Info, message)?;
                 running.push(run_download_attempt(
                     app,
                     state,
@@ -152,6 +159,13 @@ async fn run(app: &AppHandle, state: &AppState) -> CommandResult<()> {
                     }
                 }
                 let Some(wakeup) = next_wakeup else {
+                    if state
+                        .file_cleanup_active
+                        .load(std::sync::atomic::Ordering::SeqCst)
+                    {
+                        wait_for_queue_wakeup(state, None).await;
+                        continue;
+                    }
                     break;
                 };
                 wait_for_queue_wakeup(state, Some(wakeup)).await;
@@ -211,19 +225,76 @@ async fn run_download_attempt(
     let (task, _attempt) = picked;
     let cancel_token = state.register_task_cancel_token(&task.id)?;
     // Pause/remove can arrive after pickup, before this future is first polled.
-    if !matches!(state.task_status(&task.id), Ok(TaskStatus::Downloading)) {
+    if !matches!(
+        state.task_status(&task.id),
+        Ok(TaskStatus::Parsing | TaskStatus::Downloading)
+    ) {
         return Ok(());
     }
     let outcome = match ReqwestFetcher::with_global_limiter(fetch_config, global_limiter) {
         Ok(fetcher) => {
-            run_download_task(
-                app,
-                state,
-                &fetcher,
-                task.clone(),
-                runtime_options,
-                cancel_token.clone(),
-            )
+            async {
+                let resolved = if task.media_selection.deferred.is_some() {
+                    let Some(resolved) = cancellable_refresh(
+                        &cancel_token,
+                        crate::preparation::materialize_queued_download(
+                            state,
+                            &task,
+                            &cancel_token,
+                        ),
+                    )
+                    .await
+                    else {
+                        return Ok(());
+                    };
+                    let Some(resolved) = resolved? else {
+                        return Ok(());
+                    };
+                    events::emit(app, events::QUEUE_TASK_UPDATED, &resolved)?;
+                    if resolved.status == TaskStatus::Cancelled {
+                        emit_queue_log(
+                            app,
+                            state,
+                            &task.id,
+                            QueueLogLevel::Info,
+                            "已跳过已有文件",
+                        )?;
+                        return Ok(());
+                    }
+                    if resolved.status != TaskStatus::Downloading {
+                        return Ok(());
+                    }
+                    emit_queue_log(app, state, &task.id, QueueLogLevel::Info, "开始下载任务")?;
+                    resolved
+                } else if task.can_resolve_media_urls()
+                    && task.resources.iter().any(|resource| {
+                        resource.status != ResourceStatus::Completed
+                            && matches!(
+                                resource.intent,
+                                DownloadResourceIntent::Video | DownloadResourceIntent::Audio
+                            )
+                    })
+                {
+                    let Some(refreshed) =
+                        cancellable_refresh(&cancel_token, state.refresh_task_media_urls(&task.id))
+                            .await
+                    else {
+                        return Ok(());
+                    };
+                    refreshed?
+                } else {
+                    task.clone()
+                };
+                run_download_task(
+                    app,
+                    state,
+                    &fetcher,
+                    resolved,
+                    runtime_options,
+                    cancel_token.clone(),
+                )
+                .await
+            }
             .await
         }
         Err(error) => Err(error.into()),
@@ -297,6 +368,15 @@ async fn handle_download_outcome(
                     QueueLogLevel::Warning,
                     &format!("自动刷新过期链接（{attempt}/{MAX_AUTO_REFRESH_ATTEMPTS}）"),
                 )?;
+
+                if state.task_snapshot(&task.id)?.can_resolve_media_urls() {
+                    if let Some(retried) =
+                        state.finish_task_attempt(&task.id, TaskStatus::Waiting, cancel_token)?
+                    {
+                        events::emit(app, events::QUEUE_TASK_UPDATED, &retried)?;
+                    }
+                    return Ok(());
+                }
 
                 let Some(refreshed) =
                     cancellable_refresh(cancel_token, state.refresh_task_media_urls(&task.id))

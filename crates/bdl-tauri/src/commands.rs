@@ -692,7 +692,14 @@ pub async fn selection_prepare(
     let options = DownloadOptions::new(PathBuf::from("downloads"))
         .with_archive_mode(ArchiveMode::CompleteArchive);
     let prepared = state
-        .prepare_selection_owned(snapshot, &ids, &options, &context, false, |_, _| Ok(()))
+        .prepare_selection_owned(
+            snapshot,
+            &ids,
+            &options,
+            &context,
+            crate::parse_owned::SelectionPreparation::MissingStreams,
+            |_, _| Ok(()),
+        )
         .await?;
     for id in &prepared.part_ids {
         let ready = crate::parse_session::find_part(&prepared.tree, id)
@@ -1205,9 +1212,25 @@ pub async fn queue_bulk_refresh_urls_and_retry(
     state: State<'_, AppState>,
     request: BulkQueueRequest,
 ) -> CommandResult<BulkQueueResult> {
-    let mut result = BulkQueueResult::default();
+    let resolve_on_start = state
+        .queue_snapshot()?
+        .into_iter()
+        .filter(|task| task.media_selection.deferred.is_some() || task.can_resolve_media_urls())
+        .map(|task| task.id)
+        .collect::<std::collections::HashSet<_>>();
+    let (queued, refresh_now): (Vec<_>, Vec<_>) = request
+        .task_ids
+        .into_iter()
+        .partition(|id| resolve_on_start.contains(id));
+    let mut result = if queued.is_empty() {
+        BulkQueueResult::default()
+    } else {
+        let result = bulk_mutate_tasks(&app, state.inner(), queued, TaskStatus::Waiting, true);
+        start_queue_worker(&app);
+        result
+    };
 
-    for task_id in request.task_ids {
+    for task_id in refresh_now {
         let outcome = refresh_urls_and_retry(app.clone(), state.inner(), &task_id).await;
         match outcome {
             Ok(task) => result.updated.push(task),
@@ -1226,9 +1249,21 @@ pub async fn queue_bulk_remove(
     state: State<'_, AppState>,
     request: BulkQueueRequest,
 ) -> CommandResult<BulkQueueResult> {
-    let mut result = BulkQueueResult::default();
+    let removed = state.remove_idle_download_plans(&request.task_ids)?;
+    let mut result = BulkQueueResult {
+        removed,
+        ..Default::default()
+    };
+    let mut handled = result
+        .removed
+        .iter()
+        .cloned()
+        .collect::<std::collections::HashSet<_>>();
 
     for task_id in request.task_ids {
+        if !handled.insert(task_id.clone()) {
+            continue;
+        }
         match state.stop_and_remove_task(&task_id).await {
             Ok(true) => result.removed.push(task_id),
             Ok(false) => result.failed.push(BulkQueueFailure::from_message(
@@ -1263,6 +1298,10 @@ async fn refresh_urls_and_retry(
     state: &AppState,
     task_id: &str,
 ) -> CommandResult<DownloadTask> {
+    let task = state.task_snapshot(task_id)?;
+    if task.media_selection.deferred.is_some() || task.can_resolve_media_urls() {
+        return retry_task(app, state, task_id);
+    }
     emit_queue_log(&app, state, task_id, QueueLogLevel::Info, "刷新下载地址")?;
     if let Err(error) = state.refresh_task_media_urls(task_id).await {
         let error = CommandError::from(error);
@@ -1432,6 +1471,19 @@ pub fn queue_open_dir(
     let task = state.task_snapshot(&task_id)?;
     if let Some(target) = task.export_target.as_ref() {
         state.mobile_storage().open_export_directory(target)?;
+        return Ok(());
+    }
+    if let Some(deferred) = &task.media_selection.deferred
+        && let Some(directory) = &deferred.document_tree
+    {
+        state
+            .mobile_storage()
+            .open_export_directory(&DownloadExportTarget::DocumentTree {
+                tree_uri: directory.tree_uri.clone(),
+                relative_path: String::new(),
+                duplicate_naming_strategy: deferred.options.duplicate_naming_strategy,
+                document_uri: None,
+            })?;
         return Ok(());
     }
     open_task_output_dir(&app, &task)
@@ -1929,10 +1981,13 @@ fn update_task_status(
     task_id: &str,
     status: TaskStatus,
 ) -> CommandResult<DownloadTask> {
-    if matches!(status, TaskStatus::Paused | TaskStatus::Cancelled) {
-        let _ = state.cancel_running_task(task_id)?;
-    }
     let task = state.update_task_status(task_id, status)?;
+    if task.status != status && matches!(status, TaskStatus::Paused | TaskStatus::Cancelled) {
+        return Err(BdlError::Planning {
+            message: "任务已开始合并或已完成，无法暂停或取消。".into(),
+        }
+        .into());
+    }
     events::emit(&app, events::QUEUE_TASK_UPDATED, &task)?;
     if status.can_start() {
         start_queue_worker(&app);
@@ -2750,11 +2805,17 @@ fn task_mux_label(task: &DownloadTask) -> &'static str {
 }
 
 fn open_task_output_dir(app: &AppHandle, task: &DownloadTask) -> CommandResult<()> {
-    let dir = task.output_path.parent().ok_or_else(|| CommandError {
-        detail: None,
-        code: "invalid_output_path".to_owned(),
-        message: format!("任务 `{}` 没有有效输出目录。", task.title),
-    })?;
+    let dir = task
+        .media_selection
+        .deferred
+        .as_ref()
+        .map(|deferred| deferred.options.output_dir.as_path())
+        .or_else(|| task.output_path.parent())
+        .ok_or_else(|| CommandError {
+            detail: None,
+            code: "invalid_output_path".to_owned(),
+            message: format!("任务 `{}` 没有有效输出目录。", task.title),
+        })?;
     std::fs::create_dir_all(dir).map_err(BdlError::from)?;
     open_path(app, dir)
 }

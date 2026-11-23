@@ -528,7 +528,7 @@ export const useParseStore = defineStore('parse', {
           }
           if (retryFailed || stopped() || !this.sources[sourceId]?.source.has_more) break
           const progressed = await this.loadChunk(sourceId, 1)
-          if (!progressed && !stopped()) throw Object.assign(new Error(this.errorsBySource[sourceId] ?? '分页没有返回新内容，已停止后台解析'), { detail: this.errorDetailsBySource[sourceId] })
+          if (!progressed && !stopped()) throw Object.assign(new Error(this.errorsBySource[sourceId] ?? '没有加载到更多内容，已停止添加'), { detail: this.errorDetailsBySource[sourceId] })
         }
         const remaining = retryFailed && this.sources[sourceId] && (this.sources[sourceId].source.has_more || collectPartIds(this.sources[sourceId]).some((id) => !done.has(id)))
         if (this.backgroundJob) this.backgroundJob.status = stopped() || remaining ? 'stopped' : 'completed'
@@ -595,7 +595,7 @@ export const useParseStore = defineStore('parse', {
       })))
     },
     async clearWorkspace(reason: ParseCancelReason = 'workspace_cleared') {
-      if (this.backgroundJob?.status === 'running') { this.setNotice('请先停止后台解析下载', 'warning'); return }
+      if (this.backgroundJob?.status === 'running') { this.setNotice('还有内容正在添加，请先停止添加。', 'warning'); return }
       this.createGeneration++
       const stopping = Object.keys(this.operationsBySource).map(id => this.stopPacedParsing(id, reason))
       this.input = ''
@@ -779,7 +779,7 @@ export const useParseStore = defineStore('parse', {
         try { await usePreparationsStore().submit(request, snapshot, origin); submitted++ }
         catch (error) { failures.push({ message: errorMessage(error), detail: commandDiagnostic(error, `操作: 提交下载准备\n提交入口: ${origin}\n来源: ${snapshot.source.title}\n链接: ${snapshot.source.input}\n来源ID: ${sourceId}\n所选分集数: ${request.part_ids.length}\n所选分集: ${request.part_ids.join(', ')}`) }) }
       }
-      if (submitted) this.setNotice(`已提交 ${submitted} 个来源，正在准备下载`, 'info', '查看传输')
+      if (submitted) this.setNotice('正在添加下载任务', 'info', '查看传输')
       return { submitted, failures }
     },
     async createTasksForSources(

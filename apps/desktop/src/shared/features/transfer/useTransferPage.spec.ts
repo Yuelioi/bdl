@@ -52,9 +52,9 @@ describe('transfer page sorting defaults', () => {
     await page.queue.reconcile();
     expect(page.taskViews.value.map((view) => view.id)).toEqual(['third', 'second', 'first']);
     page.queue.setFilter('active');
-    expect(page.taskViews.value.map((view) => view.id)).toEqual(['third', 'second', 'first']);
+    expect(page.taskViews.value.map((view) => view.id)).toEqual(['second', 'first']);
     page.queue.setFilter('failed');
-    expect(page.taskViews.value.map((view) => view.id)).toEqual(['third', 'second']);
+    expect(page.taskViews.value.map((view) => view.id)).toEqual(['second']);
 
     setActivePinia(createPinia());
     const restored = useTransferPage();

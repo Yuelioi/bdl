@@ -545,7 +545,11 @@ impl AppState {
             return Ok(None);
         };
 
-        queue[task_index].status = TaskStatus::Downloading;
+        queue[task_index].status = if queue[task_index].media_selection.deferred.is_some() {
+            TaskStatus::Parsing
+        } else {
+            TaskStatus::Downloading
+        };
         queue[task_index].scheduled_at = None;
         let task = queue[task_index].clone();
         self.persist_queue_edit(&mut queue)?;
@@ -687,6 +691,7 @@ impl AppState {
         if matches!(status, TaskStatus::Paused | TaskStatus::Cancelled) {
             self.cancel_running_task(task_id)?;
         }
+        self.notify_queue_changed();
         Ok(task)
     }
 
@@ -733,7 +738,14 @@ impl AppState {
             let task = &mut queue[index];
             if retry {
                 reset_task_for_retry(task);
-            } else if !ignores_status_transition(task.status, status) {
+            } else {
+                if ignores_status_transition(task.status, status) {
+                    result.failed.push((
+                        id.clone(),
+                        "任务已开始合并或已完成，无法暂停或取消。".into(),
+                    ));
+                    continue;
+                }
                 task.status = status;
                 task.scheduled_at = None;
                 if status.can_start() {
@@ -748,6 +760,7 @@ impl AppState {
                 self.cancel_running_task(&task.id)?;
             }
         }
+        self.notify_queue_changed();
         Ok(result)
     }
 
@@ -831,9 +844,8 @@ impl AppState {
         // Check and transition under the same lock as pause/cancel. A late
         // completion must also leave an explicitly resumed/scheduled task alone.
         let can_finish = match (task.status, next) {
-            (TaskStatus::Downloading, TaskStatus::Waiting | TaskStatus::Failed) => {
-                !cancel_token.is_cancelled()
-            }
+            (TaskStatus::Downloading, TaskStatus::Waiting | TaskStatus::Failed)
+            | (TaskStatus::Parsing, TaskStatus::Failed) => !cancel_token.is_cancelled(),
             (TaskStatus::Muxing, TaskStatus::Failed) => true,
             _ => false,
         };
@@ -852,10 +864,11 @@ impl AppState {
 
     pub async fn refresh_task_media_urls(&self, task_id: &str) -> BdlResult<DownloadTask> {
         let task = self.task_snapshot(task_id)?;
-        let needs_audio = task
-            .resources
-            .iter()
-            .any(|resource| resource.intent == DownloadResourceIntent::Audio);
+        let account_revision = self.account_revision();
+        let needs_audio = task.resources.iter().any(|resource| {
+            resource.intent == DownloadResourceIntent::Audio
+                && resource.status != ResourceStatus::Completed
+        });
         if needs_audio && task.media_selection.audio_codec.is_none() {
             return Err(BdlError::Planning {
                 message: "此旧任务未记录音频编码，无法刷新下载地址，请重新创建任务。".to_owned(),
@@ -872,10 +885,10 @@ impl AppState {
                     refresh_ids.cid
                 ),
             })?;
-        let needs_video = task
-            .resources
-            .iter()
-            .any(|resource| resource.intent == DownloadResourceIntent::Video);
+        let needs_video = task.resources.iter().any(|resource| {
+            resource.intent == DownloadResourceIntent::Video
+                && resource.status != ResourceStatus::Completed
+        });
         let video = if needs_video {
             Some(
                 select_task_stream(
@@ -883,6 +896,7 @@ impl AppState {
                     MediaKind::Video,
                     &task.media_selection.video_quality,
                     Some(&task.media_selection.video_codec),
+                    task.media_selection.video_bandwidth,
                 )
                 .ok_or_else(|| BdlError::Planning {
                     message: format!("刷新下载地址失败：`{}` 缺少视频流。", part.title),
@@ -898,6 +912,7 @@ impl AppState {
                     MediaKind::Audio,
                     &task.media_selection.audio_quality,
                     task.media_selection.audio_codec.as_deref(),
+                    task.media_selection.audio_bandwidth,
                 )
                 .ok_or_else(|| BdlError::Planning {
                     message: format!("刷新下载地址失败：`{}` 缺少音频流。", part.title),
@@ -907,6 +922,7 @@ impl AppState {
             None
         };
 
+        self.check_account_revision(account_revision)?;
         self.replace_task_media_urls(task_id, video, audio)
     }
 
@@ -969,6 +985,69 @@ impl AppState {
             })
     }
 
+    pub(crate) fn commit_queued_download(
+        &self,
+        queued: &DownloadTask,
+        planned: Option<DownloadTask>,
+        strategy: DuplicateNamingStrategy,
+        token: &FetchCancelToken,
+    ) -> BdlResult<Option<DownloadTask>> {
+        let mut queue = self.queue_edit()?;
+        let Some(index) = queue.iter().position(|task| task.id == queued.id) else {
+            return Ok(None);
+        };
+        let current = &queue[index];
+        if token.is_cancelled()
+            || current.status != TaskStatus::Parsing
+            || current.media_selection.deferred != queued.media_selection.deferred
+        {
+            return Ok(None);
+        }
+        if self.file_cleanup_active.load(Ordering::SeqCst) {
+            queue[index].status = TaskStatus::Waiting;
+            let task = queue[index].clone();
+            self.persist_queue_edit(&mut queue)?;
+            self.notify_queue_changed();
+            return Ok(Some(task));
+        }
+        if let Some(mut planned) = planned {
+            let others = queue
+                .iter()
+                .filter(|task| task.id != queued.id && task.media_selection.deferred.is_none())
+                .cloned()
+                .collect::<Vec<_>>();
+            if planned.id != queued.id {
+                let copy_index = queued
+                    .id
+                    .strip_prefix(&planned.id)
+                    .and_then(|suffix| suffix.strip_prefix(":copy:"))
+                    .and_then(|index| index.parse().ok())
+                    .ok_or_else(|| BdlError::Planning {
+                        message: "下载任务标识已改变。".into(),
+                    })?;
+                let mut reserved = others.iter().flat_map(DownloadTask::file_paths).collect();
+                let path = bdl_core::naming::unique_path_with_stem_limit(
+                    planned.output_path.clone(),
+                    &mut reserved,
+                    planned.file_stem_byte_limit()?,
+                );
+                planned = planned.into_duplicate_copy(copy_index, path)?;
+            }
+            planned.status = TaskStatus::Downloading;
+            planned.speed_limit_bytes_per_second = current.speed_limit_bytes_per_second;
+            if let Some(task) = reserve_queued_paths(vec![planned], &others, strategy)?.pop() {
+                queue[index] = task;
+            } else {
+                queue[index].status = TaskStatus::Cancelled;
+            }
+        } else {
+            queue[index].status = TaskStatus::Cancelled;
+        }
+        let task = queue[index].clone();
+        self.persist_queue_edit(&mut queue)?;
+        Ok(Some(task))
+    }
+
     fn replace_task_media_urls(
         &self,
         task_id: &str,
@@ -999,8 +1078,9 @@ impl AppState {
             }
         }
 
-        queue[task_index].media_selection.audio_bandwidth =
-            audio.and_then(|stream| stream.bandwidth);
+        if let Some(audio) = audio {
+            queue[task_index].media_selection.audio_bandwidth = audio.bandwidth;
+        }
         let task = queue[task_index].clone();
         self.persist_queue_edit(&mut queue)?;
         Ok(task)
@@ -1924,49 +2004,22 @@ fn select_task_stream<'a>(
     kind: MediaKind,
     quality_label: &str,
     codec_label: Option<&str>,
+    bandwidth: Option<u64>,
 ) -> Option<&'a MediaStream> {
-    let streams = part
-        .streams
-        .iter()
-        .filter(|stream| stream.kind == kind)
-        .collect::<Vec<_>>();
-    if streams.is_empty() {
-        return None;
-    }
-
-    let codec_matches = codec_label
-        .filter(|label| !matches!(*label, "auto" | "none" | "unknown"))
-        .map(|label| {
-            streams
-                .iter()
-                .copied()
-                .filter(|stream| stream_codec_label(stream) == label)
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-    let candidates = if codec_matches.is_empty() {
-        if kind == MediaKind::Audio
-            && codec_label.is_some_and(|label| !matches!(label, "auto" | "none" | "unknown"))
-        {
-            return None;
-        }
-        streams
+    let codec = codec_label.filter(|label| !matches!(*label, "auto" | "none" | "unknown"));
+    let quality = if quality_label == "best" {
+        Some(StreamQuality::Best)
     } else {
-        codec_matches
+        parse_quality_label(quality_label).map(StreamQuality::Quality)
     };
-
-    if let Some(target_quality) = parse_quality_label(quality_label)
-        && let Some(exact) = candidates
-            .iter()
-            .copied()
-            .filter(|stream| stream_quality_rank(stream.quality) == target_quality)
-            .max_by_key(|stream| stream_selection_rank(stream))
-    {
-        return Some(exact);
-    }
-
-    candidates
-        .into_iter()
+    part.streams
+        .iter()
+        .filter(|stream| {
+            stream.kind == kind
+                && codec.is_none_or(|codec| stream_codec_label(stream) == codec)
+                && quality.is_none_or(|quality| stream.quality == quality)
+                && bandwidth.is_none_or(|bandwidth| stream.bandwidth == Some(bandwidth))
+        })
         .max_by_key(|stream| stream_selection_rank(stream))
 }
 
@@ -3297,8 +3350,9 @@ mod tests {
             ),
         ];
 
-        let selected = select_task_stream(&part, MediaKind::Video, "64", Some("hevc"))
-            .expect("matching stream should be selected");
+        let selected =
+            select_task_stream(&part, MediaKind::Video, "64", Some("hevc"), Some(1_800_000))
+                .expect("matching stream should be selected");
 
         assert_eq!(selected.urls, ["https://cdn.example/video-64-hevc.m4s"]);
         part.streams = vec![
@@ -3318,12 +3372,12 @@ mod tests {
             ),
         ];
         assert_eq!(
-            select_task_stream(&part, MediaKind::Audio, "30280", Some("eac3"))
+            select_task_stream(&part, MediaKind::Audio, "30280", Some("eac3"), None)
                 .unwrap()
                 .codec,
             StreamCodec::Eac3
         );
-        assert!(select_task_stream(&part, MediaKind::Audio, "30280", Some("flac")).is_none());
+        assert!(select_task_stream(&part, MediaKind::Audio, "30280", Some("flac"), None).is_none());
     }
 
     #[test]

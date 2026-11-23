@@ -6,10 +6,10 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 
 use crate::error::{BdlError, BdlResult};
-use crate::ids::PartId;
+use crate::ids::{GroupId, PartId};
 use crate::model::{
-    AssetKind, DerivedAsset, MediaKind, MediaStream, NormalizedItem, NormalizedPart,
-    NormalizedSourceTree, SourceKind, StreamCodec, StreamQuality,
+    AssetKind, DerivedAsset, MediaKind, MediaStream, NormalizedGroup, NormalizedItem,
+    NormalizedPart, NormalizedSourceTree, SourceKind, SourceSummary, StreamCodec, StreamQuality,
 };
 use crate::naming::{
     DEFAULT_NAMING_TEMPLATE, DuplicateNamingStrategy, NamingContext, ReservedPaths,
@@ -106,7 +106,7 @@ impl Default for ArchiveAssetSelection {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum StreamPreference {
     #[default]
     Best,
@@ -142,7 +142,7 @@ impl StreamPreference {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MissingQualityPolicy {
     #[default]
     Lower,
@@ -175,7 +175,7 @@ pub fn parse_stream_codec(value: &str) -> BdlResult<StreamCodec> {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DownloadOptions {
     pub output_dir: PathBuf,
     pub archive_mode: ArchiveMode,
@@ -191,6 +191,107 @@ pub struct DownloadOptions {
     pub archive_assets: ArchiveAssetSelection,
     pub processing: Option<crate::queue::TaskProcessingOptions>,
     pub workflow: Option<crate::workflow::DownloadWorkflow>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeferredDownload {
+    pub options: DownloadOptions,
+    pub document_tree: Option<crate::settings::DocumentTreeDirectory>,
+    source: SourceSummary,
+    item: NormalizedItem,
+    part_id: PartId,
+    item_index: usize,
+    part_index: usize,
+    part_count: usize,
+}
+
+impl DeferredDownload {
+    pub fn source_tree(&self) -> NormalizedSourceTree {
+        NormalizedSourceTree {
+            source: self.source.clone(),
+            groups: vec![NormalizedGroup {
+                id: GroupId("queued-download".into()),
+                kind: String::new(),
+                title: String::new(),
+                items: vec![self.item.clone()],
+                page: None,
+            }],
+        }
+    }
+
+    pub fn part_id(&self) -> &PartId {
+        &self.part_id
+    }
+
+    pub fn plan(&self, tree: &NormalizedSourceTree) -> BdlResult<Option<DownloadTask>> {
+        let mut selected = required_part(tree, &self.part_id)?;
+        selected.item_index = self.item_index;
+        selected.part_index = self.part_index;
+        selected.part_count = self.part_count;
+        plan_part(tree, selected, &self.options, &mut ReservedPaths::new())
+    }
+}
+
+pub fn defer_selected_parts(
+    tree: &NormalizedSourceTree,
+    selected_part_ids: &[PartId],
+    options: &DownloadOptions,
+    document_tree: Option<&crate::settings::DocumentTreeDirectory>,
+) -> BdlResult<Vec<DownloadTask>> {
+    let mut source = tree.source.clone();
+    source.input.clear();
+    selected_part_ids
+        .iter()
+        .map(|id| {
+            let selected = required_part(tree, id)?;
+            let mut part = selected.part.clone();
+            part.streams.clear();
+            part.assets
+                .retain(|asset| asset.kind != AssetKind::Subtitle);
+            let item = NormalizedItem {
+                parts: vec![part],
+                ..selected.item.clone()
+            };
+            Ok(DownloadTask {
+                id: planned_task_id(tree, id, options)?,
+                title: task_title(selected.item, selected.part),
+                source_id: tree.source.id.0.clone(),
+                status: TaskStatus::Waiting,
+                resources: Vec::new(),
+                output_path: PathBuf::new(),
+                export_target: None,
+                refresh_intent: media_refresh_intent(
+                    tree.source.kind,
+                    selected.part,
+                    selected.part_index + 1,
+                )
+                .map(|mut intent| {
+                    intent.cover_url.clone_from(&selected.item.cover_url);
+                    intent.duration_seconds = selected
+                        .part
+                        .duration_seconds
+                        .or(selected.item.duration_seconds);
+                    intent
+                }),
+                scheduled_at: None,
+                speed_limit_bytes_per_second: None,
+                media_selection: DownloadTaskMediaSelection {
+                    deferred: Some(Box::new(DeferredDownload {
+                        options: options.clone(),
+                        document_tree: document_tree.cloned(),
+                        source: source.clone(),
+                        item,
+                        part_id: id.clone(),
+                        item_index: selected.item_index,
+                        part_index: selected.part_index,
+                        part_count: selected.part_count,
+                    })),
+                    workflow: options.workflow.clone(),
+                    ..Default::default()
+                },
+            })
+        })
+        .collect()
 }
 
 impl DownloadOptions {
@@ -264,12 +365,7 @@ pub fn plan_selected_parts(
     let mut tasks = Vec::with_capacity(selected_part_ids.len());
 
     for part_id in selected_part_ids {
-        let selected = find_part(tree, part_id).ok_or_else(|| BdlError::Planning {
-            message: format!(
-                "选中的分 P `{}` 未加载，请重新解析后再创建下载任务。",
-                part_id.0
-            ),
-        })?;
+        let selected = required_part(tree, part_id)?;
         if let Some(task) = plan_part(tree, selected, options, &mut reserved_paths)? {
             tasks.push(task);
         }
@@ -375,6 +471,13 @@ struct SelectedPart<'a> {
     part: &'a NormalizedPart,
     item_index: usize,
     part_index: usize,
+    part_count: usize,
+}
+
+fn required_part<'a>(tree: &'a NormalizedSourceTree, id: &PartId) -> BdlResult<SelectedPart<'a>> {
+    find_part(tree, id).ok_or_else(|| BdlError::Planning {
+        message: format!("选中的分 P `{}` 未加载，请重新解析后再创建下载任务。", id.0),
+    })
 }
 
 fn find_part<'a>(tree: &'a NormalizedSourceTree, part_id: &PartId) -> Option<SelectedPart<'a>> {
@@ -392,8 +495,22 @@ fn find_part<'a>(tree: &'a NormalizedSourceTree, part_id: &PartId) -> Option<Sel
                     part,
                     item_index,
                     part_index,
+                    part_count: item.parts.len(),
                 })
         })
+}
+
+fn planned_task_id(
+    tree: &NormalizedSourceTree,
+    part_id: &PartId,
+    options: &DownloadOptions,
+) -> BdlResult<String> {
+    let mut id = format!("task:{}:{}", tree.source.id.0, part_id.0);
+    if let Some(workflow) = &options.workflow {
+        workflow.validate()?;
+        id.push_str(&format!(":workflow:{}", workflow.fingerprint()));
+    }
+    Ok(id)
 }
 
 fn plan_part(
@@ -404,11 +521,7 @@ fn plan_part(
 ) -> BdlResult<Option<DownloadTask>> {
     let item = selected.item;
     let part = selected.part;
-    let mut task_id = format!("task:{}:{}", tree.source.id.0, part.id.0);
-    if let Some(workflow) = &options.workflow {
-        workflow.validate()?;
-        task_id.push_str(&format!(":workflow:{}", workflow.fingerprint()));
-    }
+    let task_id = planned_task_id(tree, &part.id, options)?;
     let title = task_title(item, part);
     let video = if options.media_mode.includes_video() {
         Some(select_video_stream(part, options)?)
@@ -515,6 +628,7 @@ fn plan_part(
             },
         ),
         media_selection: DownloadTaskMediaSelection {
+            deferred: None,
             nfo_metadata: crate::nfo::NfoMetadata {
                 aid: part.aid,
                 owner_mid: item.owner_mid,
@@ -546,7 +660,7 @@ fn plan_part(
                 part_title: part.title.clone(),
                 uploader: item.owner_name.clone().unwrap_or_default(),
                 publish_date: item.publish_date.clone().unwrap_or_default(),
-                duration_seconds: part.duration_seconds.or(if item.parts.len() == 1 {
+                duration_seconds: part.duration_seconds.or(if selected.part_count == 1 {
                     item.duration_seconds
                 } else {
                     None
@@ -568,6 +682,7 @@ fn plan_part(
                 .map(stream_quality_label)
                 .unwrap_or_else(|| "none".to_owned()),
             video_codec: video.map(stream_codec_label).unwrap_or("none").to_owned(),
+            video_bandwidth: video.and_then(|stream| stream.bandwidth),
             audio_codec: audio.map(|stream| stream_codec_label(stream).to_owned()),
             audio_bandwidth: audio.and_then(|stream| stream.bandwidth),
             container: effective_options.output_extension.clone(),
