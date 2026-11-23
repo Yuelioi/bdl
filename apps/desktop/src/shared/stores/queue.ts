@@ -183,6 +183,11 @@ export const useQueueStore = defineStore('queue', {
         }),
       )
       this.unlisten.push(
+        await listen<DownloadTask[]>('queue://tasks-added', (event) => {
+          this.applyCreatedTasks(event.payload)
+        }),
+      )
+      this.unlisten.push(
         await listen<QueueLogEntry>('queue://log-appended', (event) => {
           const list = this.logsByTask[event.payload.task_id] ?? []
           this.logsByTask[event.payload.task_id] = mergeLogs([event.payload], list)
@@ -246,10 +251,10 @@ export const useQueueStore = defineStore('queue', {
       })
     },
     upsertTask(task: DownloadTask) {
+      const index = this.tasks.findIndex((candidate) => candidate.id === task.id)
       if (task.status !== 'completed' || this.outputSizesByTask[task.id]?.path !== task.output_path) {
         delete this.outputSizesByTask[task.id]
       }
-      const index = this.tasks.findIndex((candidate) => candidate.id === task.id)
       const previous = this.tasks[index]
       task = {
         ...task,
@@ -270,9 +275,18 @@ export const useQueueStore = defineStore('queue', {
       this.selectedTaskId = this.selectedTaskId ?? task.id
     },
     applyCreatedTasks(tasks: DownloadTask[]) {
+      if (!tasks.length) return
+      const existing = new Set(this.tasks.map(task => task.id))
+      const added: DownloadTask[] = []
       for (const task of tasks) {
-        this.upsertTask(task)
+        if (existing.has(task.id)) continue
+        existing.add(task.id)
+        added.push(task)
       }
+      if (!added.length) return
+      this.tasks.push(...added)
+      this.applyDefaultFilter()
+      this.selectedTaskId ??= added[0].id
     },
     countByFilter(filter: QueueFilter): number {
       return this.tasks.filter((task) => filterTaskByWorkflow(task.status, filter)).length
@@ -463,7 +477,7 @@ export const useQueueStore = defineStore('queue', {
       await this.runBulkCommand(() => queueBulkRefreshUrlsAndRetry({ task_ids: taskIds }), '已安排重试')
     },
     async bulkRemove(taskIds: string[]) {
-      await this.runBulkCommand(() => queueBulkRemove({ task_ids: taskIds }), '已移除', '保留成品，已清理临时文件')
+      await this.runBulkCommand(() => queueBulkRemove({ task_ids: taskIds }), '已移除', '下载文件已保留')
     },
     async clearCompleted() {
       await this.runBulkCommand(() => queueClearCompleted(), '已移除', '保留成品，已清理临时文件')

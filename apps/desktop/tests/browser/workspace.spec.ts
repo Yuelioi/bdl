@@ -325,7 +325,7 @@ const installTauriMock = async (
             }
             if (command === 'selection_estimate_size')
               return { estimated_bytes: 0, estimated_parts: 0, unknown_streams: 1 };
-            if (command === 'selection_create_tasks') {
+            if (command === 'selection_enqueue_batch') {
               if (taskCreationFails) {
                 throw {
                   code: 'bilibili_request_rejected',
@@ -333,7 +333,8 @@ const installTauriMock = async (
                     'Bilibili 暂时拒绝了请求（HTTP 412），可能是访问过于频繁或触发风控。请稍后重试；持续出现时请重新登录。',
                 };
               }
-              return { created: [], duplicates: [], skipped_existing: 0, requires_confirmation: false };
+              const ids = (args as { request: { part_ids: string[] } }).request.part_ids;
+              return { created: [], skipped: 0, processed_part_ids: ids, failures: [], blocked: null };
             }
             if (command === 'account_login_qr_start') {
               return {
@@ -610,8 +611,8 @@ test.describe('safe file removal', () => {
         expect(await deletionCalls()).toBe(0);
         if (device !== 'desktop') await page.getByRole('button', { name: '管理任务', exact: true }).click();
         await row.getByRole('checkbox').check();
-        await page.getByRole('button', { name: '更多批量操作', exact: true }).click();
-        await page.getByRole('menuitem', { name: '删除任务及文件', exact: true }).click();
+        await page.getByRole('button', { name: '批量操作', exact: true }).click();
+        await page.getByRole('menuitem', { name: '删除所选任务及文件', exact: true }).click();
         await expect(dialog.getByText(/1 个成品或附件/)).toBeVisible();
         await dialog.getByText('查看将删除的文件', { exact: true }).click();
         await expect(dialog.getByText(/selected.mp4/, { exact: false })).toBeVisible();
@@ -1700,12 +1701,15 @@ for (const theme of ['light', 'dark'] as const) {
         target.__TAURI_INTERNALS__.invoke = async (command, args) => {
           if (command === 'mobile_pick_export_directory')
             return { tree_uri: 'content://fixture/downloads', display_name: '测试下载目录' };
-          if (command === 'selection_create_tasks') {
-            const id = (args?.request as { part_ids: string[] }).part_ids[0];
-            target.__TASK_ATTEMPTS__.push(id);
-            target.__FAILED_PART__ ??= id;
-            if (id === target.__FAILED_PART__ && !target.__RETRY_ALLOWED__)
-              throw new Error('planning error: `长标题' + '测试'.repeat(70) + '` 缺少视频流，请重新解析后再试。');
+          if (command === 'selection_enqueue_batch') {
+            const ids = (args?.request as { part_ids: string[] }).part_ids;
+            target.__TASK_ATTEMPTS__.push(...ids);
+            target.__FAILED_PART__ ??= ids[0];
+            const failures = ids.filter(id => id === target.__FAILED_PART__ && !target.__RETRY_ALLOWED__).map(part_id => ({
+              part_id,
+              error: { code: 'core_error', message: 'planning error: `长标题' + '测试'.repeat(70) + '` 缺少视频流，请重新解析后再试。' },
+            }));
+            return { created: [], skipped: 0, processed_part_ids: ids, failures, blocked: null };
           }
           return invoke(command, args);
         };
@@ -1764,7 +1768,7 @@ test('background parsing downloads progressively and remains visible on another 
   const commands = await page.evaluate(
     () => (window as unknown as { __BDL_TEST_INVOKES__: string[] }).__BDL_TEST_INVOKES__,
   );
-  expect(commands.indexOf('selection_create_tasks')).toBeLessThan(commands.indexOf('parse_load_more'));
+  expect(commands.indexOf('selection_enqueue_batch')).toBeLessThan(commands.indexOf('parse_load_more'));
 });
 
 test('batch result selection uses the shared list checkbox', async ({ page }) => {
@@ -1874,6 +1878,37 @@ test('leaving a library folder does not leak its parse session into the parse wo
 test('library detail supports pagination, parsing and selection', async ({ page }) => {
   await page.setViewportSize({ width: 1080, height: 720 });
   await installTauriMock(page, 'light', true, true);
+  await page.addInitScript(() => {
+    const target = window as unknown as {
+      __TAURI_INTERNALS__: { invoke: (command: string, args?: Record<string, unknown>) => Promise<unknown> };
+      __LIBRARY_BATCH_SIZES__: number[];
+    };
+    const invoke = target.__TAURI_INTERNALS__.invoke;
+    target.__LIBRARY_BATCH_SIZES__ = [];
+    let tree: NormalizedSourceTree;
+    target.__TAURI_INTERNALS__.invoke = async (command, args) => {
+      if (command === 'parse_load_more') {
+        const next = structuredClone(tree);
+        const item = structuredClone(next.groups[0].items[0]);
+        item.id = 'item:last';
+        item.parts[0].id = 'part:last';
+        next.groups[0].items.push(item);
+        next.source.loaded_count = 6;
+        next.source.has_more = false;
+        return next;
+      }
+      if (command === 'selection_enqueue_batch') {
+        target.__LIBRARY_BATCH_SIZES__.push((args?.request as { part_ids: string[] }).part_ids.length);
+      }
+      const result = await invoke(command, args);
+      if (command === 'parse_create_source') {
+        tree = result as NormalizedSourceTree;
+        tree.source.total_count = 6;
+        tree.source.has_more = true;
+      }
+      return result;
+    };
+  });
   await page.goto('/');
   await page.keyboard.press('Control+2');
   await page.getByRole('tab', { name: /订阅合集/ }).click();
@@ -1881,9 +1916,14 @@ test('library detail supports pagination, parsing and selection', async ({ page 
 
   const actionBar = page.locator('.selection-action-bar');
   await expect(page.getByRole('navigation', { name: '集合内容分页', exact: true })).toHaveCount(0);
-  await expect(page.locator('.source-function-toolbar').getByText('已加载 5 / 5 项')).toBeVisible();
+  await expect(page.locator('.source-function-toolbar').getByText('已加载 5 / 6 项')).toBeVisible();
   await expect(actionBar.locator('.selection-context-row')).toHaveCount(0);
   await expect(actionBar.getByRole('button', { name: /^下载所选/ })).toBeDisabled();
+  await confirmDesktopBackgroundDownload(page);
+  await expect(page.getByRole('region', { name: '后台添加下载' })).toContainText('添加完成');
+  expect(await page.evaluate(() =>
+    (window as unknown as { __LIBRARY_BATCH_SIZES__: number[] }).__LIBRARY_BATCH_SIZES__,
+  )).toEqual([5, 1]);
 });
 
 test('library page jump loads only the requested page and reuses visited pages', async ({ page }) => {
@@ -2679,10 +2719,19 @@ for (const theme of ['light', 'dark'] as const) {
     await page.getByRole('tab', { name: /全部/ }).click();
     await expect(page.locator('.task-table-row')).toHaveCount(6);
     await expect(page.locator('.task-table-row').first()).toContainText('128 MB');
+    await page.locator('.task-table-row').first().getByRole('button', { name: '播放', exact: true }).click();
+    expect(await page.evaluate(() => (
+      window as unknown as { __BDL_TEST_INVOKES__: string[] }
+    ).__BDL_TEST_INVOKES__.filter(command => command === 'queue_open_file').length)).toBe(2);
     await page.locator('.task-table-row').first().getByRole('button', { name: '更多操作' }).click();
     await expect(page.getByRole('menuitem', { name: '打开文件夹' })).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(page.getByRole('menuitem', { name: '打开文件夹' })).toBeHidden();
+    await page.getByRole('tab', { name: /已完成/ }).click();
+    await page.getByRole('button', { name: '批量操作', exact: true }).click();
+    await expect(page.getByRole('menuitem', { name: '暂停全部任务', exact: true })).toBeVisible();
+    await expect(page.getByRole('menuitem', { name: '仅清除已完成记录', exact: true })).toBeVisible();
+    await page.keyboard.press('Escape');
     await page.setViewportSize({ width: 900, height: 700 });
   });
 }
@@ -3963,8 +4012,8 @@ test('pagination and background keep real causes from transport to controls', as
     const invoke = target.__TAURI_INTERNALS__.invoke;
     target.attempts = 0;
     target.__TAURI_INTERNALS__.invoke = async (cmd, args) => {
-      if (cmd === 'selection_create_tasks') target.attempts!++;
-      if (cmd === 'parse_load_more' || cmd === 'selection_create_tasks')
+      if (cmd === 'selection_enqueue_batch') target.attempts!++;
+      if (cmd === 'parse_load_more' || cmd === 'selection_enqueue_batch')
         throw {
           code: 'bilibili_api_error',
           message: '操作失败',

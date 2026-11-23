@@ -124,6 +124,7 @@ pub fn run() {
             bdl_tauri::commands::parse_load_all,
             bdl_tauri::commands::parse_refresh_source,
             bdl_tauri::commands::selection_create_tasks,
+            bdl_tauri::commands::selection_enqueue_batch,
             bdl_tauri::preparation::selection_submit_tasks,
             bdl_tauri::preparation::preparation_list,
             bdl_tauri::preparation::preparation_cancel,

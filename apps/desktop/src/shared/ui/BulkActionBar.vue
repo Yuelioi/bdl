@@ -1,142 +1,33 @@
 <script setup lang="ts">
-import { computed } from 'vue';
-
 import UiButton from './Button.vue';
 
-const {
-  selectedCount,
-  completedCount,
-  canPause,
-  canCancel,
-  canResume,
-  canRetry,
-  canRefreshRetry,
-  canRemove,
-  loading = false,
-} = defineProps<{
+defineProps<{
   selectedCount: number;
-  completedCount: number;
-  canPause: boolean;
-  canCancel: boolean;
-  canResume: boolean;
-  canRetry: boolean;
-  canRefreshRetry: boolean;
-  canRemove: boolean;
+  items: { label: string; icon: string; color?: 'error'; onSelect: () => void }[][];
   loading?: boolean;
 }>();
 
-const emit = defineEmits<{
-  pause: [];
-  cancel: [];
-  resume: [];
-  retry: [];
-  refreshRetry: [];
-  remove: [];
-  deleteFiles: [];
-  clearCompleted: [];
-  refresh: [];
-}>();
-
-const moreItems = computed(() => [
-  [
-    {
-      label: '暂停当前列表中的任务',
-      icon: 'i-tabler-player-pause',
-      disabled: loading || !canPause,
-      onSelect: () => emit('pause'),
-    },
-    {
-      label: '取消当前列表中的任务',
-      icon: 'i-tabler-x',
-      disabled: loading || !canCancel,
-      onSelect: () => emit('cancel'),
-    },
-    {
-      label: '继续当前列表中的任务',
-      icon: 'i-tabler-player-play',
-      disabled: loading || !canResume,
-      onSelect: () => emit('resume'),
-    },
-  ],
-]);
+const emit = defineEmits<{ refresh: [] }>();
 </script>
 
 <template>
   <div class="bulk-action-bar" :class="{ selected: selectedCount > 0 }">
     <div v-if="selectedCount > 0" class="bulk-copy">
-      <strong>已选择 {{ selectedCount }} 个</strong>
+      <strong>已选 {{ selectedCount }} 项</strong>
     </div>
-
-    <div v-if="selectedCount > 0" class="bulk-actions">
-      <UiButton v-if="canPause" size="compact" variant="ghost" :disabled="loading" @click="emit('pause')"
-        >暂停</UiButton
-      >
-      <UiButton v-if="canCancel" size="compact" variant="ghost" :disabled="loading" @click="emit('cancel')"
-        >取消任务</UiButton
-      >
-      <UiButton v-if="canResume" size="compact" variant="ghost" :disabled="loading" @click="emit('resume')"
-        >继续</UiButton
-      >
-      <UiButton v-if="canRetry" size="compact" variant="ghost" :disabled="loading" @click="emit('retry')"
-        >重试</UiButton
-      >
-      <UiButton
-        v-if="canRefreshRetry"
-        size="compact"
-        variant="secondary"
-        :disabled="loading"
-        @click="emit('refreshRetry')"
-      >
-        刷新链接并重试
-      </UiButton>
-      <UiButton
-        v-if="canRemove"
-        size="compact"
-        variant="ghost"
-        title="移除任务记录并清理临时文件，保留成品"
-        :disabled="loading"
-        @click="emit('remove')"
-        >移除任务</UiButton
-      >
-      <UDropdownMenu
-        v-if="canRemove"
-        :items="[
-          {
-            label: '删除任务及文件',
-            icon: 'i-tabler-trash',
-            color: 'error',
-            disabled: loading,
-            onSelect: () => emit('deleteFiles'),
-          },
-        ]"
-        :content="{ align: 'end' }"
-        ><UiButton size="compact" variant="ghost" aria-label="更多批量操作" :disabled="loading"
-          ><UIcon name="i-tabler-dots" class="size-4" /></UiButton
-      ></UDropdownMenu>
-    </div>
-
-    <div v-else class="bulk-actions">
-      <UiButton
-        v-if="completedCount > 0"
-        size="compact"
-        variant="secondary"
-        title="删除已完成的任务记录，保留下载文件"
-        :disabled="loading"
-        @click="emit('clearCompleted')"
-      >
-        移除已完成记录
-      </UiButton>
+    <div class="bulk-actions">
       <UiButton size="compact" variant="ghost" :disabled="loading" @click="emit('refresh')">
         <UIcon name="i-tabler-refresh" class="size-4" aria-hidden="true" />
         刷新
       </UiButton>
       <UDropdownMenu
-        v-if="canPause || canCancel || canResume"
-        :items="moreItems"
-        :content="{ align: 'end', sideOffset: 4, collisionPadding: 12 }"
-        :ui="{ content: 'min-w-32' }"
+        v-if="items.length"
+        :items="items"
+        :content="{ align: 'end', side: 'top', sideOffset: 4, collisionPadding: 12 }"
       >
-        <UiButton size="compact" variant="ghost" :disabled="loading">批量操作</UiButton>
+        <UiButton size="compact" variant="secondary" :disabled="loading">
+          批量操作 <UIcon name="i-tabler-chevron-up" class="size-4" aria-hidden="true" />
+        </UiButton>
       </UDropdownMenu>
     </div>
   </div>

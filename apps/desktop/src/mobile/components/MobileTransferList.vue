@@ -136,10 +136,6 @@ const run = (kind: Exclude<TaskActionKind, 'none'>) => {
   if (actionTask.value) emit('taskAction', actionTask.value.id, kind);
   actionsOpen.value = false;
 };
-const artworkActionLabel = (view: TransferTaskView) =>
-  view.primaryAction === 'open_file' ? '播放' : view.primaryActionLabel;
-const artworkActionIcon = (view: TransferTaskView) =>
-  view.primaryAction === 'open_file' ? 'play' : view.primaryActionIcon;
 const hasProgress = (view: TransferTaskView) =>
   ['downloading', 'paused'].includes(view.statusBadge) && view.stageProgressLabel !== '';
 const taskMetaLabel = (view: TransferTaskView) =>
@@ -192,8 +188,8 @@ const taskMetaValue = (view: TransferTaskView) =>
             <UiIconButton
               v-if="view.primaryAction !== 'none'"
               class="task-action-button"
-              :icon="artworkActionIcon(view)"
-              :label="artworkActionLabel(view)"
+              :icon="view.primaryActionIcon"
+              :label="view.primaryActionLabel"
               variant="ghost"
               size="compact"
               :disabled="loading"

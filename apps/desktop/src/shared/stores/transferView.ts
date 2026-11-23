@@ -105,6 +105,8 @@ export const createTransferTaskView = (
     : splitTaskTitle(task.title)
   const issue = classifyTaskIssue(task, logs)
   const primaryAction = primaryActionForTask(task, issue, capabilities)
+  const canPlayOutput = task.status === 'completed' && primaryAction === 'open_file'
+    && (task.resources.length === 0 || task.resources.some(resource => resource.kind === 'video' || resource.kind === 'audio'))
   const completedWithWarnings = task.status === 'completed' && hasWarningLogs(logs)
   const scheduled = isScheduledTask(task)
   const activelyTransferring = task.status === 'downloading'
@@ -147,8 +149,8 @@ export const createTransferTaskView = (
     outputPath: task.output_path,
     sourceId: task.source_id,
     primaryAction,
-    primaryActionLabel: actionLabel(primaryAction),
-    primaryActionIcon: actionIcon(primaryAction),
+    primaryActionLabel: canPlayOutput ? '播放' : actionLabel(primaryAction),
+    primaryActionIcon: canPlayOutput ? 'play' : actionIcon(primaryAction),
     secondaryActions: secondaryActionsForTask(task, primaryAction, capabilities),
   }
 }

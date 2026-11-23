@@ -33,21 +33,8 @@ const {
   tabs,
   transferSortOptions,
   taskViews,
-  pausableTaskIds,
-  cancellableTaskIds,
-  resumableTaskIds,
-  retryableTaskIds,
-  removableTaskIds,
-  runBulkPause,
-  runBulkCancel,
-  runBulkResume,
-  runBulkRetry,
-  runBulkRefreshRetry,
-  runBulkRemove,
-  runBulkDeleteFiles,
+  batchItems,
   removal,
-  runClearCompleted,
-  completedTaskCount,
   emptyTitle,
   emptyDescription,
 } = useTransferPage();
@@ -77,51 +64,6 @@ const visibleSelectedCount = computed(() => {
   return queue.selectedTaskIds.filter((id) => visibleIds.has(id)).length;
 });
 const allVisibleSelected = computed(() => taskViews.value.length > 0 && visibleSelectedCount.value === taskViews.value.length);
-const batchItems = computed(() => {
-  const selected = queue.selectedTaskIds.length > 0;
-  const taskActions = [
-    {
-      label: selected ? '暂停' : '暂停当前列表',
-      icon: 'i-tabler-player-pause',
-      available: pausableTaskIds.value.length > 0,
-      onSelect: runBulkPause,
-    },
-    {
-      label: selected ? '继续' : '继续当前列表',
-      icon: 'i-tabler-player-play',
-      available: resumableTaskIds.value.length > 0,
-      onSelect: runBulkResume,
-    },
-    {
-      label: '重试',
-      icon: 'i-tabler-refresh',
-      available: selected && retryableTaskIds.value.length > 0,
-      onSelect: runBulkRetry,
-    },
-    {
-      label: '刷新链接并重试',
-      icon: 'i-tabler-link',
-      available: selected && retryableTaskIds.value.length > 0,
-      onSelect: runBulkRefreshRetry,
-    },
-    {
-      label: selected ? '取消下载' : '取消当前列表的下载',
-      icon: 'i-tabler-x',
-      available: cancellableTaskIds.value.length > 0,
-      onSelect: runBulkCancel,
-    },
-  ].filter((item) => item.available);
-  const removalActions = removableTaskIds.value.length
-    ? [
-        { label: '仅删除任务记录', icon: 'i-tabler-file-minus', onSelect: runBulkRemove },
-        { label: '删除任务及文件', icon: 'i-tabler-trash', color: 'error' as const, onSelect: runBulkDeleteFiles },
-      ]
-    : [];
-  const completedActions = !selected && queue.activeFilter === 'completed' && completedTaskCount.value
-    ? [{ label: '移除全部完成记录，保留文件', icon: 'i-tabler-file-minus', onSelect: runClearCompleted }]
-    : [];
-  return [taskActions, removalActions, completedActions].filter((group) => group.length > 0);
-});
 const beginManaging = (taskId: string) => {
   select(() => {
     if (!queue.selectedTaskIds.includes(taskId)) queue.toggleTaskSelection(taskId);
@@ -212,9 +154,8 @@ const beginManaging = (taskId: string) => {
           <UiButton
             variant="secondary"
             class="transfer-batch-button"
-            aria-label="更多批量操作"
-            :disabled="queue.loading || !batchItems.length"
-          >批量操作 <UIcon name="i-tabler-chevron-up" class="size-4" /></UiButton>
+            :disabled="queue.loading || queue.bulkBusy || !batchItems.length"
+          >批量操作 <UIcon name="i-tabler-chevron-up" class="size-4" aria-hidden="true" /></UiButton>
         </UDropdownMenu>
       </footer>
     </section>

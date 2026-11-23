@@ -38,7 +38,10 @@ export function useTransferPage() {
   });
   const queueFilter = computed({
     get: () => queue.activeFilter,
-    set: (value: QueueFilter) => queue.setFilter(value),
+    set: (value: QueueFilter) => {
+      if (value !== queue.activeFilter) queue.setVisibleTaskSelection(queue.selectedTaskIds, false);
+      queue.setFilter(value);
+    },
   });
   const tabs = computed<Array<{ label: string; value: QueueFilter; count: number }>>(() => [
     { label: '活动', value: 'active', count: queue.countByFilter('active') },
@@ -94,16 +97,82 @@ export function useTransferPage() {
     cancellableTaskIds,
     resumableTaskIds,
     retryableTaskIds,
+    redownloadTaskIds,
     removableTaskIds,
     runBulkPause,
     runBulkCancel,
     runBulkResume,
     runBulkRetry,
+    runBulkRedownload,
     runBulkRefreshRetry,
     runBulkRemove,
     runClearCompleted,
-  } = useTransferBulkActions(queue, visibleTasks);
-  const completedTaskCount = computed(() => queue.tasks.filter((task) => task.status === 'completed').length);
+    runClearCancelled,
+    completedTaskIds,
+    cancelledTaskIds,
+  } = useTransferBulkActions(queue);
+  const runBulkDeleteFiles = () => removal.show(removableTaskIds.value);
+  const batchItems = computed(() => {
+    const selected = removableTaskIds.value.length > 0;
+    const controls = [
+      {
+        label: selected ? '暂停所选' : '暂停全部任务',
+        icon: 'i-tabler-player-pause',
+        available: pausableTaskIds.value.length > 0,
+        onSelect: runBulkPause,
+      },
+      {
+        label: selected ? '取消所选任务' : '取消全部任务',
+        icon: 'i-tabler-x',
+        available: cancellableTaskIds.value.length > 0,
+        onSelect: runBulkCancel,
+      },
+      {
+        label: selected ? '继续所选' : '继续全部任务',
+        icon: 'i-tabler-player-play',
+        available: resumableTaskIds.value.length > 0,
+        onSelect: runBulkResume,
+      },
+      {
+        label: '重试所选',
+        icon: 'i-tabler-refresh',
+        available: retryableTaskIds.value.length > 0,
+        onSelect: runBulkRetry,
+      },
+      {
+        label: '刷新链接并重试',
+        icon: 'i-tabler-link',
+        available: retryableTaskIds.value.length > 0,
+        onSelect: runBulkRefreshRetry,
+      },
+      {
+        label: '重新下载所选',
+        icon: 'i-tabler-download',
+        available: redownloadTaskIds.value.length > 0,
+        onSelect: runBulkRedownload,
+      },
+    ].filter(item => item.available);
+    const cleanup = selected
+      ? [
+          { label: '仅删除所选记录', icon: 'i-tabler-file-minus', onSelect: runBulkRemove },
+          { label: '删除所选任务及文件', icon: 'i-tabler-trash', color: 'error' as const, onSelect: runBulkDeleteFiles },
+        ]
+      : [
+          {
+            label: '仅清除已完成记录',
+            icon: 'i-tabler-file-minus',
+            available: completedTaskIds.value.length > 0,
+            onSelect: runClearCompleted,
+          },
+          {
+            label: '仅清除已取消记录',
+            icon: 'i-tabler-file-minus',
+            available: cancelledTaskIds.value.length > 0,
+            onSelect: runClearCancelled,
+          },
+        ].filter(item => item.available);
+    return [controls, cleanup].filter(group => group.length > 0);
+  });
   const emptyTitle = computed(() => {
     if (queue.tasks.length === 0) {
       return '还没有传输任务';
@@ -151,19 +220,7 @@ export function useTransferPage() {
     tabs,
     transferSortOptions,
     taskViews,
-    pausableTaskIds,
-    cancellableTaskIds,
-    resumableTaskIds,
-    retryableTaskIds,
-    removableTaskIds,
-    runBulkPause,
-    runBulkCancel,
-    runBulkResume,
-    runBulkRetry,
-    runBulkRefreshRetry,
-    runBulkRemove,
-    runClearCompleted,
-    completedTaskCount,
+    batchItems,
     emptyTitle,
     emptyDescription,
     contextMenu,
@@ -173,7 +230,6 @@ export function useTransferPage() {
     closeContextMenu,
     runContextAction,
     contextIcon,
-    runBulkDeleteFiles: () => removal.show(removableTaskIds.value),
     removal,
   };
 }

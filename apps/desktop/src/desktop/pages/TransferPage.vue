@@ -26,21 +26,8 @@ const {
   tabs,
   transferSortOptions,
   taskViews,
-  pausableTaskIds,
-  cancellableTaskIds,
-  resumableTaskIds,
-  retryableTaskIds,
-  removableTaskIds,
-  runBulkPause,
-  runBulkCancel,
-  runBulkResume,
-  runBulkRetry,
-  runBulkRefreshRetry,
-  runBulkRemove,
-  runBulkDeleteFiles,
+  batchItems,
   removal,
-  runClearCompleted,
-  completedTaskCount,
   emptyTitle,
   emptyDescription,
   contextMenu,
@@ -126,22 +113,8 @@ const recoverTask = (taskId: string, action: 'retry' | 'refresh_retry') => {
       <footer class="transfer-footer">
         <BulkActionBar
           :selected-count="queue.selectedTaskIds.length"
-          :completed-count="completedTaskCount"
-          :can-pause="pausableTaskIds.length > 0"
-          :can-cancel="cancellableTaskIds.length > 0"
-          :can-resume="resumableTaskIds.length > 0"
-          :can-retry="retryableTaskIds.length > 0"
-          :can-refresh-retry="retryableTaskIds.length > 0"
-          :can-remove="removableTaskIds.length > 0"
-          :loading="queue.loading"
-          @pause="runBulkPause"
-          @cancel="runBulkCancel"
-          @resume="runBulkResume"
-          @retry="runBulkRetry"
-          @refresh-retry="runBulkRefreshRetry"
-          @remove="runBulkRemove"
-          @delete-files="runBulkDeleteFiles"
-          @clear-completed="runClearCompleted"
+          :items="batchItems"
+          :loading="queue.loading || queue.bulkBusy"
           @refresh="queue.list"
         />
       </footer>

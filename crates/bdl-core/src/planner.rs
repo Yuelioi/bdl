@@ -237,6 +237,7 @@ pub fn defer_selected_parts(
     selected_part_ids: &[PartId],
     options: &DownloadOptions,
     document_tree: Option<&crate::settings::DocumentTreeDirectory>,
+    item_index_offset: usize,
 ) -> BdlResult<Vec<DownloadTask>> {
     let mut source = tree.source.clone();
     source.input.clear();
@@ -282,7 +283,7 @@ pub fn defer_selected_parts(
                         source: source.clone(),
                         item,
                         part_id: id.clone(),
-                        item_index: selected.item_index,
+                        item_index: selected.item_index.saturating_add(item_index_offset),
                         part_index: selected.part_index,
                         part_count: selected.part_count,
                     })),

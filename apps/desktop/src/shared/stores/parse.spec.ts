@@ -14,6 +14,7 @@ const api = vi.hoisted(() => ({
   parseCancel: vi.fn(),
   parseRefreshSource: vi.fn(),
   selectionCreateTasks: vi.fn(),
+  selectionEnqueueBatch: vi.fn<typeof import('../api/tauri').selectionEnqueueBatch>(),
   selectionEstimateSize: vi.fn(),
   selectionPrepare: vi.fn(),
 }))
@@ -82,11 +83,11 @@ describe('parse store', () => {
     const tree = sourceTree('source:background-error', '后台来源')
     tree.groups[0]!.items.push(sourceTree('second', '第二条').groups[0]!.items[0]!)
     parse.upsertSource(tree)
-    api.selectionCreateTasks.mockRejectedValue(Object.assign(new Error('解析失败'), {
+    api.selectionEnqueueBatch.mockRejectedValue(Object.assign(new Error('解析失败'), {
       code: 'bilibili_api_error', detail: 'HTTP 429; token=private-token',
     }))
     await parse.startBackgroundDownload(tree.source.id)
-    expect(api.selectionCreateTasks).toHaveBeenCalledTimes(1)
+    expect(api.selectionEnqueueBatch).toHaveBeenCalledTimes(1)
     expect(parse.backgroundJob?.status).toBe('failed')
     expect(parse.backgroundJob?.detail).toContain('HTTP 429')
     expect(parse.backgroundJob?.detail).not.toContain('private-token')
@@ -700,41 +701,62 @@ describe('parse store', () => {
 })
 
 
+const enqueued = (ids: string[], options: Partial<Awaited<ReturnType<typeof api.selectionEnqueueBatch>>> = {}) => ({
+  created: [], skipped: ids.length, processed_part_ids: ids, failures: [], blocked: null, ...options,
+})
+
 describe('background parse and download', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     Object.values(api).forEach((mock) => mock.mockReset())
     api.parseCancel.mockResolvedValue(undefined)
     useSettingsStore().loaded = true
-    api.selectionCreateTasks.mockResolvedValue({ created: [], duplicates: [], skipped_existing: 1, requires_confirmation: false })
+    api.selectionEnqueueBatch.mockImplementation(async request => enqueued(request.part_ids))
   })
 
-  it('downloads loaded content before paging, snapshots defaults, and leaves selection intact', async () => {
+  it.each([
+    ['uploader', 30],
+    ['favorite', 20],
+    ['collection', 20],
+    ['series', 20],
+    ['watch_later', 20],
+  ] as const)('enqueues %s in batches of %i while preserving selection and download defaults', async (kind, pageSize) => {
     const parse = useParseStore()
     const settings = useSettingsStore()
     const first = sourceTree('source:background', '后台来源')
-    first.source.loaded_count = 1
-    first.source.has_more = true
+    const initialCount = pageSize * 2
+    const initialIds = Array.from({ length: initialCount }, (_, index) => `part:video-${index}`)
+    const template = first.groups[0].items[0]
+    first.groups[0].items = initialIds.map(id => ({ ...template, id: `item:${id}`, parts: [{ ...template.parts[0], id }] }))
+    first.source.kind = kind
+    first.source.loaded_count = initialCount
+    first.source.has_more = kind !== 'watch_later'
+    if (first.source.has_more) {
+      first.groups[0].page = { page_number: 2, page_size: pageSize, loaded_count: initialCount, total_count: initialCount + 1, has_more: true }
+      first.groups.unshift({ id: 'intro', kind: 'section', title: '', items: [], page: null })
+    }
     const next = structuredClone(first)
-    next.source.loaded_count = 2
+    next.source.loaded_count = initialCount + 1
     next.source.has_more = false
-    next.groups[0].items.push({ ...next.groups[0].items[0], id: 'item:second', parts: [{ ...next.groups[0].items[0].parts[0], id: 'part:second' }] })
+    next.groups.at(-1)?.items.push({ ...template, id: 'item:next', parts: [{ ...template.parts[0], id: 'part:next' }] })
     parse.upsertSource(first)
     parse.selectionBySource[first.source.id] = []
     settings.saved.naming_template = '{title}.{ext}'
     const order: string[] = []
-    api.selectionCreateTasks.mockImplementation(async () => {
+    api.selectionEnqueueBatch.mockImplementation(async request => {
       order.push('download')
       settings.saved.naming_template = '{bvid}.{ext}'
-      return { created: [], duplicates: [], skipped_existing: 1, requires_confirmation: false }
+      return enqueued(request.part_ids)
     })
     api.parseLoadMore.mockImplementation(async () => { order.push('page'); return next })
     await parse.startBackgroundDownload(first.source.id)
-    expect(order).toEqual(['download', 'page', 'download'])
-    expect(api.selectionCreateTasks.mock.calls.map(([request]) => request.part_ids)).toEqual([['part:source:background'], ['part:second']])
-    expect(api.selectionCreateTasks.mock.calls.every(([request]) => request.naming_template === '{title}.{ext}' && request.duplicate_policy === 'skip')).toBe(true)
+    expect(order).toEqual(first.source.has_more ? ['download', 'download', 'page', 'download'] : ['download', 'download'])
+    const batches = [initialIds.slice(0, pageSize), initialIds.slice(pageSize)]
+    if (first.source.has_more) batches.push(['part:next'])
+    expect(api.selectionEnqueueBatch.mock.calls.map(([request]) => request.part_ids)).toEqual(batches)
+    expect(api.selectionEnqueueBatch.mock.calls.every(([request]) => request.naming_template === '{title}.{ext}' && request.duplicate_policy === 'skip')).toBe(true)
     expect(parse.selectionBySource[first.source.id]).toEqual([])
-    expect(parse.backgroundJob).toMatchObject({ status: 'completed', processed: 2 })
+    expect(parse.backgroundJob).toMatchObject({ status: 'completed', processed: initialCount + Number(first.source.has_more) })
   })
 
   it('continues past a missing stream and retries only failed parts with the saved recipe', async () => {
@@ -744,18 +766,20 @@ describe('background parse and download', () => {
     tree.groups[0].items = ['first', 'bad', 'last'].map((name) => ({ ...first, id: `item:${name}`, parts: [{ ...first.parts[0], id: `part:${name}`, title: name }] }))
     parse.upsertSource(tree)
     useSettingsStore().saved.naming_template = '{title}.{ext}'
-    api.selectionCreateTasks.mockImplementation(async (request) => {
-      if (request.part_ids[0] === 'part:bad') throw new Error('planning error: `bad 风控403验证` 缺少视频流，请重新解析后再试。')
-      return { created: [], duplicates: [], skipped_existing: 1, requires_confirmation: false }
+    api.selectionEnqueueBatch.mockImplementation(async (request) => {
+      return enqueued(request.part_ids, {
+        skipped: 2,
+        failures: [{ part_id: 'part:bad', error: { code: 'core_error', message: '缺少视频流' } }],
+      })
     })
     await parse.startBackgroundDownload(tree.source.id)
-    expect(api.selectionCreateTasks.mock.calls.map(([r]) => r.part_ids)).toEqual([['part:first'], ['part:bad'], ['part:last']])
+    expect(api.selectionEnqueueBatch.mock.calls.map(([r]) => r.part_ids)).toEqual([['part:first', 'part:bad', 'part:last']])
     expect(parse.backgroundJob).toMatchObject({ status: 'completed', processed: 3, skipped: 2, failures: [{ partId: 'part:bad', title: 'bad' }] })
     useSettingsStore().saved.naming_template = '{bvid}.{ext}'
-    api.selectionCreateTasks.mockClear().mockResolvedValue({ created: [], duplicates: [], skipped_existing: 1, requires_confirmation: false })
+    api.selectionEnqueueBatch.mockClear().mockImplementation(async request => enqueued(request.part_ids))
     await parse.startBackgroundDownload(tree.source.id, true)
-    expect(api.selectionCreateTasks).toHaveBeenCalledTimes(1)
-    expect(api.selectionCreateTasks.mock.calls[0][0]).toMatchObject({ part_ids: ['part:bad'], naming_template: '{title}.{ext}' })
+    expect(api.selectionEnqueueBatch).toHaveBeenCalledTimes(1)
+    expect(api.selectionEnqueueBatch.mock.calls[0][0]).toMatchObject({ part_ids: ['part:bad'], naming_template: '{title}.{ext}' })
     expect(parse.backgroundJob).toMatchObject({ status: 'completed', processed: 3, skipped: 3, failures: [] })
   })
 
@@ -765,13 +789,13 @@ describe('background parse and download', () => {
     const first = tree.groups[0].items[0]
     tree.groups[0].items = ['first', 'blocked', 'last'].map((name) => ({ ...first, id: `item:${name}`, parts: [{ ...first.parts[0], id: `part:${name}` }] }))
     parse.upsertSource(tree)
-    api.selectionCreateTasks.mockResolvedValueOnce({ created: [], duplicates: [], skipped_existing: 1, requires_confirmation: false }).mockRejectedValueOnce(new Error(message))
+    api.selectionEnqueueBatch.mockResolvedValueOnce(enqueued(['part:first'], { blocked: { code: 'login_required', message } }))
     await parse.startBackgroundDownload(tree.source.id)
     expect(parse.backgroundJob).toMatchObject({ status: 'failed', processed: 1, failures: [] })
-    expect(api.selectionCreateTasks).toHaveBeenCalledTimes(2)
-    api.selectionCreateTasks.mockClear().mockResolvedValue({ created: [], duplicates: [], skipped_existing: 1, requires_confirmation: false })
+    expect(api.selectionEnqueueBatch).toHaveBeenCalledTimes(1)
+    api.selectionEnqueueBatch.mockClear().mockImplementation(async request => enqueued(request.part_ids))
     await parse.startBackgroundDownload(tree.source.id)
-    expect(api.selectionCreateTasks.mock.calls.map(([r]) => r.part_ids)).toEqual([['part:blocked'], ['part:last']])
+    expect(api.selectionEnqueueBatch.mock.calls.map(([r]) => r.part_ids)).toEqual([['part:blocked', 'part:last']])
     expect(parse.backgroundJob).toMatchObject({ status: 'completed', processed: 3 })
   })
 
@@ -779,20 +803,20 @@ describe('background parse and download', () => {
     const parse = useParseStore()
     const tree = sourceTree('source:hydrate', '多P')
     parse.upsertSource(tree)
-    api.selectionCreateTasks.mockImplementationOnce(async () => {
+    api.selectionEnqueueBatch.mockImplementationOnce(async request => {
       const loaded = structuredClone(tree)
       const part = loaded.groups[0].items[0].parts[0]
       loaded.groups[0].items[0].parts = [{ ...part, id: 'part:p1' }, { ...part, id: 'part:p2' }]
       parse.upsertSource(loaded)
       parse.stopPacedParsing(tree.source.id)
-      return { created: [], duplicates: [], skipped_existing: 2, requires_confirmation: false }
+      return enqueued(request.part_ids, { skipped: 2 })
     })
     await parse.startBackgroundDownload(tree.source.id)
     expect(parse.backgroundJob?.failures).toEqual([])
     expect(parse.backgroundJob?.donePartIds).toEqual(expect.arrayContaining(['part:p1', 'part:p2']))
-    api.selectionCreateTasks.mockClear()
+    api.selectionEnqueueBatch.mockClear()
     await parse.startBackgroundDownload(tree.source.id)
-    expect(api.selectionCreateTasks).not.toHaveBeenCalled()
+    expect(api.selectionEnqueueBatch).not.toHaveBeenCalled()
     expect(parse.backgroundJob?.status).toBe('completed')
   })
 
@@ -802,14 +826,18 @@ describe('background parse and download', () => {
     const first = tree.groups[0].items[0]
     tree.groups[0].items.push({ ...first, id: 'item:blocked', parts: [{ ...first.parts[0], id: 'part:blocked' }] })
     parse.upsertSource(tree)
-    api.selectionCreateTasks.mockRejectedValueOnce(new Error('planning error: `bad` 缺少视频流，请重新解析后再试。')).mockRejectedValueOnce(new Error('HTTP 429'))
+    api.selectionEnqueueBatch.mockResolvedValueOnce(enqueued(['part:source:retry-paused'], {
+      skipped: 0,
+      failures: [{ part_id: 'part:source:retry-paused', error: { code: 'core_error', message: '缺少视频流' } }],
+      blocked: { code: 'source_rate_limited', message: 'HTTP 429' },
+    }))
     await parse.startBackgroundDownload(tree.source.id)
     expect(parse.backgroundJob?.status).toBe('failed')
-    api.selectionCreateTasks.mockClear().mockResolvedValue({ created: [], duplicates: [], skipped_existing: 1, requires_confirmation: false })
+    api.selectionEnqueueBatch.mockClear().mockImplementation(async request => enqueued(request.part_ids))
     await parse.startBackgroundDownload(tree.source.id, true)
     expect(parse.backgroundJob).toMatchObject({ status: 'stopped', processed: 1, failures: [] })
     await parse.startBackgroundDownload(tree.source.id)
-    expect(api.selectionCreateTasks.mock.calls.map(([r]) => r.part_ids)).toEqual([['part:source:retry-paused'], ['part:blocked']])
+    expect(api.selectionEnqueueBatch.mock.calls.map(([r]) => r.part_ids)).toEqual([['part:source:retry-paused'], ['part:blocked']])
     expect(parse.backgroundJob).toMatchObject({ status: 'completed', processed: 2 })
   })
 
@@ -818,13 +846,14 @@ describe('background parse and download', () => {
     const first = sourceTree('source:stop', '停止')
     first.source.has_more = true
     parse.upsertSource(first)
-    api.selectionCreateTasks.mockImplementation(async () => {
+    api.selectionEnqueueBatch.mockImplementation(async () => {
       parse.stopPacedParsing(first.source.id)
-      return { created: [], duplicates: [], skipped_existing: 0, requires_confirmation: false }
+      throw { code: 'parse_cancelled', message: '已停止' }
     })
     await parse.startBackgroundDownload(first.source.id)
     expect(parse.backgroundJob?.status).toBe('stopped')
     expect(api.parseLoadMore).not.toHaveBeenCalled()
+    expect(api.parseCancel).toHaveBeenCalledWith(api.selectionEnqueueBatch.mock.calls[0][2], 'stop_requested')
   })
 
   it('retains completed pages and stops on a pagination error', async () => {

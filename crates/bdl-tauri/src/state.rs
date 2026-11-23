@@ -456,17 +456,25 @@ impl AppState {
         }
 
         let planned_count = tasks.len();
-        let mut reservations = queue.clone();
-        let removing = self
-            .removals
-            .lock()
-            .map_err(|_| state_poisoned("removals"))?;
-        for task in &mut reservations {
-            if removing.contains(&task.id) {
-                task.status = TaskStatus::Cancelled;
+        // Deferred tasks reserve their output paths when they start.
+        let tasks = if tasks
+            .iter()
+            .all(|task| task.media_selection.deferred.is_some())
+        {
+            tasks
+        } else {
+            let mut reservations = queue.clone();
+            let removing = self
+                .removals
+                .lock()
+                .map_err(|_| state_poisoned("removals"))?;
+            for task in &mut reservations {
+                if removing.contains(&task.id) {
+                    task.status = TaskStatus::Cancelled;
+                }
             }
-        }
-        let tasks = reserve_queued_paths(tasks, &reservations, naming_strategy)?;
+            reserve_queued_paths(tasks, &reservations, naming_strategy)?
+        };
         let skipped_existing = planned_count - tasks.len();
         let inserted = append_new_tasks(&mut queue, tasks);
         if removed_existing_duplicates || !inserted.is_empty() {

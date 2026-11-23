@@ -393,6 +393,21 @@ pub struct SelectionCreateTasksResult {
     pub requires_confirmation: bool,
 }
 
+#[derive(Default, Serialize)]
+pub struct BackgroundEnqueueResult {
+    pub created: Vec<DownloadTask>,
+    pub skipped: usize,
+    pub processed_part_ids: Vec<String>,
+    pub failures: Vec<BackgroundEnqueueFailure>,
+    pub blocked: Option<CommandError>,
+}
+
+#[derive(Serialize)]
+pub struct BackgroundEnqueueFailure {
+    pub part_id: String,
+    pub error: CommandError,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct AccountImportCookieRequest {
     pub cookie: String,
@@ -644,7 +659,6 @@ pub async fn selection_create_tasks(
     snapshot: NormalizedSourceTree,
     operation_id: String,
 ) -> CommandResult<SelectionCreateTasksResult> {
-    // The explicit background-parse loop waits for one result; ordinary UI uses submit.
     let input = crate::preparation::build_input(&state, request, snapshot, operation_id.clone())?;
     state
         .task_execution()
@@ -661,6 +675,57 @@ pub async fn selection_create_tasks(
             input.options.duplicate_naming_strategy,
         )?;
         crate::preparation::publish(&app, &state, &result).await;
+        Ok(result)
+    }
+    .await;
+    if let Err(error) = state
+        .task_execution()
+        .set_preparation_active(&operation_id, false)
+    {
+        report_runtime_error(&app, &state, "stop_preparation_execution", error.into()).await;
+    }
+    result
+}
+
+#[tauri::command]
+pub async fn selection_enqueue_batch(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    mut request: SelectionCreateTasksRequest,
+    snapshot: NormalizedSourceTree,
+    operation_id: String,
+) -> CommandResult<BackgroundEnqueueResult> {
+    // Download All skips duplicates without interrupting the batch for a prompt.
+    request.duplicate_policy = DuplicateTaskPolicy::Skip;
+    let part_ids = request.part_ids.clone();
+    let operation = state.parse_control.begin(&operation_id, "enqueue_batch");
+    operation.phase(crate::parse_control::Phase::Running);
+    let input = crate::preparation::build_input(&state, request, snapshot, operation_id.clone())?;
+    state
+        .task_execution()
+        .set_preparation_active(&operation_id, true)?;
+    let result = async {
+        let (tasks, mut result) = operation
+            .run(crate::preparation::plan_background_batch(
+                &state, &input, part_ids,
+            ))
+            .await?;
+        let committed = operation
+            .run(async {
+                state.check_account_revision(input.context.account_revision)?;
+                Ok(crate::preparation::commit(
+                    &state,
+                    tasks,
+                    result.skipped,
+                    input.policy,
+                    input.options.duplicate_naming_strategy,
+                ))
+            })
+            .await??;
+        drop(operation);
+        crate::preparation::publish(&app, &state, &committed).await;
+        result.created = committed.created;
+        result.skipped = committed.skipped_existing + committed.duplicates.len();
         Ok(result)
     }
     .await;
@@ -1457,6 +1522,18 @@ pub fn queue_open_file(
     }
     if task.output_path.exists() {
         open_path(&app, &task.output_path)
+    } else if task.status == TaskStatus::Completed
+        && task.media_selection.workflow.is_none()
+        && task
+            .resources
+            .iter()
+            .any(|resource| resource.kind != bdl_core::queue::DownloadResourceKind::Asset)
+    {
+        Err(CommandError {
+            detail: None,
+            code: "output_file_missing".to_owned(),
+            message: "找不到下载文件，文件可能已被移动或删除。".to_owned(),
+        })
     } else {
         open_task_output_dir(&app, &task)
     }

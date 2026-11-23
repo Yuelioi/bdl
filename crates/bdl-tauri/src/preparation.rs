@@ -1,9 +1,9 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 
 use bdl_core::fetcher::FetchCancelToken;
 use bdl_core::ids::PartId;
-use bdl_core::model::NormalizedSourceTree;
+use bdl_core::model::{NormalizedGroup, NormalizedSourceTree};
 use bdl_core::planner::{DownloadOptions, defer_selected_parts};
 use bdl_core::queue::{
     DownloadExportTarget, DownloadTask, DuplicateTaskPolicy, portable_relative_path,
@@ -16,8 +16,8 @@ use tauri::{AppHandle, Manager};
 use tokio::sync::Semaphore;
 
 use crate::commands::{
-    CommandError, CommandResult, DuplicateTaskMatch, SelectionCreateTasksRequest,
-    SelectionCreateTasksResult,
+    BackgroundEnqueueFailure, BackgroundEnqueueResult, CommandError, CommandResult,
+    DuplicateTaskMatch, SelectionCreateTasksRequest, SelectionCreateTasksResult,
 };
 use crate::parse_owned::{PreparationContext, SelectionPreparation};
 use crate::state::AppState;
@@ -180,9 +180,14 @@ pub(crate) fn build_input(
         .map(PartId)
         .collect::<Vec<_>>();
     let selected = crate::parse_session::normalize_selected_part_ids(&tree, &requested);
+    let selected_ids: HashSet<_> = selected.iter().collect();
     // Empty position slots preserve {index}/episode numbering without retaining other videos.
     for item in tree.groups.iter_mut().flat_map(|group| &mut group.items) {
-        if !item.parts.iter().any(|part| selected.contains(&part.id)) {
+        if !item
+            .parts
+            .iter()
+            .any(|part| selected_ids.contains(&part.id))
+        {
             item.parts.clear();
             item.id.0.clear();
             item.title.clear();
@@ -221,10 +226,30 @@ pub(crate) async fn plan_input(
     input: PreparationInput,
     progress: impl Fn(usize, usize) -> BdlResult<()>,
 ) -> CommandResult<(Vec<DownloadTask>, usize, PreparationInput)> {
+    let (tasks, skipped) = plan_selection(
+        state,
+        input.tree.clone(),
+        &input.selected,
+        &input,
+        0,
+        progress,
+    )
+    .await?;
+    Ok((tasks, skipped, input))
+}
+
+pub(crate) async fn plan_selection(
+    state: &AppState,
+    tree: NormalizedSourceTree,
+    selected: &[PartId],
+    input: &PreparationInput,
+    item_index_offset: usize,
+    progress: impl Fn(usize, usize) -> BdlResult<()>,
+) -> BdlResult<(Vec<DownloadTask>, usize)> {
     let prepared = state
         .prepare_selection_owned(
-            input.tree.clone(),
-            &input.selected,
+            tree,
+            selected,
             &input.options,
             &input.context,
             SelectionPreparation::Metadata,
@@ -236,13 +261,117 @@ pub(crate) async fn plan_input(
         &prepared.part_ids,
         &input.options,
         input.document_tree.as_ref(),
+        item_index_offset,
     )?;
     let skipped = prepared.part_ids.len().saturating_sub(tasks.len());
     for task in &mut tasks {
         task.scheduled_at = input.scheduled_at;
         task.speed_limit_bytes_per_second = input.speed_limit;
     }
-    Ok((tasks, skipped, input))
+    Ok((tasks, skipped))
+}
+
+pub(crate) async fn plan_background_batch(
+    state: &AppState,
+    input: &PreparationInput,
+    part_ids: Vec<String>,
+) -> BdlResult<(Vec<DownloadTask>, BackgroundEnqueueResult)> {
+    let mut locations = HashMap::new();
+    let items = input
+        .tree
+        .groups
+        .iter()
+        .flat_map(|group| group.items.iter().map(move |item| (group, item)));
+    for (index, (group, item)) in items.enumerate() {
+        for part in &item.parts {
+            locations.entry(&part.id).or_insert((index, group, item));
+        }
+    }
+    let mut tasks = Vec::new();
+    let mut planned_ids = HashSet::new();
+    let mut result = BackgroundEnqueueResult::default();
+    for part_id in part_ids {
+        let id = PartId(part_id.clone());
+        let selected = if locations.contains_key(&id) {
+            vec![id]
+        } else {
+            crate::parse_session::normalize_selected_part_ids(&input.tree, &[id])
+        };
+        let planned =
+            if let Some((index, group, item)) = selected.first().and_then(|id| locations.get(id)) {
+                let tree = NormalizedSourceTree {
+                    source: input.tree.source.clone(),
+                    groups: vec![NormalizedGroup {
+                        id: group.id.clone(),
+                        kind: group.kind.clone(),
+                        title: group.title.clone(),
+                        page: None,
+                        items: vec![(*item).clone()],
+                    }],
+                };
+                plan_selection(state, tree, &selected, input, *index, |_, _| Ok(())).await
+            } else {
+                Err(BdlError::Planning {
+                    message: "这项内容已不在列表中，请重新加载。".into(),
+                })
+            };
+        match planned {
+            Ok((planned, skipped)) => {
+                result.skipped += skipped;
+                for task in planned {
+                    if planned_ids.insert(task.id.clone()) {
+                        tasks.push(task);
+                    } else {
+                        result.skipped += 1;
+                    }
+                }
+            }
+            Err(error) => {
+                let planning_or_account = match error.root_cause() {
+                    BdlError::Account { .. } => Some(true),
+                    BdlError::Planning { message } => Some(
+                        message.starts_with("解析已因限流暂停")
+                            || message.starts_with("源站限制了请求，已停止解析"),
+                    ),
+                    _ => None,
+                };
+                let command_error = CommandError::from(error);
+                let blocked = planning_or_account.unwrap_or({
+                    matches!(
+                        command_error.code.as_str(),
+                        "source_rate_limited"
+                            | "source_verification_required"
+                            | "source_access_restricted"
+                            | "remote_forbidden"
+                            | "login_required"
+                            | "network_timeout"
+                            | "bilibili_request_failed"
+                            | "network_request_failed"
+                            | "database_error"
+                            | "data_format_error"
+                            | "file_access_denied"
+                            | "file_not_found"
+                            | "file_path_invalid"
+                            | "file_read_only"
+                            | "disk_full"
+                            | "local_io_failed"
+                            | "platform_error"
+                            | "parse_cancelled"
+                    )
+                });
+                if blocked {
+                    result.blocked = Some(command_error);
+                    break;
+                }
+                result.failures.push(BackgroundEnqueueFailure {
+                    part_id: part_id.clone(),
+                    error: command_error,
+                });
+            }
+        }
+        result.processed_part_ids.push(part_id);
+    }
+    Ok((tasks, result))
 }
 
 pub(crate) async fn materialize_queued_download(
@@ -354,12 +483,12 @@ pub(crate) async fn publish(
     state: &AppState,
     result: &SelectionCreateTasksResult,
 ) {
-    for task in &result.created {
-        if let Err(error) = crate::events::emit(app, crate::events::QUEUE_TASK_UPDATED, task) {
+    if !result.created.is_empty() {
+        if let Err(error) =
+            crate::events::emit(app, crate::events::QUEUE_TASKS_ADDED, &result.created)
+        {
             crate::commands::report_runtime_error(app, state, "publish_prepared_task", error).await;
         }
-    }
-    if !result.created.is_empty() {
         // Claim download protection before the preparation lease is released.
         // Queue workers also recheck the queue under this same lock on exit.
         if let Err(error) = state.sync_download_activity() {
@@ -500,6 +629,13 @@ pub(crate) async fn run(
         _ = token.cancelled() => return Ok(None),
         permit = state.preparations.gate.acquire() => permit.map_err(|_| BdlError::Planning { message: "准备队列已关闭。".into() })?,
     };
+    let checkpoint_every = input
+        .tree
+        .groups
+        .iter()
+        .filter_map(|group| group.page.as_ref())
+        .find(|page| page.page_size > 0)
+        .map_or(20, |page| page.page_size as usize);
     let progress = |processed: usize, total: usize| {
         let mut entries = state.preparations.entries.lock().unwrap();
         if token.is_cancelled() {
@@ -513,7 +649,12 @@ pub(crate) async fn run(
         entry.job.status = PreparationStatus::Preparing;
         entry.job.processed = processed;
         entry.job.total = total.max(entry.job.total);
-        persist(state, &entry.job)
+        // The running UI reads memory. Persist checkpoints and the terminal
+        // result so loading metadata does not write one transaction per item.
+        if processed == 0 || (processed < total && processed.is_multiple_of(checkpoint_every)) {
+            persist(state, &entry.job)?;
+        }
+        Ok(())
     };
     let (tasks, skipped, input) = tokio::select! {
         biased;

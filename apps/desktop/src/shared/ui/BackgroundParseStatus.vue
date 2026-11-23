@@ -12,7 +12,7 @@ const parse = useParseStore()
       <strong class="truncate text-xs">{{ parse.backgroundJob.title }}</strong>
       <span class="text-xs text-(--color-muted)">
         {{ parse.backgroundJob.status === 'running' ? '正在添加下载任务' : parse.backgroundJob.status === 'completed' ? '添加完成' : parse.backgroundJob.status === 'stopped' ? '已停止添加' : '添加失败' }}
-        · 已加入队列 {{ parse.backgroundJob.created }} 项<template v-if="parse.backgroundJob.skipped"> · 跳过 {{ parse.backgroundJob.skipped }} 项</template>
+        · 已添加 {{ parse.backgroundJob.created }} 个任务<template v-if="parse.backgroundJob.skipped"> · 已跳过 {{ parse.backgroundJob.skipped }} 项</template>
       </span>
       <ParseActivityStatus v-if="parse.backgroundJob.status === 'running'" class="text-xs text-(--color-muted)" :source-id="parse.backgroundJob.sourceId" :stopping="parse.pacedParsingStopRequestedBySource[parse.backgroundJob.sourceId]" />
       <span v-if="parse.backgroundJob.error" class="break-all text-xs text-(--color-danger)">{{ parse.backgroundJob.error }}</span>

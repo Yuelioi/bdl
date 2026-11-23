@@ -42,9 +42,15 @@ describe('transfer page sorting defaults', () => {
     const second = task('second', 'failed');
     const third = task('third', 'cancelled');
     page.queue.tasks = [first];
+    page.queue.toggleTaskSelection(first.id);
+    page.queueFilter.value = 'completed';
+    expect(page.queue.selectedTaskIds).toEqual([]);
+    page.queueFilter.value = 'all';
     page.queue.applyCreatedTasks([second, third]);
     expect(page.taskViews.value.map((view) => view.id)).toEqual(['third', 'second', 'first']);
     page.queue.upsertTask({ ...first, status: 'downloading' });
+    page.queue.applyCreatedTasks([first]);
+    expect(page.queue.tasks.find(task => task.id === first.id)?.status).toBe('downloading');
     expect(page.taskViews.value.map((view) => view.id)).toEqual(['third', 'second', 'first']);
     page.queue.applyBulkResult({ updated: [{ ...second, status: 'waiting' }], removed: [], failed: [] });
     expect(page.taskViews.value.map((view) => view.id)).toEqual(['third', 'second', 'first']);

@@ -74,7 +74,6 @@ const canPlay = (view: TransferTaskView) =>
 const play = (view: TransferTaskView) => emit('taskAction', view.id, view.isCompleted ? 'open_file' : 'open_source');
 const hasProgress = (view: TransferTaskView) =>
   ['downloading', 'paused'].includes(view.statusBadge) && view.stageProgressLabel !== '';
-const openDirectory = (view: TransferTaskView) => view.secondaryActions.find((action) => action.kind === 'open_dir');
 </script>
 
 <template>
@@ -121,7 +120,7 @@ const openDirectory = (view: TransferTaskView) => view.secondaryActions.find((ac
               color="neutral"
               :ui="{ base: 'p-0', label: 'contents' }"
               :aria-label="
-                row.view.isCompleted ? `播放本地文件 ${row.view.displayTitle}` : `播放 ${row.view.displayTitle}`
+                row.view.isCompleted ? `${row.view.primaryActionLabel} ${row.view.displayTitle}` : `播放 ${row.view.displayTitle}`
               "
               :disabled="!canPlay(row.view) || loading"
               @click="play(row.view)"
@@ -169,22 +168,13 @@ const openDirectory = (view: TransferTaskView) => view.secondaryActions.find((ac
           <span v-if="mode !== 'completed'" class="task-speed speed-column">{{ row.view.speedLabel === '--' ? '—' : row.view.speedLabel }}</span>
           <div class="task-actions">
             <UiIconButton
-              v-if="row.view.primaryAction !== 'none' && row.view.primaryAction !== 'open_file'"
+              v-if="row.view.primaryAction !== 'none'"
               :icon="row.view.primaryActionIcon"
               :label="row.view.primaryActionLabel"
               variant="ghost"
               size="compact"
               :disabled="loading"
               @click="emit('taskAction', row.view.id, row.view.primaryAction)"
-            />
-            <UiIconButton
-              v-if="openDirectory(row.view)"
-              icon="folder"
-              label="打开所在目录"
-              variant="ghost"
-              size="compact"
-              :disabled="loading"
-              @click="emit('taskAction', row.view.id, 'open_dir')"
             />
             <TaskActionMenu
               :view="row.view"

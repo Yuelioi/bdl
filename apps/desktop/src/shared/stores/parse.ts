@@ -23,6 +23,7 @@ import {
   type ParseCancelReason,
   type SelectionCreateTasksRequest,
   selectionCreateTasks,
+  selectionEnqueueBatch,
   selectionEstimateSize,
   selectionPrepare,
 } from '../api/tauri'
@@ -477,7 +478,6 @@ export const useParseStore = defineStore('parse', {
       const done = new Set(job.donePartIds)
       const retryIds = retryFailed ? job.failures.map((failure) => failure.partId) : null
       retryIds?.forEach((id) => done.delete(id))
-      const attempted = new Set<string>()
       const stopped = () => Boolean(this.pacedParsingStopRequestedBySource[sourceId]) || !this.sources[sourceId]
       try {
         const settings = useSettingsStore()
@@ -499,32 +499,41 @@ export const useParseStore = defineStore('parse', {
         })
         job.options = options
         while (!stopped()) {
-          const pending = (retryIds ?? collectPartIds(this.sources[sourceId])).filter((id) => !done.has(id) && !attempted.has(id))
-          // Enqueue each resolved selection immediately so downloading starts early.
-          for (let index = 0; index < pending.length && !stopped(); index += 1) {
-            const ids = pending.slice(index, index + 1)
-            const partId = ids[0]
-            attempted.add(partId)
-            const title = this.sources[sourceId].groups.flatMap((group) => group.items).flatMap((item) => item.parts).find((part) => part.id === partId)?.title
-              ?? job.failures.find((failure) => failure.partId === partId)?.title ?? partId
-            const beforeIds = new Set(collectPartIds(this.sources[sourceId]))
-            const result = await this.createTasksForSources([sourceId], { ...options, partIdsBySource: { [sourceId]: ids } })
-            if (stopped() && (!result || result.failures.length)) break
-            const message = !result || result.failures.length || result.requires_confirmation
-              ? result?.failures[0]?.message ?? '后台创建下载任务失败' : null
-            if (message && (result?.failures[0]?.stopBackground ?? shouldStopBackgroundParsing(message))) throw Object.assign(new Error(message), { detail: result?.failures[0]?.detail })
-            const wasFailed = job.failures.some((failure) => failure.partId === partId)
-            job.failures = job.failures.filter((failure) => failure.partId !== partId)
-            if (message) job.failures.push({ partId, title, message, detail: result?.failures[0]?.detail })
-            ids.forEach((id) => done.add(id))
-            // Hydration can replace placeholder IDs with real part IDs.
-            if (!message) collectPartIds(this.sources[sourceId]).filter((id) => !beforeIds.has(id)).forEach((id) => done.add(id))
-            job.donePartIds = [...done]
-            if (!wasFailed) job.processed += ids.length
-            if (!message && result) {
-              job.created += result.created.length
-              if (!result.created.length) job.skipped += ids.length
+          const tree = this.sources[sourceId]
+          const parts = indexSourceParts(tree)
+          const pending = (retryIds ?? [...parts.keys()]).filter(id => !done.has(id))
+          const batchSize = tree.groups.find(group => (group.page?.page_size ?? 0) > 0)?.page?.page_size ?? 20
+          for (let start = 0; start < pending.length && !stopped(); start += batchSize) {
+            const ids = pending.slice(start, start + batchSize)
+            const operationId = this.beginOperation(sourceId)
+            let result: Awaited<ReturnType<typeof selectionEnqueueBatch>>
+            try {
+              result = await selectionEnqueueBatch(taskRequest(sourceId, ids, options, defaults), cloneTree(tree), operationId)
+            } finally {
+              this.endOperation(sourceId, operationId)
             }
+            useQueueStore().applyCreatedTasks(result.created)
+            job.created += result.created.length
+            job.skipped += result.skipped
+            const processed = new Set(result.processed_part_ids)
+            const previousFailures = new Map(job.failures.map(failure => [failure.partId, failure]))
+            const failed = new Set(result.failures.map(failure => failure.part_id))
+            job.failures = job.failures.filter(failure => !processed.has(failure.partId))
+            for (const { part_id: partId, error } of result.failures) {
+              const title = parts.get(partId)?.part.title ?? previousFailures.get(partId)?.title ?? partId
+              job.failures.push({ partId, title, message: error.message, detail: commandDiagnostic(error, `来源: ${source.source.title}\n条目: ${title}`) })
+            }
+            for (const id of processed) {
+              done.add(id)
+              if (!previousFailures.has(id)) job.processed++
+            }
+            if (this.sources[sourceId] !== tree) {
+              const expandedItems = new Set(result.processed_part_ids.filter(id => !failed.has(id)).map(id => parts.get(id)?.item.id))
+              for (const item of this.sources[sourceId].groups.flatMap(group => group.items)) {
+                if (expandedItems.has(item.id)) item.parts.filter(part => !parts.has(part.id)).forEach(part => done.add(part.id))
+              }
+            }
+            if (result.blocked) throw result.blocked
           }
           if (retryFailed || stopped() || !this.sources[sourceId]?.source.has_more) break
           const progressed = await this.loadChunk(sourceId, 1)
@@ -540,6 +549,7 @@ export const useParseStore = defineStore('parse', {
         }
         if (!stopped()) this.recordSourceFailure(sourceId, error)
       } finally {
+        job.donePartIds = [...done]
         this.pacedParsingBySource[sourceId] = false
         this.pacedParsingStopRequestedBySource[sourceId] = false
         this.loadingBySource[sourceId] = false
@@ -766,8 +776,9 @@ export const useParseStore = defineStore('parse', {
         const tree = this.sources[sourceId]
         const partIds = [...(options.partIdsBySource?.[sourceId] ?? this.selectionBySource[sourceId] ?? [])]
         if (!tree || !partIds.length) return []
+        const selected = new Set(partIds)
         const snapshot = cloneTree(tree)
-        for (const group of snapshot.groups) group.items = group.items.map(item => item.parts.some(part => partIds.includes(part.id)) ? item : { id: '', title: '', owner_name: null, cover_url: null, duration_seconds: null, parts: [] })
+        for (const group of snapshot.groups) group.items = group.items.map(item => item.parts.some(part => selected.has(part.id)) ? item : { id: '', title: '', owner_name: null, cover_url: null, duration_seconds: null, parts: [] })
         return [{ sourceId, partIds, snapshot }]
       })
       if (!sources.length) return null
@@ -818,7 +829,7 @@ export const useParseStore = defineStore('parse', {
         }
 
         for (const { sourceId, partIds, failureContext, snapshot } of requests) {
-          if (this.pacedParsingBySource[sourceId] && this.pacedParsingStopRequestedBySource[sourceId]) break
+          if (this.pacedParsingBySource[sourceId] && this.pacedParsingStopRequestedBySource[sourceId]) return null
           try {
             const operationId = this.beginOperation(sourceId)
             let result: SelectionCreateTasksResult
@@ -893,6 +904,18 @@ export const useParseStore = defineStore('parse', {
 })
 
 const cloneTree = (tree: NormalizedSourceTree): NormalizedSourceTree => JSON.parse(JSON.stringify(tree)) as NormalizedSourceTree
+
+const indexSourceParts = (tree: NormalizedSourceTree) => {
+  const parts = new Map<string, { item: NormalizedItem; part: NormalizedPart }>()
+  for (const group of tree.groups) {
+    for (const item of group.items) {
+      for (const part of item.parts) {
+        if (!parts.has(part.id)) parts.set(part.id, { item, part })
+      }
+    }
+  }
+  return parts
+}
 
 const taskRequest = (
   sourceId: string,

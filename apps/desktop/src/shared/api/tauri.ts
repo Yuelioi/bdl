@@ -165,6 +165,17 @@ export const parseRefreshSource = (request: ParseSourcePageRequest) =>
 export const selectionCreateTasks = (request: SelectionCreateTasksRequest, snapshot: NormalizedSourceTree, operationId: string) =>
   invokeCommand<SelectionCreateTasksResult>('selection_create_tasks', { request, snapshot, operationId })
 
+interface BackgroundEnqueueResult {
+  created: DownloadTask[]
+  skipped: number
+  processed_part_ids: string[]
+  failures: { part_id: string; error: CommandErrorShape }[]
+  blocked: CommandErrorShape | null
+}
+
+export const selectionEnqueueBatch = (request: SelectionCreateTasksRequest, snapshot: NormalizedSourceTree, operationId: string) =>
+  invokeCommand<BackgroundEnqueueResult>('selection_enqueue_batch', { request, snapshot, operationId })
+
 export const selectionSubmitTasks = (request: SelectionCreateTasksRequest, snapshot: NormalizedSourceTree, origin: string) =>
   invokeCommand<PreparationJob>('selection_submit_tasks', { request, snapshot, origin })
 export const preparationList = () => invokeCommand<PreparationJob[]>('preparation_list')
