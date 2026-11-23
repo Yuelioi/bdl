@@ -7,17 +7,17 @@ const { form } = defineProps<{ form: SettingsForm }>();
 </script>
 
 <template>
-  <SettingsCard title="画质与编码">
+  <SettingsCard title="影音偏好">
     <template #title-actions>
       <UPopover :content="{ align: 'start', sideOffset: 6, collisionPadding: 12 }">
         <UiIconButton icon="?" label="画质与编码说明" size="compact" variant="ghost" />
         <template #content>
           <section class="quality-help" aria-label="画质与编码说明">
-            <h4>选择与编排</h4>
+            <h4>档位与优先顺序</h4>
             <dl>
               <div>
                 <dt>最佳可用</dt>
-                <dd>按编排顺序选择首个可用档位。</dd>
+                <dd>按优先顺序选择首个可用档位。</dd>
               </div>
               <div>
                 <dt>手动选档</dt>
@@ -33,7 +33,7 @@ const { form } = defineProps<{ form: SettingsForm }>();
               </div>
               <div>
                 <dt>调整顺序</dt>
-                <dd>点“编排”，用上下箭头排序；下拉立即同步，点“保存”后生效。</dd>
+                <dd>打开“优先顺序”，用上下箭头排序，保存后生效。</dd>
               </div>
             </dl>
           </section>

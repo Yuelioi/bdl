@@ -11,44 +11,12 @@ onMounted(() => { void update.loadSources(); });
 </script>
 
 <template>
-  <div class="grid gap-5">
-    <SettingsCard aria-label="更新来源">
-      <UFormField label="更新来源">
-        <USelect :model-value="update.source" :items="update.sourceOptions" class="w-full" :loading="update.loadingSources" :disabled="update.loadingSources || update.checking || update.installing" @update:model-value="(value: string) => update.setSource(value as typeof update.source)" />
-      </UFormField>
-      <UiInlineNotice v-if="update.sourcesError" tone="danger">
-        <div class="flex flex-wrap items-center justify-between gap-2">
-          <span>无法读取软件站下载来源：{{ update.sourcesError }}</span>
-          <UiButton variant="secondary" :disabled="update.loadingSources || update.checking" @click="update.loadSources">重试</UiButton>
-        </div>
-      </UiInlineNotice>
-      <UiTextField
-        v-if="update.source === 'mirror'" label="自定义加速地址" :model-value="update.customMirror"
-        placeholder="https://你的加速站/" helper="支持地址前缀、{url}（完整链接）或 {path}（不含 https:// 的链接）模板。"
-        :disabled="update.checking || update.installing" @update:model-value="value => update.setSource('mirror', value)" />
-      <div v-if="update.source === 'quark'" class="grid justify-items-start gap-3">
-        <p class="m-0 text-xs leading-5 text-(--color-muted)">打开夸克目录后，按版本与系统选择安装包，下载后手动安装。</p>
-        <UiButton variant="secondary" :disabled="update.openingQuark" @click="update.openQuark">
-          {{ update.openingQuark ? '正在打开…' : '打开夸克网盘' }}
-        </UiButton>
-        <UiInlineNotice v-if="update.quarkError" tone="danger">{{ update.quarkError }}</UiInlineNotice>
-      </div>
-    </SettingsCard>
-    <SettingsCard aria-label="自动检测">
+  <div class="settings-block">
+    <SettingsCard title="版本状态">
       <div class="settings-update-heading">
         <div>
-          <h4>自动检测</h4>
-          <p>默认关闭。开启后会在应用启动时静默检测新版本，不会自动下载或安装。</p>
-        </div>
-        <USwitch :model-value="update.autoCheck" aria-label="自动检测更新" @update:model-value="update.setAutoCheck" />
-      </div>
-    </SettingsCard>
-
-    <SettingsCard aria-label="当前版本">
-      <div class="settings-update-heading">
-        <div>
-          <h4>当前版本</h4>
-          <p class="tabular-nums">v{{ update.currentVersion }}</p>
+          <span>当前版本</span>
+          <strong class="tabular-nums">v{{ update.currentVersion }}</strong>
         </div>
         <UiButton
           variant="secondary"
@@ -79,9 +47,39 @@ onMounted(() => { void update.loadSources(); });
         当前来源暂无更新。
       </UiInlineNotice>
     </SettingsCard>
+    <SettingsCard title="更新偏好">
+      <UFormField label="更新来源">
+        <USelect :model-value="update.source" :items="update.sourceOptions" class="w-full" :loading="update.loadingSources" :disabled="update.loadingSources || update.checking || update.installing" @update:model-value="(value: string) => update.setSource(value as typeof update.source)" />
+      </UFormField>
+      <UiInlineNotice v-if="update.sourcesError" tone="danger">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <span>无法读取软件站下载来源：{{ update.sourcesError }}</span>
+          <UiButton variant="secondary" :disabled="update.loadingSources || update.checking" @click="update.loadSources">重试</UiButton>
+        </div>
+      </UiInlineNotice>
+      <UiTextField
+        v-if="update.source === 'mirror'" label="自定义加速地址" :model-value="update.customMirror"
+        placeholder="https://你的加速站/" helper="支持地址前缀、{url}（完整链接）或 {path}（不含 https:// 的链接）模板。"
+        :disabled="update.checking || update.installing" @update:model-value="value => update.setSource('mirror', value)" />
+      <div v-if="update.source === 'quark'" class="grid justify-items-start gap-3">
+        <p class="m-0 text-xs leading-5 text-(--color-muted)">打开夸克目录后，按版本与系统选择安装包，下载后手动安装。</p>
+        <UiButton variant="secondary" :disabled="update.openingQuark" @click="update.openQuark">
+          {{ update.openingQuark ? '正在打开…' : '打开夸克网盘' }}
+        </UiButton>
+        <UiInlineNotice v-if="update.quarkError" tone="danger">{{ update.quarkError }}</UiInlineNotice>
+      </div>
+      <div class="settings-update-heading update-preference-row">
+        <div>
+          <h4>自动检测</h4>
+          <p>启动时检查新版本，下载和安装由你确认。</p>
+        </div>
+        <USwitch :model-value="update.autoCheck" aria-label="自动检测更新" @update:model-value="update.setAutoCheck" />
+      </div>
+      <p class="settings-note">更新偏好自动保存。</p>
+    </SettingsCard>
 
     <p v-if="!update.android" class="m-0 text-xs leading-5 text-(--color-muted)">
-      应用内安装会校验 BDL 更新签名。网络代理沿用“网络与维护”中已保存的代理设置。
+      应用内安装会校验 BDL 更新签名，并使用「下载代理」中已保存的设置。
     </p>
   </div>
 </template>
@@ -93,6 +91,16 @@ onMounted(() => { void update.loadSources(); });
   align-items: center;
   justify-content: space-between;
   gap: var(--space-12);
+}
+
+.update-preference-row {
+  padding-block-start: var(--space-12);
+  border-block-start: 1px solid var(--color-border);
+}
+
+.settings-update-heading strong {
+  margin-inline-start: var(--space-8);
+  font-weight: 600;
 }
 
 .settings-update-heading h4,

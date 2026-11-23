@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed, ref } from 'vue';
 import SettingsCard from './SettingsCard.vue';
 import SettingsOutputDefaults from './SettingsOutputDefaults.vue';
 import ParseRulesEditor from './ParseRulesEditor.vue';
@@ -7,13 +8,13 @@ import UiSelect from '../../ui/Select.vue';
 import UiTextField from '../../ui/TextField.vue';
 import SettingsEnvironmentSummary from './SettingsEnvironmentSummary.vue';
 import FfmpegDownloadButton from '../../ui/FfmpegDownloadButton.vue';
-import { concurrentTaskOptions, retryCountOptions, segmentCountOptions } from './settingsCatalog';
+import { concurrentTaskOptions, globalSpeedLimitOptions, retryCountOptions, segmentCountOptions } from './settingsCatalog';
 import type { SettingsForm } from './useSettingsForm';
 
 const { form, desktopPaths = true, group } = defineProps<{
   form: SettingsForm;
   desktopPaths?: boolean;
-  group?: 'saving' | 'tasks' | 'links';
+  group: 'saving' | 'tasks' | 'links';
 }>();
 const {
   settings,
@@ -32,11 +33,26 @@ const {
   settingsAutoRefreshExpiredUrls,
   settingsStartupAutoRecovery,
 } = form;
+const customSpeedSelected = ref(false);
+const speedLimitPreset = computed({
+  get: () => {
+    if (customSpeedSelected.value) return 'custom';
+    const value = settingsGlobalSpeedLimitMb.value.trim();
+    if (!value) return 'unlimited';
+    return globalSpeedLimitOptions.some((option) => option.value === value && option.value !== 'unlimited')
+      ? value
+      : 'custom';
+  },
+  set: (value: string) => {
+    customSpeedSelected.value = value === 'custom';
+    if (value !== 'custom') updateGlobalSpeedLimit(value === 'unlimited' ? '' : value);
+  },
+});
 </script>
 
 <template>
   <section class="settings-block">
-    <SettingsCard v-if="!group || group === 'saving'" title="保存位置">
+    <SettingsCard v-if="group === 'saving'" :title="desktopPaths ? undefined : '保存位置'">
       <div v-if="!desktopPaths" class="mobile-directory-row">
         <span>{{ settings.draft.document_tree_output?.display_name ?? '尚未选择目录' }}</span>
         <UiButton
@@ -59,13 +75,17 @@ const {
         </UiButton>
       </div>
     </SettingsCard>
-    <SettingsOutputDefaults v-if="!group || group === 'saving'" :form="form" />
-    <SettingsCard v-if="!group || group === 'tasks'" :title="group ? '速度与并发' : '下载与恢复'">
+    <SettingsOutputDefaults v-if="group === 'saving'" :form="form" />
+    <SettingsCard v-if="group === 'tasks'" title="速度与并发">
       <div class="settings-inline-grid settings-download-options">
         <UiSelect v-model="settingsConcurrentTasks" label="同时下载任务数" :options="concurrentTaskOptions" />
         <UiSelect v-model="settingsSegmentCount" label="单任务分段数" :options="segmentCountOptions" />
-        <UiSelect v-if="!group" v-model="settingsRetryCount" label="失败自动重试次数" :options="retryCountOptions" />
+      </div>
+      <p class="settings-note">有任务排队时，每次至少间隔 5 秒启动下一项。</p>
+      <div class="settings-inline-grid settings-download-options">
+        <UiSelect v-model="speedLimitPreset" label="下载总限速" :options="globalSpeedLimitOptions" tall-menu />
         <UiTextField
+          v-if="speedLimitPreset === 'custom'"
           :model-value="settingsGlobalSpeedLimitMb"
           label="全局下载限速（MB/s）"
           placeholder="留空时不限速"
@@ -73,8 +93,10 @@ const {
           @update:model-value="updateGlobalSpeedLimit"
         />
       </div>
-      <h3 v-if="group" class="settings-subheading">重试与续传</h3>
-      <div v-if="group" class="settings-inline-grid settings-download-options">
+      <p class="settings-note">运行中的任务共享此带宽上限。</p>
+    </SettingsCard>
+    <SettingsCard v-if="group === 'tasks'" title="重试与续传">
+      <div class="settings-inline-grid settings-download-options">
         <UiSelect v-model="settingsRetryCount" label="失败自动重试次数" :options="retryCountOptions" />
       </div>
       <div class="settings-toggle-list">
@@ -94,8 +116,21 @@ const {
         /></label>
       </div>
     </SettingsCard>
-    <ParseRulesEditor v-if="!group || group === 'links'" v-model="settings.draft.parse_rules" />
-    <SettingsCard v-if="desktopPaths && !group" title="FFmpeg">
+    <ParseRulesEditor v-if="group === 'links'" v-model="settings.draft.parse_rules" />
+    <SettingsCard v-if="desktopPaths && group === 'saving'" title="FFmpeg">
+      <div class="directory-row">
+        <UiTextField v-model="settingsFfmpegPath" label="FFmpeg 路径" placeholder="留空时使用系统 FFmpeg" />
+        <UiButton variant="secondary" :disabled="settings.loading || settings.saving" @click="settings.chooseFfmpegPath"
+          >选择</UiButton>
+      </div>
+      <SettingsEnvironmentSummary
+        :health="settingsEnvironmentHealth"
+        :checking="draftChecking"
+        @check="checkDraftEnvironment"
+        @choose-ffmpeg="settings.chooseFfmpegPath"
+        @use-system-ffmpeg="settings.clearFfmpegPath"
+      />
+      <p v-if="draftCheckError" class="settings-error">{{ draftCheckError }}</p>
       <details class="text-xs leading-5 text-(--color-muted)">
         <summary
           class="cursor-pointer rounded-sm text-(--color-text) border border-transparent focus-visible:border-(--color-accent) focus-visible:outline-none"
@@ -117,33 +152,11 @@ const {
           </ol>
         </div>
       </details>
-      <div class="directory-row">
-        <UiTextField v-model="settingsFfmpegPath" label="FFmpeg 路径" placeholder="留空时使用系统 FFmpeg" />
-        <UiButton variant="secondary" :disabled="settings.loading || settings.saving" @click="settings.chooseFfmpegPath"
-          >选择</UiButton
-        >
-      </div>
-      <SettingsEnvironmentSummary
-        :health="settingsEnvironmentHealth"
-        :checking="draftChecking"
-        @check="checkDraftEnvironment"
-        @choose-ffmpeg="settings.chooseFfmpegPath"
-        @use-system-ffmpeg="settings.clearFfmpegPath"
-      />
-      <p v-if="draftCheckError" class="settings-error">{{ draftCheckError }}</p>
     </SettingsCard>
   </section>
 </template>
 
 <style scoped>
-.directory-row {
-  min-width: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: end;
-  gap: var(--space-8);
-}
-
 .mobile-directory-row {
   display: flex;
   align-items: center;
@@ -153,10 +166,4 @@ const {
   overflow-wrap: anywhere;
 }
 
-.settings-subheading {
-  margin: var(--space-8) 0 0;
-  color: var(--color-text-strong);
-  font-size: var(--font-14);
-  font-weight: 600;
-}
 </style>

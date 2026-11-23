@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed } from 'vue';
 import UiInlineNotice from '../../shared/ui/InlineNotice.vue';
 import UiButton from '../../shared/ui/Button.vue';
 import ParseSourceInput from '../../shared/features/parse/ParseSourceInput.vue';
@@ -16,6 +16,8 @@ const {
   singleInput,
   createLoading,
   activeStage,
+  submittedInput,
+  returnToInput,
   pasteInput,
   downloadSelected,
   openAllDownloadSettings,
@@ -37,7 +39,6 @@ const downloadAll = () => {
   openAllDownloadSettings(source.id);
 };
 
-const submittedInput = ref('');
 const parseSource = async () => {
   if (createLoading.value) return;
   const input = parse.input;
@@ -61,10 +62,6 @@ const openCollection = async () => {
     parse.selectPartIds(source.id, selection, 'replace');
     parse.setNotice('这个视频没有可查看的所属合集。', 'info');
   }
-};
-const returnToInput = () => {
-  if (inputMode.value === 'batch' && !parse.input) parse.input = submittedInput.value;
-  activeStage.value = 'source';
 };
 useMobileBack('parse', () => {
   if (activeStage.value !== 'content') return false;
@@ -104,7 +101,6 @@ useMobileBack('parse', () => {
         v-model:input="parse.input"
         v-model:single-input="singleInput"
         :busy="createLoading"
-        :has-results="false"
         mobile
         @submit="parseSource"
         @paste="pasteInput"

@@ -31,6 +31,7 @@ const { task, progress, logs, logsLoading = false } = defineProps<{
 
 const emit = defineEmits<{
   refreshLogs: []
+  recover: [taskId: string, action: 'retry' | 'refresh_retry']
 }>()
 
 const ui = useUiStore()
@@ -48,6 +49,14 @@ const tabs = computed(() => [
   { label: '日志', value: 'raw_logs', count: logs.length },
 ])
 const diagnostic = computed(() => (task ? createTaskDiagnosticView(task, logs, transferCapabilities) : null))
+const recoveryAction = computed(() =>
+  diagnostic.value?.recommendedAction === 'refresh_retry' ? 'refresh_retry' : 'retry',
+)
+const canRecover = computed(() => !logs.length || ['retry', 'refresh_retry'].some(action => action === diagnostic.value?.recommendedAction))
+const needsLogin = computed(() => diagnostic.value?.recommendedActionLabel === '登录后重试')
+const recover = () => {
+  if (task) emit('recover', task.id, recoveryAction.value)
+}
 const failedTrackCount = computed(
   () => task?.resources.filter((resource) => resource.status === 'failed' || resource.status === 'cancelled').length ?? 0,
 )
@@ -189,9 +198,20 @@ const trackTitle = (resource: DownloadResource): string => resourceIntentText(re
       <section v-if="selectedTab === 'overview'" class="tab-panel overview-panel">
         <div v-if="diagnostic.tone === 'danger' || diagnostic.tone === 'warning'" class="diagnosis-block feedback-tone" :class="`tone-${diagnostic.tone}`">
           <h3>{{ diagnostic.summary }}</h3>
-          <p>{{ diagnostic.detail }}</p>
+          <p>{{ task.status === 'failed' && !logsLoading && !logs.length && !diagnostic.recommendedAction ? '暂无可用日志。可以先重试任务。' : diagnostic.detail }}</p>
+          <div v-if="task.status === 'failed' && !isMobilePlatform()" class="diagnosis-actions mt-3">
+            <UiButton v-if="needsLogin" size="compact" @click="ui.openLoginDialog()">
+              <UIcon name="i-tabler-user" class="size-4" aria-hidden="true" />
+              打开登录
+            </UiButton>
+            <UiButton v-if="canRecover" size="compact" :variant="needsLogin ? 'secondary' : 'primary'" :disabled="logsLoading" @click="recover">
+              <UIcon name="i-tabler-refresh" class="size-4" aria-hidden="true" />
+              {{ recoveryAction === 'refresh_retry' ? '刷新链接并重试' : '重试任务' }}
+            </UiButton>
+            <UiButton size="compact" variant="ghost" @click="setTab('raw_logs')">查看日志</UiButton>
+          </div>
         </div>
-        <div class="overview-strip">
+        <div v-if="task.status !== 'failed' || task.resources.length" class="overview-strip">
           <div>
             <strong>{{ progress }}%</strong>
             <span>{{ statusLabel(task.status) }}</span>
@@ -245,7 +265,7 @@ const trackTitle = (resource: DownloadResource): string => resourceIntentText(re
             <p>{{ redactLogMessage(log.message) }}</p>
           </div>
           <UiEmptyState v-if="logsLoading && !redactedLogs.length" class="inspector-empty" title="日志加载中" layout="stacked" compact />
-          <UiEmptyState v-else-if="!redactedLogs.length" class="inspector-empty" title="暂无日志" layout="stacked" compact />
+          <UiEmptyState v-else-if="!redactedLogs.length" class="inspector-empty" title="暂无日志" layout="stacked" compact embedded />
         </div>
       </section>
     </template>

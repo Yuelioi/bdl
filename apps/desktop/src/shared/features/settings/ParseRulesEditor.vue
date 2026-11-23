@@ -2,31 +2,36 @@
 import { computed, ref } from 'vue';
 import type { ParseRules } from '../../api/dto';
 import UiSelect from '../../ui/Select.vue';
+import SettingsCard from './SettingsCard.vue';
 
 const model = defineModel<ParseRules>({ required: true });
 const presets = [
-  { label: '快速', value: 'fast', pages: 5 },
-  { label: '标准', value: 'standard', pages: 3 },
-  { label: '慢速', value: 'slow', pages: 1 },
+  { label: '快速', value: 'fast', rules: { pages_per_round: 4, interval_seconds: 1, rest_seconds: 3 } },
+  { label: '标准', value: 'standard', rules: { pages_per_round: 3, interval_seconds: 1, rest_seconds: 3 } },
+  { label: '慢速', value: 'slow', rules: { pages_per_round: 1, interval_seconds: 3, rest_seconds: 8 } },
 ];
 const customSelected = ref(false);
 const selectedPreset = computed({
   get: () =>
-    customSelected.value || model.value.interval_seconds !== 1 || model.value.rest_seconds !== 3
+    customSelected.value
       ? 'custom'
-      : (presets.find((preset) => preset.pages === model.value.pages_per_round)?.value ?? 'custom'),
+      : (presets.find(({ rules }) =>
+          rules.pages_per_round === model.value.pages_per_round &&
+          rules.interval_seconds === model.value.interval_seconds &&
+          rules.rest_seconds === model.value.rest_seconds,
+        )?.value ?? 'custom'),
   set: (value: string) => {
     customSelected.value = value === 'custom';
     const preset = presets.find((item) => item.value === value);
-    if (preset) model.value = { pages_per_round: preset.pages, interval_seconds: 1, rest_seconds: 3 };
+    if (preset) model.value = { ...preset.rules };
   },
 });
 const seconds = (current: number) =>
-  [...new Set([1, 2, 3, 4, 5, 10, 20, 30, 60, current])]
+  [...new Set([1, 2, 3, 4, 5, 8, 10, 20, 30, 60, current])]
     .sort((a, b) => a - b)
     .map((value) => ({ label: `${value} 秒`, value: String(value) }));
 const batchOptions = computed(() =>
-  [...new Set([1, 2, 3, 5, 10, model.value.pages_per_round])]
+  [...new Set([1, 2, 3, 4, 5, 10, model.value.pages_per_round])]
     .sort((a, b) => a - b)
     .map((value) => ({ label: `${value * 20} 条`, value: String(value) })),
 );
@@ -71,9 +76,8 @@ const estimatedWait = computed(() => {
 </script>
 
 <template>
-  <section class="settings-parse-rules" aria-labelledby="parse-rules-title">
-    <div class="flex items-center gap-1">
-      <h3 id="parse-rules-title" class="m-0 text-sm font-medium text-(--color-text)">解析节奏</h3>
+  <SettingsCard title="解析节奏">
+    <template #title-actions>
       <UPopover :content="{ side: 'bottom', align: 'start', sideOffset: 4, collisionPadding: 12 }">
         <button
           type="button"
@@ -105,7 +109,7 @@ const estimatedWait = computed(() => {
           </section>
         </template>
       </UPopover>
-    </div>
+    </template>
     <div class="settings-inline-grid">
       <UiSelect
         v-model="selectedPreset"
@@ -122,13 +126,5 @@ const estimatedWait = computed(() => {
       />
     </div>
     <p class="m-0 text-xs text-(--color-muted)">解析约 200 条，额外等待约 {{ estimatedWait }} 秒，不含网络耗时。</p>
-  </section>
+  </SettingsCard>
 </template>
-
-<style scoped>
-.settings-parse-rules {
-  min-width: 0;
-  display: grid;
-  gap: var(--space-12);
-}
-</style>

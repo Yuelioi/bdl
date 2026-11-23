@@ -170,19 +170,6 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-@media (width >= 900px) {
-  .settings-content .ui-form-field:not(.ui-form-field-label-hidden) {
-    display: grid;
-    grid-template-columns: 9rem minmax(0, 1fr);
-    align-items: center;
-    gap: 0.5rem 0.75rem;
-  }
-  .settings-content .field-control {
-    margin-top: 0;
-    min-width: 0;
-  }
-}
-
 @media (width <= 600px) {
   .platform-mobile .settings-download-options {
     gap: 0;

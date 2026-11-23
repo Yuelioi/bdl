@@ -5,7 +5,7 @@ import { coverUrl } from '../../utils/coverUrl';
 import UiDialog from '../../ui/Dialog.vue';
 import { sourceKindLabels } from './parseResultTree';
 
-const props = defineProps<{ source: NormalizedSourceTree; wrapMetadata?: boolean }>();
+const props = defineProps<{ source: NormalizedSourceTree; wrapMetadata?: boolean; hideCount?: boolean }>();
 const item = computed(() => props.source.groups.flatMap((group) => group.items)[0]);
 const countLabel = computed(() =>
   props.source.source.kind === 'video'
@@ -47,8 +47,10 @@ watch(
       </UButton>
       <span class="source-summary-owner" :class="{ 'wrap-metadata': wrapMetadata }">
         <span>{{ item?.owner_name || sourceKindLabels[source.source.kind] }}</span>
-        <span v-if="!wrapMetadata"> · </span>
-        <span class="source-summary-count">{{ countLabel }}</span>
+        <template v-if="!hideCount">
+          <span v-if="!wrapMetadata"> · </span>
+          <span class="source-summary-count">{{ countLabel }}</span>
+        </template>
       </span>
     </div>
   </div>

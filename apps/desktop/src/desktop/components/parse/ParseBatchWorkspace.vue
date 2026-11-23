@@ -4,7 +4,6 @@ import SourceMediaList from './SourceMediaList.vue';
 import type { NormalizedSourceTree } from '../../../shared/api/dto';
 import UiButton from '../../../shared/ui/Button.vue';
 import UiIconButton from '../../../shared/ui/IconButton.vue';
-import UiTextField from '../../../shared/ui/TextField.vue';
 import SelectionActionBar from '../../../shared/ui/SelectionActionBar.vue';
 import { useParseBatchWorkspace } from '../../../shared/features/parse/useParseBatchWorkspace';
 const { embedded = false, inlineDownload = false } = defineProps<{ embedded?: boolean; inlineDownload?: boolean }>();
@@ -34,40 +33,33 @@ const source = computed<NormalizedSourceTree>(() => ({
 <template>
   <section class="min-h-0 overflow-hidden" :class="embedded ? 'flex flex-1 flex-col gap-3' : 'panel'">
     <header
-      class="batch-result-header grid min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-4 border-b border-(--color-border) pb-3"
+      class="flex min-w-0 flex-wrap items-center justify-between gap-3 border-b border-(--color-border) pb-3"
     >
-      <div class="flex min-w-0 items-center gap-3">
-        <UButton
-          variant="ghost"
-          color="neutral"
-          :ui="{ base: 'p-0', label: 'contents' }"
-          type="button"
-          class="grid size-8 shrink-0 place-items-center rounded-md text-(--color-muted) hover:bg-(--color-panel) hover:text-(--color-text) disabled:cursor-not-allowed disabled:opacity-55"
-          aria-label="返回解析首页"
-          :disabled="loading"
-          @click="returnToSource"
-        >
-          <UIcon name="i-tabler-arrow-left" class="size-4" aria-hidden="true" />
-        </UButton>
-        <div class="grid min-w-0 gap-1">
-          <div class="flex items-center gap-2">
-            <strong class="text-base text-(--color-text)">批量视频</strong>
-            <span class="text-xs font-bold text-(--color-muted)">{{ parse.batchEntries.length }} 个链接</span>
-          </div>
-        </div>
+      <div class="flex min-w-0 items-baseline gap-2">
+        <h2 class="m-0 font-semibold text-(--color-text)">批量解析结果</h2>
+        <span class="text-xs text-(--color-muted)">{{ parse.batchEntries.length }} 个链接</span>
       </div>
-      <div v-if="!inlineDownload" class="source-function-toolbar flex items-start justify-end">
-        <UiButton size="compact" :disabled="selectedCount === 0 || loading" @click="emit('download')">
+      <div class="flex min-w-0 flex-wrap items-center gap-2">
+        <UInput
+          v-model="query"
+          type="search"
+          icon="i-tabler-search"
+          class="w-60 max-w-full"
+          aria-label="搜索视频"
+          placeholder="搜索标题或原始链接"
+          :disabled="loading"
+          color="neutral"
+          variant="outline"
+          size="sm"
+        />
+        <UiButton v-if="!inlineDownload" size="compact" :disabled="selectedCount === 0 || loading" @click="emit('download')">
           下载所选 ({{ selectedCount }})
         </UiButton>
+        <UiButton variant="ghost" size="compact" :disabled="loading" @click="returnToSource">
+          <UIcon name="i-tabler-x" class="size-4" aria-hidden="true" />
+          清除结果
+        </UiButton>
       </div>
-      <UiTextField
-        v-model="query"
-        class="col-span-full"
-        label="搜索视频"
-        placeholder="标题或原始链接"
-        :disabled="loading"
-      />
     </header>
 
     <SourceMediaList

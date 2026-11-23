@@ -3,22 +3,10 @@
   overflow: hidden;
   gap: 1rem;
 }
-.library-page-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  flex-shrink: 0;
-}
-.library-page-heading h2 {
+.library-page-title {
   margin: 0;
   font-size: var(--font-18);
   font-weight: 600;
-}
-.library-page-heading p {
-  margin: 0.25rem 0 0;
-  color: var(--color-muted);
-  font-size: var(--font-12);
 }
 .library-content {
   position: relative;
@@ -33,10 +21,17 @@
 }
 .library-toolbar {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+  gap: var(--space-12);
+}
+.library-toolbar > .ui-tabs {
+  flex: 1 1 18rem;
+  width: auto;
 }
 .library-search {
-  width: min(18rem, 45%);
+  width: min(15rem, 100%);
   min-width: 0;
 }
 .library-grid {
@@ -92,9 +87,6 @@
 .cover-fallback svg {
   width: 1.5rem;
   height: 1.5rem;
-}
-.cover-fallback span {
-  font-size: var(--font-12);
 }
 .library-card-copy {
   min-width: 0;

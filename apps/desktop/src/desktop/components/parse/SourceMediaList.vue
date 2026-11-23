@@ -21,6 +21,7 @@ const props = defineProps<{
   selectionLabel?: string;
   label?: string;
   compact?: boolean;
+  hideSelectionCount?: boolean;
 }>();
 const emit = defineEmits<{ toggle: [id: string]; toggleAll: [] }>();
 const queue = useQueueStore();
@@ -125,7 +126,7 @@ async function play(entry: (typeof entries.value)[number]) {
         :disabled="disabled || !rows.length"
         @update:model-value="emit('toggleAll')"
       />
-      <span v-if="selectedIds.length" class="selected-count">已选 {{ selectedIds.length }} 项</span>
+      <span v-if="!hideSelectionCount && selectedIds.length" class="selected-count">已选 {{ selectedIds.length }} 项</span>
     </div>
     <div
       ref="scrollElement"

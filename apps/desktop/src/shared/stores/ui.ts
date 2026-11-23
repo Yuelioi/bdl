@@ -1,9 +1,9 @@
 import { defineStore } from 'pinia'
 import { FEEDBACK_AUTO_DISMISS_MS } from './feedback'
-import type { SettingsSectionId } from '../features/settings/settingsSections'
+import type { SettingsDetailPage, SettingsSectionId } from '../features/settings/settingsSections'
 
 export type AppTab = 'parse' | 'library' | 'transfer' | 'settings' | 'about'
-export type MobileSettingsPage = 'overview' | 'saving' | 'tasks' | 'media' | 'presets' | 'links' | 'network' | 'storage' | 'update'
+export type MobileSettingsPage = 'overview' | SettingsDetailPage
 type NavigationGuard = (leave: () => void) => void
 
 export interface ToastMessage {

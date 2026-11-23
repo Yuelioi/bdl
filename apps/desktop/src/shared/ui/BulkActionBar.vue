@@ -40,19 +40,19 @@ const emit = defineEmits<{
 const moreItems = computed(() => [
   [
     {
-      label: '暂停全部',
+      label: '暂停当前列表中的任务',
       icon: 'i-tabler-player-pause',
       disabled: loading || !canPause,
       onSelect: () => emit('pause'),
     },
     {
-      label: '取消全部',
+      label: '取消当前列表中的任务',
       icon: 'i-tabler-x',
       disabled: loading || !canCancel,
       onSelect: () => emit('cancel'),
     },
     {
-      label: '继续全部',
+      label: '继续当前列表中的任务',
       icon: 'i-tabler-player-play',
       disabled: loading || !canResume,
       onSelect: () => emit('resume'),
@@ -72,7 +72,7 @@ const moreItems = computed(() => [
         >暂停</UiButton
       >
       <UiButton v-if="canCancel" size="compact" variant="ghost" :disabled="loading" @click="emit('cancel')"
-        >取消</UiButton
+        >取消任务</UiButton
       >
       <UiButton v-if="canResume" size="compact" variant="ghost" :disabled="loading" @click="emit('resume')"
         >继续</UiButton
@@ -117,21 +117,26 @@ const moreItems = computed(() => [
 
     <div v-else class="bulk-actions">
       <UiButton
+        v-if="completedCount > 0"
         size="compact"
         variant="secondary"
         title="删除已完成的任务记录，保留下载文件"
-        :disabled="loading || completedCount === 0"
+        :disabled="loading"
         @click="emit('clearCompleted')"
       >
         移除已完成记录
       </UiButton>
-      <UiButton size="compact" variant="ghost" :disabled="loading" @click="emit('refresh')">刷新</UiButton>
+      <UiButton size="compact" variant="ghost" :disabled="loading" @click="emit('refresh')">
+        <UIcon name="i-tabler-refresh" class="size-4" aria-hidden="true" />
+        刷新
+      </UiButton>
       <UDropdownMenu
+        v-if="canPause || canCancel || canResume"
         :items="moreItems"
         :content="{ align: 'end', sideOffset: 4, collisionPadding: 12 }"
         :ui="{ content: 'min-w-32' }"
       >
-        <UiButton size="compact" variant="ghost" :disabled="loading">更多</UiButton>
+        <UiButton size="compact" variant="ghost" :disabled="loading">批量操作</UiButton>
       </UDropdownMenu>
     </div>
   </div>

@@ -5,9 +5,6 @@
 .transfer-main {
   min-width: 0;
   min-height: 0;
-}
-
-.transfer-main {
   overflow: hidden;
   gap: 1rem;
 }
@@ -18,7 +15,10 @@
 }
 
 .transfer-list-tools {
-  min-width: 0;
+  max-width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
 }
 
 .transfer-toolbar {
@@ -31,7 +31,7 @@
 }
 
 .transfer-toolbar > .ui-tabs {
-  flex: 1;
+  flex: 1 1 18rem;
   width: auto;
 }
 
@@ -41,7 +41,7 @@
 }
 
 .transfer-search {
-  width: 100%;
+  width: 15rem;
   min-width: 0;
 }
 

@@ -3,18 +3,20 @@ const {
   loaded,
   total = null,
   unit = '项',
+  hasMore = false,
 } = defineProps<{
   loaded: number
   total?: number | null
   unit?: string
+  hasMore?: boolean
 }>()
 </script>
 
 <template>
   <span class="source-load-status" role="status">
-    已加载 <strong>{{ loaded }}</strong>
-    <template v-if="total !== null"> / <strong>{{ total }}</strong></template>
-    {{ unit }}
+    已加载 <strong>{{ loaded.toLocaleString('zh-CN') }}</strong>
+    <template v-if="total !== null"> / <strong>{{ total.toLocaleString('zh-CN') }}</strong></template>
+    {{ unit }}<template v-if="hasMore && total === null">，还有更多</template>
   </span>
 </template>
 

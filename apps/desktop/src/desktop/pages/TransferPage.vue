@@ -51,6 +51,11 @@ const {
   runContextAction,
   contextIcon,
 } = useTransferPage();
+
+const recoverTask = (taskId: string, action: 'retry' | 'refresh_retry') => {
+  taskDetailOpen.value = false;
+  handleTaskAction(taskId, action);
+};
 </script>
 <template>
   <section class="page-grid transfer-page">
@@ -62,32 +67,31 @@ const {
 
       <div class="transfer-toolbar">
         <UiTabs v-model="queueFilter" :tabs="tabs" />
-        <USelect
-          v-model="transferSort"
-          :items="transferSortOptions"
-          value-key="value"
-          label-key="label"
-          aria-label="列表排序"
-          class="transfer-sort"
-          size="sm"
-          :disabled="queue.loading"
-        />
-      </div>
-
-      <div v-if="queue.activeFilter === 'completed'" class="transfer-list-tools">
-        <UInput
-          v-model="completedSearch"
-          class="transfer-search"
-          type="search"
-          aria-label="搜索已完成"
-          icon="i-tabler-search"
-          placeholder="搜索标题、来源或保存路径"
-          :disabled="queue.loading"
-          color="neutral"
-          variant="outline"
-          size="sm"
-          :ui="{ base: 'h-9 text-(length:--font-13)', leadingIcon: 'size-4' }"
-        />
+        <div class="transfer-list-tools">
+          <UInput
+            v-if="queue.activeFilter === 'completed'"
+            v-model="completedSearch"
+            class="transfer-search"
+            type="search"
+            aria-label="搜索已完成"
+            icon="i-tabler-search"
+            placeholder="搜索标题、来源或保存路径"
+            :disabled="queue.loading"
+            color="neutral"
+            variant="outline"
+            size="sm"
+          />
+          <USelect
+            v-model="transferSort"
+            :items="transferSortOptions"
+            value-key="value"
+            label-key="label"
+            aria-label="列表排序"
+            class="transfer-sort"
+            size="sm"
+            :disabled="queue.loading"
+          />
+        </div>
       </div>
 
       <div v-if="taskViews.length" class="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
@@ -105,7 +109,15 @@ const {
           @visible-tasks="queue.loadOutputSizes"
         />
       </div>
-      <UiEmptyState v-else :title="emptyTitle" :description="emptyDescription || undefined" layout="stacked" compact>
+      <UiEmptyState
+        v-else
+        :title="emptyTitle"
+        :description="emptyDescription || undefined"
+        icon="i-tabler-transfer"
+        layout="stacked"
+        compact
+        embedded
+      >
         <template v-if="queue.tasks.length === 0" #action>
           <UiButton variant="secondary" @click="ui.setTab('parse')">去解析</UiButton>
         </template>
@@ -143,6 +155,7 @@ const {
           :logs="selectedLogs"
           :logs-loading="selectedLogsLoading"
           @refresh-logs="refreshSelectedLogs"
+          @recover="recoverTask"
         />
     </UiDialog>
 

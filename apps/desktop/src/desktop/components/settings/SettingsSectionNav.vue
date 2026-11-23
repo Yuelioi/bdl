@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { SettingsSection, SettingsSectionId } from '../../../shared/features/settings/settingsSections';
+import { settingsGroups, type SettingsSection, type SettingsSectionId } from '../../../shared/features/settings/settingsSections';
 
 const activeSection = defineModel<SettingsSectionId>({ required: true });
 defineProps<{ sections: readonly SettingsSection[] }>();
@@ -7,52 +7,61 @@ defineProps<{ sections: readonly SettingsSection[] }>();
 
 <template>
   <nav class="settings-section-nav" aria-label="设置分区">
-    <UButton
-      variant="ghost"
-      color="neutral"
-      :ui="{ label: 'contents' }"
-      v-for="section in sections"
-      :key="section.id"
-      type="button"
-      class="settings-section-tab"
-      :class="{ active: activeSection === section.id }"
-      :aria-current="activeSection === section.id ? 'page' : undefined"
-      @click="activeSection = section.id"
-    >
-      <UIcon :name="section.icon" class="settings-section-tab-icon" aria-hidden="true" />
-      <span class="settings-section-tab-copy">
-        <strong>{{ section.label }}</strong>
-        <small>{{ section.description }}</small>
-      </span>
-    </UButton>
+    <div v-for="group in settingsGroups" :key="group" class="settings-section-group" role="group" :aria-label="group">
+      <p aria-hidden="true">{{ group }}</p>
+      <UButton
+        v-for="section in sections.filter((item) => item.group === group)"
+        :key="section.id"
+        variant="ghost"
+        color="neutral"
+        :icon="section.icon"
+        :ui="{ leadingIcon: 'size-4' }"
+        type="button"
+        class="settings-section-tab"
+        :class="{ active: activeSection === section.id }"
+        :aria-current="activeSection === section.id ? 'page' : undefined"
+        @click="activeSection = section.id"
+      >
+        {{ section.label }}
+      </UButton>
+    </div>
   </nav>
 </template>
 
 <style scoped>
 .settings-section-nav {
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-self: start;
+  gap: var(--space-16);
+  max-height: 100%;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-8);
+  background: var(--color-inset);
+  padding: var(--space-8);
+  overflow: auto;
+}
+
+.settings-section-group {
   display: grid;
-  align-content: start;
-  gap: 0.25rem;
+  gap: var(--space-4);
+}
+
+.settings-section-group p {
+  margin: 0 0 var(--space-4);
+  padding-inline: var(--space-8);
+  color: var(--color-muted);
+  font-size: var(--font-12);
 }
 
 .settings-section-tab {
-  min-width: 0;
-  min-height: 2.5rem;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  border: 1px solid transparent;
-  border-radius: var(--radius-4);
-  background: transparent;
-  color: var(--color-muted);
-  padding: 0.5rem 0.75rem;
-  text-align: left;
-}
-
-.settings-section-tab:hover {
-  background: var(--color-hover-surface);
-  color: var(--color-text);
+  min-height: 2.25rem;
+  justify-content: flex-start;
+  gap: var(--space-8);
+  padding-inline: var(--space-8);
+  font-size: var(--font-13);
+  white-space: nowrap;
 }
 
 .settings-section-tab.active {
@@ -60,31 +69,26 @@ defineProps<{ sections: readonly SettingsSection[] }>();
   color: var(--color-accent-strong);
 }
 
-.settings-section-tab-icon {
-  display: none;
-}
-
-.settings-section-tab-copy {
-  min-width: 0;
-}
-
-.settings-section-tab-copy strong {
-  font-size: var(--font-13);
-  font-weight: 500;
-}
-
-.settings-section-tab-copy small {
-  display: none;
-}
-
-@media (width <= 840px) {
+@media (width <= 640px) {
   .settings-section-nav {
+    gap: var(--space-8);
+  }
+
+  .settings-section-group {
     display: flex;
-    overflow: auto;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .settings-section-group p {
+    margin: 0;
+    padding-inline: var(--space-4);
   }
 
   .settings-section-tab {
-    flex-shrink: 0;
+    gap: var(--space-4);
+    padding-inline: var(--space-4);
+    font-size: var(--font-12);
   }
 }
 </style>

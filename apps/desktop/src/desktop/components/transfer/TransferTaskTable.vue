@@ -78,7 +78,7 @@ const openDirectory = (view: TransferTaskView) => view.secondaryActions.find((ac
 </script>
 
 <template>
-  <section class="transfer-table" aria-label="传输任务">
+  <section class="transfer-table" :class="{ 'completed-table': mode === 'completed' }" aria-label="传输任务">
     <div class="transfer-columns transfer-selection-bar">
       <UiCheckbox
         :model-value="selection"
@@ -87,8 +87,12 @@ const openDirectory = (view: TransferTaskView) => view.secondaryActions.find((ac
         :disabled="!views.length || loading"
         @update:model-value="emit('toggleVisibleSelection', visibleIds, selection !== true)"
       />
-      <span>文件</span><span>进度</span><span>状态</span><span class="speed-column">速度</span
-      ><span class="actions-label">操作</span>
+      <span>文件</span>
+      <span>{{ mode === 'completed' ? '大小' : '进度' }}</span>
+      <template v-if="mode !== 'completed'">
+        <span>状态</span><span class="speed-column">速度</span>
+      </template>
+      <span class="actions-label">操作</span>
     </div>
     <div ref="scrollElement" class="transfer-scroll" @scroll="updateViewport">
       <div class="virtual-task-list" role="list" aria-label="传输任务" :style="{ height: `${taskWindow.totalSize}px` }">
@@ -153,16 +157,16 @@ const openDirectory = (view: TransferTaskView) => view.secondaryActions.find((ac
               </div>
               <small v-if="row.view.sizeLabel !== '--'">{{ row.view.sizeLabel }}</small></template
             >
-            <span v-else>{{ row.view.isCompleted ? row.view.sizeLabel : '—' }}</span>
+            <span v-else>{{ row.view.isCompleted && row.view.sizeLabel !== '--' ? row.view.sizeLabel : '—' }}</span>
           </div>
-          <div class="task-state">
+          <div v-if="mode !== 'completed'" class="task-state">
             <UiStatusBadge :status="row.view.statusBadge">{{ row.view.statusLabel }}</UiStatusBadge
-            ><span v-if="row.view.issueLabel !== '-'" class="task-issue" :title="row.view.issueLabel">{{
+            ><span v-if="!['-', '任务失败', row.view.statusLabel].includes(row.view.issueLabel)" class="task-issue" :title="row.view.issueLabel">{{
               row.view.issueLabel
             }}</span
             ><small class="compact-speed" v-if="row.view.speedLabel !== '--'">{{ row.view.speedLabel }}</small>
           </div>
-          <span class="task-speed speed-column">{{ row.view.speedLabel === '--' ? '—' : row.view.speedLabel }}</span>
+          <span v-if="mode !== 'completed'" class="task-speed speed-column">{{ row.view.speedLabel === '--' ? '—' : row.view.speedLabel }}</span>
           <div class="task-actions">
             <UiIconButton
               v-if="row.view.primaryAction !== 'none' && row.view.primaryAction !== 'open_file'"
@@ -210,6 +214,10 @@ const openDirectory = (view: TransferTaskView) => view.secondaryActions.find((ac
   grid-template-columns: 1.25rem minmax(0, 2.5fr) minmax(7rem, 1.1fr) minmax(5.5rem, 0.8fr) 5.25rem 5.5rem;
   align-items: center;
   gap: 0.75rem;
+}
+
+.completed-table .transfer-columns {
+  grid-template-columns: 1.25rem minmax(0, 1fr) 5.5rem 5.5rem;
 }
 
 .transfer-selection-bar {

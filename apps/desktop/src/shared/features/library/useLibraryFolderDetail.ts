@@ -101,15 +101,6 @@ export function useLibraryFolderDetail(
   const stopParsing = () => {
     if (sourceId.value) parse.stopPacedParsing(sourceId.value);
   };
-  const downloadAll = async () => {
-    if (!sourceId.value) return;
-    if (hasMore.value) {
-      const result = await parse.parseAllPaced(sourceId.value, Number(loadBatchSize.value));
-      if (result !== 'completed') return;
-    }
-    parse.selectAllLoaded(sourceId.value);
-    onDownload();
-  };
   const goToPage = async (targetPage: number) => {
     if (!sourceId.value || loading.value) return;
     const requestedSource = sourceId.value;
@@ -165,7 +156,6 @@ export function useLibraryFolderDetail(
     parseMore,
     parseAll,
     stopParsing,
-    downloadAll,
     goToPage,
     formatDuration,
     bilibiliVideoUrl,

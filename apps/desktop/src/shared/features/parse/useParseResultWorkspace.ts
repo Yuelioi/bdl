@@ -106,9 +106,6 @@ export function useParseResultWorkspace(onDownload: () => void) {
     parse.selectAllLoaded(activeSource.value.source.id);
     onDownload();
   };
-  const parseAndDownload = () => {
-    if (activeSource.value) void parse.startBackgroundDownload(activeSource.value.source.id);
-  };
   const returnToSource = () => {
     if (!activeLoading.value) void parse.clearWorkspace();
   };
@@ -166,7 +163,6 @@ export function useParseResultWorkspace(onDownload: () => void) {
     parseAll,
     stopParsing,
     downloadAllLoaded,
-    parseAndDownload,
     returnToSource,
     toggleNode,
     sourceKindLabels,

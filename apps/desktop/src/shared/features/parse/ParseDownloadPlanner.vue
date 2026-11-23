@@ -94,7 +94,7 @@ const dialogDescription = computed(() => {
   const source = allSource.value;
   if (source) {
     const count = source.source.has_more ? source.source.total_count : collectPartIds(source).length;
-    return `${source.source.title} · ${count != null ? `全部 ${count} 项` : '全部内容'}`;
+    return `${source.source.title} · ${count != null ? `全部 ${count.toLocaleString('zh-CN')} 项` : '全部内容'}`;
   }
   const titleLimit = mobile ? 18 : 36;
   const title = selectionTitle.value;
@@ -380,42 +380,28 @@ defineExpose({ openDialog, openAllDialog, downloadSaved });
       <UIcon name="i-tabler-adjustments-horizontal" class="size-5 shrink-0" aria-hidden="true" />
       下载设置
     </UiButton>
-    <div v-else class="download-summary-copy">
-      <span class="download-selection">已选 <strong>{{ selectedCount }}</strong> 项</span>
-      <UButton
-        class="download-summary-preset"
-        variant="link"
-        color="neutral"
-        size="xs"
-        :disabled="downloadBusy"
-        :title="savedOutput"
-        aria-label="调整下载设置"
-        icon="i-tabler-adjustments-horizontal"
-        :label="`${savedPreset?.name || '下载预设'} · ${savedOutput}`"
-        :ui="{ label: 'truncate', leadingIcon: 'size-4' }"
-        @click="openDialog"
-      >
-        <template #trailing><span class="summary-link">调整</span></template>
-      </UButton>
-      <UButton
-        class="download-summary-directory"
-        variant="link"
-        color="neutral"
-        size="xs"
-        :disabled="downloadBusy"
-        :title="savedDirectory"
-        aria-label="更换本次保存目录"
-        icon="i-tabler-folder"
-        :label="savedDirectory"
-        :ui="{ label: 'truncate', leadingIcon: 'size-4' }"
-        @click="openDialog"
-        ><template #trailing><span class="summary-link">更换</span></template></UButton
-      >
+    <div v-else class="download-summary-details">
+      <span class="truncate" :title="savedOutput">{{ savedPreset?.name || '下载预设' }} · {{ savedOutput }}</span>
+      <span v-if="savedDirectory" class="download-summary-directory">
+        <UIcon name="i-tabler-folder" class="size-4 shrink-0" aria-hidden="true" />
+        <span class="truncate" :title="savedDirectory">{{ savedDirectory }}</span>
+      </span>
     </div>
     <div class="download-summary-actions" :class="{ split: mobile && $slots['download-scope'] }">
       <UiButton
+        v-if="!mobile"
+        variant="secondary"
+        size="compact"
+        :disabled="downloadBusy"
+        aria-label="调整下载设置"
+        @click="openDialog"
+      >
+        <UIcon name="i-tabler-adjustments-horizontal" class="size-4" aria-hidden="true" />
+        下载设置
+      </UiButton>
+      <UiButton
         class="download-summary-submit"
-        :variant="mobile && !selectedCount ? 'secondary' : 'primary'"
+        :variant="selectedCount ? 'primary' : 'secondary'"
         :aria-label="`下载所选 (${selectedCount})`"
         :disabled="downloadBusy || selectedCount === 0"
         @click="downloadSaved"
@@ -425,7 +411,7 @@ defineExpose({ openDialog, openAllDialog, downloadSaved });
           :class="{ 'animate-spin': downloadBusy }"
           aria-hidden="true"
         />
-        {{ downloadBusy ? '正在创建…' : mobile && !selectedCount ? '下载所选' : `下载 ${selectedCount} 项` }}
+        {{ downloadBusy ? '正在创建…' : !selectedCount ? '下载所选' : `下载 ${selectedCount} 项` }}
       </UiButton>
       <slot v-if="mobile" name="download-scope" :busy="downloadBusy" />
     </div>
@@ -572,54 +558,30 @@ defineExpose({ openDialog, openAllDialog, downloadSaved });
   border-top: 1px solid var(--color-border);
 }
 
-.download-summary-copy {
+.download-summary-actions {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.375rem 1rem;
+  gap: var(--space-8);
+  flex-shrink: 0;
   min-width: 0;
+}
+
+.download-summary-actions.split {
+  gap: 0;
+}
+
+.download-summary-details {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+  max-width: 25rem;
+  color: var(--color-muted);
   font-size: var(--font-12);
 }
 
-.download-selection {
-  flex-shrink: 0;
-  white-space: nowrap;
-}
-
-.download-summary-copy button {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.375rem;
-  min-width: 0;
-  min-height: 2rem;
-  padding: 0;
-  text-align: left;
-}
-
-.download-summary-copy button > span:not(.summary-link) {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.download-summary-copy button > :deep(svg) {
-  width: 1rem;
-  height: 1rem;
-  flex-shrink: 0;
-}
-
-.download-summary-preset {
-  max-width: 23rem;
-}
-
 .download-summary-directory {
-  max-width: 18rem;
-}
-
-.summary-link {
-  white-space: nowrap;
-  flex-shrink: 0;
-  color: var(--color-accent-strong);
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
 }
 
 .download-summary-submit {
@@ -649,11 +611,6 @@ defineExpose({ openDialog, openAllDialog, downloadSaved });
 .is-mobile .download-summary-submit {
   min-width: 0;
   min-height: 3rem;
-}
-
-.is-mobile .download-summary-actions {
-  display: flex;
-  min-width: 0;
 }
 
 .is-mobile .download-summary-submit {
@@ -815,8 +772,11 @@ defineExpose({ openDialog, openAllDialog, downloadSaved });
   grid-template-columns: auto minmax(0, 1fr) auto;
 }
 
-.planner-mobile-footer .planner-confirm {
+.planner-confirm {
   grid-column: -2;
+}
+
+.planner-mobile-footer .planner-confirm {
   min-height: 2.75rem;
 }
 

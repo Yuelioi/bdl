@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { useAboutPage } from './useAboutPage';
+import UiButton from '../../ui/Button.vue';
 import appIcon from '../../../../src-tauri/icons/128x128.png';
 const { version, links, openLink } = useAboutPage();
-defineProps<{ compact?: boolean }>();
+defineProps<{ compact?: boolean; canCheckUpdates?: boolean }>();
+const emit = defineEmits<{ checkUpdates: [] }>();
 </script>
 <template>
   <section class="about-content" :class="{ 'is-compact': compact }">
@@ -14,10 +16,26 @@ defineProps<{ compact?: boolean }>();
       </div>
     </header>
     <p class="about-description">解析、选择和下载 Bilibili 内容。</p>
-    <p class="about-version">
-      <span class="about-version-label">当前版本</span><span>v{{ version }}</span>
-    </p>
+    <div class="about-version">
+      <span><span class="about-version-label">当前版本</span> v{{ version }}</span>
+      <UiButton v-if="canCheckUpdates" size="compact" variant="secondary" @click="emit('checkUpdates')">
+        <UIcon name="i-tabler-refresh" class="size-4" aria-hidden="true" />
+        检查更新
+      </UiButton>
+    </div>
     <div class="about-links">
+      <UButton
+        v-if="!compact"
+        class="about-link"
+        variant="ghost"
+        color="neutral"
+        :ui="{ label: 'contents' }"
+        @click="openLink('https://github.com/Yuelioi/bdl/issues/new/choose')"
+      >
+        <UIcon name="i-tabler-message-report" class="link-icon" aria-hidden="true" />
+        <span><strong>反馈问题</strong><small>在 GitHub 提交问题</small></span>
+        <UIcon name="i-tabler-external-link" class="external-icon" aria-hidden="true" />
+      </UButton>
       <UButton
         v-for="link in links"
         :key="link.url"
@@ -73,6 +91,8 @@ defineProps<{ compact?: boolean }>();
 
 .about-version {
   display: flex;
+  align-items: center;
+  flex-wrap: wrap;
   gap: 1.5rem;
   margin: 1.75rem 0;
   font-size: var(--font-13);
@@ -81,6 +101,7 @@ defineProps<{ compact?: boolean }>();
 
 .about-version-label {
   color: var(--color-muted);
+  margin-inline-end: var(--space-12);
 }
 
 .about-links {

@@ -25,18 +25,16 @@ const {
   openFolder,
   closeFolder,
   openDownloadSettings,
+  openAllDownloadSettings,
 } = useLibraryPage();
 </script>
 <template>
   <section class="page-grid grid-cols-1" aria-label="账号内容库">
     <section class="panel library-panel">
-      <header v-if="!detailFolder" class="library-page-heading">
-        <div>
-          <h2>内容库</h2>
-          <p v-if="account.profile.logged_in">{{ account.profile.name || 'Bilibili 用户' }}</p>
-        </div>
+      <h2 v-if="!detailFolder" class="library-page-title">内容库</h2>
+      <div v-if="!detailFolder && account.profile.logged_in" class="library-toolbar">
+        <UiTabs v-model="categoryFilter" :tabs="categoryTabs" />
         <UInput
-          v-if="account.profile.logged_in"
           v-model="query"
           class="library-search"
           type="search"
@@ -47,18 +45,15 @@ const {
           variant="outline"
           size="sm"
         />
-      </header>
-      <div v-if="!detailFolder" class="shrink-0">
-        <UiTabs v-model="categoryFilter" :tabs="categoryTabs" />
       </div>
 
       <LibraryFolderDetail
         v-if="detailFolder"
         :folder="detailFolder"
-        :category-label="activeCategory.label"
         :loading-initial="detailLoading"
         @back="closeFolder"
         @download="openDownloadSettings"
+        @download-all="openAllDownloadSettings"
       />
 
       <section v-else class="library-content" :aria-label="activeCategory.label" :aria-busy="library.loading">
@@ -112,8 +107,7 @@ const {
                 @error="failedCoverIds = [...failedCoverIds, item.media_id]"
               />
               <div v-else class="cover-fallback" aria-hidden="true">
-                <UIcon name="i-tabler-bookmark" />
-                <span v-if="item.kind !== 'watch_later'">{{ item.media_count }}</span>
+                <UIcon :name="item.kind === 'watch_later' ? 'i-tabler-clock' : 'i-tabler-bookmark'" />
               </div>
             </div>
             <div class="library-card-copy">
@@ -122,9 +116,7 @@ const {
                 <span class="library-owner" :title="item.owner_name || '我的收藏夹'">{{
                   item.owner_name || '我的收藏夹'
                 }}</span>
-                <span class="library-count">{{
-                  item.kind === 'watch_later' ? '进入查看' : `${item.media_count} 个视频`
-                }}</span>
+                <span v-if="item.kind !== 'watch_later'" class="library-count">{{ item.media_count }} 个视频</span>
               </div>
             </div>
             <UIcon name="i-tabler-chevron-right" class="library-chevron" aria-hidden="true" />

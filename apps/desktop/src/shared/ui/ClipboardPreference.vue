@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { useSettingsStore } from '../stores/settings';
 const settings = useSettingsStore();
+defineProps<{ showSaveStatus?: boolean }>();
 </script>
 <template>
   <label class="clipboard-preference">
     <span
-      >返回应用时识别剪贴板链接<small class="clipboard-help">仅识别 Bilibili 链接，确认添加后再手动解析。</small></span
+      >返回应用时识别剪贴板链接<small class="clipboard-help">仅识别 Bilibili 链接，确认添加后再手动解析。<template v-if="showSaveStatus">此开关自动保存。</template></small></span
     >
     <USwitch
       :model-value="settings.saved.clipboard_monitor_enabled"

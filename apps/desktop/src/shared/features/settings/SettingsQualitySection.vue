@@ -164,17 +164,17 @@ const videoLabel = (quality: string) =>
 const audioLabel = (quality: string) =>
   audioQualityOptions.find((option) => option.value === quality)?.label ?? quality;
 const videoSummary = computed(() => {
-  if (settings.draft.quality === 'best') return videoOrdered.value ? '最佳可用按编排顺序选择。' : '';
+  if (settings.draft.quality === 'best') return videoOrdered.value ? '最佳可用按优先顺序选择。' : '';
   if (settings.draft.quality === 'sdr')
     return videoOrdered.value
-      ? '按编排顺序选择 SDR，不选择 HDR 或杜比视界。'
+      ? '按优先顺序选择 SDR，不选择 HDR 或杜比视界。'
       : '选择最高可用 SDR，不选择 HDR 或杜比视界。';
   return missingPolicy.value === 'lower'
     ? '优先 ' + videoLabel(settings.draft.quality) + '；没有时自动使用其他可用档位，可能降到 480P 或更低。'
     : '仅下载 ' + videoLabel(settings.draft.quality) + '；没有时不创建任务。';
 });
 const audioSummary = computed(() => {
-  if (settings.draft.audio_quality === 'best') return audioOrdered.value ? '音质按编排顺序选择。' : '';
+  if (settings.draft.audio_quality === 'best') return audioOrdered.value ? '音质按优先顺序选择。' : '';
   return missingPolicy.value === 'lower'
     ? '优先 ' + audioLabel(settings.draft.audio_quality) + '；没有时允许使用其他可用音质。'
     : '仅下载 ' + audioLabel(settings.draft.audio_quality) + '；没有时不创建任务。';
@@ -183,56 +183,62 @@ const audioSummary = computed(() => {
 
 <template>
   <div class="quality-section">
-    <p class="settings-note">画质和音质设置用于所有下载预设。</p>
+    <p class="settings-note">以下偏好适用于所有下载预设。</p>
     <div class="settings-inline-grid settings-quality-options">
-      <div class="quality-choice">
-        <UiSelect v-model="video" label="视频清晰度" :options="videoOptions" :disabled="disabled" />
-        <UiButton
-          variant="ghost"
-          size="compact"
-          aria-label="编排清晰度优先级"
-          :aria-pressed="videoEditorVisible"
-          :disabled="disabled"
-          @click="toggleVideoEditor"
-          >编排</UiButton
-        >
-      </div>
-      <div class="quality-choice">
-        <UiSelect v-model="videoCodec" label="视频编码" :options="videoCodecOptions" :disabled="disabled" />
-        <UiButton
-          variant="ghost"
-          size="compact"
-          aria-label="编排视频编码优先级"
-          :aria-pressed="videoCodecVisible"
-          :disabled="disabled"
-          @click="toggleVideoCodec"
-          >编排</UiButton
-        >
-      </div>
-      <div class="quality-choice">
-        <UiSelect v-model="audio" label="音频质量" :options="audioOptions" :disabled="disabled" />
-        <UiButton
-          variant="ghost"
-          size="compact"
-          aria-label="编排音质优先级"
-          :aria-pressed="audioEditorVisible"
-          :disabled="disabled"
-          @click="toggleAudioEditor"
-          >编排</UiButton
-        >
-      </div>
-      <div class="quality-choice">
-        <UiSelect v-model="audioCodec" label="音频编码" :options="audioCodecOptions" :disabled="disabled" />
-        <UiButton
-          variant="ghost"
-          size="compact"
-          aria-label="编排音频编码优先级"
-          :aria-pressed="audioCodecVisible"
-          :disabled="disabled"
-          @click="toggleAudioCodec"
-          >编排</UiButton
-        >
-      </div>
+      <fieldset class="quality-group">
+        <legend>视频</legend>
+        <div class="quality-choice">
+          <UiSelect v-model="video" label="视频清晰度" :options="videoOptions" :disabled="disabled" />
+          <UiButton
+            variant="ghost"
+            size="compact"
+            aria-label="清晰度优先顺序"
+            :aria-pressed="videoEditorVisible"
+            :disabled="disabled"
+            @click="toggleVideoEditor"
+            >优先顺序</UiButton
+          >
+        </div>
+        <div class="quality-choice">
+          <UiSelect v-model="videoCodec" label="视频编码" :options="videoCodecOptions" :disabled="disabled" />
+          <UiButton
+            variant="ghost"
+            size="compact"
+            aria-label="视频编码优先顺序"
+            :aria-pressed="videoCodecVisible"
+            :disabled="disabled"
+            @click="toggleVideoCodec"
+            >优先顺序</UiButton
+          >
+        </div>
+      </fieldset>
+      <fieldset class="quality-group">
+        <legend>音频</legend>
+        <div class="quality-choice">
+          <UiSelect v-model="audio" label="音频质量" :options="audioOptions" :disabled="disabled" />
+          <UiButton
+            variant="ghost"
+            size="compact"
+            aria-label="音质优先顺序"
+            :aria-pressed="audioEditorVisible"
+            :disabled="disabled"
+            @click="toggleAudioEditor"
+            >优先顺序</UiButton
+          >
+        </div>
+        <div class="quality-choice">
+          <UiSelect v-model="audioCodec" label="音频编码" :options="audioCodecOptions" :disabled="disabled" />
+          <UiButton
+            variant="ghost"
+            size="compact"
+            aria-label="音频编码优先顺序"
+            :aria-pressed="audioCodecVisible"
+            :disabled="disabled"
+            @click="toggleAudioCodec"
+            >优先顺序</UiButton
+          >
+        </div>
+      </fieldset>
       <UiSelect
         v-if="needsMissingPolicy"
         v-model="missingPolicy"
@@ -286,6 +292,23 @@ const audioSummary = computed(() => {
 
 .quality-summary p + p {
   margin-top: var(--space-4);
+}
+
+.quality-group {
+  min-width: 0;
+  display: grid;
+  gap: var(--space-12);
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
+.quality-group legend {
+  margin-block-end: var(--space-8);
+  padding: 0;
+  color: var(--color-text-strong);
+  font-size: var(--font-13);
+  font-weight: 600;
 }
 
 .quality-choice {

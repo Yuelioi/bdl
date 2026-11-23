@@ -2,7 +2,6 @@
 import SettingsCard from './SettingsCard.vue';
 import ErrorDetails from '../../ui/ErrorDetails.vue';
 import { recentFailureReport } from '../../utils/recentFailures';
-import ClipboardPreference from '../../ui/ClipboardPreference.vue';
 import UiButton from '../../ui/Button.vue';
 import UiSelect from '../../ui/Select.vue';
 import UiTextField from '../../ui/TextField.vue';
@@ -18,7 +17,7 @@ import { useDiagnosticExport } from '../diagnostics/useDiagnosticExport';
 const { form, desktopPaths = true, group } = defineProps<{
   form: SettingsForm;
   desktopPaths?: boolean;
-  group?: 'network' | 'storage';
+  group: 'network' | 'storage';
 }>();
 const { settings, settingsProxyMode, settingsProxyDescription, settingsProxyUrl, settingsLogLevel, settingsDataDir } = form;
 const cleanup = useFileRemoval('temp', maintenanceTempPreview, (token) => settings.cleanupTemp(token));
@@ -29,17 +28,13 @@ const {
 </script>
 
 <template>
-  <section class="settings-block">
-    <SettingsCard v-if="!group" title="剪贴板识别">
-      <ClipboardPreference />
-    </SettingsCard>
-    <SettingsCard v-if="!group || group === 'network'" :title="group ? undefined : '网络与日志'">
+  <section class="settings-block" :class="{ 'desktop-maintenance': desktopPaths }">
+    <SettingsCard v-if="group === 'network'" title="连接方式">
       <UiSelect v-model="settingsProxyMode" label="下载代理" :options="proxyModeOptions" :helper="settingsProxyDescription" />
       <UiTextField v-if="settingsProxyMode === 'custom'" v-model="settingsProxyUrl" label="代理地址" placeholder="例如 http://127.0.0.1:7890" :error="settings.proxySettingsError ?? undefined" />
       <p class="settings-note">保存后用于新启动的下载{{ desktopPaths ? '和桌面应用更新' : '' }}。</p>
-      <UiSelect v-if="!group" v-model="settingsLogLevel" label="任务日志级别" :options="logLevelOptions" />
     </SettingsCard>
-    <SettingsCard v-if="desktopPaths" title="应用数据">
+    <SettingsCard v-if="desktopPaths && group === 'storage'" title="应用数据">
       <div class="directory-row">
         <UiTextField v-model="settingsDataDir" label="数据目录" placeholder="留空时使用当前工作目录下的 .bdl" />
         <UiButton variant="secondary" :disabled="settings.loading || settings.saving" @click="settings.chooseDataDir"
@@ -53,7 +48,7 @@ const {
       </div>
       <p v-if="desktopPaths" class="settings-note">数据目录影响任务库、账户摘要和维护文件，修改后下次启动生效。</p>
     </SettingsCard>
-    <template v-if="!group || group === 'storage'">
+    <template v-if="group === 'storage'">
       <SettingsCard title="清理空间">
         <div class="maintenance-actions">
           <UiButton class="maintenance-action" variant="secondary" :disabled="settings.loading || settings.saving" @click="settings.cleanupCache">
@@ -64,9 +59,11 @@ const {
           </UiButton>
         </div>
       </SettingsCard>
-      <SettingsCard title="日志与诊断">
-        <UiSelect v-if="group" v-model="settingsLogLevel" label="任务日志级别" :options="logLevelOptions" />
+      <SettingsCard title="日志管理">
+        <UiSelect v-model="settingsLogLevel" label="任务日志级别" :options="logLevelOptions" />
         <LogMaintenance />
+      </SettingsCard>
+      <SettingsCard title="诊断报告">
         <details v-if="recentFailureReport" class="min-w-0">
           <summary class="cursor-pointer">最近的操作错误</summary>
           <div class="grid min-w-0 gap-3 py-3">
@@ -96,5 +93,14 @@ const {
 
 .maintenance-action {
   width: 100%;
+}
+
+.desktop-maintenance .maintenance-actions {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.desktop-maintenance .maintenance-action {
+  width: auto;
 }
 </style>

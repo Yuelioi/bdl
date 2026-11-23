@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue';
 import CollectionTree from '../../../shared/ui/CollectionTree.vue';
 import { hasCollectionSections } from '../../../shared/features/parse/collectionTree';
 import UiButton from '../../../shared/ui/Button.vue';
@@ -13,7 +14,7 @@ import ParseResultFilters from '../../../shared/features/parse/ParseResultFilter
 import SourceParseControls from './SourceParseControls.vue';
 import { useParseResultWorkspace } from '../../../shared/features/parse/useParseResultWorkspace';
 const { embedded = false, inlineDownload = false } = defineProps<{ embedded?: boolean; inlineDownload?: boolean }>();
-const emit = defineEmits<{ download: [] }>();
+const emit = defineEmits<{ download: []; downloadAll: [sourceId: string] }>();
 const {
   parse,
   loadBatchSize,
@@ -27,7 +28,6 @@ const {
   selectRange,
   sourceRequestLoading,
   pacedParsing,
-  pacedWaiting,
   pacedStopping,
   activeLoading,
   activeError,
@@ -41,10 +41,10 @@ const {
   parseAll,
   stopParsing,
   downloadAllLoaded,
-  parseAndDownload,
   returnToSource,
   toggleNode,
 } = useParseResultWorkspace(() => emit('download'));
+const showLoadToolbar = computed(() => hasMore.value || activeLoading.value);
 </script>
 <template>
   <section
@@ -54,41 +54,10 @@ const {
   >
     <div class="source-result-header flex min-w-0 flex-wrap items-center gap-3 border-b border-(--color-border) pb-4">
       <div class="flex min-w-0 flex-1 items-center gap-3">
-        <UButton
-          variant="ghost"
-          color="neutral"
-          :ui="{ base: 'p-0', label: 'contents' }"
-          type="button"
-          class="order-last ml-auto grid size-7 shrink-0 place-items-center rounded-md text-(--color-muted) hover:bg-(--color-panel) hover:text-(--color-text) disabled:cursor-not-allowed disabled:opacity-55"
-          aria-label="返回解析首页"
-          :disabled="activeLoading"
-          @click="returnToSource"
-        >
-          <UIcon name="i-tabler-arrow-left" class="size-4" aria-hidden="true" />
-        </UButton>
-        <ParseSourceSummary :source="activeSource" />
+        <ParseSourceSummary :source="activeSource" :hide-count="showLoadToolbar" />
       </div>
 
-      <div class="source-function-toolbar flex flex-wrap items-center justify-end gap-2 max-[840px]:justify-start">
-        <SourceLoadStatus
-          v-if="hasMore || pacedParsing"
-          :loaded="activeSource.source.loaded_count"
-          :total="activeSource.source.total_count"
-        />
-        <SourceParseControls
-          :source-id="activeSource.source.id"
-          v-if="hasMore || pacedParsing"
-          v-model:batch-size="loadBatchSize"
-          :has-more="hasMore"
-          :loading="sourceRequestLoading"
-          :parsing-all="pacedParsing"
-          :waiting="pacedWaiting"
-          :stopping="pacedStopping"
-          @parse-batch="loadMore"
-          @parse-all="parseAll"
-          @parse-and-download="parseAndDownload"
-          @stop="stopParsing"
-        />
+      <div class="flex flex-wrap items-center justify-end gap-2">
         <UiButton
           v-if="!hasMore && !inlineDownload"
           size="compact"
@@ -101,13 +70,37 @@ const {
         <UiButton v-if="!inlineDownload" size="compact" :disabled="!canCreateTasks" @click="emit('download')">{{
           createTaskLabel
         }}</UiButton>
+        <UiButton variant="ghost" size="compact" :disabled="activeLoading" @click="returnToSource">
+          <UIcon name="i-tabler-x" class="size-4" aria-hidden="true" />
+          清除结果
+        </UiButton>
       </div>
     </div>
+
+    <section v-if="showLoadToolbar" class="source-function-toolbar result-loading-toolbar" aria-label="加载更多内容">
+      <SourceLoadStatus
+        :loaded="activeSource.source.loaded_count"
+        :total="activeSource.source.total_count"
+        :has-more="hasMore"
+      />
+      <SourceParseControls
+        :source-id="activeSource.source.id"
+        v-model:batch-size="loadBatchSize"
+        :has-more="hasMore"
+        :loading="sourceRequestLoading"
+        :parsing-all="pacedParsing"
+        :stopping="pacedStopping"
+        @parse-batch="loadMore"
+        @parse-all="parseAll"
+        @parse-and-download="emit('downloadAll', activeSource.source.id)"
+        @stop="stopParsing"
+      />
+    </section>
 
     <ParseResultFilters
       v-model:query="query"
       v-model:sort="sort"
-      :loaded="tableRows.length"
+      :loaded="showLoadToolbar ? undefined : tableRows.length"
       :grouped="hasCollectionSections(activeSource)"
       :disabled="activeLoading"
       :apply-range="selectRange"
@@ -130,6 +123,7 @@ const {
       :disabled="activeLoading"
       @toggle="toggleNode"
       @toggle-all="toggleAllResults"
+      :hide-selection-count="inlineDownload"
     />
     <UiEmptyState
       v-else
@@ -171,16 +165,22 @@ const {
 </template>
 
 <style scoped>
+.result-loading-toolbar {
+  flex-shrink: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+  border-radius: var(--radius-6);
+  background: var(--color-inset);
+  padding: var(--space-6) var(--space-12);
+}
+
 @media (width <= 700px) {
   .source-result-header {
     gap: var(--space-8);
     padding-bottom: var(--space-10);
-  }
-
-  .source-function-toolbar {
-    width: 100%;
-    justify-content: flex-start;
-    gap: var(--space-6);
   }
 }
 </style>

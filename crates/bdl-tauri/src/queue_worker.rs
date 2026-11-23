@@ -1,9 +1,11 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use bdl_core::fetcher::{BandwidthLimiter, FetchCancelToken, FetchConfig, ReqwestFetcher};
 use bdl_core::queue::{DownloadTask, QueueLogLevel, TaskStatus};
 use futures::stream::{FuturesUnordered, StreamExt};
 use tauri::{AppHandle, Manager};
+use tokio::time::Instant;
 
 use crate::commands::{
     CommandResult, DownloadRuntimeOptions, concurrent_tasks, emit_queue_log,
@@ -59,10 +61,14 @@ async fn run(app: &AppHandle, state: &AppState) -> CommandResult<()> {
         loop {
             let current_settings = state.settings()?;
             let concurrent_tasks = concurrent_tasks(&current_settings);
-            while running.len() < concurrent_tasks {
-                let Some(task) = state.take_next_startable_task()? else {
-                    break;
-                };
+            let mut start_wakeup = state
+                .queue_start_deadline()?
+                .filter(|deadline| *deadline > Instant::now());
+            if running.len() < concurrent_tasks
+                && start_wakeup.is_none()
+                && let Some(task) = state.take_next_startable_task()?
+            {
+                start_wakeup = state.queue_start_deadline()?;
                 let attempt = AttemptGuard {
                     state,
                     task_id: task.id.clone(),
@@ -99,7 +105,18 @@ async fn run(app: &AppHandle, state: &AppState) -> CommandResult<()> {
             }
 
             let scheduled_wakeups = state.scheduled_wakeups()?;
-            let next_scheduled_at = scheduled_wakeups.first().copied();
+            let schedule_wakeup = scheduled_wakeups.first().map(|scheduled_at| {
+                let delay = (*scheduled_at - chrono::Utc::now())
+                    .to_std()
+                    .unwrap_or(Duration::ZERO);
+                Instant::now() + delay
+            });
+            if start_wakeup.is_some()
+                && (running.len() >= concurrent_tasks || !state.has_startable_task()?)
+            {
+                start_wakeup = None;
+            }
+            let next_wakeup = [schedule_wakeup, start_wakeup].into_iter().flatten().min();
             let scheduled_wakeup_millis = scheduled_wakeups
                 .iter()
                 .map(|scheduled_at| scheduled_at.timestamp_millis())
@@ -120,36 +137,30 @@ async fn run(app: &AppHandle, state: &AppState) -> CommandResult<()> {
 
             if running.is_empty() {
                 if execution_active {
-                    if let Err(error) = state.sync_download_activity() {
-                        tracing::warn!("failed to stop platform task execution: {error}");
-                        crate::commands::report_runtime_error(
-                            app,
-                            state,
-                            "stop_task_execution",
-                            error.into(),
-                        )
-                        .await;
-                    } else {
-                        execution_active = false;
+                    match state.sync_download_activity() {
+                        Ok(active) => execution_active = active,
+                        Err(error) => {
+                            tracing::warn!("failed to stop platform task execution: {error}");
+                            crate::commands::report_runtime_error(
+                                app,
+                                state,
+                                "stop_task_execution",
+                                error.into(),
+                            )
+                            .await;
+                        }
                     }
                 }
-                let Some(scheduled_at) = next_scheduled_at else {
+                let Some(wakeup) = next_wakeup else {
                     break;
                 };
-                wait_for_schedule_or_queue_change(state, scheduled_at).await;
+                wait_for_queue_wakeup(state, Some(wakeup)).await;
                 continue;
             }
 
-            let completed = if let Some(scheduled_at) = next_scheduled_at {
-                tokio::select! {
-                    completed = running.next() => completed,
-                    () = wait_for_schedule_or_queue_change(state, scheduled_at) => None,
-                }
-            } else {
-                tokio::select! {
-                    completed = running.next() => completed,
-                    () = state.wait_for_queue_change() => None,
-                }
+            let completed = tokio::select! {
+                completed = running.next() => completed,
+                () = wait_for_queue_wakeup(state, next_wakeup) => None,
             };
 
             if let Some(outcome) = completed {
@@ -177,16 +188,14 @@ async fn run(app: &AppHandle, state: &AppState) -> CommandResult<()> {
     result
 }
 
-async fn wait_for_schedule_or_queue_change(
-    state: &AppState,
-    scheduled_at: chrono::DateTime<chrono::Utc>,
-) {
-    let delay = (scheduled_at - chrono::Utc::now())
-        .to_std()
-        .unwrap_or(std::time::Duration::ZERO);
-    tokio::select! {
-        () = tokio::time::sleep(delay) => {}
-        () = state.wait_for_queue_change() => {}
+async fn wait_for_queue_wakeup(state: &AppState, deadline: Option<Instant>) {
+    if let Some(deadline) = deadline {
+        tokio::select! {
+            () = tokio::time::sleep_until(deadline) => {}
+            () = state.wait_for_queue_change() => {}
+        }
+    } else {
+        state.wait_for_queue_change().await;
     }
 }
 
@@ -361,8 +370,6 @@ mod tests {
     use crate::parse_pacing::ParsePacer;
     use bdl_core::settings::ParseRules;
     use futures::FutureExt;
-    use std::time::Duration;
-    use tokio::time::Instant;
 
     #[test]
     fn dropping_an_unpolled_attempt_releases_its_pickup_slot() {

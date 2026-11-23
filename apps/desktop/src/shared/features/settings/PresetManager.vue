@@ -113,7 +113,7 @@ const remove = async (id: string) => {
         color="neutral"
         variant="outline"
         size="sm"
-        class="min-w-0 w-full"
+        class="preset-search min-w-0 w-full"
         :ui="{ base: 'h-(--height-input) text-(length:--font-13)' }"
       />
       <UiButton :disabled="Boolean(deleting) || atLimit" @click="begin('create')"
@@ -207,6 +207,16 @@ const remove = async (id: string) => {
   list-style: none;
 }
 
+.settings-section-body .preset-search {
+  max-width: 20rem;
+}
+
+.settings-section-body .preset-manager-list {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-8);
+  padding-inline: var(--space-16);
+}
+
 .preset-manager-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -223,6 +233,10 @@ const remove = async (id: string) => {
 .preset-manager-row:last-child {
   border-bottom: 0;
   padding-bottom: 0;
+}
+
+.settings-section-body .preset-manager-row {
+  padding-block: var(--space-12);
 }
 
 .preset-manager-copy {

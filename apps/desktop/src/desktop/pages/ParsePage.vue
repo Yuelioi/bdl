@@ -1,10 +1,13 @@
 <script setup lang="ts">
+import { ref, watch } from 'vue';
+import UiButton from '../../shared/ui/Button.vue';
 import UiInlineNotice from '../../shared/ui/InlineNotice.vue';
 import ParseSourceInput from '../../shared/features/parse/ParseSourceInput.vue';
 import ParseDownloadPlanner from '../../shared/features/parse/ParseDownloadPlanner.vue';
 import ParseBatchWorkspace from '../components/parse/ParseBatchWorkspace.vue';
 import ParseResultWorkspace from '../components/parse/ParseResultWorkspace.vue';
 import { useParsePage } from '../../shared/features/parse/useParsePage';
+import { useUiStore } from '../../shared/stores/ui';
 const {
   parse,
   inputMode,
@@ -12,26 +15,63 @@ const {
   createLoading,
   activeStage,
   submitInput,
+  returnToInput,
   pasteSingleInput,
   pasteInput,
   downloadSelected,
+  openAllDownloadSettings,
   runNoticeAction,
 } = useParsePage();
+const ui = useUiStore();
+const inputHeading = ref<HTMLElement>();
+const resultNavigation = ref<HTMLElement>();
+
+watch(activeStage, (stage) => {
+  if (ui.activeTab !== 'parse') return;
+  const destination = stage === 'content' ? resultNavigation.value : inputHeading.value;
+  destination?.focus({ preventScroll: true });
+}, { flush: 'post' });
 </script>
 
 <template>
   <section class="page-grid grid-cols-1">
-    <section class="panel parse-panel min-h-0 overflow-hidden bg-(--color-surface)">
-      <ParseSourceInput
-        v-model:mode="inputMode"
-        v-model:input="parse.input"
-        v-model:single-input="singleInput"
-        :busy="createLoading"
-        :has-results="activeStage === 'content'"
-        @submit="submitInput"
-        @paste="pasteInput"
-        @single-paste="pasteSingleInput"
-      />
+    <section
+      class="panel parse-panel min-h-0 overflow-hidden bg-(--color-surface)"
+      :class="{ 'parse-panel-entry': activeStage !== 'content' }"
+    >
+      <header v-if="activeStage === 'content'" ref="resultNavigation" class="parse-result-navigation" tabindex="-1" aria-label="解析结果">
+        <UiButton variant="ghost" size="compact" @click="returnToInput">
+          <UIcon name="i-tabler-arrow-left" class="size-4" aria-hidden="true" />
+          返回解析
+        </UiButton>
+      </header>
+      <template v-else>
+        <header class="parse-entry-heading">
+          <div class="parse-entry-heading-row">
+            <h2 ref="inputHeading" tabindex="-1">解析链接</h2>
+            <UiButton
+              v-if="parse.activeSource"
+              variant="secondary"
+              size="compact"
+              :disabled="createLoading"
+              @click="activeStage = 'content'"
+            >
+              查看上次结果
+              <UIcon name="i-tabler-arrow-right" class="size-4" aria-hidden="true" />
+            </UiButton>
+          </div>
+          <p>支持视频、合集、收藏夹、UP 主空间、番剧和课程。</p>
+        </header>
+        <ParseSourceInput
+          v-model:mode="inputMode"
+          v-model:input="parse.input"
+          v-model:single-input="singleInput"
+          :busy="createLoading"
+          @submit="submitInput"
+          @paste="pasteInput"
+          @single-paste="pasteSingleInput"
+        />
+      </template>
       <UiInlineNotice
         v-if="parse.notice"
         :tone="parse.notice.tone"
@@ -42,14 +82,14 @@ const {
       >
       <template v-if="activeStage === 'content'">
         <ParseBatchWorkspace v-if="parse.isBatch" embedded inline-download @download="downloadSelected" />
-        <ParseResultWorkspace v-else embedded inline-download @download="downloadSelected" />
+        <ParseResultWorkspace
+          v-else
+          embedded
+          inline-download
+          @download="downloadSelected"
+          @download-all="openAllDownloadSettings"
+        />
       </template>
-      <div v-else class="parse-entry-hint">
-        <UIcon name="i-tabler-link" aria-hidden="true" />
-        <h2>从一个链接开始</h2>
-        <p>视频、合集、收藏夹、UP 空间、番剧或课程</p>
-        <p>多条链接可分行粘贴，解析后选择需要的内容。</p>
-      </div>
       <ParseDownloadPlanner ref="download-planner" :inline="activeStage === 'content'" />
     </section>
   </section>
@@ -61,33 +101,43 @@ const {
   padding: 0;
 }
 
-.parse-entry-hint {
-  display: grid;
-  flex: 1;
-  align-content: center;
-  justify-items: center;
-  gap: 0.5rem;
-  min-height: 0;
+.parse-panel-entry {
+  width: min(100%, 44rem);
+  margin-inline: auto;
+  padding-top: clamp(1rem, 10vh, 5rem);
   overflow-y: auto;
+}
+
+.parse-entry-heading {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.parse-entry-heading-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+}
+
+.parse-result-navigation {
+  display: flex;
+  flex-shrink: 0;
+}
+
+.parse-entry-heading h2,
+.parse-entry-heading p {
+  margin: 0;
+}
+
+.parse-result-navigation:focus,
+.parse-entry-heading h2:focus {
+  outline: none;
+}
+
+.parse-entry-heading p {
   color: var(--color-muted);
-  text-align: center;
-}
-
-.parse-entry-hint > :deep(svg) {
-  width: 1.75rem;
-  height: 1.75rem;
-}
-
-.parse-entry-hint h2 {
-  margin: 0;
-  font-size: var(--font-18);
-  font-weight: 600;
-  color: var(--color-text);
-}
-
-.parse-entry-hint p {
-  margin: 0;
   font-size: var(--font-13);
-  line-height: 1.6;
 }
 </style>

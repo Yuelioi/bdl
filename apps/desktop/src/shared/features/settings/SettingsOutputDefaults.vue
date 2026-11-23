@@ -14,7 +14,7 @@ const disabled = computed(() => settings.loading || settings.saving);
 </script>
 
 <template>
-  <SettingsCard title="默认下载方式">
+  <SettingsCard title="默认选项">
     <div class="output-default-row">
       <UiSelect
         v-model="settings.draft.selected_download_preset"

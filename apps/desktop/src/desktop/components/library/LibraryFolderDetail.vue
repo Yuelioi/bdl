@@ -17,9 +17,8 @@ const props = defineProps<{
   folder: LibraryContentSource;
   embedded?: boolean;
   loadingInitial?: boolean;
-  categoryLabel?: string;
 }>();
-const emit = defineEmits<{ back: []; download: [] }>();
+const emit = defineEmits<{ back: []; download: []; downloadAll: [sourceId: string] }>();
 const {
   parse,
   pageSize,
@@ -34,7 +33,6 @@ const {
   selectedCount,
   sourceRequestLoading,
   pacedParsing,
-  pacedWaiting,
   pacedStopping,
   loading,
   activeError,
@@ -48,7 +46,6 @@ const {
   parseMore,
   parseAll,
   stopParsing,
-  downloadAll,
   goToPage,
 } = useLibraryFolderDetail(props, () => emit('download'));
 const rows = computed(() =>
@@ -67,13 +64,9 @@ const rows = computed(() =>
         variant="ghost"
         color="neutral"
         icon="i-tabler-arrow-left"
-        aria-label="返回内容集合"
         size="xs"
         @click="emit('back')"
-      /><span
-        >内容库 / <template v-if="categoryLabel">{{ categoryLabel }} / </template
-        ><strong>{{ folder.title }}</strong></span
-      >
+      >返回内容库</UButton>
     </div>
     <header
       class="library-folder-header flex min-w-0 items-center justify-between gap-4 border-b border-(--color-border) pb-4"
@@ -91,22 +84,12 @@ const rows = computed(() =>
           :has-more="hasMore"
           :loading="sourceRequestLoading"
           :parsing-all="pacedParsing"
-          :waiting="pacedWaiting"
           :stopping="pacedStopping"
+          :show-download="false"
           @parse-batch="parseMore"
           @parse-all="parseAll"
-          @parse-and-download="sourceId && parse.startBackgroundDownload(sourceId)"
           @stop="stopParsing"
         />
-        <UiButton
-          v-if="!hasMore"
-          size="compact"
-          variant="secondary"
-          :disabled="loading || totalCount === 0"
-          @click="downloadAll"
-        >
-          下载全部
-        </UiButton>
       </div>
     </header>
 
@@ -139,6 +122,7 @@ const rows = computed(() =>
       :rows="rows"
       :fallback-owner="folder.owner_name"
       :selected-ids="parse.activeSelection"
+      hide-selection-count
       :disabled="loading"
       @toggle="
         (id) => {
@@ -163,6 +147,7 @@ const rows = computed(() =>
         <div class="library-pagination-status">
           <span class="library-selection-count">已选 {{ selectedCount }} / {{ totalCount }}</span>
           <UiPagination
+            v-if="totalPages > 1"
             :page="currentPage"
             :total="totalCount"
             :items-per-page="pageSize"
@@ -170,16 +155,28 @@ const rows = computed(() =>
             label="集合内容分页"
             @update:page="goToPage"
           />
-          <span>第 {{ currentPage }} / {{ totalPages }} 页</span>
         </div>
       </template>
       <template #selection>
         <UiButton v-if="selectedCount > 0" size="compact" variant="ghost" :disabled="loading" @click="clearSelection">
           取消选择
         </UiButton>
-        <UiButton :disabled="loading || selectedCount === 0" @click="downloadSelected"
-          >下载所选 ({{ selectedCount }})</UiButton
+        <UiButton
+          v-if="sourceId && totalCount"
+          variant="secondary"
+          :disabled="loading"
+          @click="emit('downloadAll', sourceId)"
         >
+          下载全部
+        </UiButton>
+        <UiButton
+          :variant="selectedCount ? 'primary' : 'secondary'"
+          :aria-label="`下载所选 (${selectedCount})`"
+          :disabled="loading || selectedCount === 0"
+          @click="downloadSelected"
+        >
+          下载所选
+        </UiButton>
       </template>
     </SelectionActionBar>
   </section>
@@ -188,15 +185,6 @@ const rows = computed(() =>
 <style scoped>
 .folder-breadcrumb {
   display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  color: var(--color-muted);
-  font-size: var(--font-12);
-}
-
-.folder-breadcrumb strong {
-  color: var(--color-text);
-  font-weight: 500;
 }
 
 .library-pagination-status {

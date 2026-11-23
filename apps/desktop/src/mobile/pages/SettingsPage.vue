@@ -13,7 +13,9 @@ import SettingsUpdateSection from '../../shared/features/settings/SettingsUpdate
 import SettingsCard from '../../shared/features/settings/SettingsCard.vue';
 import ClipboardPreference from '../../shared/ui/ClipboardPreference.vue';
 
-import { useUiStore, type MobileSettingsPage } from '../../shared/stores/ui';
+import { useUiStore } from '../../shared/stores/ui';
+import { settingsSections } from '../../shared/features/settings/settingsCatalog';
+import { settingsGroups } from '../../shared/features/settings/settingsSections';
 const ui = useUiStore();
 import { useSettingsPage } from '../../shared/features/settings/useSettingsPage';
 const {
@@ -33,28 +35,8 @@ const {
   availableSettingsSections,
 } = useSettingsPage();
 
-const sections = {
-  saving: { title: '下载与保存', icon: 'i-tabler-folder-down' },
-  tasks: { title: '下载速度与续传', icon: 'i-tabler-gauge' },
-  media: { title: '画质与编码', icon: 'i-tabler-adjustments' },
-  presets: { title: '下载与命名预设', icon: 'i-tabler-list-details' },
-  links: { title: '链接识别与解析', icon: 'i-tabler-link' },
-  network: { title: '下载代理', icon: 'i-tabler-network' },
-  storage: { title: '存储与诊断', icon: 'i-tabler-database' },
-  update: { title: '应用更新', icon: 'i-tabler-refresh' },
-} satisfies Record<Exclude<MobileSettingsPage, 'overview'>, { title: string; icon: string }>;
-type SettingsCategory = keyof typeof sections;
-const groups = computed<{ title: string; pages: SettingsCategory[] }[]>(() => [
-  { title: '下载', pages: ['saving', 'tasks', 'media', 'presets'] },
-  {
-    title: '应用',
-    pages: [
-      'links', 'network', 'storage',
-      ...(availableSettingsSections.value.some(({ id }) => id === 'settings-update') ? ['update' as const] : []),
-    ],
-  },
-]);
 const page = computed(() => ui.mobileSettingsPath.at(-1) ?? 'overview');
+const pageTitle = computed(() => settingsSections.find((section) => section.mobilePage === page.value)?.label ?? '设置');
 const backLabel = computed(() => {
   if (ui.mobileSettingsPath.length > 1) return '返回上一级设置';
   if (ui.mobileSettingsReturnTab === 'parse') return '返回解析';
@@ -95,7 +77,7 @@ useMobileBack('settings', () => {
           >
             <UIcon name="i-tabler-arrow-left" />
           </button>
-          <h2>{{ page === 'overview' ? '设置' : sections[page].title }}</h2>
+          <h2>{{ pageTitle }}</h2>
         </div>
         <div v-if="page === 'overview' || settingsFormChanged" class="settings-actions">
           <UDropdownMenu
@@ -150,19 +132,19 @@ useMobileBack('settings', () => {
       <div class="settings-workspace">
         <div ref="settingsContent" class="settings-content">
           <div v-if="page === 'overview'" class="settings-index">
-            <section v-for="group in groups" :key="group.title" class="settings-index-group">
-              <h3>{{ group.title }}</h3>
+            <section v-for="group in settingsGroups" :key="group" class="settings-index-group">
+              <h3>{{ group }}</h3>
               <UButton
-                v-for="category in group.pages"
-                :key="category"
+                v-for="section in availableSettingsSections.filter((item) => item.group === group)"
+                :key="section.id"
                 class="settings-index-row"
                 variant="ghost"
                 color="neutral"
                 :ui="{ label: 'contents' }"
-                @click="ui.mobileSettingsPath.push(category)"
+                @click="ui.mobileSettingsPath.push(section.mobilePage)"
               >
-                <UIcon :name="sections[category].icon" class="size-5 text-(--color-muted)" aria-hidden="true" />
-                <span class="min-w-0 flex-1">{{ sections[category].title }}</span>
+                <UIcon :name="section.icon" class="size-5 text-(--color-muted)" aria-hidden="true" />
+                <span class="min-w-0 flex-1">{{ section.label }}</span>
                 <UIcon name="i-tabler-chevron-right" class="size-4 text-(--color-muted)" aria-hidden="true" />
               </UButton>
             </section>

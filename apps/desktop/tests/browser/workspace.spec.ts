@@ -640,10 +640,7 @@ test.describe('safe file removal', () => {
         expect(previews.every((ids) => JSON.stringify(ids) === '["selected"]')).toBe(true);
         if (device === 'desktop') {
           await page.getByRole('button', { name: '设置 偏好与维护' }).click();
-          await page
-            .getByRole('button', { name: /网络与维护/ })
-            .or(page.getByRole('tab', { name: '维护', exact: true }))
-            .click();
+          await page.getByRole('button', { name: '存储与诊断', exact: true }).click();
         } else {
           await page
             .getByRole('navigation', { name: '主导航' })
@@ -1005,8 +1002,9 @@ test('mobile library supports selection and page actions', async ({ page }) => {
   await expect(page.locator('.profile-card')).toBeVisible();
   await expect(page.locator('.workspace-enter-active, .workspace-leave-active')).toHaveCount(0);
   await page.getByRole('button', { name: '设置', exact: true }).click();
-  await page.getByRole('button', { name: '下载速度与续传', exact: true }).click();
-  await page.getByLabel('全局下载限速（MB/s）', { exact: true }).fill('10');
+  await page.getByRole('button', { name: '速度与续传', exact: true }).click();
+  await page.getByRole('combobox', { name: '下载总限速', exact: true }).click();
+  await page.getByRole('option', { name: '10 MB/s', exact: true }).click();
   await page.getByRole('button', { name: '保存', exact: true }).click();
   await expect(page.getByRole('button', { name: '保存', exact: true })).toHaveCount(0);
   await nav.getByRole('button', { name: '传输' }).click();
@@ -1242,8 +1240,8 @@ test.describe('populated Android interactions', () => {
     await expect(page.locator('.profile-card')).toBeVisible();
     await expect(page.locator('.workspace-enter-active, .workspace-leave-active')).toHaveCount(0);
     await page.getByRole('button', { name: '设置', exact: true }).click();
-    await page.getByRole('button', { name: '下载速度与续传', exact: true }).click();
-    await expect(page.getByLabel('全局下载限速（MB/s）', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: '速度与续传', exact: true }).click();
+    await expect(page.getByRole('combobox', { name: '下载总限速', exact: true })).toBeVisible();
     await page.getByRole('button', { name: '返回上一级设置', exact: true }).click();
     await page.getByRole('button', { name: '返回我的', exact: true }).click();
     await page
@@ -1346,7 +1344,7 @@ test('renders dynamic icon buttons before paint without Iconify network access',
 });
 
 for (const width of [375, 900, 1280]) {
-  test(`appearance hover labels follow theme selection at ${width}px`, async ({ page }) => {
+  test(`appearance labels follow theme selection at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 844 });
     if (width === 375) {
       await page.addInitScript(() => {
@@ -1359,7 +1357,7 @@ for (const width of [375, 900, 1280]) {
       await page.getByRole('navigation', { name: '主导航' }).getByRole('button', { name: '我的' }).click();
     }
     const appearance = page.getByRole('button', { name: /^外观：/ });
-    await expect(appearance).toHaveAttribute('title', '外观：深色');
+    await expect(appearance).toHaveAccessibleName('外观：深色');
     for (const label of ['跟随系统', '浅色', '深色']) {
       await appearance.focus();
       await appearance.press('Enter');
@@ -1370,8 +1368,12 @@ for (const width of [375, 900, 1280]) {
       await page.keyboard.press('Escape');
       await expect(page.getByRole('menu')).not.toBeVisible();
       await expect(appearance).toBeFocused();
-      await appearance.hover();
-      await expect(appearance).toHaveAttribute('title', `外观：${label}`);
+      if (width === 375) {
+        await expect(appearance.getByText(label, { exact: true })).toBeVisible();
+      } else {
+        await appearance.hover();
+        await expect(appearance).toHaveAttribute('title', `外观：${label}`);
+      }
       await expect(appearance).toHaveAccessibleName(`外观：${label}`);
       await expect(page.locator('html')).toHaveAttribute('data-theme', label === '深色' ? 'dark' : 'light');
     }
@@ -1593,23 +1595,31 @@ test('parse result checkbox controls download selection', async ({ page }) => {
   await expect(page.locator('.source-result-header').getByRole('button', { name: /全选/ })).toHaveCount(0);
 });
 
-test('parse result clears the workspace while retaining the source input', async ({ page }) => {
+test('desktop parse separates the input from results and keeps the draft and selection when going back', async ({ page }) => {
   await installTauriMock(page, 'light');
   await page.goto('/');
   const input = page.getByLabel('Bilibili 链接或 BV / AV');
   await input.fill('BV1xx411c7mD');
   await page.getByRole('button', { name: '开始解析' }).click();
 
-  await expect(page.getByRole('button', { name: '返回解析首页' })).toBeVisible();
+  await expect(input).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '清除结果' })).toBeVisible();
   await expect(page.getByRole('searchbox', { name: '搜索解析结果' })).toBeEnabled();
   await expect(page.getByRole('combobox', { name: '解析结果排序' })).toContainText('原顺序');
   await expect(page.getByRole('button', { name: '刷新当前来源' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: '关闭解析结果' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: '下载所选 (0)' })).toBeVisible();
 
-  await page.getByRole('button', { name: '返回解析首页' }).click();
-  await expect(page.getByRole('heading', { name: /^(解析链接|从一个链接开始)$/ })).toBeVisible();
+  await page.getByRole('checkbox', { name: '全选已加载', exact: true }).check();
+  await page.getByRole('button', { name: '返回解析', exact: true }).click();
+  await expect(input).toHaveValue('BV1xx411c7mD');
+  await expect(page.getByRole('searchbox', { name: '搜索解析结果' })).toHaveCount(0);
+  await page.getByRole('button', { name: '查看上次结果', exact: true }).click();
+  await expect(page.getByRole('button', { name: '下载所选 (1)' })).toBeEnabled();
+
+  await page.getByRole('button', { name: '清除结果' }).click();
   await expect(input).toHaveValue('');
+  await expect(page.getByRole('button', { name: '查看上次结果', exact: true })).toHaveCount(0);
   await expect(page.getByText('测试视频', { exact: true })).toHaveCount(0);
 });
 
@@ -1638,10 +1648,10 @@ test('parse cooldown shows remaining seconds and stops immediately', async ({ pa
     };
   });
   const toolbar = page.locator('.source-function-toolbar');
-  await toolbar.getByRole('button', { name: '解析', exact: true }).click();
+  await toolbar.getByRole('button', { name: '继续解析', exact: true }).click();
   await expect(toolbar).toContainText('休息 3 秒后继续');
   await toolbar.getByRole('button', { name: '停止解析', exact: true }).click();
-  await expect(toolbar.getByRole('button', { name: '解析', exact: true })).toBeVisible({ timeout: 1000 });
+  await expect(toolbar.getByRole('button', { name: '继续解析', exact: true })).toBeVisible({ timeout: 1000 });
   await expect(toolbar).toContainText('9 / 401');
   await expect(page.getByText('解析已停止', { exact: true })).toHaveCount(0);
 });
@@ -1653,11 +1663,16 @@ test('parse all can stop at a page boundary', async ({ page }) => {
   await page.getByLabel('链接或 BV / AV').fill('favorite:fixture');
   await page.getByRole('button', { name: '开始解析' }).click();
   await expect(toolbar.getByRole('combobox', { name: '每批解析数量' })).toContainText('每批 50');
-  await toolbar.getByRole('button', { name: '更多解析方式' }).click();
-  await page.getByRole('menuitem', { name: '解析全部', exact: true }).click();
+  await toolbar.getByRole('button', { name: '解析全部', exact: true }).click();
   await toolbar.getByRole('button', { name: '停止解析', exact: true }).click();
-  await expect(toolbar.getByRole('button', { name: '解析', exact: true })).toBeVisible();
+  await expect(toolbar.getByRole('button', { name: '继续解析', exact: true })).toBeVisible();
 });
+
+const confirmDesktopBackgroundDownload = async (page: Page) => {
+  await page.getByRole('button', { name: '后台下载全部', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: '下载全部', exact: true });
+  await dialog.getByRole('button', { name: '开始下载', exact: true }).click();
+};
 
 for (const theme of ['light', 'dark'] as const) {
   for (const platform of ['desktop', 'mobile'] as const) {
@@ -1703,8 +1718,7 @@ for (const theme of ['light', 'dark'] as const) {
         await expect(dialog.getByText('测试下载目录', { exact: true })).toBeVisible();
         await start.click();
       } else {
-        await page.getByRole('button', { name: '更多解析方式' }).click();
-        await page.getByRole('menuitem', { name: '后台解析全部并下载' }).click();
+        await confirmDesktopBackgroundDownload(page);
       }
       const status = page.getByRole('region', { name: '后台解析下载' });
       await expect(status).toContainText('后台解析下载已完成', { timeout: 15000 });
@@ -1737,8 +1751,7 @@ test('background parsing downloads progressively and remains visible on another 
   await page.goto('/');
   await page.getByLabel('链接或 BV / AV').fill('favorite:fixture');
   await page.getByRole('button', { name: '开始解析' }).click();
-  await page.getByRole('button', { name: '更多解析方式' }).click();
-  await page.getByRole('menuitem', { name: '后台解析全部并下载' }).click();
+  await confirmDesktopBackgroundDownload(page);
   await page.getByRole('button', { name: '设置 偏好与维护' }).click();
   const status = page.getByRole('region', { name: '后台解析下载' });
   await expect(status).toBeVisible();
@@ -1822,7 +1835,7 @@ test('collected favorite folders open through the collection resolver with match
   const actionBar = page.locator('.selection-action-bar');
   await expect(page.getByRole('checkbox', { name: '全选本页' })).toBeVisible();
   await expect(actionBar.getByRole('button', { name: /^下载所选/ })).toBeDisabled();
-  await expect(page.locator('.library-folder-header').getByRole('button', { name: '下载全部' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '下载全部', exact: true })).toBeVisible();
 });
 
 test('subscription collection cards fall back to the collection owner when archive authors are missing', async ({
@@ -1863,8 +1876,7 @@ test('library detail supports pagination, parsing and selection', async ({ page 
   await page.getByRole('button', { name: '进入 双赢之路' }).click();
 
   const actionBar = page.locator('.selection-action-bar');
-  await expect(actionBar.getByText('第 1 / 1 页')).toBeVisible();
-  await expect(page.getByText('第 1 / 1 页')).toHaveCount(1);
+  await expect(page.getByRole('navigation', { name: '集合内容分页', exact: true })).toHaveCount(0);
   await expect(page.locator('.source-function-toolbar').getByText('已加载 5 / 5 项')).toBeVisible();
   await expect(actionBar.locator('.selection-context-row')).toHaveCount(0);
   await expect(actionBar.getByRole('button', { name: /^下载所选/ })).toBeDisabled();
@@ -2005,10 +2017,10 @@ test('media preferences reorder combinations while download keeps optimal qualit
     .getByRole('button', { name: '画质与编码', exact: true })
     .or(page.getByRole('tab', { name: '画质与编码', exact: true }))
     .click();
-  await page.getByRole('button', { name: '编排清晰度优先级', exact: true }).click();
+  await page.getByRole('button', { name: '清晰度优先顺序', exact: true }).click();
   await page.getByRole('button', { name: '上移第 3 条视频偏好', exact: true }).click();
   await page.getByRole('button', { name: '上移第 2 条视频偏好', exact: true }).click();
-  await page.getByRole('button', { name: '编排视频编码优先级', exact: true }).click();
+  await page.getByRole('button', { name: '视频编码优先顺序', exact: true }).click();
   await page.getByRole('button', { name: '上移第 2 条视频编码', exact: true }).click();
   await expect(page.getByRole('list', { name: '视频编码优先级', exact: true }).getByRole('listitem').nth(1)).toContainText('AVC');
   await page.getByRole('combobox', { name: '视频编码', exact: true }).click();
@@ -2017,7 +2029,7 @@ test('media preferences reorder combinations while download keeps optimal qualit
   await page.getByRole('option', { name: 'HEVC / H.265', exact: true }).click();
   await page.getByRole('button', { name: '下移第 1 条视频编码', exact: true }).click();
   await page.getByRole('button', { name: '上移第 2 条视频编码', exact: true }).click();
-  await page.getByRole('button', { name: '编排音频编码优先级', exact: true }).click();
+  await page.getByRole('button', { name: '音频编码优先顺序', exact: true }).click();
   await page.getByRole('button', { name: '上移第 2 条音频编码', exact: true }).click();
   await page.getByRole('button', { name: '下移第 1 条视频偏好', exact: true }).click();
   await expect(page.getByRole('list', { name: '画质优先顺序', exact: true }).getByRole('listitem').first()).toContainText('8K');
@@ -2029,7 +2041,7 @@ test('media preferences reorder combinations while download keeps optimal qualit
   await expect(page.getByRole('combobox', { name: '指定档位不可用时', exact: true })).toContainText('允许自动换档');
   await page.getByRole('combobox', { name: '视频清晰度', exact: true }).click();
   await page.getByRole('option', { name: '最佳可用', exact: true }).click();
-  await page.getByRole('button', { name: '编排音质优先级', exact: true }).click();
+  await page.getByRole('button', { name: '音质优先顺序', exact: true }).click();
   await page.getByRole('button', { name: '上移第 4 条音频偏好', exact: true }).click();
   await page.getByRole('button', { name: '上移第 3 条音频偏好', exact: true }).click();
   await page.getByRole('button', { name: '保存', exact: true }).click();
@@ -2037,8 +2049,8 @@ test('media preferences reorder combinations while download keeps optimal qualit
   await page.reload();
   await page.getByRole('button', { name: '设置 偏好与维护' }).click();
   await page.getByRole('button', { name: '画质与编码', exact: true }).or(page.getByRole('tab', { name: '画质与编码', exact: true })).click();
-  await page.getByRole('button', { name: '编排视频编码优先级', exact: true }).click();
-  await page.getByRole('button', { name: '编排音频编码优先级', exact: true }).click();
+  await page.getByRole('button', { name: '视频编码优先顺序', exact: true }).click();
+  await page.getByRole('button', { name: '音频编码优先顺序', exact: true }).click();
   await expect(page.getByRole('list', { name: '视频编码优先级', exact: true }).getByRole('listitem').first()).toContainText('HEVC');
   await expect(page.getByRole('list', { name: '音频编码优先级', exact: true }).getByRole('listitem').nth(1)).toContainText('AAC');
   await page.setViewportSize({ width: 800, height: 900 });
@@ -2077,13 +2089,13 @@ test('media preferences reorder combinations while download keeps optimal qualit
   await page.reload();
   await page.getByRole('button', { name: '设置 偏好与维护' }).click();
   await selectSettingsSection(page, '画质与编码');
-  await page.getByRole('button', { name: '编排清晰度优先级', exact: true }).click();
+  await page.getByRole('button', { name: '清晰度优先顺序', exact: true }).click();
   await page.getByRole('button', { name: '撤销', exact: true }).click();
   await expect(page.getByRole('button', { name: '保存', exact: true })).toBeDisabled();
   await page.getByRole('button', { name: '解析 添加与选择' }).click();
   await page.getByRole('button', { name: '设置 偏好与维护' }).click();
   await selectSettingsSection(page, '画质与编码');
-  await page.getByRole('button', { name: '编排清晰度优先级', exact: true }).click();
+  await page.getByRole('button', { name: '清晰度优先顺序', exact: true }).click();
   await page.getByRole('button', { name: '保存', exact: true }).click();
   const completed = await page.evaluate(() => JSON.parse(localStorage.getItem('fixture-media-priorities')!).media_preferences.video);
   expect(completed).toEqual([
@@ -2302,7 +2314,7 @@ const openPresetSettings = async (page: Page) => {
     await page.getByRole('navigation', { name: '主导航' }).getByRole('button', { name: '我的', exact: true }).click();
     await page.getByRole('button', { name: '设置', exact: true }).click();
   }
-  await selectSettingsSection(page, await desktop.isVisible() ? '预设管理' : '下载与命名预设');
+  await selectSettingsSection(page, '预设管理');
   await page.getByRole('region', { name: '预设管理', exact: true }).getByRole('tab', { name: '下载预设', exact: true }).click();
 };
 const openCurrentPresetEditor = async (page: Page) => {
@@ -2449,7 +2461,7 @@ for (const theme of ['light', 'dark'] as const) {
     await editor.getByRole('button', { name: '保存预设', exact: true }).click();
     await expect(editor).not.toBeVisible();
     await page.getByRole('button', { name: '返回上一级设置', exact: true }).click();
-    await page.getByRole('button', { name: '下载速度与续传', exact: true }).click();
+    await page.getByRole('button', { name: '速度与续传', exact: true }).click();
     await expect(page.getByRole('combobox', { name: '单任务分段数', exact: true })).toBeVisible();
     await expect(page.getByRole('textbox', { name: 'FFmpeg 路径', exact: true })).toHaveCount(0);
   });
@@ -2473,6 +2485,7 @@ test('pagination presets save rules and allow custom cooldown', async ({ page })
   });
   await page.goto('/');
   await page.getByRole('button', { name: '设置 偏好与维护' }).click();
+  await page.getByRole('button', { name: '链接与解析', exact: true }).click();
   await expect(page.getByRole('combobox', { name: '解析预设', exact: true })).toContainText('标准');
   await expect(page.getByText('解析约 200 条，额外等待约 5 秒，不含网络耗时。')).toBeVisible();
   await page.getByRole('button', { name: '解析节奏说明', exact: true }).click();
@@ -2481,15 +2494,20 @@ test('pagination presets save rules and allow custom cooldown', async ({ page })
   await page.keyboard.press('Escape');
   await expect(parseHelp).not.toBeVisible();
   await page.getByRole('combobox', { name: '解析预设', exact: true }).click();
+  await page.getByRole('option', { name: '慢速', exact: true }).click();
+  await expect(page.getByRole('combobox', { name: '每批解析', exact: true })).toContainText('20 条');
+  await expect(page.getByRole('combobox', { name: '批间等待', exact: true })).toContainText('3 秒');
+  await expect(page.getByRole('combobox', { name: '每100条休息', exact: true })).toContainText('8 秒');
+  await page.getByRole('combobox', { name: '解析预设', exact: true }).click();
   await page.getByRole('option', { name: '快速', exact: true }).click();
-  await expect(page.getByRole('combobox', { name: '每批解析', exact: true })).toContainText('100 条');
+  await expect(page.getByRole('combobox', { name: '每批解析', exact: true })).toContainText('80 条');
   await page.getByRole('combobox', { name: '每100条休息', exact: true }).click();
   await page.getByRole('option', { name: '10 秒', exact: true }).click();
   await expect(page.getByRole('combobox', { name: '解析预设', exact: true })).toContainText('自定义');
   await page.getByRole('button', { name: '保存', exact: true }).click();
   await expect(page.getByRole('button', { name: '保存', exact: true })).toBeDisabled();
   expect(await page.evaluate(() => (window as unknown as { __RULES__: unknown }).__RULES__)).toEqual({
-    pages_per_round: 5,
+    pages_per_round: 4,
     interval_seconds: 1,
     rest_seconds: 10,
   });
@@ -2784,8 +2802,10 @@ for (const [format, width, theme, danmakuFormat] of [
     const openDownload = async () => {
       await page.getByLabel('链接或 BV / AV').fill('BV1xx411c7mD');
       await page.getByRole('button', { name: '开始解析' }).click();
-      await page.getByRole('button', { name: '选择 测试视频' }).click();
-      await page.getByRole('button', { name: '调整下载设置' }).click();
+      if (width !== 375) await page.getByRole('button', { name: '选择 测试视频' }).click();
+      const downloadSettings = page.getByRole('button', { name: '调整下载设置' });
+      await expect(downloadSettings).toBeEnabled();
+      await downloadSettings.click();
     };
     await openDownload();
     const dialog = page.getByRole('dialog', { name: '下载设置' });
@@ -2997,7 +3017,9 @@ for (const theme of ['light', 'dark'] as const) {
     const nav = page.getByRole('navigation', { name: '主导航' });
     await nav.getByRole('button', { name: '我的', exact: true }).click();
     await page.getByRole('button', { name: '设置', exact: true }).click();
-    await page.getByRole('button', { name: '下载速度与续传', exact: true }).click();
+    await page.getByRole('button', { name: '速度与续传', exact: true }).click();
+    await page.getByRole('combobox', { name: '下载总限速', exact: true }).click();
+    await page.getByRole('option', { name: '自定义', exact: true }).click();
     await page.getByRole('textbox', { name: '全局下载限速（MB/s）', exact: true }).fill('-1');
     const back = () => page.evaluate(() => window.dispatchEvent(new Event('bdl:android-back', { cancelable: true })));
     expect(await back()).toBe(false);
@@ -3245,7 +3267,7 @@ for (const [width, theme] of [
       await page.getByRole('navigation', { name: '主导航' }).getByRole('button', { name: '我的', exact: true }).click();
       await page.getByRole('button', { name: '设置', exact: true }).click();
     } else await page.getByRole('button', { name: /^设置/ }).click();
-    await page.getByRole('button', { name: width === 390 ? /链接识别与解析/ : /网络与维护/ }).click();
+    await page.getByRole('button', { name: '链接与解析', exact: true }).click();
     const clipboard = page.getByRole('switch', { name: '返回应用时识别剪贴板链接' });
     await expect(clipboard).not.toBeChecked();
     await clipboard.focus();
@@ -3427,7 +3449,7 @@ for (const device of ['desktop', 'android'] as const) {
       await page.getByRole('navigation', { name: '主导航' }).getByRole('button', { name: '我的', exact: true }).click();
       await page.getByRole('button', { name: '设置', exact: true }).click();
     } else await page.getByRole('button', { name: /^设置/ }).click();
-    await page.getByRole('button', { name: device === 'android' ? /链接识别与解析/ : /网络与维护/ }).click();
+    await page.getByRole('button', { name: '链接与解析', exact: true }).click();
     await page.getByRole('switch', { name: '返回应用时识别剪贴板链接' }).check();
     const prompt = page.getByRole('dialog', { name: '发现剪贴板中的 Bilibili 链接' });
     await expect(prompt).toBeVisible();
@@ -3732,11 +3754,9 @@ for (const device of ['desktop', 'android'] as const) {
       await expect(rows.first()).toBeVisible();
       await expect(page.locator('h2').filter({ hasText: '视频所属合集' })).toBeVisible();
       if (device === 'desktop') {
-        await expect(page.getByRole('button', { name: '解析', exact: true })).toBeVisible();
+        await expect(page.getByRole('button', { name: '继续解析', exact: true })).toBeVisible();
         await expect(page.getByRole('combobox', { name: '每批解析数量' })).toBeVisible();
-        await page.getByRole('button', { name: '更多解析方式', exact: true }).click();
-        await expect(page.getByRole('menuitem', { name: '解析全部', exact: true })).toBeVisible();
-        await page.keyboard.press('Escape');
+        await expect(page.getByRole('button', { name: '解析全部', exact: true })).toBeVisible();
       } else {
         await page.getByRole('button', { name: '加载选项', exact: true }).click();
         await expect(page.getByRole('button', { name: '提前加载全部视频', exact: true })).toBeVisible();
@@ -3952,12 +3972,11 @@ test('pagination and background keep real causes from transport to controls', as
   await page.goto('/');
   await page.getByLabel('链接或 BV / AV').fill('favorite:fixture');
   await page.getByRole('button', { name: '开始解析' }).click();
-  await page.getByRole('button', { name: '解析', exact: true }).click();
+  await page.getByRole('button', { name: '继续解析', exact: true }).click();
   await expect(page.locator('.error-details')).toBeVisible();
   await page.locator('.error-details summary').click();
   await expect(page.locator('.error-details pre')).toContainText('HTTP 429');
-  await page.getByRole('button', { name: '更多解析方式' }).click();
-  await page.getByRole('menuitem', { name: '后台解析全部并下载' }).click();
+  await confirmDesktopBackgroundDownload(page);
   const status = page.getByRole('region', { name: '后台解析下载' });
   await expect(status).toContainText('后台解析下载失败');
   await status.locator('summary').click();
@@ -3998,10 +4017,7 @@ test('recent failure report survives page changes and can be cleared', async ({ 
   await page.getByRole('button', { name: '开始解析' }).click();
   await expect(page.locator('.error-details')).toBeVisible();
   await page.getByRole('button', { name: '设置 偏好与维护' }).click();
-  await page
-    .getByRole('button', { name: /网络与维护/ })
-    .or(page.getByRole('tab', { name: '维护', exact: true }))
-    .click();
+  await page.getByRole('button', { name: '存储与诊断', exact: true }).click();
   await page.getByText('最近的操作错误', { exact: true }).click();
   await page.locator('.error-details summary').click();
   await expect(page.locator('.error-details pre')).toContainText('API diagnostic sentinel');

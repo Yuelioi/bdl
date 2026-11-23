@@ -28,6 +28,13 @@ defineProps<{ title?: string }>();
   border-bottom: 0;
 }
 
+.settings-section-body .settings-card {
+  gap: var(--space-12);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-8);
+  padding: var(--space-16);
+}
+
 .settings-card-title {
   margin: 0;
   color: var(--color-text-strong);

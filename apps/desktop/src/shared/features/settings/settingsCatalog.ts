@@ -2,11 +2,14 @@ import type { SelectOption } from '../../ui/Select.vue';
 import type { SettingsSection } from './settingsSections';
 
 export const settingsSections = [
-  { id: 'settings-download', label: '下载与保存', compactLabel: '下载保存', description: '默认下载方式、目录与任务行为', icon: 'i-tabler-download' },
-  { id: 'settings-media', label: '画质与编码', compactLabel: '画质编码', description: '清晰度、音质与编码优先级', icon: 'i-tabler-adjustments' },
-  { id: 'settings-presets', label: '预设管理', compactLabel: '预设管理', description: '下载预设与命名预设', icon: 'i-tabler-list-details' },
-  { id: 'settings-update', label: '应用更新', compactLabel: '更新', description: '版本检测与安装', icon: 'i-tabler-refresh' },
-  { id: 'settings-maintenance', label: '网络与维护', compactLabel: '维护', description: '代理、日志与数据', icon: 'i-tabler-tool' },
+  { id: 'settings-download', mobilePage: 'saving', label: '下载与保存', group: '下载', icon: 'i-tabler-folder-down' },
+  { id: 'settings-tasks', mobilePage: 'tasks', label: '速度与续传', group: '下载', icon: 'i-tabler-gauge' },
+  { id: 'settings-media', mobilePage: 'media', label: '画质与编码', group: '下载', icon: 'i-tabler-adjustments' },
+  { id: 'settings-presets', mobilePage: 'presets', label: '预设管理', group: '下载', icon: 'i-tabler-list-details' },
+  { id: 'settings-links', mobilePage: 'links', label: '链接与解析', group: '应用', icon: 'i-tabler-link' },
+  { id: 'settings-network', mobilePage: 'network', label: '下载代理', group: '应用', icon: 'i-tabler-world' },
+  { id: 'settings-maintenance', mobilePage: 'storage', label: '存储与诊断', group: '应用', icon: 'i-tabler-database' },
+  { id: 'settings-update', mobilePage: 'update', label: '应用更新', group: '应用', icon: 'i-tabler-refresh' },
 ] as const satisfies readonly SettingsSection[];
 
 const options = <T extends readonly SelectOption[]>(items: T): T => items;
@@ -22,6 +25,13 @@ export const concurrentTaskOptions = options([
   { label: '2', value: '2' },
   { label: '3', value: '3' },
   { label: '5', value: '5' },
+]);
+export const globalSpeedLimitOptions = options([
+  { label: '不限速', value: 'unlimited' },
+  { label: '3 MB/s', value: '3' },
+  { label: '10 MB/s', value: '10' },
+  { label: '30 MB/s', value: '30' },
+  { label: '自定义', value: 'custom' },
 ]);
 export const retryCountOptions = options([
   { label: '0', value: '0' },

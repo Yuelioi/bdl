@@ -267,7 +267,7 @@
   font-size: 10px;
 }
 
-@media (max-width: 980px) {
+@media (max-width: 760px) {
   .app-shell {
     grid-template-columns: 72px minmax(0, 1fr);
   }
@@ -277,7 +277,6 @@
     padding-inline: var(--space-xs);
   }
 
-  .nav-copy,
   .nav-status > span:last-child {
     display: none;
   }
@@ -285,7 +284,12 @@
   .nav-item {
     grid-template-columns: 1fr;
     justify-items: center;
+    gap: var(--space-4);
     padding-inline: var(--space-xs);
+  }
+
+  .nav-copy strong {
+    font-size: var(--font-12);
   }
 
   .nav-badge {

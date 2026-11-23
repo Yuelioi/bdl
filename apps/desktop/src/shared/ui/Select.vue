@@ -14,6 +14,7 @@ const {
   error,
   helper,
   hideLabel = false,
+  tallMenu = false,
 } = defineProps<{
   label: string;
   options: readonly SelectOption[];
@@ -21,6 +22,7 @@ const {
   error?: string;
   helper?: string;
   hideLabel?: boolean;
+  tallMenu?: boolean;
 }>();
 </script>
 
@@ -48,7 +50,7 @@ const {
           base: 'h-(--height-input) min-h-(--height-input) py-0 font-medium text-(length:--font-13)',
           trailingIcon: 'size-4',
           itemTrailingIcon: 'size-4 text-(--color-accent)',
-          content: 'bdl-select-content z-50 !max-h-44',
+          content: tallMenu ? 'bdl-select-content z-50 !max-h-56' : 'bdl-select-content z-50 !max-h-44',
           item: 'bdl-select-item font-medium',
         }"
         class="ui-select w-full"

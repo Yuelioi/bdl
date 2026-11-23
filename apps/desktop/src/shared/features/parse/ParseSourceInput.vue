@@ -6,7 +6,7 @@ import { extractBilibiliInputs } from '../../utils/bilibiliLinks';
 const mode = defineModel<'single' | 'batch'>('mode', { required: true });
 const input = defineModel<string>('input', { required: true });
 const singleInput = defineModel<string>('singleInput', { required: true });
-defineProps<{ busy: boolean; hasResults: boolean; mobile?: boolean }>();
+defineProps<{ busy: boolean; mobile?: boolean }>();
 const emit = defineEmits<{ submit: []; paste: []; singlePaste: [event: ClipboardEvent] }>();
 const modeOptions = [
   { label: '视频及所属合集', value: 'batch' },
@@ -66,7 +66,7 @@ const paste = (event: ClipboardEvent) => {
       type="text"
       :aria-label="mode === 'single' ? '视频链接或 BV / AV' : 'Bilibili 链接或 BV / AV'"
       :placeholder="mobile ? 'Bilibili 链接或 BV / AV' : '粘贴 Bilibili 链接 / BV / AV'"
-      :icon="mobile ? 'i-tabler-link' : undefined"
+      icon="i-tabler-link"
       :disabled="busy"
       color="neutral"
       variant="outline"
@@ -97,10 +97,9 @@ const paste = (event: ClipboardEvent) => {
       </div>
       <div class="source-input-actions">
         <UButton
-          v-if="!hasResults"
-          :variant="mobile ? 'ghost' : 'link'"
-          :color="mobile ? 'neutral' : undefined"
-          :icon="mobile ? 'i-tabler-clipboard' : undefined"
+          variant="ghost"
+          color="neutral"
+          icon="i-tabler-clipboard"
           :aria-label="mobile ? '粘贴链接' : undefined"
           size="xs"
           :disabled="busy"
@@ -108,9 +107,9 @@ const paste = (event: ClipboardEvent) => {
         >{{ mobile ? '粘贴' : '粘贴链接' }}</UButton>
         <UButton
           v-if="mode === 'batch'"
-          :variant="mobile ? 'ghost' : 'link'"
-          :color="mobile ? 'neutral' : undefined"
-          :icon="mobile ? 'i-tabler-align-left' : undefined"
+          variant="ghost"
+          color="neutral"
+          icon="i-tabler-align-left"
           size="xs"
           :disabled="busy"
           :aria-expanded="multiline"
@@ -120,7 +119,12 @@ const paste = (event: ClipboardEvent) => {
         </UButton>
       </div>
     </div>
-    <UiButton class="source-submit" type="submit" :disabled="busy" :aria-label="busy ? '正在解析' : '开始解析'">
+    <UiButton
+      class="source-submit"
+      type="submit"
+      :disabled="busy"
+      :aria-label="busy ? '正在解析' : '开始解析'"
+    >
       {{ busy ? '解析中…' : mobile ? '开始解析' : '解析' }}
       <UIcon v-if="mobile && !busy" name="i-tabler-arrow-right" class="size-4" aria-hidden="true" />
     </UiButton>

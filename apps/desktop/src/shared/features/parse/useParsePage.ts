@@ -19,6 +19,7 @@ export function useParsePage() {
   const createLoading = computed(() => Boolean(parse.loadingBySource.__create__));
   const hasResults = computed(() => Boolean(parse.activeSource));
   const activeStage = ref<'source' | 'content'>(hasResults.value ? 'content' : 'source');
+  const submittedInput = ref('');
   const clipboard = useClipboardStore();
   let pageActive = false;
   const acceptClipboard = () => {
@@ -59,11 +60,21 @@ export function useParsePage() {
   const submitInput = async () => {
     if (createLoading.value) return;
 
+    const mode = inputMode.value;
+    const draft = parse.input;
     const parsed =
-      inputMode.value === 'single'
+      mode === 'single'
         ? await parse.createSource(singleInput.value, { singleVideo: true })
         : await parse.createSource();
-    if (parsed) activeStage.value = 'content';
+    if (parsed) {
+      if (mode === 'batch') submittedInput.value = draft;
+      activeStage.value = 'content';
+    }
+  };
+  const returnToInput = () => {
+    if (inputMode.value === 'batch' && !parse.input) parse.input = submittedInput.value;
+    submittedInput.value = '';
+    activeStage.value = 'source';
   };
   const setSingleInput = (text: string) => {
     const extracted = extractBilibiliInputs(text);
@@ -127,8 +138,10 @@ export function useParsePage() {
     singleInput,
     createLoading,
     activeStage,
+    submittedInput,
     workflowSteps,
     submitInput,
+    returnToInput,
     switchInputMode,
     pasteSingleInput,
     pasteInput,

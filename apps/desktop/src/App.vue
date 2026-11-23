@@ -323,7 +323,7 @@ watch(
             aria-live="polite"
             aria-atomic="true"
           >
-            {{ account.qrMessage || (account.qrLoading ? '正在生成二维码' : '点击上方获取登录二维码') }}
+            {{ account.qrMessage || (account.qrLoading ? '正在生成二维码' : '使用哔哩哔哩 App 扫码，并在手机上确认登录。') }}
           </p>
         </div>
         <UiTextarea v-else v-model="cookieText" label="Cookie" placeholder="SESSDATA=..." />
