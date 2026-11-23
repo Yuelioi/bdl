@@ -48,7 +48,7 @@ impl AppState {
         mut tree: NormalizedSourceTree,
         page_number: u32,
         operation_id: &str,
-    ) -> BdlResult<(NormalizedSourceTree, Vec<String>)> {
+    ) -> BdlResult<(NormalizedSourceTree, Vec<String>, bool)> {
         if page_number == 0 {
             return Err(BdlError::Planning {
                 message: "页码必须大于 0。".into(),
@@ -77,8 +77,9 @@ impl AppState {
             .flat_map(|group| &group.items)
             .map(|item| item.id.0.clone())
             .collect();
+        let has_more = page.source.has_more;
         merge_browsed_page(&mut tree, page)?;
-        Ok((tree, ids))
+        Ok((tree, ids, has_more))
     }
 
     pub async fn load_all(

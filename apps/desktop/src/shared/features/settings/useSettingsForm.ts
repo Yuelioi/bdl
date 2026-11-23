@@ -116,6 +116,11 @@ export function useSettingsForm() {
     set: (value: string) => settings.setSegmentCount(value),
   });
   const settingsGlobalSpeedLimitMb = ref('');
+  watch(() => settings.draft.global_speed_limit_bytes_per_second, (value, previous) => {
+    if (settingsGlobalSpeedLimitMb.value.trim() === toMbPerSecondInput(previous)) {
+      settingsGlobalSpeedLimitMb.value = toMbPerSecondInput(value);
+    }
+  });
   const settingsGlobalSpeedLimitError = computed(() => speedLimitMbError(settingsGlobalSpeedLimitMb.value));
   const settingsGlobalSpeedInputDirty = computed(
     () =>

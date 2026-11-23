@@ -10,6 +10,7 @@ pub const QUEUE_RESOURCE_UPDATED: &str = "queue://resource-updated";
 pub const QUEUE_PROGRESS_UPDATED: &str = "queue://progress-updated";
 pub const QUEUE_LOG_APPENDED: &str = "queue://log-appended";
 pub const SETTINGS_UPDATED: &str = "settings://updated";
+pub const SETTINGS_EXTERNAL_UPDATED: &str = "settings://external-updated";
 pub const ACCOUNT_UPDATED: &str = "account://updated";
 pub const OPERATION_ERROR: &str = "diagnostic://operation-error";
 

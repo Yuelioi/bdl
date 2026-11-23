@@ -10,7 +10,9 @@ import SettingsMediaSection from '../../shared/features/settings/SettingsMediaSe
 import PresetManager from '../../shared/features/settings/PresetManager.vue';
 import SettingsUpdateSection from '../../shared/features/settings/SettingsUpdateSection.vue';
 import SettingsSectionNav from '../components/settings/SettingsSectionNav.vue';
+import SettingsMcpSection from '../components/settings/SettingsMcpSection.vue';
 import SettingsCard from '../../shared/features/settings/SettingsCard.vue';
+import type { SettingsSection } from '../../shared/features/settings/settingsSections';
 import ClipboardPreference from '../../shared/ui/ClipboardPreference.vue';
 import { useUiStore } from '../../shared/stores/ui';
 import { useSettingsPage } from '../../shared/features/settings/useSettingsPage';
@@ -33,6 +35,10 @@ const {
   currentSettingsSection,
 } = useSettingsPage();
 
+const aiSection = { id: 'settings-ai', label: 'AI 接入', group: '应用', icon: 'i-tabler-plug-connected' } as const satisfies Omit<SettingsSection, 'mobilePage'>;
+const desktopSections = computed(() => [...availableSettingsSections.value, aiSection]);
+const sectionLabel = computed(() => activeSettingsSection.value === aiSection.id ? aiSection.label : currentSettingsSection.value.label);
+
 const hiddenFieldError = computed(() => {
   if (settingsGlobalSpeedLimitError.value && activeSettingsSection.value !== 'settings-tasks') {
     return { section: 'settings-tasks' as const, label: '调整限速', message: settingsGlobalSpeedLimitError.value };
@@ -50,7 +56,7 @@ const confirmRestore = () => {
   restoreAllDefaults();
 };
 const hasDraftActions = computed(
-  () => settingsFormChanged.value || !['settings-presets', 'settings-update'].includes(activeSettingsSection.value),
+  () => settingsFormChanged.value || !['settings-presets', 'settings-update', aiSection.id].includes(activeSettingsSection.value),
 );
 watch(activeSettingsSection, () => {
   content.value?.scrollTo({ top: 0 });
@@ -80,11 +86,11 @@ watch(activeSettingsSection, () => {
       <header class="settings-heading"><h2>设置</h2></header>
 
       <div class="settings-workspace">
-        <SettingsSectionNav v-model="activeSettingsSection" :sections="availableSettingsSections" />
+        <SettingsSectionNav v-model="activeSettingsSection" :sections="desktopSections" />
 
         <div class="settings-main">
           <header class="settings-section-header">
-            <h3 ref="sectionHeading" class="settings-section-heading" tabindex="-1">{{ currentSettingsSection.label }}</h3>
+            <h3 ref="sectionHeading" class="settings-section-heading" tabindex="-1">{{ sectionLabel }}</h3>
           </header>
           <div ref="content" class="settings-content">
             <div class="settings-section-body">
@@ -109,6 +115,8 @@ watch(activeSettingsSection, () => {
               />
 
               <SettingsUpdateSection v-else-if="activeSettingsSection === 'settings-update'" />
+
+              <SettingsMcpSection v-else-if="activeSettingsSection === aiSection.id" />
 
               <div v-else-if="activeSettingsSection === 'settings-links'" class="settings-block">
                 <SettingsCard title="剪贴板识别"><ClipboardPreference show-save-status /></SettingsCard>

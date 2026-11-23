@@ -2,7 +2,7 @@
 import { settingsGroups, type SettingsSection, type SettingsSectionId } from '../../../shared/features/settings/settingsSections';
 
 const activeSection = defineModel<SettingsSectionId>({ required: true });
-defineProps<{ sections: readonly SettingsSection[] }>();
+defineProps<{ sections: readonly Omit<SettingsSection, 'mobilePage'>[] }>();
 </script>
 
 <template>

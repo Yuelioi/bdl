@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import { useAccountStore } from './shared/stores/account'
@@ -49,6 +50,8 @@ const cookieText = ref('')
 const qrImageSaving = ref(false)
 const isMobile = isMobilePlatform()
 const isAndroid = isAndroidPlatform()
+let unlistenExternalSettings: UnlistenFn | undefined
+let appUnmounted = false
 
 const cookieSaveDisabled = computed(() => account.saving || !cookieText.value.trim())
 const startupRecoveryCount = computed(() => queue.startupRecovery?.task_ids.length ?? 0)
@@ -154,6 +157,13 @@ const prepareMobileNotifications = async () => {
 }
 
 const initializeApp = async () => {
+  if (!isMobile) {
+    const unlisten = await listen('settings://external-updated', () => {
+      void settings.refreshExternalSettings().catch(() => undefined)
+    }).catch(() => undefined)
+    if (appUnmounted) unlisten?.()
+    else unlistenExternalSettings = unlisten
+  }
   await settings.ensureLoaded()
   theme.restorePreference()
   usageNoticeOpen.value = !settings.saved.usage_notice_acknowledged
@@ -219,6 +229,8 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  appUnmounted = true
+  unlistenExternalSettings?.()
   window.removeEventListener('keydown', handleAppShortcut)
   document.removeEventListener('contextmenu', preventNativeContextMenu)
   theme.dispose()

@@ -348,7 +348,7 @@ checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
 name = "bdl-cli"
-version = "0.10.6"
+version = "0.11.0"
 dependencies = [
  "anyhow",
  "bdl-core",
@@ -361,7 +361,7 @@ dependencies = [
 
 [[package]]
 name = "bdl-core"
-version = "0.10.6"
+version = "0.11.0"
 dependencies = [
  "async-trait",
  "bpi-rs",
@@ -385,7 +385,7 @@ dependencies = [
 
 [[package]]
 name = "bdl-desktop"
-version = "0.10.6"
+version = "0.11.0"
 dependencies = [
  "bdl-core",
  "bdl-mobile-credentials",
@@ -393,9 +393,13 @@ dependencies = [
  "bdl-mobile-media",
  "bdl-mobile-storage",
  "bdl-tauri",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
+ "subtle",
  "tauri",
  "tauri-build",
  "tauri-plugin-clipboard-manager",
@@ -404,12 +408,14 @@ dependencies = [
  "tauri-plugin-process",
  "tauri-plugin-updater",
  "tauri-plugin-window-state",
+ "tokio",
  "url",
+ "uuid",
 ]
 
 [[package]]
 name = "bdl-mobile-credentials"
-version = "0.10.6"
+version = "0.11.0"
 dependencies = [
  "bdl-core",
  "bdl-tauri",
@@ -421,7 +427,7 @@ dependencies = [
 
 [[package]]
 name = "bdl-mobile-execution"
-version = "0.10.6"
+version = "0.11.0"
 dependencies = [
  "bdl-core",
  "bdl-tauri",
@@ -433,7 +439,7 @@ dependencies = [
 
 [[package]]
 name = "bdl-mobile-media"
-version = "0.10.6"
+version = "0.11.0"
 dependencies = [
  "async-trait",
  "bdl-core",
@@ -446,7 +452,7 @@ dependencies = [
 
 [[package]]
 name = "bdl-mobile-storage"
-version = "0.10.6"
+version = "0.11.0"
 dependencies = [
  "bdl-core",
  "bdl-tauri",
@@ -458,7 +464,7 @@ dependencies = [
 
 [[package]]
 name = "bdl-tauri"
-version = "0.10.6"
+version = "0.11.0"
 dependencies = [
  "async-trait",
  "bdl-core",
@@ -2188,6 +2194,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6dbf3de79e51f3d586ab4cb9d5c3e2c14aa28ed23d180cf89b4df0454a69cc87"
 
 [[package]]
+name = "httpdate"
+version = "1.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "df3b46402a9d5adb4c86a0cf463f42e19994e3ee891101b1841f30a545cb49a9"
+
+[[package]]
 name = "hyper"
 version = "1.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2200,6 +2212,7 @@ dependencies = [
  "http",
  "http-body",
  "httparse",
+ "httpdate",
  "itoa",
  "pin-project-lite",
  "smallvec",

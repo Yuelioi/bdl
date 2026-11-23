@@ -335,7 +335,7 @@ pub struct ParseLoadAllRequest {
     pub limit: Option<usize>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct SelectionCreateTasksRequest {
     pub download_preset_id: Option<String>,
     pub source_id: String,
@@ -601,7 +601,7 @@ pub async fn parse_load_page(
     state: State<'_, AppState>,
     request: ParseLoadPageRequest,
 ) -> CommandResult<ParseLoadPageResponse> {
-    let (tree, item_ids) = state
+    let (tree, item_ids, _) = state
         .load_page(request.snapshot, request.page_number, &request.operation_id)
         .await?;
     Ok(ParseLoadPageResponse { tree, item_ids })

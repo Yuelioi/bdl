@@ -1,4 +1,6 @@
 use tauri::Manager;
+#[cfg(desktop)]
+mod mcp;
 mod updates;
 
 #[tauri::command]
@@ -93,6 +95,11 @@ pub fn run() {
             let state = bdl_tauri::state::AppState::new(data_dir, download_dir)?;
 
             app.manage(state);
+            #[cfg(desktop)]
+            app.manage(mcp::McpService::new(
+                app.handle(),
+                &app.path().app_config_dir()?,
+            ));
             bdl_tauri::commands::start_queue_processing(app.handle());
             bdl_tauri::commands::start_account_startup_verification(app.handle());
             Ok(())
@@ -100,6 +107,12 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             desktop_read_clipboard_text,
             desktop_write_clipboard_text,
+            #[cfg(desktop)]
+            mcp::desktop_mcp_status,
+            #[cfg(desktop)]
+            mcp::desktop_mcp_set_enabled,
+            #[cfg(desktop)]
+            mcp::desktop_mcp_token,
             updates::update_distribution,
             updates::update_check,
             updates::update_open_download,

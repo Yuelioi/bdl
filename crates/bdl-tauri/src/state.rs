@@ -1171,17 +1171,30 @@ impl AppState {
     }
 
     pub fn update_settings(&self, settings: SettingsSnapshot) -> BdlResult<SettingsSnapshot> {
+        self.edit_settings(move |current| {
+            *current = settings;
+            Ok(())
+        })
+    }
+
+    pub fn edit_settings(
+        &self,
+        edit: impl FnOnce(&mut SettingsSnapshot) -> BdlResult<()>,
+    ) -> BdlResult<SettingsSnapshot> {
+        let mut current = self
+            .settings
+            .lock()
+            .map_err(|_| state_poisoned("settings"))?;
+        let mut settings = current.clone();
+        edit(&mut settings)?;
         let settings = settings.normalized();
         settings.validate()?;
         save_settings(&self.settings_path, &settings)?;
-        let global_speed_limit = settings.global_speed_limit_bytes_per_second;
-        *self
-            .settings
-            .lock()
-            .map_err(|_| state_poisoned("settings"))? = settings;
-        self.global_limiter.set_limit(global_speed_limit);
+        self.global_limiter
+            .set_limit(settings.global_speed_limit_bytes_per_second);
+        *current = settings.clone();
         self.notify_queue_changed();
-        self.settings()
+        Ok(settings)
     }
 
     pub fn account(&self) -> BdlResult<AccountSnapshot> {

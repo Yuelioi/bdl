@@ -4,6 +4,7 @@ export type SettingsSectionId =
   | 'settings-media'
   | 'settings-presets'
   | 'settings-update'
+  | 'settings-ai'
   | 'settings-links'
   | 'settings-network'
   | 'settings-maintenance';

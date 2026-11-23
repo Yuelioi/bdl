@@ -11,7 +11,7 @@ import {
   settingsGet,
   settingsUpdate,
 } from '../api/tauri'
-import { audioQualityOptions, videoQualityOptions } from '../features/settings/settingsCatalog'
+import { audioQualityOptions, concurrentTaskOptions, videoQualityOptions } from '../features/settings/settingsCatalog'
 import { useUiStore } from './ui'
 import type { InlineNotice, NoticeTone } from './feedback'
 import { NOTICE_CLEAR_DELAY } from './feedback'
@@ -130,7 +130,7 @@ const duplicateNamingStrategies = new Set<SettingsSnapshot['duplicate_naming_str
 const codecPreferences = new Set<SettingsSnapshot['codec']>(['auto', 'avc', 'hevc', 'av1'])
 const missingQualityPolicies = new Set<SettingsSnapshot['missing_quality_policy']>(['lower', 'skip', 'ask'])
 const logLevels = new Set<SettingsSnapshot['log_level']>(['debug', 'info', 'warning', 'error'])
-const concurrentTaskCounts = new Set([1, 2, 3, 5])
+const concurrentTaskCounts = new Set(concurrentTaskOptions.map(option => Number(option.value)))
 const retryCounts = new Set([0, 1, 3, 5])
 const segmentCounts = new Set([1, 2, 4, 8])
 // `season_index` was advertised before the source model had a reliable season ordinal.
@@ -710,6 +710,25 @@ export const useSettingsStore = defineStore('settings', {
       this.saved = cloneSettings(normalized)
       this.draft = cloneSettings(normalized)
       this.loaded = true
+    },
+    refreshExternalSettings(): Promise<void> {
+      return enqueueSettingsWrite(this, async () => {
+        const next = normalizeSettings(await settingsGet())
+        if (!this.loaded) {
+          this.apply(next)
+          return
+        }
+        const saved = cloneSettings(this.saved)
+        const draft = cloneSettings(this.draft)
+        for (const field of ['global_speed_limit_bytes_per_second', 'concurrent_tasks', 'parse_rules', 'selected_download_preset'] as const) {
+          if (JSON.stringify(draft[field]) === JSON.stringify(saved[field])) {
+            Object.assign(draft, { [field]: next[field] })
+          }
+          Object.assign(saved, { [field]: next[field] })
+        }
+        this.saved = saved
+        this.draft = draft
+      })
     },
   },
 })
