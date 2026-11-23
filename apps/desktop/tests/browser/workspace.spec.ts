@@ -1669,7 +1669,7 @@ test('parse all can stop at a page boundary', async ({ page }) => {
 });
 
 const confirmDesktopBackgroundDownload = async (page: Page) => {
-  await page.getByRole('button', { name: '后台下载全部', exact: true }).click();
+  await page.getByRole('button', { name: '下载全部', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: '下载全部', exact: true });
   await dialog.getByRole('button', { name: '开始下载', exact: true }).click();
 };

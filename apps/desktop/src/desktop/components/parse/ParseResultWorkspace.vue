@@ -2,10 +2,8 @@
 import { computed } from 'vue';
 import CollectionTree from '../../../shared/ui/CollectionTree.vue';
 import { hasCollectionSections } from '../../../shared/features/parse/collectionTree';
-import UiButton from '../../../shared/ui/Button.vue';
 import UiEmptyState from '../../../shared/ui/EmptyState.vue';
 import UiInlineNotice from '../../../shared/ui/InlineNotice.vue';
-import SelectionActionBar from '../../../shared/ui/SelectionActionBar.vue';
 import SourceMediaList from './SourceMediaList.vue';
 
 import SourceLoadStatus from './SourceLoadStatus.vue';
@@ -13,15 +11,11 @@ import ParseSourceSummary from '../../../shared/features/parse/ParseSourceSummar
 import ParseResultFilters from '../../../shared/features/parse/ParseResultFilters.vue';
 import SourceParseControls from './SourceParseControls.vue';
 import { useParseResultWorkspace } from '../../../shared/features/parse/useParseResultWorkspace';
-const { embedded = false, inlineDownload = false } = defineProps<{ embedded?: boolean; inlineDownload?: boolean }>();
-const emit = defineEmits<{ download: []; downloadAll: [sourceId: string] }>();
 const {
   parse,
   loadBatchSize,
   activeSource,
   selectedIds,
-  selectedCount,
-  totalPartCount,
   tableRows,
   query,
   sort,
@@ -33,69 +27,39 @@ const {
   activeError,
   activeErrorDetail,
   hasMore,
-  canCreateTasks,
-  createTaskLabel,
   toggleAllResults,
-  clearSelection,
   loadMore,
   parseAll,
   stopParsing,
-  downloadAllLoaded,
-  returnToSource,
   toggleNode,
-} = useParseResultWorkspace(() => emit('download'));
+} = useParseResultWorkspace();
 const showLoadToolbar = computed(() => hasMore.value || activeLoading.value);
 </script>
 <template>
-  <section
-    v-if="activeSource"
-    class="min-h-0 overflow-hidden"
-    :class="embedded ? 'flex flex-1 flex-col gap-3' : 'panel'"
-  >
-    <div class="source-result-header flex min-w-0 flex-wrap items-center gap-3 border-b border-(--color-border) pb-4">
-      <div class="flex min-w-0 flex-1 items-center gap-3">
+  <section v-if="activeSource" class="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
+    <header class="source-result-header flex min-w-0 flex-wrap items-center justify-between gap-3 border-b border-(--color-border) pb-4">
+      <div class="source-result-summary">
         <ParseSourceSummary :source="activeSource" :hide-count="showLoadToolbar" />
       </div>
-
-      <div class="flex flex-wrap items-center justify-end gap-2">
-        <UiButton
-          v-if="!hasMore && !inlineDownload"
-          size="compact"
-          variant="secondary"
-          :disabled="activeLoading || totalPartCount === 0"
-          @click="downloadAllLoaded"
-        >
-          下载全部
-        </UiButton>
-        <UiButton v-if="!inlineDownload" size="compact" :disabled="!canCreateTasks" @click="emit('download')">{{
-          createTaskLabel
-        }}</UiButton>
-        <UiButton variant="ghost" size="compact" :disabled="activeLoading" @click="returnToSource">
-          <UIcon name="i-tabler-x" class="size-4" aria-hidden="true" />
-          清除结果
-        </UiButton>
+      <div v-if="showLoadToolbar" class="source-function-toolbar" role="group" aria-label="解析进度与操作">
+        <SourceLoadStatus
+          :loaded="activeSource.source.loaded_count"
+          :total="activeSource.source.total_count"
+          :has-more="hasMore"
+        />
+        <SourceParseControls
+          :source-id="activeSource.source.id"
+          v-model:batch-size="loadBatchSize"
+          :has-more="hasMore"
+          :loading="sourceRequestLoading"
+          :parsing-all="pacedParsing"
+          :stopping="pacedStopping"
+          @parse-batch="loadMore"
+          @parse-all="parseAll"
+          @stop="stopParsing"
+        />
       </div>
-    </div>
-
-    <section v-if="showLoadToolbar" class="source-function-toolbar result-loading-toolbar" aria-label="加载更多内容">
-      <SourceLoadStatus
-        :loaded="activeSource.source.loaded_count"
-        :total="activeSource.source.total_count"
-        :has-more="hasMore"
-      />
-      <SourceParseControls
-        :source-id="activeSource.source.id"
-        v-model:batch-size="loadBatchSize"
-        :has-more="hasMore"
-        :loading="sourceRequestLoading"
-        :parsing-all="pacedParsing"
-        :stopping="pacedStopping"
-        @parse-batch="loadMore"
-        @parse-all="parseAll"
-        @parse-and-download="emit('downloadAll', activeSource.source.id)"
-        @stop="stopParsing"
-      />
-    </section>
+    </header>
 
     <ParseResultFilters
       v-model:query="query"
@@ -123,7 +87,7 @@ const showLoadToolbar = computed(() => hasMore.value || activeLoading.value);
       :disabled="activeLoading"
       @toggle="toggleNode"
       @toggle-all="toggleAllResults"
-      :hide-selection-count="inlineDownload"
+      hide-selection-count
     />
     <UiEmptyState
       v-else
@@ -137,20 +101,6 @@ const showLoadToolbar = computed(() => hasMore.value || activeLoading.value);
     <UiInlineNotice v-if="activeError" tone="danger" :detail="activeErrorDetail ?? undefined">{{
       activeError
     }}</UiInlineNotice>
-
-    <SelectionActionBar v-if="!inlineDownload" :selected-count="selectedCount" :total-count="totalPartCount">
-      <template #selection>
-        <UiButton
-          v-if="selectedCount > 0"
-          size="compact"
-          variant="ghost"
-          :disabled="activeLoading"
-          @click="clearSelection"
-        >
-          取消选择
-        </UiButton>
-      </template>
-    </SelectionActionBar>
   </section>
 
   <UiEmptyState
@@ -165,16 +115,17 @@ const showLoadToolbar = computed(() => hasMore.value || activeLoading.value);
 </template>
 
 <style scoped>
-.result-loading-toolbar {
-  flex-shrink: 0;
+.source-result-summary {
+  min-width: 0;
+  flex: 1 1 15rem;
+}
+
+.source-function-toolbar {
+  min-width: 0;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
   gap: var(--space-8);
-  border-radius: var(--radius-6);
-  background: var(--color-inset);
-  padding: var(--space-6) var(--space-12);
 }
 
 @media (width <= 700px) {

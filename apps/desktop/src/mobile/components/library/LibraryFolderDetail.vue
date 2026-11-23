@@ -49,7 +49,7 @@ const {
   toggleCurrentPageSelection,
   clearSelection,
   downloadSelected,
-  parseMore,
+  loadMore,
   parseAll,
   stopParsing,
   goToPage,
@@ -160,7 +160,7 @@ const visibleItems = computed(() => {
           :busy="sourceRequestLoading"
           :parsing="pacedParsing"
           :stopping="pacedStopping"
-          @load="parseMore"
+          @load="loadMore"
           @all="parseAll"
           @stop="stopParsing"
         />

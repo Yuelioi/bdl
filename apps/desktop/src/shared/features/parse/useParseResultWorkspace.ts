@@ -3,14 +3,16 @@ import { computed } from 'vue';
 import { useParseStore } from '../../stores/parse';
 import { sourceMediaByPart } from '../../utils/sourceMedia';
 import { collectionTree, hasCollectionSections } from './collectionTree';
+import { useSourceParsing } from './useSourceParsing';
 
 import { flattenResultRows, sourceKindLabels, sourcePartCount, toTreeNodes } from './parseResultTree';
 
-export function useParseResultWorkspace(onDownload: () => void) {
+export function useParseResultWorkspace() {
   const parse = useParseStore();
 
-  const loadBatchSize = ref('50');
   const activeSource = computed(() => parse.activeSource);
+  const parsing = useSourceParsing(activeSource);
+  const { activeLoading } = parsing;
   const selectedIds = computed(() => parse.activeSelection);
   const selectedSet = computed(() => new Set(selectedIds.value));
   const selectedCount = computed(() => selectedIds.value.length);
@@ -44,31 +46,12 @@ export function useParseResultWorkspace(onDownload: () => void) {
       );
     return filtered;
   });
-  const sourceRequestLoading = computed(() =>
-    Boolean(activeSource.value && parse.loadingBySource[activeSource.value.source.id]),
-  );
-  const pacedParsing = computed(() =>
-    Boolean(activeSource.value && parse.pacedParsingBySource[activeSource.value.source.id]),
-  );
-  const pacedWaiting = computed(() =>
-    Boolean(activeSource.value && parse.pacedParsingWaitingBySource[activeSource.value.source.id]),
-  );
-  const pacedStopping = computed(() =>
-    Boolean(activeSource.value && parse.pacedParsingStopRequestedBySource[activeSource.value.source.id]),
-  );
-  const activeLoading = computed(() => sourceRequestLoading.value || pacedParsing.value);
-  const activeError = computed(() => (activeSource.value ? parse.errorsBySource[activeSource.value.source.id] : null));
-  const activeErrorDetail = computed(() =>
-    activeSource.value ? parse.errorDetailsBySource[activeSource.value.source.id] : null,
-  );
-  const hasMore = computed(() => Boolean(activeSource.value?.source.has_more));
   const allRowsSelected = computed(
     () =>
       tableRows.value.length > 0 &&
       tableRows.value.flatMap((row) => row.partIds).every((partId) => selectedSet.value.has(partId)),
   );
   const canCreateTasks = computed(() => Boolean(activeSource.value && selectedCount.value > 0 && !activeLoading.value));
-  const createTaskLabel = computed(() => `下载所选 (${selectedCount.value})`);
   const toggleAllResults = () => {
     if (!activeSource.value) return;
     if (allRowsSelected.value) {
@@ -84,30 +67,6 @@ export function useParseResultWorkspace(onDownload: () => void) {
       activeSource.value.source.id,
       tableRows.value.flatMap((row) => row.partIds),
     );
-  };
-  const clearSelection = () => {
-    if (activeSource.value) parse.clearSelection(activeSource.value.source.id);
-  };
-  const loadMore = () => {
-    if (activeSource.value?.source.has_more) {
-      void parse.loadChunk(activeSource.value.source.id, Number(loadBatchSize.value));
-    }
-  };
-  const parseAll = () => {
-    if (activeSource.value?.source.has_more) {
-      void parse.parseAllPaced(activeSource.value.source.id, Number(loadBatchSize.value));
-    }
-  };
-  const stopParsing = () => {
-    if (activeSource.value) parse.stopPacedParsing(activeSource.value.source.id);
-  };
-  const downloadAllLoaded = () => {
-    if (!activeSource.value) return;
-    parse.selectAllLoaded(activeSource.value.source.id);
-    onDownload();
-  };
-  const returnToSource = () => {
-    if (!activeLoading.value) void parse.clearWorkspace();
   };
   const toggleNode = (nodeId: string) => {
     if (activeSource.value) parse.toggleNode(activeSource.value.source.id, nodeId);
@@ -136,8 +95,8 @@ export function useParseResultWorkspace(onDownload: () => void) {
     return null;
   };
   return {
+    ...parsing,
     parse,
-    loadBatchSize,
     activeSource,
     selectedIds,
     selectedCount,
@@ -146,24 +105,9 @@ export function useParseResultWorkspace(onDownload: () => void) {
     query,
     sort,
     selectRange,
-    sourceRequestLoading,
-    pacedParsing,
-    pacedWaiting,
-    pacedStopping,
-    activeLoading,
-    activeError,
-    activeErrorDetail,
-    hasMore,
     allRowsSelected,
     canCreateTasks,
-    createTaskLabel,
     toggleAllResults,
-    clearSelection,
-    loadMore,
-    parseAll,
-    stopParsing,
-    downloadAllLoaded,
-    returnToSource,
     toggleNode,
     sourceKindLabels,
   };

@@ -39,7 +39,7 @@ const {
   parseAll,
   stopParsing,
   toggleNode,
-} = useParseResultWorkspace(() => emit('download'));
+} = useParseResultWorkspace();
 const activeLoading = computed(() => sourceLoading.value || Boolean(parse.loadingBySource.__create__));
 const selectAllLabel = computed(() => query.value.trim() ? '全选搜索结果' : '全选已加载');
 const searching = ref(false);

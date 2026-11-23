@@ -43,7 +43,7 @@ const {
   toggleCurrentPageSelection,
   clearSelection,
   downloadSelected,
-  parseMore,
+  loadMore,
   parseAll,
   stopParsing,
   goToPage,
@@ -85,8 +85,7 @@ const rows = computed(() =>
           :loading="sourceRequestLoading"
           :parsing-all="pacedParsing"
           :stopping="pacedStopping"
-          :show-download="false"
-          @parse-batch="parseMore"
+          @parse-batch="loadMore"
           @parse-all="parseAll"
           @stop="stopParsing"
         />

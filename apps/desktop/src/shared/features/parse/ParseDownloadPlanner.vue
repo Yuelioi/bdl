@@ -367,7 +367,7 @@ defineExpose({ openDialog, openAllDialog, downloadSaved });
     v-if="inline"
     class="parse-download-summary"
     :class="{ 'is-mobile': mobile }"
-    aria-label="下载所选内容"
+    :aria-label="$slots['download-scope'] ? '下载操作' : '下载所选内容'"
   >
     <UiButton
       v-if="mobile"
@@ -399,6 +399,7 @@ defineExpose({ openDialog, openAllDialog, downloadSaved });
         <UIcon name="i-tabler-adjustments-horizontal" class="size-4" aria-hidden="true" />
         下载设置
       </UiButton>
+      <slot v-if="!mobile" name="download-scope" :busy="downloadBusy" />
       <UiButton
         class="download-summary-submit"
         :variant="selectedCount ? 'primary' : 'secondary'"
@@ -563,6 +564,10 @@ defineExpose({ openDialog, openAllDialog, downloadSaved });
   gap: var(--space-8);
   flex-shrink: 0;
   min-width: 0;
+}
+
+.parse-download-summary:not(.is-mobile) .download-summary-actions {
+  align-items: center;
 }
 
 .download-summary-actions.split {

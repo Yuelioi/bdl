@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import UiButton from '../../shared/ui/Button.vue';
 import UiInlineNotice from '../../shared/ui/InlineNotice.vue';
 import ParseSourceInput from '../../shared/features/parse/ParseSourceInput.vue';
@@ -7,6 +7,7 @@ import ParseDownloadPlanner from '../../shared/features/parse/ParseDownloadPlann
 import ParseBatchWorkspace from '../components/parse/ParseBatchWorkspace.vue';
 import ParseResultWorkspace from '../components/parse/ParseResultWorkspace.vue';
 import { useParsePage } from '../../shared/features/parse/useParsePage';
+import { sourcePartCount } from '../../shared/features/parse/parseResultTree';
 import { useUiStore } from '../../shared/stores/ui';
 const {
   parse,
@@ -25,6 +26,15 @@ const {
 const ui = useUiStore();
 const inputHeading = ref<HTMLElement>();
 const resultNavigation = ref<HTMLElement>();
+const result = computed(() => parse.isBatch ? undefined : parse.activeSource);
+const sourceBusy = computed(() => {
+  const id = result.value?.source.id;
+  return Boolean(id && (parse.loadingBySource[id] || parse.pacedParsingBySource[id]));
+});
+const downloadAllSourceId = computed(() => {
+  const source = result.value;
+  return source && (source.source.has_more || sourcePartCount(source) > 0) ? source.source.id : undefined;
+});
 
 watch(activeStage, (stage) => {
   if (ui.activeTab !== 'parse') return;
@@ -43,6 +53,10 @@ watch(activeStage, (stage) => {
         <UiButton variant="ghost" size="compact" @click="returnToInput">
           <UIcon name="i-tabler-arrow-left" class="size-4" aria-hidden="true" />
           返回解析
+        </UiButton>
+        <UiButton v-if="result" variant="ghost" size="compact" :disabled="sourceBusy" @click="parse.clearWorkspace()">
+          <UIcon name="i-tabler-x" class="size-4" aria-hidden="true" />
+          清除结果
         </UiButton>
       </header>
       <template v-else>
@@ -82,15 +96,17 @@ watch(activeStage, (stage) => {
       >
       <template v-if="activeStage === 'content'">
         <ParseBatchWorkspace v-if="parse.isBatch" embedded inline-download @download="downloadSelected" />
-        <ParseResultWorkspace
-          v-else
-          embedded
-          inline-download
-          @download="downloadSelected"
-          @download-all="openAllDownloadSettings"
-        />
+        <ParseResultWorkspace v-else />
       </template>
-      <ParseDownloadPlanner ref="download-planner" :inline="activeStage === 'content'" />
+      <ParseDownloadPlanner ref="download-planner" :inline="activeStage === 'content'">
+        <template v-if="downloadAllSourceId" #download-scope="{ busy }">
+          <UiButton
+            variant="secondary"
+            :disabled="busy || sourceBusy"
+            @click="openAllDownloadSettings(downloadAllSourceId)"
+          >下载全部</UiButton>
+        </template>
+      </ParseDownloadPlanner>
     </section>
   </section>
 </template>
@@ -123,6 +139,7 @@ watch(activeStage, (stage) => {
 
 .parse-result-navigation {
   display: flex;
+  justify-content: space-between;
   flex-shrink: 0;
 }
 

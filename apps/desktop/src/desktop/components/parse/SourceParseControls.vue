@@ -10,16 +10,14 @@ const {
   parsingAll = false,
   stopping = false,
   sourceId,
-  showDownload = true,
 } = defineProps<{
   hasMore: boolean
   loading?: boolean
   parsingAll?: boolean
   stopping?: boolean
   sourceId?: string
-  showDownload?: boolean
 }>()
-const emit = defineEmits<{ parseBatch: []; parseAll: []; parseAndDownload: []; stop: [] }>()
+const emit = defineEmits<{ parseBatch: []; parseAll: []; stop: [] }>()
 </script>
 
 <template>
@@ -41,10 +39,6 @@ const emit = defineEmits<{ parseBatch: []; parseAll: []; parseAndDownload: []; s
       </UiButton>
       <UiButton size="compact" variant="ghost" @click="emit('parseAll')">
         解析全部
-      </UiButton>
-      <UiButton v-if="showDownload" size="compact" variant="ghost" @click="emit('parseAndDownload')">
-        <UIcon name="i-tabler-download" class="size-4" aria-hidden="true" />
-        后台下载全部
       </UiButton>
     </template>
   </div>

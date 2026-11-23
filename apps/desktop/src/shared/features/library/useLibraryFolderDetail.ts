@@ -2,6 +2,7 @@ import { computed, ref, watch } from 'vue';
 import type { LibraryContentSource, NormalizedItem } from '../../api/dto';
 import { useParseStore } from '../../stores/parse';
 import { bilibiliVideoUrl } from '../../utils/bilibiliLinks';
+import { useSourceParsing } from '../parse/useSourceParsing';
 
 export function useLibraryFolderDetail(
   props: { folder: LibraryContentSource; loadingInitial?: boolean },
@@ -12,7 +13,6 @@ export function useLibraryFolderDetail(
   const currentPage = ref(1);
   const pageItemIds = ref<Record<number, string[]>>({});
   const failedCoverIds = ref<string[]>([]);
-  const loadBatchSize = ref('50');
   const source = computed(() => {
     const activeSource = parse.activeSource;
     const matches = props.folder.parsed_source_id
@@ -20,7 +20,8 @@ export function useLibraryFolderDetail(
       : activeSource?.source.input === props.folder.source_url;
     return !props.loadingInitial && matches ? activeSource : null;
   });
-  const sourceId = computed(() => source.value?.source.id ?? null);
+  const parsing = useSourceParsing(source);
+  const { sourceId, activeLoading } = parsing;
   const items = computed(() => {
     const entries = source.value?.groups.flatMap((group) => group.items) ?? [];
     return source.value?.source.kind === 'video'
@@ -38,16 +39,7 @@ export function useLibraryFolderDetail(
   });
   const selectedSet = computed(() => new Set(parse.activeSelection));
   const selectedCount = computed(() => parse.activeSelection.length);
-  const sourceRequestLoading = computed(() => Boolean(sourceId.value && parse.loadingBySource[sourceId.value]));
-  const pacedParsing = computed(() => Boolean(sourceId.value && parse.pacedParsingBySource[sourceId.value]));
-  const pacedWaiting = computed(() => Boolean(sourceId.value && parse.pacedParsingWaitingBySource[sourceId.value]));
-  const pacedStopping = computed(() =>
-    Boolean(sourceId.value && parse.pacedParsingStopRequestedBySource[sourceId.value]),
-  );
-  const loading = computed(() => props.loadingInitial || sourceRequestLoading.value || pacedParsing.value);
-  const activeError = computed(() => (sourceId.value ? parse.errorsBySource[sourceId.value] : null));
-  const activeErrorDetail = computed(() => (sourceId.value ? parse.errorDetailsBySource[sourceId.value] : null));
-  const hasMore = computed(() => Boolean(source.value?.source.has_more));
+  const loading = computed(() => props.loadingInitial || activeLoading.value);
   watch(
     sourceId,
     () => {
@@ -90,17 +82,6 @@ export function useLibraryFolderDetail(
   const downloadSelected = () => {
     if (selectedCount.value > 0) onDownload();
   };
-  const parseMore = async () => {
-    if (sourceId.value && hasMore.value) await parse.loadChunk(sourceId.value, Number(loadBatchSize.value));
-  };
-  const parseAll = async () => {
-    if (sourceId.value && hasMore.value) {
-      await parse.parseAllPaced(sourceId.value, Number(loadBatchSize.value));
-    }
-  };
-  const stopParsing = () => {
-    if (sourceId.value) parse.stopPacedParsing(sourceId.value);
-  };
   const goToPage = async (targetPage: number) => {
     if (!sourceId.value || loading.value) return;
     const requestedSource = sourceId.value;
@@ -125,26 +106,18 @@ export function useLibraryFolderDetail(
       : `${minutes}:${String(remaining).padStart(2, '0')}`;
   };
   return {
+    ...parsing,
     parse,
     pageSize,
     currentPage,
     failedCoverIds,
-    loadBatchSize,
     source,
-    sourceId,
     items,
     totalCount,
     totalPages,
     pageItems,
     selectedCount,
-    sourceRequestLoading,
-    pacedParsing,
-    pacedWaiting,
-    pacedStopping,
     loading,
-    activeError,
-    activeErrorDetail,
-    hasMore,
     itemOwnerName,
     itemSelected,
     currentPageSelected,
@@ -153,9 +126,6 @@ export function useLibraryFolderDetail(
     clearSelection,
     downloadItem,
     downloadSelected,
-    parseMore,
-    parseAll,
-    stopParsing,
     goToPage,
     formatDuration,
     bilibiliVideoUrl,
