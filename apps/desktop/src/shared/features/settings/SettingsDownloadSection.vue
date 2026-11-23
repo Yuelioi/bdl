@@ -8,7 +8,7 @@ import UiSelect from '../../ui/Select.vue';
 import UiTextField from '../../ui/TextField.vue';
 import SettingsEnvironmentSummary from './SettingsEnvironmentSummary.vue';
 import FfmpegDownloadButton from '../../ui/FfmpegDownloadButton.vue';
-import { concurrentTaskOptions, globalSpeedLimitOptions, retryCountOptions, segmentCountOptions } from './settingsCatalog';
+import { concurrentTaskOptions, globalSpeedLimitOptions, retryCountOptions, segmentCountOptions, taskStartIntervalOptions } from './settingsCatalog';
 import type { SettingsForm } from './useSettingsForm';
 
 const { form, desktopPaths = true, group } = defineProps<{
@@ -24,6 +24,9 @@ const {
   checkDraftEnvironment,
   settingsDownloadDir,
   settingsConcurrentTasks,
+  taskStartInterval,
+  taskStartIntervalError,
+  updateTaskStartInterval,
   settingsRetryCount,
   settingsSegmentCount,
   settingsFfmpegPath,
@@ -34,6 +37,19 @@ const {
   settingsStartupAutoRecovery,
 } = form;
 const customSpeedSelected = ref(false);
+const customIntervalSelected = ref(false);
+const taskIntervalPreset = computed({
+  get: () => {
+    const value = taskStartInterval.value.trim();
+    return !customIntervalSelected.value && taskStartIntervalOptions.some(option => option.value === value)
+      ? value
+      : 'custom';
+  },
+  set: (value: string) => {
+    customIntervalSelected.value = value === 'custom';
+    if (value !== 'custom') updateTaskStartInterval(value);
+  },
+});
 const speedLimitPreset = computed({
   get: () => {
     if (customSpeedSelected.value) return 'custom';
@@ -81,17 +97,29 @@ const speedLimitPreset = computed({
         <UiSelect v-model="settingsConcurrentTasks" label="同时下载任务数" :options="concurrentTaskOptions" />
         <UiSelect v-model="settingsSegmentCount" label="单任务分段数" :options="segmentCountOptions" />
       </div>
-      <p class="settings-note">有任务排队时，每次至少间隔 5 秒启动下一项。</p>
       <div class="settings-inline-grid settings-download-options">
-        <UiSelect v-model="speedLimitPreset" label="下载总限速" :options="globalSpeedLimitOptions" tall-menu />
-        <UiTextField
-          v-if="speedLimitPreset === 'custom'"
-          :model-value="settingsGlobalSpeedLimitMb"
-          label="全局下载限速（MB/s）"
-          placeholder="留空时不限速"
-          :error="settingsGlobalSpeedLimitError ?? undefined"
-          @update:model-value="updateGlobalSpeedLimit"
-        />
+        <div class="grid min-w-0 content-start gap-2">
+          <UiSelect v-model="taskIntervalPreset" label="任务间隔" :options="taskStartIntervalOptions" />
+          <UiTextField
+            v-if="taskIntervalPreset === 'custom'"
+            :model-value="taskStartInterval"
+            label="自定义间隔（秒）"
+            inputmode="numeric"
+            :error="taskStartIntervalError ?? undefined"
+            @update:model-value="updateTaskStartInterval"
+          />
+        </div>
+        <div class="grid min-w-0 content-start gap-2">
+          <UiSelect v-model="speedLimitPreset" label="下载总限速" :options="globalSpeedLimitOptions" tall-menu />
+          <UiTextField
+            v-if="speedLimitPreset === 'custom'"
+            :model-value="settingsGlobalSpeedLimitMb"
+            label="全局下载限速（MB/s）"
+            placeholder="留空时不限速"
+            :error="settingsGlobalSpeedLimitError ?? undefined"
+            @update:model-value="updateGlobalSpeedLimit"
+          />
+        </div>
       </div>
       <p class="settings-note">运行中的任务共享此带宽上限。</p>
     </SettingsCard>

@@ -12,6 +12,7 @@ const {
   label: string;
   placeholder?: string;
   type?: 'text' | 'password' | 'url' | 'datetime-local';
+  inputmode?: 'numeric';
   disabled?: boolean;
   error?: string;
   helper?: string;
@@ -30,6 +31,7 @@ const {
       :id="fieldId"
       v-model="model"
       :type
+      :inputmode
       :placeholder
       :disabled
       :min

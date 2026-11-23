@@ -60,8 +60,6 @@ use crate::queue_coordinator::{
 use crate::secure_store::SecureStore;
 use crate::task_execution::TaskExecutionBackend;
 
-const MIN_TASK_START_INTERVAL: Duration = Duration::from_secs(5);
-
 pub struct AppState {
     pub(crate) parse_pacer: crate::parse_pacing::ParsePacer,
     pub(crate) parse_control: crate::parse_control::ParseControl,
@@ -81,7 +79,7 @@ pub struct AppState {
     qr_login: Mutex<Option<(String, u64, u64)>>,
     qr_request: Mutex<Option<String>>,
     queue_worker_active: AtomicBool,
-    queue_start_deadline: Mutex<Option<Instant>>,
+    last_queue_start: Mutex<Option<Instant>>,
     queue_changed: Notify,
     pub(crate) queue_cancellations: Mutex<HashMap<String, FetchCancelToken>>,
     pub(crate) removals: Mutex<HashSet<String>>,
@@ -241,7 +239,7 @@ impl AppState {
             qr_login: Mutex::new(None),
             qr_request: Mutex::new(None),
             queue_worker_active: AtomicBool::new(false),
-            queue_start_deadline: Mutex::new(None),
+            last_queue_start: Mutex::new(None),
             queue_changed: Notify::new(),
             queue_cancellations: Mutex::new(HashMap::new()),
             removals: Default::default(),
@@ -499,23 +497,25 @@ impl AppState {
     }
 
     pub(crate) fn queue_start_deadline(&self) -> BdlResult<Option<Instant>> {
-        self.queue_start_deadline
+        let interval = Duration::from_secs(self.settings()?.task_start_interval_seconds.into());
+        self.last_queue_start
             .lock()
-            .map(|deadline| *deadline)
-            .map_err(|_| state_poisoned("queue_start_deadline"))
+            .map(|started| started.map(|time| time + interval))
+            .map_err(|_| state_poisoned("last_queue_start"))
     }
 
     pub fn take_next_startable_task(&self) -> BdlResult<Option<DownloadTask>> {
-        let mut deadline = self
-            .queue_start_deadline
+        let mut last_start = self
+            .last_queue_start
             .lock()
-            .map_err(|_| state_poisoned("queue_start_deadline"))?;
-        if deadline.is_some_and(|next| next > Instant::now()) {
+            .map_err(|_| state_poisoned("last_queue_start"))?;
+        let interval = Duration::from_secs(self.settings()?.task_start_interval_seconds.into());
+        if last_start.is_some_and(|time| time + interval > Instant::now()) {
             return Ok(None);
         }
         let task = self.take_next_startable_task_at(Utc::now())?;
         if task.is_some() {
-            *deadline = Some(Instant::now() + MIN_TASK_START_INTERVAL);
+            *last_start = Some(Instant::now());
         }
         Ok(task)
     }
@@ -3525,7 +3525,7 @@ mod tests {
             qr_login: Mutex::new(None),
             qr_request: Mutex::new(None),
             queue_worker_active: AtomicBool::new(false),
-            queue_start_deadline: Mutex::new(None),
+            last_queue_start: Mutex::new(None),
             queue_changed: Notify::new(),
             queue_cancellations: Mutex::new(HashMap::new()),
             startup_recovery: Mutex::new(StartupRecoverySnapshot::default()),

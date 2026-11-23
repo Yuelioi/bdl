@@ -125,6 +125,6 @@ const estimatedWait = computed(() => {
         @update:model-value="update(field.key, $event)"
       />
     </div>
-    <p class="m-0 text-xs text-(--color-muted)">解析约 200 条，额外等待约 {{ estimatedWait }} 秒，不含网络耗时。</p>
+    <p class="m-0 text-xs text-(--color-muted)">解析 200 条，预估 {{ estimatedWait }} 秒</p>
   </SettingsCard>
 </template>

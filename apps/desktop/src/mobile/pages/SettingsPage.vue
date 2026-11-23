@@ -27,6 +27,7 @@ const {
   supportsDesktopPaths,
   settings,
   settingsGlobalSpeedLimitError,
+  taskStartIntervalError,
   settingsFormChanged,
   settingsEmbeddingFormatError,
   resetSettingsDraft,
@@ -59,9 +60,9 @@ useMobileBack('settings', () => {
     <SettingsLeaveDialog
       v-model="settingsLeaveOpen"
       :saving="settings.saving"
-      :invalid="Boolean(settings.namingTemplateError || settings.proxySettingsError || settingsGlobalSpeedLimitError || settingsEmbeddingFormatError)"
+      :invalid="Boolean(settings.namingTemplateError || settings.proxySettingsError || settingsGlobalSpeedLimitError || taskStartIntervalError || settingsEmbeddingFormatError)"
       :error="
-        settings.error || settings.proxySettingsError || settingsGlobalSpeedLimitError || settingsEmbeddingFormatError || settings.namingTemplateError
+        settings.error || settings.proxySettingsError || settingsGlobalSpeedLimitError || taskStartIntervalError || settingsEmbeddingFormatError || settings.namingTemplateError
       "
       @save="saveAndLeave"
       @discard="discardAndLeave"
@@ -110,6 +111,7 @@ useMobileBack('settings', () => {
               Boolean(settings.namingTemplateError) ||
               Boolean(settings.proxySettingsError) ||
               Boolean(settingsGlobalSpeedLimitError) ||
+              Boolean(taskStartIntervalError) ||
               Boolean(settingsEmbeddingFormatError)
             "
             @click="saveSettings"

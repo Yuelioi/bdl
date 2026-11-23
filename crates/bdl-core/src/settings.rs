@@ -138,6 +138,7 @@ pub struct AppSettings {
     pub log_level: String,
     pub data_dir: Option<String>,
     pub concurrent_tasks: usize,
+    pub task_start_interval_seconds: u32,
     pub retry_count: usize,
     pub segment_count: usize,
     pub global_speed_limit_bytes_per_second: Option<u64>,
@@ -182,6 +183,7 @@ impl Default for AppSettings {
             log_level: "info".to_owned(),
             data_dir: None,
             concurrent_tasks: 1,
+            task_start_interval_seconds: 1,
             retry_count: 3,
             segment_count: 4,
             global_speed_limit_bytes_per_second: None,
@@ -306,6 +308,11 @@ impl AppSettings {
             validate_proxy_url(Some(required_proxy_url(self.proxy_url.as_deref())?))?;
         }
         validate_segment_count(self.segment_count)?;
+        if self.task_start_interval_seconds == 0 {
+            return Err(crate::error::BdlError::Planning {
+                message: "任务间隔至少为 1 秒。".into(),
+            });
+        }
         validate_speed_limit(self.global_speed_limit_bytes_per_second, "全局下载限速")?;
         if let Some(directory) = &self.document_tree_output
             && !directory.tree_uri.starts_with("content://")

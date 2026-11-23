@@ -14,7 +14,7 @@ members = [
 
 [workspace.package]
 edition = "2024"
-rust-version = "1.88"
+rust-version = "1.90"
 license = "MIT"
 authors = ["YUELI <yuelioi1210@gmail.com>"]
 

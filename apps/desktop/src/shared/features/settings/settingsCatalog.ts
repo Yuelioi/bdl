@@ -34,6 +34,12 @@ export const globalSpeedLimitOptions = options([
   { label: '30 MB/s', value: '30' },
   { label: '自定义', value: 'custom' },
 ]);
+export const taskStartIntervalOptions = options([
+  { label: '1 秒', value: '1' },
+  { label: '5 秒', value: '5' },
+  { label: '10 秒', value: '10' },
+  { label: '自定义', value: 'custom' },
+]);
 export const retryCountOptions = options([
   { label: '0', value: '0' },
   { label: '1', value: '1' },

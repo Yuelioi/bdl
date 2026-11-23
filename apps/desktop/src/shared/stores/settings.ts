@@ -111,6 +111,7 @@ const defaultSettings = (): SettingsSnapshot => ({
   log_level: 'info',
   data_dir: null,
   concurrent_tasks: 1,
+  task_start_interval_seconds: 1,
   retry_count: 3,
   segment_count: 4,
   global_speed_limit_bytes_per_second: null,

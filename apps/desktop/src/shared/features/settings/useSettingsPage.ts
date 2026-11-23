@@ -41,6 +41,7 @@ export function useSettingsPage() {
   const {
     settings,
     settingsGlobalSpeedLimitError,
+    taskStartIntervalError,
     settingsFormChanged,
     settingsEmbeddingFormatError,
     resetSettingsDraft,
@@ -73,6 +74,7 @@ export function useSettingsPage() {
     supportsDesktopPaths,
     settings,
     settingsGlobalSpeedLimitError,
+    taskStartIntervalError,
     settingsFormChanged,
     settingsEmbeddingFormatError,
     resetSettingsDraft,

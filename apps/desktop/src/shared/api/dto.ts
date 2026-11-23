@@ -325,6 +325,7 @@ export interface SettingsSnapshot {
   log_level: LogLevel;
   data_dir: string | null;
   concurrent_tasks: number;
+  task_start_interval_seconds: number;
   retry_count: number;
   segment_count: number;
   global_speed_limit_bytes_per_second: number | null;

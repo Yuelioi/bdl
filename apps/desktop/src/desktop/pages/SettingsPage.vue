@@ -25,6 +25,7 @@ const {
   supportsDesktopPaths,
   settings,
   settingsGlobalSpeedLimitError,
+  taskStartIntervalError,
   settingsFormChanged,
   settingsEmbeddingFormatError,
   resetSettingsDraft,
@@ -40,6 +41,9 @@ const desktopSections = computed(() => [...availableSettingsSections.value, aiSe
 const sectionLabel = computed(() => activeSettingsSection.value === aiSection.id ? aiSection.label : currentSettingsSection.value.label);
 
 const hiddenFieldError = computed(() => {
+  if (taskStartIntervalError.value && activeSettingsSection.value !== 'settings-tasks') {
+    return { section: 'settings-tasks' as const, label: '调整间隔', message: taskStartIntervalError.value };
+  }
   if (settingsGlobalSpeedLimitError.value && activeSettingsSection.value !== 'settings-tasks') {
     return { section: 'settings-tasks' as const, label: '调整限速', message: settingsGlobalSpeedLimitError.value };
   }
@@ -68,9 +72,9 @@ watch(activeSettingsSection, () => {
     <SettingsLeaveDialog
       v-model="settingsLeaveOpen"
       :saving="settings.saving"
-      :invalid="Boolean(settings.namingTemplateError || settings.proxySettingsError || settingsGlobalSpeedLimitError || settingsEmbeddingFormatError)"
+      :invalid="Boolean(settings.namingTemplateError || settings.proxySettingsError || settingsGlobalSpeedLimitError || taskStartIntervalError || settingsEmbeddingFormatError)"
       :error="
-        settings.error || settings.proxySettingsError || settingsGlobalSpeedLimitError || settingsEmbeddingFormatError || settings.namingTemplateError
+        settings.error || settings.proxySettingsError || settingsGlobalSpeedLimitError || taskStartIntervalError || settingsEmbeddingFormatError || settings.namingTemplateError
       "
       @save="saveAndLeave"
       @discard="discardAndLeave"
@@ -153,7 +157,7 @@ watch(activeSettingsSection, () => {
               >撤销</UiButton>
               <UiButton
                 :variant="settingsFormChanged ? 'primary' : 'secondary'"
-                :disabled="settings.loading || settings.saving || !settingsFormChanged || Boolean(settings.namingTemplateError || settings.proxySettingsError || settingsGlobalSpeedLimitError || settingsEmbeddingFormatError)"
+                :disabled="settings.loading || settings.saving || !settingsFormChanged || Boolean(settings.namingTemplateError || settings.proxySettingsError || settingsGlobalSpeedLimitError || taskStartIntervalError || settingsEmbeddingFormatError)"
                 @click="saveSettings"
               >
                 <UIcon

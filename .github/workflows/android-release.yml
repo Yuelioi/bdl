@@ -52,7 +52,7 @@ jobs:
           cache-dependency-path: apps/desktop/pnpm-lock.yaml
 
       - name: Install Rust Android target
-        uses: dtolnay/rust-toolchain@1.88
+        uses: dtolnay/rust-toolchain@1.90
         with:
           targets: aarch64-linux-android
 
@@ -70,7 +70,7 @@ jobs:
       - name: Install Android platform and NDK
         shell: bash
         run: |
-          sdkmanager "platforms;android-36" "build-tools;36.0.0" "ndk;27.2.12479018"
+          sdkmanager "platforms;android-36" "platforms;android-37.0" "build-tools;36.0.0" "ndk;27.2.12479018"
           echo "NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
 
       - name: Install frontend dependencies

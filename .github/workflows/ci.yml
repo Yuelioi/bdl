@@ -24,7 +24,7 @@ jobs:
           node-version: 22
           cache: pnpm
           cache-dependency-path: apps/desktop/pnpm-lock.yaml
-      - uses: dtolnay/rust-toolchain@1.88
+      - uses: dtolnay/rust-toolchain@1.90
       - uses: Swatinem/rust-cache@v2
         with:
           key: linux-x64
@@ -74,7 +74,7 @@ jobs:
           cache-dependency-path: apps/desktop/pnpm-lock.yaml
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@1.88
+        uses: dtolnay/rust-toolchain@1.90
         with:
           components: rustfmt, clippy
 
@@ -119,7 +119,7 @@ jobs:
           cache-dependency-path: apps/desktop/pnpm-lock.yaml
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@1.88
+        uses: dtolnay/rust-toolchain@1.90
         with:
           components: rustfmt, clippy
 

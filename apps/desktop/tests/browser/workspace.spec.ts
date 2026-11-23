@@ -2487,7 +2487,7 @@ test('pagination presets save rules and allow custom cooldown', async ({ page })
   await page.getByRole('button', { name: '设置 偏好与维护' }).click();
   await page.getByRole('button', { name: '链接与解析', exact: true }).click();
   await expect(page.getByRole('combobox', { name: '解析预设', exact: true })).toContainText('标准');
-  await expect(page.getByText('解析约 200 条，额外等待约 5 秒，不含网络耗时。')).toBeVisible();
+  await expect(page.getByText('解析 200 条，预估 5 秒')).toBeVisible();
   await page.getByRole('button', { name: '解析节奏说明', exact: true }).click();
   const parseHelp = page.getByRole('region', { name: '解析节奏参数', exact: true });
   await expect(parseHelp).toBeVisible();

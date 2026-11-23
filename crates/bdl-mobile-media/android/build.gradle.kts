@@ -1,3 +1,5 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
 plugins {
     id("com.android.library")
     id("org.jetbrains.kotlin.android")
@@ -5,7 +7,7 @@ plugins {
 
 android {
     namespace = "com.yueli.bdl.media"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         minSdk = 24
@@ -17,14 +19,16 @@ android {
         targetCompatibility = JavaVersion.VERSION_1_8
     }
 
-    kotlinOptions {
-        jvmTarget = "1.8"
-    }
-
     packaging {
         resources {
             excludes += "META-INF/native-image/**"
         }
+    }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget = JvmTarget.JVM_1_8
     }
 }
 

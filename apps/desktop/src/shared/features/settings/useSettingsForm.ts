@@ -107,6 +107,17 @@ export function useSettingsForm() {
     get: () => String(settings.draft.concurrent_tasks),
     set: (value: string) => settings.setConcurrentTasks(value),
   });
+  const taskStartInterval = ref(String(settings.draft.task_start_interval_seconds));
+  const taskStartIntervalError = computed(() => {
+    const value = taskStartInterval.value.trim();
+    return /^\d+$/.test(value) && Number(value) >= 1 && Number(value) <= 0xffffffff
+      ? null
+      : '请输入至少 1 秒的有效整数。';
+  });
+  const updateTaskStartInterval = (value: string) => {
+    taskStartInterval.value = value;
+    if (!taskStartIntervalError.value) settings.draft.task_start_interval_seconds = Number(value);
+  };
   const settingsRetryCount = computed({
     get: () => String(settings.draft.retry_count),
     set: (value: string) => settings.setRetryCount(value),
@@ -127,7 +138,7 @@ export function useSettingsForm() {
       settingsGlobalSpeedLimitMb.value.trim() !==
       toMbPerSecondInput(settings.draft.global_speed_limit_bytes_per_second),
   );
-  const settingsFormChanged = computed(() => settings.changed || settingsGlobalSpeedInputDirty.value);
+  const settingsFormChanged = computed(() => settings.changed || settingsGlobalSpeedInputDirty.value || Boolean(taskStartIntervalError.value));
   const settingsEmbeddingFormatError = computed(
     () => settings.downloadPresetError ?? embeddingContainerError(settings.draft),
   );
@@ -209,18 +220,21 @@ export function useSettingsForm() {
   const resetSettingsDraft = () => {
     settings.resetDraft();
     applyPlatformSettingsConstraints();
+    taskStartInterval.value = String(settings.draft.task_start_interval_seconds);
     settingsGlobalSpeedLimitMb.value = toMbPerSecondInput(settings.draft.global_speed_limit_bytes_per_second);
   };
 
   const restoreDefaultSettings = () => {
     settings.restoreDefaults();
     applyPlatformSettingsConstraints();
+    taskStartInterval.value = String(settings.draft.task_start_interval_seconds);
     settingsGlobalSpeedLimitMb.value = toMbPerSecondInput(settings.draft.global_speed_limit_bytes_per_second);
   };
 
   const saveSettings = async () => {
-    if (settingsGlobalSpeedLimitError.value) return;
+    if (settingsGlobalSpeedLimitError.value || taskStartIntervalError.value) return;
     await settings.save();
+    taskStartInterval.value = String(settings.draft.task_start_interval_seconds);
     settingsGlobalSpeedLimitMb.value = toMbPerSecondInput(settings.draft.global_speed_limit_bytes_per_second);
   };
 
@@ -229,6 +243,7 @@ export function useSettingsForm() {
   onMounted(async () => {
     await settings.ensureLoaded();
     applyPlatformSettingsConstraints();
+    taskStartInterval.value = String(settings.draft.task_start_interval_seconds);
     settingsGlobalSpeedLimitMb.value = toMbPerSecondInput(settings.draft.global_speed_limit_bytes_per_second);
   });
 
@@ -251,6 +266,9 @@ export function useSettingsForm() {
     settingsDuplicateNamingStrategy,
     settingsNamingTemplate,
     settingsConcurrentTasks,
+    taskStartInterval,
+    taskStartIntervalError,
+    updateTaskStartInterval,
     settingsRetryCount,
     settingsSegmentCount,
     settingsGlobalSpeedLimitMb,

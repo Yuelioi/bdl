@@ -6,13 +6,19 @@
 
 ## 环境要求
 
-- Rust `1.88+`
+- Rust `1.90+`
 - Node.js `22+`
 - pnpm `11+`
 - FFmpeg
 - 对应平台的 [Tauri 2 prerequisites](https://v2.tauri.app/start/prerequisites/)
 
 BDL 的桌面目标包括 Windows、macOS，以及正在接入的 Linux x86_64；具体范围见 [支持平台](SUPPORTED_PLATFORMS.md)。
+
+### Android 构建环境
+
+CI 使用 JDK 17、Android SDK Platform `37.0`、Build Tools `36.0.0` 和 NDK `27.2.12479018`。Tauri 的 Android 库和上游插件还需要 SDK Platform `36`。
+
+首次构建时运行 `pnpm --dir apps/desktop tauri android init`，生成 Tauri 2.12 对应的 Gradle 工程。升级前已生成 Android 工程的开发机可以在独立工作副本中重新初始化，保留原工程和本地构建产物。
 
 ### Linux 构建环境
 
