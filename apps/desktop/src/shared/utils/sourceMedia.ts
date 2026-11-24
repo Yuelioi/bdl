@@ -52,8 +52,8 @@ export function completedTaskForMedia(media: SourceMedia, tasks: DownloadTask[])
     (task) =>
       task.status === 'completed' &&
       ((matchesCompletedPart(media, task) &&
-        (!media.wholePost || task.media_selection.post || (task.refresh_intent?.page_number ?? 1) === 1)) ||
-        task.media_selection.post?.finished.some((part) => matchesCompletedPart(media, part))),
+        (!media.wholePost || task.media_selection?.post || (task.refresh_intent?.page_number ?? 1) === 1)) ||
+        task.media_selection?.post?.finished.some((part) => matchesCompletedPart(media, part))),
   );
 }
 

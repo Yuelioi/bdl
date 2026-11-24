@@ -255,7 +255,7 @@ export const useQueueStore = defineStore('queue', {
         delete this.outputSizesByTask[task.id]
       }
       if ((task.status === 'waiting' && task.resources.every((resource) => resource.status === 'pending'))
-          || (task.media_selection.post && previous?.resources.length && task.resources[0]?.id !== previous.resources[0]?.id)) {
+          || (task.media_selection?.post && previous?.resources.length && task.resources[0]?.id !== previous.resources[0]?.id)) {
         delete this.progressByTask[task.id]
       }
       return {
@@ -337,7 +337,7 @@ export const useQueueStore = defineStore('queue', {
       const fraction = transferProgress?.totalBytes && transferProgress.totalBytes > 0
         ? Math.min(0.99, transferProgress.downloadedBytes / transferProgress.totalBytes)
         : task.resources.length ? completed / task.resources.length : 0
-      const post = task.media_selection.post
+      const post = task.media_selection?.post
       if (!post) return Math.round(fraction * 100)
       const processed = post.total - post.pending.length - (post.replay?.length ?? 0) - 1
       return Math.min(99, Math.round((processed + fraction) / post.total * 100))
@@ -375,7 +375,7 @@ export const useQueueStore = defineStore('queue', {
     },
     applyProgress(entry: QueueProgressEntry) {
       const task = this.tasks.find(task => task.id === entry.task_id)
-      if (task?.media_selection.post && !task.resources.some(resource => resource.id === entry.resource_id)) return
+      if (task?.media_selection?.post && !task.resources.some(resource => resource.id === entry.resource_id)) return
       const existing = this.progressByTask[entry.task_id]
       const resources = {
         ...(existing?.resources ?? {}),

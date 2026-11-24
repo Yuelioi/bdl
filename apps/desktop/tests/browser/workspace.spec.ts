@@ -1923,7 +1923,7 @@ test('library detail supports pagination, parsing and selection', async ({ page 
   await expect(page.getByRole('region', { name: '后台添加下载' })).toContainText('添加完成');
   expect(await page.evaluate(() =>
     (window as unknown as { __LIBRARY_BATCH_SIZES__: number[] }).__LIBRARY_BATCH_SIZES__,
-  )).toEqual([1, 1, 1, 1, 1, 1]);
+  )).toEqual([5, 1]);
 });
 
 test('library page jump loads only the requested page and reuses visited pages', async ({ page }) => {
