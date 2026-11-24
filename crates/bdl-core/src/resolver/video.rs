@@ -1,10 +1,10 @@
 use async_trait::async_trait;
-use bpi_rs::BpiClient;
 use bpi_rs::danmaku::DanmakuXmlListParams;
 use bpi_rs::ids::{Aid, Bvid, Cid};
 use bpi_rs::models::{Fnval, VideoQuality};
 use bpi_rs::video::videostream_url::{DashInfo, DashStream};
 use bpi_rs::video::{VideoPlayUrlParams, VideoPlayerInfoParams};
+use bpi_rs::{BpiClient, DEFAULT_USER_AGENT};
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -22,8 +22,6 @@ use crate::model::{
 
 const DEFAULT_REFERER: &str = "https://www.bilibili.com/";
 const VIDEO_VIEW_API: &str = "https://api.bilibili.com/x/web-interface/view";
-const DEFAULT_USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) \
-    AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VideoInputId {

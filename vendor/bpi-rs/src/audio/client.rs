@@ -204,7 +204,6 @@ impl<'a> AudioClient<'a> {
     pub async fn stream_url(&self, params: AudioStreamUrlParams) -> BpiResult<AudioStreamUrlData> {
         self.client
             .get(STREAM_URL_ENDPOINT)
-            .with_bilibili_headers()
             .query(&params.query_pairs())
             .send_bpi_payload("audio.stream_url")
             .await

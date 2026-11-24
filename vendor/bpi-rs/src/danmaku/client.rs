@@ -132,7 +132,6 @@ impl<'a> DanmakuClient<'a> {
     pub async fn web_seg_proto(&self, params: DanmakuSegmentParams) -> BpiResult<Bytes> {
         self.client
             .get(WEB_SEG_ENDPOINT)
-            .with_bilibili_headers()
             .query(&params.query_pairs())
             .send_request("danmaku.web.seg")
             .await
@@ -144,7 +143,6 @@ impl<'a> DanmakuClient<'a> {
 
         self.client
             .get(WEB_SEG_WBI_ENDPOINT)
-            .with_bilibili_headers()
             .query(&signed)
             .send_request("danmaku.web.seg_wbi")
             .await
@@ -154,7 +152,6 @@ impl<'a> DanmakuClient<'a> {
     pub async fn web_view_proto(&self, params: DanmakuWebViewParams) -> BpiResult<Bytes> {
         self.client
             .get(WEB_VIEW_ENDPOINT)
-            .with_bilibili_headers()
             .query(&params.query_pairs())
             .send_request("danmaku.web.view")
             .await
@@ -164,7 +161,6 @@ impl<'a> DanmakuClient<'a> {
     pub async fn mobile_seg_proto(&self, params: DanmakuSegmentParams) -> BpiResult<Bytes> {
         self.client
             .get(MOBILE_SEG_ENDPOINT)
-            .with_bilibili_headers()
             .query(&params.query_pairs())
             .send_request("danmaku.mobile.seg")
             .await
@@ -177,7 +173,6 @@ impl<'a> DanmakuClient<'a> {
     ) -> BpiResult<Bytes> {
         self.client
             .get(WEB_HISTORY_SEG_ENDPOINT)
-            .with_bilibili_headers()
             .query(&params.query_pairs())
             .send_request("danmaku.web.history_seg")
             .await

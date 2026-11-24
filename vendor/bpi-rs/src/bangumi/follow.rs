@@ -44,7 +44,6 @@ impl<'a> BangumiClient<'a> {
         let csrf = self.client.csrf()?;
         self.client
             .post(FOLLOW_ENDPOINT)
-            .with_bilibili_headers()
             .form(&params.form_pairs(&csrf))
             .send_bpi_payload("bangumi.follow")
             .await
@@ -55,7 +54,6 @@ impl<'a> BangumiClient<'a> {
         let csrf = self.client.csrf()?;
         self.client
             .post(UNFOLLOW_ENDPOINT)
-            .with_bilibili_headers()
             .form(&params.form_pairs(&csrf))
             .send_bpi_payload("bangumi.unfollow")
             .await

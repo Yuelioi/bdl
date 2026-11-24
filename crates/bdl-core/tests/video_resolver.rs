@@ -251,6 +251,23 @@ async fn video_resolver_maps_dash_streams_when_requested() -> Result<(), BdlErro
         ]
     );
     assert!(video.headers.iter().any(|header| header.name == "Referer"));
+    let request = bpi_rs::BpiClient::new()
+        .expect("API client")
+        .get("https://api.bilibili.com/x/test")
+        .build()
+        .expect("API request");
+    for name in ["User-Agent", "Referer", "Origin"] {
+        assert_eq!(request.headers().get_all(name).iter().count(), 1);
+    }
+    assert_eq!(
+        video
+            .headers
+            .iter()
+            .find(|header| header.name == "User-Agent")
+            .unwrap()
+            .value,
+        request.headers()["User-Agent"].to_str().unwrap(),
+    );
 
     let audio = streams
         .iter()

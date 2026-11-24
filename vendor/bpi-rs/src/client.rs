@@ -64,8 +64,8 @@ use crate::wallet::WalletClient;
 #[cfg(feature = "web_widget")]
 use crate::web_widget::WebWidgetClient;
 
-const DEFAULT_USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) \
-    AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+pub const DEFAULT_USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) \
+    AppleWebKit/537.36 (KHTML, like Gecko) Chrome/158.0.0.0 Safari/537.36";
 const DEFAULT_REFERER: &str = "https://www.bilibili.com/";
 const DEFAULT_ORIGIN: &str = "https://www.bilibili.com";
 const BILIBILI_URL: &str = "https://www.bilibili.com";
@@ -763,6 +763,9 @@ mod tests {
         assert_eq!(request.headers()[USER_AGENT], "test-agent");
         assert_eq!(request.headers()[REFERER], "https://example.com/referer");
         assert_eq!(request.headers()[ORIGIN], "https://example.com");
+        for name in [USER_AGENT, REFERER, ORIGIN] {
+            assert_eq!(request.headers().get_all(name).iter().count(), 1);
+        }
         Ok(())
     }
 

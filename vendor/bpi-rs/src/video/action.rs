@@ -221,7 +221,6 @@ impl<'a> VideoClient<'a> {
     ) -> BpiResult<VideoCoinStatusData> {
         self.client
             .get(COIN_STATUS_ENDPOINT)
-            .with_bilibili_headers()
             .query(&params.query_pairs())
             .send_bpi_payload("video.coin_status")
             .await
@@ -233,7 +232,6 @@ impl<'a> VideoClient<'a> {
 
         self.client
             .post(LIKE_ENDPOINT)
-            .with_bilibili_headers()
             .form(&params.form_pairs(&csrf))
             .send_bpi_optional_payload("video.like")
             .await
@@ -248,7 +246,6 @@ impl<'a> VideoClient<'a> {
 
         self.client
             .post(COIN_ENDPOINT)
-            .with_bilibili_headers()
             .form(&params.form_pairs(&csrf))
             .send_bpi_payload("video.coin")
             .await
@@ -260,7 +257,6 @@ impl<'a> VideoClient<'a> {
 
         self.client
             .post(FAVORITE_ENDPOINT)
-            .with_bilibili_headers()
             .form(&params.form_pairs(&csrf))
             .send_bpi_payload("video.favorite")
             .await

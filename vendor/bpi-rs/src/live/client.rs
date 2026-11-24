@@ -96,7 +96,6 @@ impl<'a> LiveClient<'a> {
     pub async fn area_list(&self) -> BpiResult<Vec<LiveParentArea>> {
         self.client
             .get(AREA_LIST_ENDPOINT)
-            .with_bilibili_headers()
             .send_bpi_payload("live.area_list")
             .await
     }
@@ -105,7 +104,6 @@ impl<'a> LiveClient<'a> {
     pub async fn room_info(&self, room_id: i64) -> BpiResult<RoomInfoData> {
         self.client
             .get(ROOM_INFO_ENDPOINT)
-            .with_bilibili_headers()
             .query(&[("room_id", room_id.to_string())])
             .send_bpi_payload("live.room_info")
             .await
@@ -133,7 +131,6 @@ impl<'a> LiveClient<'a> {
 
         self.client
             .get(STREAM_ENDPOINT)
-            .with_bilibili_headers()
             .query(&query)
             .send_bpi_payload("live.stream")
             .await
@@ -143,7 +140,6 @@ impl<'a> LiveClient<'a> {
     pub async fn recommend(&self) -> BpiResult<RecommendData> {
         self.client
             .get(RECOMMEND_ENDPOINT)
-            .with_bilibili_headers()
             .query(&[("platform", "web"), ("web_location", "333.1007")])
             .send_bpi_payload("live.recommend")
             .await
@@ -153,7 +149,6 @@ impl<'a> LiveClient<'a> {
     pub async fn version(&self) -> BpiResult<PcLiveVersionData> {
         self.client
             .get(VERSION_ENDPOINT)
-            .with_bilibili_headers()
             .query(&[("system_version", "2")])
             .send_bpi_payload("live.version")
             .await
@@ -163,7 +158,6 @@ impl<'a> LiveClient<'a> {
     pub async fn gift_types(&self) -> BpiResult<Vec<GiftTypeItem>> {
         self.client
             .get(GIFT_TYPES_ENDPOINT)
-            .with_bilibili_headers()
             .send_bpi_payload("live.gift_types")
             .await
     }
@@ -190,7 +184,6 @@ impl<'a> LiveClient<'a> {
 
         self.client
             .get(ROOM_GIFT_LIST_ENDPOINT)
-            .with_bilibili_headers()
             .query(&query)
             .send_bpi_payload("live.room_gift_list")
             .await
@@ -200,7 +193,6 @@ impl<'a> LiveClient<'a> {
     pub async fn blind_gift_info(&self, gift_id: i64) -> BpiResult<BlindGiftData> {
         self.client
             .get(BLIND_GIFT_INFO_ENDPOINT)
-            .with_bilibili_headers()
             .query(&[("gift_id", gift_id.to_string())])
             .send_bpi_payload("live.blind_gift_info")
             .await
@@ -218,7 +210,6 @@ impl<'a> LiveClient<'a> {
 
         self.client
             .get(DANMU_INFO_ENDPOINT)
-            .with_bilibili_headers()
             .query(&query)
             .send_bpi_payload("live.danmu_info")
             .await
@@ -228,7 +219,6 @@ impl<'a> LiveClient<'a> {
     pub async fn emoticons(&self, room_id: i64, platform: &str) -> BpiResult<EmoticonData> {
         self.client
             .get(EMOTICONS_ENDPOINT)
-            .with_bilibili_headers()
             .query(&[
                 ("room_id", room_id.to_string()),
                 ("platform", platform.to_string()),
@@ -246,7 +236,6 @@ impl<'a> LiveClient<'a> {
 
         self.client
             .get(LOTTERY_INFO_ENDPOINT)
-            .with_bilibili_headers()
             .query(&query)
             .send_bpi_payload("live.lottery_info")
             .await
@@ -256,7 +245,6 @@ impl<'a> LiveClient<'a> {
     pub async fn my_medals(&self, page: i32, page_size: i32) -> BpiResult<MyMedalsData> {
         self.client
             .get(MY_MEDALS_ENDPOINT)
-            .with_bilibili_headers()
             .query(&[
                 ("page", page.to_string()),
                 ("page_size", page_size.to_string()),
@@ -290,7 +278,6 @@ impl<'a> LiveClient<'a> {
 
         self.client
             .get(FOLLOW_UP_LIST_ENDPOINT)
-            .with_bilibili_headers()
             .query(&query)
             .send_bpi_payload("live.follow_up_list")
             .await
@@ -306,7 +293,6 @@ impl<'a> LiveClient<'a> {
 
         self.client
             .get(FOLLOW_UP_WEB_LIST_ENDPOINT)
-            .with_bilibili_headers()
             .query(&query)
             .send_bpi_payload("live.follow_up_web_list")
             .await
@@ -329,7 +315,6 @@ impl<'a> LiveClient<'a> {
 
         self.client
             .get(REPLAY_LIST_ENDPOINT)
-            .with_bilibili_headers()
             .query(&query)
             .send_bpi_payload("live.replay_list")
             .await
@@ -354,7 +339,6 @@ impl<'a> LiveClient<'a> {
 
         self.client
             .get(GUARD_LIST_ENDPOINT)
-            .with_bilibili_headers()
             .query(&query)
             .send_bpi_payload("live.guard_list")
             .await
@@ -370,7 +354,6 @@ impl<'a> LiveClient<'a> {
 
         self.client
             .post(SILENT_USERS_ENDPOINT)
-            .with_bilibili_headers()
             .form(&form)
             .send_bpi_payload("live.silent_users")
             .await
@@ -386,7 +369,6 @@ impl<'a> LiveClient<'a> {
 
         self.client
             .get(BANNED_USERS_ENDPOINT)
-            .with_bilibili_headers()
             .query(&query)
             .send_bpi_payload("live.banned_users")
             .await
@@ -402,7 +384,6 @@ impl<'a> LiveClient<'a> {
 
         self.client
             .post(SHIELD_KEYWORDS_ENDPOINT)
-            .with_bilibili_headers()
             .form(&form)
             .send_bpi_payload("live.shield_keywords")
             .await
@@ -412,7 +393,6 @@ impl<'a> LiveClient<'a> {
     pub async fn web_heart_beat(&self, params: LiveWebHeartBeatParams) -> BpiResult<HeartBeatData> {
         self.client
             .get(WEB_HEART_BEAT_ENDPOINT)
-            .with_bilibili_headers()
             .query(&params.query_pairs())
             .send_bpi_payload("live.web_heart_beat")
             .await

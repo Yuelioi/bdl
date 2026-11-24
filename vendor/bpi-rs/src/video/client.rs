@@ -112,7 +112,6 @@ impl<'a> VideoClient<'a> {
 
         self.client
             .get(PLAY_URL_ENDPOINT)
-            .with_bilibili_headers()
             .query(&params)
             .send_bpi_payload("video.play_url")
             .await
@@ -127,7 +126,6 @@ impl<'a> VideoClient<'a> {
 
         self.client
             .get(SEASONS_ARCHIVES_LIST_ENDPOINT)
-            .with_bilibili_headers()
             .query(&params)
             .send_bpi_payload("video.collection.seasons_archives_list")
             .await

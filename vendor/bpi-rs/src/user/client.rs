@@ -163,7 +163,6 @@ impl<'a> UserClient<'a> {
     ) -> BpiResult<UserBangumiFollowList> {
         self.client
             .get(BANGUMI_FOLLOW_LIST_ENDPOINT)
-            .with_bilibili_headers()
             .query(&params.query_pairs())
             .send_bpi_payload("user.bangumi_follow_list")
             .await
@@ -173,7 +172,6 @@ impl<'a> UserClient<'a> {
     pub async fn followings(&self, params: UserFollowingsParams) -> BpiResult<UserFollowings> {
         self.client
             .get(FOLLOWINGS_ENDPOINT)
-            .with_bilibili_headers()
             .query(&params.query_pairs())
             .send_bpi_payload("user.followings")
             .await
@@ -183,7 +181,6 @@ impl<'a> UserClient<'a> {
     pub async fn followers(&self, params: UserFollowersParams) -> BpiResult<UserFollowers> {
         self.client
             .get(FOLLOWERS_ENDPOINT)
-            .with_bilibili_headers()
             .query(&params.query_pairs())
             .send_bpi_payload("user.followers")
             .await
@@ -193,7 +190,6 @@ impl<'a> UserClient<'a> {
     pub async fn follow_tags(&self) -> BpiResult<Vec<UserFollowTag>> {
         self.client
             .get(FOLLOW_TAGS_ENDPOINT)
-            .with_bilibili_headers()
             .send_bpi_payload("user.follow_tags")
             .await
     }
@@ -202,7 +198,6 @@ impl<'a> UserClient<'a> {
     pub async fn medal_wall(&self, params: UserMedalWallParams) -> BpiResult<UserMedalWall> {
         self.client
             .get(MEDAL_WALL_ENDPOINT)
-            .with_bilibili_headers()
             .query(&params.query_pairs())
             .send_bpi_payload("user.medal_wall")
             .await

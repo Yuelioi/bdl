@@ -46,10 +46,7 @@ impl BilibiliRequest for RequestBuilder {
     }
 
     fn with_user_agent(self) -> Self {
-        self.header(
-            "User-Agent",
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        )
+        self.header(reqwest::header::USER_AGENT, crate::DEFAULT_USER_AGENT)
     }
 
     async fn send_request(self, operation_name: &str) -> Result<bytes::Bytes, BpiError> {

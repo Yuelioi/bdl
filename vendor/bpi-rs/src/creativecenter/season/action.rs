@@ -119,7 +119,6 @@ impl<'a> CreativeCenterClient<'a> {
 
         self.client
             .post("https://member.bilibili.com/x2/creative/web/season/section/episodes/add")
-            .with_bilibili_headers()
             .query(&[("csrf", csrf)])
             .json(&payload)
             .send_bpi_optional_payload("creativecenter.season.episodes.add")

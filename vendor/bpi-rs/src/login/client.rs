@@ -155,7 +155,6 @@ impl<'a> LoginClient<'a> {
     pub async fn notice(&self, params: LoginNoticeParams) -> BpiResult<LoginNoticeData> {
         self.client
             .get(NOTICE_ENDPOINT)
-            .with_bilibili_headers()
             .query(&params.query_pairs())
             .send_bpi_payload("login.notice")
             .await
@@ -165,7 +164,6 @@ impl<'a> LoginClient<'a> {
     pub async fn log(&self, params: LoginLogParams) -> BpiResult<LoginLogData> {
         self.client
             .get(LOG_ENDPOINT)
-            .with_bilibili_headers()
             .query(&params.query_pairs())
             .send_bpi_payload("login.log")
             .await
@@ -176,7 +174,6 @@ impl<'a> LoginClient<'a> {
         let data: GeetestData = self
             .client
             .get(CAPTCHA_GENERATE_ENDPOINT)
-            .with_bilibili_headers()
             .query(&[("source", CAPTCHA_SOURCE)])
             .send_bpi_payload("login.captcha_generate")
             .await?;
@@ -193,7 +190,6 @@ impl<'a> LoginClient<'a> {
     pub async fn qr_generate(&self) -> BpiResult<GenerateQrCodeData> {
         self.client
             .get(QR_GENERATE_ENDPOINT)
-            .with_bilibili_headers()
             .send_bpi_payload("login.qr_generate")
             .await
     }
@@ -203,7 +199,6 @@ impl<'a> LoginClient<'a> {
         let response = self
             .client
             .get(QR_POLL_ENDPOINT)
-            .with_bilibili_headers()
             .query(&params.query_pairs())
             .send()
             .await?;

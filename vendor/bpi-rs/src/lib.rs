@@ -99,7 +99,7 @@ mod testing;
 // bv aid互转, 以及生成wbi
 pub mod utils;
 
-pub use client::BpiClient;
+pub use client::{BpiClient, DEFAULT_USER_AGENT};
 pub use err::error::BpiError;
 pub use request::BilibiliRequest;
 pub use response::{ApiEnvelope, BpiResult};

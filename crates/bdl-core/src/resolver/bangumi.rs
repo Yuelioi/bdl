@@ -1,11 +1,11 @@
 use async_trait::async_trait;
-use bpi_rs::BpiClient;
 use bpi_rs::bangumi::info::BangumiType;
 use bpi_rs::bangumi::{BangumiDetailParams, BangumiVideoStreamParams};
 use bpi_rs::danmaku::DanmakuXmlListParams;
 use bpi_rs::ids::{Aid, Bvid, Cid, EpisodeId, SeasonId};
 use bpi_rs::models::{DashTrack, Fnval, VideoQuality};
 use bpi_rs::video::VideoPlayerInfoParams;
+use bpi_rs::{BpiClient, DEFAULT_USER_AGENT};
 use chrono::{DateTime, Utc};
 use std::sync::Arc;
 use url::Url;
@@ -21,8 +21,6 @@ use crate::model::{
 };
 
 const DEFAULT_REFERER: &str = "https://www.bilibili.com/";
-const DEFAULT_USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) \
-    AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BangumiInputId {

@@ -228,7 +228,6 @@ impl<'a> CreativeCenterClient<'a> {
     pub async fn play_source(&self) -> BpiResult<PlaySourceData> {
         self.client
             .get(PLAY_SOURCE_ENDPOINT)
-            .with_bilibili_headers()
             .send_bpi_payload("creativecenter.statistics.play_source")
             .await
     }
