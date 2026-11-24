@@ -257,8 +257,8 @@
   },
   {
     "code": "source_verification_required",
-    "summary": "源站要求验证",
-    "detail": "请求可能触发源站验证或访问限制。请暂停批量任务，在 B 站网页检查验证提示，稍后重试。",
+    "summary": "可能触发了 B 站风控",
+    "detail": "请稍后重试。如果持续出现此提示，请反馈问题。",
     "recommended_action": "inspect_raw_log",
     "contains": [
       "[-352]",

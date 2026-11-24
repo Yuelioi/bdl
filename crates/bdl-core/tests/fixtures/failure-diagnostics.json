@@ -51,12 +51,12 @@
   },
   {
     "message": "HTTP request failed with status 412",
-    "summary": "源站要求验证",
+    "summary": "可能触发了 B 站风控",
     "action": "inspect_raw_log"
   },
   {
     "message": "API错误 [-352]: 风控校验失败",
-    "summary": "源站要求验证",
+    "summary": "可能触发了 B 站风控",
     "action": "inspect_raw_log"
   },
   {

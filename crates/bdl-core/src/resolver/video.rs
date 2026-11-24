@@ -531,7 +531,8 @@ impl VideoDownloadResponse {
     fn into_play_url(self) -> BdlResult<ResolvedPlayUrl> {
         if self.v_voucher.is_some() {
             return Err(BdlError::Bpi(
-                "[stage=bilibili_api code=source_verification_required] B 站要求验证，请在 B 站网页完成验证后再重试。".into(),
+                "[stage=bilibili_api code=source_verification_required] 播放地址响应包含验证标记。"
+                    .into(),
             ));
         }
         Ok(self
