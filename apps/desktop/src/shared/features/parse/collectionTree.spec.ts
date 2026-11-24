@@ -39,11 +39,12 @@ const source: NormalizedSourceTree = {
   })),
 };
 describe('collection tree selection scope', () => {
-  it('preserves source, section, video and part levels with stable IDs', () => {
+  it('selects each collection video as a whole within its section', () => {
     expect(hasCollectionSections(source)).toBe(true);
     const root = collectionTree(source)[0];
     expect(root.children?.map((group) => group.label)).toEqual(['分组 1', '分组 2']);
-    expect(root.children?.[0].children?.[0].children?.map((part) => part.id)).toEqual(['p1-1', 'p1-2']);
+    expect(root.children?.[0].children?.[0]).toMatchObject({ id: 'v1', partIds: ['p1-1'] });
+    expect(root.children?.[0].children?.[0].children).toBeUndefined();
     expect(treeSelection(root.partIds, new Set(['p1-1']))).toBe('indeterminate');
     expect(treeSelection(root.partIds, new Set(root.partIds))).toBe(true);
     expect(treeSelection([], new Set())).toBe(false);
@@ -51,8 +52,8 @@ describe('collection tree selection scope', () => {
   it('limits group selection to the visible page and search result without including hidden items', () => {
     const page = collectionTree(source, ['v2'])[0];
     expect(page.children).toHaveLength(1);
-    expect(page.partIds).toEqual(['p2-1', 'p2-2']);
-    expect(collectionTree(source, undefined, '分组 1')[0].partIds).toEqual(['p1-1', 'p1-2']);
+    expect(page.partIds).toEqual(['p2-1']);
+    expect(collectionTree(source, undefined, '分组 1')[0].partIds).toEqual(['p1-1']);
     expect(collectionTree(source, ['v1'], '视频 2')[0].partIds).toEqual([]);
   });
 });

@@ -3,7 +3,7 @@ use bpi_rs::BpiClient;
 use bpi_rs::danmaku::DanmakuXmlListParams;
 use bpi_rs::ids::{Aid, Bvid, Cid};
 use bpi_rs::models::{Fnval, VideoQuality};
-use bpi_rs::video::videostream_url::DashStream;
+use bpi_rs::video::videostream_url::{DashInfo, DashStream};
 use bpi_rs::video::{VideoPlayUrlParams, VideoPlayerInfoParams};
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
@@ -190,7 +190,34 @@ where
             .await
     }
 
-    async fn resolve_with_requirements(
+    /// The queue already has this part's metadata. Request only the media and
+    /// subtitle links needed to execute the download.
+    pub async fn load_part_playback(
+        &self,
+        input: ClassifiedInput,
+        part: &mut NormalizedPart,
+        fetch_streams: bool,
+        fetch_subtitles: bool,
+    ) -> BdlResult<()> {
+        let input_id = VideoInputId::from_classified(input)?;
+        let cid = part.cid.ok_or_else(|| BdlError::Planning {
+            message: "下载任务缺少分 P 信息。".into(),
+        })?;
+        if fetch_streams {
+            let play_url = self.api.play_url(&input_id, cid).await?;
+            let part_key = part.id.0.strip_prefix("part:").unwrap_or(&part.id.0);
+            part.streams = map_play_url(part_key, play_url, Utc::now());
+        }
+        if fetch_subtitles {
+            let player_info = self.api.player_info(&input_id, cid).await?;
+            part.assets
+                .retain(|asset| asset.kind != AssetKind::Subtitle);
+            part.assets.extend(subtitle_asset(&player_info));
+        }
+        Ok(())
+    }
+
+    pub async fn resolve_with_requirements(
         &self,
         input: ClassifiedInput,
         fetch_streams: bool,
@@ -337,17 +364,14 @@ impl VideoApi for BpiVideoApi {
     }
 
     async fn play_url(&self, id: &VideoInputId, cid: u64) -> BdlResult<ResolvedPlayUrl> {
-        let data = self
+        let data: VideoDownloadResponse = self
             .client
             .video()
-            .play_url(play_url_params(id, cid)?)
+            .play_url_payload(play_url_params(id, cid)?)
             .await
             .map_err(|error| crate::error::bpi_error(error))?;
 
-        Ok(data
-            .dash
-            .map(ResolvedPlayUrl::from_dash)
-            .unwrap_or_default())
+        data.into_play_url()
     }
 
     async fn collection_hint(&self, id: &VideoInputId) -> BdlResult<Option<VideoCollectionRef>> {
@@ -497,6 +521,26 @@ struct VideoCollectionHintSeason {
 struct VideoViewSnapshot {
     video: ResolvedVideo,
     collection_hint: Option<VideoCollectionRef>,
+}
+
+#[derive(Deserialize)]
+struct VideoDownloadResponse {
+    dash: Option<DashInfo>,
+    v_voucher: Option<serde::de::IgnoredAny>,
+}
+
+impl VideoDownloadResponse {
+    fn into_play_url(self) -> BdlResult<ResolvedPlayUrl> {
+        if self.v_voucher.is_some() {
+            return Err(BdlError::Bpi(
+                "[stage=bilibili_api code=source_verification_required] B 站要求验证，请在 B 站网页完成验证后再重试。".into(),
+            ));
+        }
+        Ok(self
+            .dash
+            .map(ResolvedPlayUrl::from_dash)
+            .unwrap_or_default())
+    }
 }
 
 impl ResolvedPlayUrl {
@@ -791,13 +835,19 @@ mod tests {
     #[test]
     fn media_preferences_collects_dolby_and_flac_tracks() {
         let track = |id| serde_json::json!({"id": id, "baseUrl": "https://example.invalid/track", "backupUrl": [], "bandwidth": 1000, "mimeType": "audio/mp4", "codecs": "mp4a"});
-        let dash = serde_json::from_value(serde_json::json!({
-            "video": [], "audio": [track(30280)], "duration": 1,
-            "dolby": {"type": 1, "audio": [track(30250)]},
-            "flac": {"audio": track(30251)}
-        }))
+        let payload = bpi_rs::ApiEnvelope::<super::VideoDownloadResponse>::from_slice(
+            serde_json::json!({"code": 0, "data": {"dash": {
+                "video": [], "audio": [track(30280)], "duration": 1,
+                "dolby": {"type": 1, "audio": [track(30250)]},
+                "flac": {"audio": track(30251)}
+            }}})
+            .to_string()
+            .as_bytes(),
+        )
+        .unwrap()
+        .into_payload()
         .unwrap();
-        let resolved = super::ResolvedPlayUrl::from_dash(dash);
+        let resolved = payload.into_play_url().unwrap();
         assert_eq!(
             resolved
                 .audio
@@ -810,6 +860,12 @@ mod tests {
             super::stream_codec("dvhe.05.06"),
             crate::model::StreamCodec::Hevc
         );
+        let challenge = bpi_rs::ApiEnvelope::<super::VideoDownloadResponse>::from_slice(
+            br#"{"code":0,"message":"0","ttl":1,"data":{"v_voucher":"voucher_00000000-0000-0000-0000-000000000000"}}"#,
+        ).unwrap().into_payload().unwrap();
+        let error = challenge.into_play_url().unwrap_err().to_string();
+        assert!(error.contains("source_verification_required"));
+        assert!(!error.contains("voucher_"));
     }
 
     #[test]

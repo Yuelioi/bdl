@@ -51,7 +51,7 @@ const visibleNodes = computed(() => {
     items.flatMap((item) => [item, ...(expanded.value.includes(item.id) ? visit(item.children ?? []) : [])]);
   return visit(nodes.value);
 });
-const estimateSize = (index: number) => (['video', 'part'].includes(visibleNodes.value[index]?.kind ?? '') ? 96 : 36);
+const estimateSize = (index: number) => (visibleNodes.value[index]?.kind === 'video' ? 96 : 36);
 const selectedNodes = computed(() =>
   flattened.value.filter((node) => treeSelection(node.partIds, selected.value) === true),
 );
@@ -84,11 +84,6 @@ function select(event: Event, node: CollectionTreeNode) {
       : [...expanded.value, node.id];
   }
 }
-function expand(event: Event, node: CollectionTreeNode) {
-  const original = (event as CustomEvent<{ originalEvent: Event }>).detail?.originalEvent;
-  // Video rows retain click-to-select; their arrow and keyboard arrows expand parts.
-  if (props.disabled || (node.kind === 'video' && original instanceof MouseEvent)) event.preventDefault();
-}
 </script>
 <template>
   <section class="collection-tree" aria-label="合集分组">
@@ -107,18 +102,17 @@ function expand(event: Event, node: CollectionTreeNode) {
       :virtualize="flattened.length > 200 ? { estimateSize } : false"
       :ui="{ link: 'collection-tree-row', linkLabel: 'min-w-0 truncate', listWithChildren: 'ms-3 ps-2' }"
       @select="select"
-      @toggle="expand"
     >
       <template #item="{ item, expanded: opened, handleToggle }">
         <MediaListRow
-          v-if="item.kind === 'video' || item.kind === 'part'"
+          v-if="item.kind === 'video'"
           :key="item.id"
           flat
           :title="item.label"
           :cover="details(item)?.cover"
           :secondary="details(item)?.secondary"
           :published="details(item)?.published"
-          :duration="item.kind === 'video' ? details(item)?.item.duration_seconds : details(item)?.duration"
+          :duration="details(item)?.duration"
           :selected="treeSelection(item.partIds, selected) === true"
           :indeterminate="treeSelection(item.partIds, selected) === 'indeterminate'"
           :disabled="disabled"
@@ -128,24 +122,7 @@ function expand(event: Event, node: CollectionTreeNode) {
           @keydown.stop
           @toggle="toggle(item)"
           @play="play(item)"
-        >
-          <template v-if="item.children?.length" #facts>
-            <UButton
-              variant="ghost"
-              color="neutral"
-              :ui="{ base: 'p-0', label: 'contents' }"
-              class="tree-expand"
-              type="button"
-              :aria-label="`${opened ? '收起' : '展开'} ${item.label}`"
-              :aria-expanded="opened"
-              :disabled="disabled"
-              @click.stop="handleToggle()"
-              @keydown.stop
-            >
-              <UIcon :name="opened ? 'i-tabler-chevron-down' : 'i-tabler-chevron-right'" />
-            </UButton>
-          </template>
-        </MediaListRow>
+        />
         <div v-else class="tree-category">
           <UiCheckbox
             :key="item.id"

@@ -694,6 +694,7 @@ pub async fn selection_enqueue_batch(
     mut request: SelectionCreateTasksRequest,
     snapshot: NormalizedSourceTree,
     operation_id: String,
+    item_index_offset: usize,
 ) -> CommandResult<BackgroundEnqueueResult> {
     // Download All skips duplicates without interrupting the batch for a prompt.
     request.duplicate_policy = DuplicateTaskPolicy::Skip;
@@ -707,7 +708,10 @@ pub async fn selection_enqueue_batch(
     let result = async {
         let (tasks, mut result) = operation
             .run(crate::preparation::plan_background_batch(
-                &state, &input, part_ids,
+                &state,
+                &input,
+                part_ids,
+                item_index_offset,
             ))
             .await?;
         let committed = operation
@@ -762,7 +766,7 @@ pub async fn selection_prepare(
             &ids,
             &options,
             &context,
-            crate::parse_owned::SelectionPreparation::MissingStreams,
+            crate::download_resolution::SelectionPreparation::MissingStreams,
             |_, _| Ok(()),
         )
         .await?;
@@ -819,6 +823,12 @@ pub async fn selection_estimate_size(
     let selected_part_ids = request.part_ids.into_iter().map(PartId).collect::<Vec<_>>();
     let tree = snapshot;
     let part_ids = crate::parse_session::normalize_selected_part_ids(&tree, &selected_part_ids);
+    let part_ids =
+        if tree.source.kind.queues_whole_posts() || tree.source.kind.prepares_list_parts() {
+            crate::parse_session::expand_selected_posts(&tree, &part_ids)
+        } else {
+            part_ids
+        };
     Ok(estimate_selected_parts_download_size(
         &tree, &part_ids, &options,
     )?)
@@ -1012,15 +1022,17 @@ pub async fn queue_output_sizes(
         if !requested.contains(&task.id) || task.status != TaskStatus::Completed {
             continue;
         }
-        let size = if task.export_target.is_none() {
-            fs::metadata(&task.output_path)
-                .await
-                .ok()
-                .filter(|metadata| metadata.is_file())
-                .map(|metadata| metadata.len())
-        } else {
-            None
-        };
+        let mut size: Option<u64> = None;
+        for part in task
+            .file_parts()
+            .filter(|part| part.export_target.is_none())
+        {
+            if let Ok(metadata) = fs::metadata(&part.output_path).await
+                && metadata.is_file()
+            {
+                size = Some(size.unwrap_or(0).saturating_add(metadata.len()));
+            }
+        }
         sizes.insert(task.id, size);
     }
     Ok(sizes)
@@ -1368,7 +1380,10 @@ async fn refresh_urls_and_retry(
         return retry_task(app, state, task_id);
     }
     emit_queue_log(&app, state, task_id, QueueLogLevel::Info, "刷新下载地址")?;
-    if let Err(error) = state.refresh_task_media_urls(task_id).await {
+    if let Err(error) = state
+        .refresh_task_media_urls(task_id, crate::parse_pacing::CooldownBehavior::Report)
+        .await
+    {
         let error = CommandError::from(error);
         emit_queue_log(
             &app,
@@ -1425,8 +1440,8 @@ fn bulk_mutate_tasks(
             };
         }
     };
-    let mut result = BulkQueueResult {
-        updated: vec![],
+    let result = BulkQueueResult {
+        updated: changed.updated,
         removed: vec![],
         failed: changed
             .failed
@@ -1434,19 +1449,14 @@ fn bulk_mutate_tasks(
             .map(|(task_id, message)| BulkQueueFailure::from_message(task_id, message))
             .collect(),
     };
-    for task in changed.updated {
-        let notification = events::emit(app, events::QUEUE_TASK_UPDATED, &task).and_then(|()| {
-            if retry {
+    // The invocation returns the committed tasks to the queue view in one batch.
+    if retry {
+        for task in &result.updated {
+            if let Err(error) =
                 emit_queue_log(app, state, &task.id, QueueLogLevel::Info, "重试任务")
-            } else {
-                Ok(())
+            {
+                tracing::warn!(code = %error.code, "failed to record a bulk retry log");
             }
-        });
-        match notification {
-            Ok(()) => result.updated.push(task),
-            Err(error) => result
-                .failed
-                .push(BulkQueueFailure::from_error(task.id, error)),
         }
     }
     result
@@ -1514,8 +1524,21 @@ pub fn queue_open_file(
     app: AppHandle,
     state: State<'_, AppState>,
     task_id: String,
+    cid: Option<u64>,
 ) -> CommandResult<()> {
     let task = state.task_snapshot(&task_id)?;
+    let task = task
+        .file_parts()
+        .find(|part| {
+            cid.is_none_or(|cid| {
+                part.refresh_intent
+                    .as_ref()
+                    .is_some_and(|intent| intent.cid == cid)
+            })
+        })
+        .ok_or_else(|| BdlError::Planning {
+            message: "找不到这个分 P 的下载记录。".into(),
+        })?;
     if let Some(target) = task.export_target.as_ref() {
         state.mobile_storage().open_exported_file(target)?;
         return Ok(());
@@ -1535,7 +1558,7 @@ pub fn queue_open_file(
             message: "找不到下载文件，文件可能已被移动或删除。".to_owned(),
         })
     } else {
-        open_task_output_dir(&app, &task)
+        open_task_output_dir(&app, task)
     }
 }
 
@@ -2262,19 +2285,13 @@ pub(crate) async fn run_download_task(
             }
         }
         export_task_files(app, state, &task.id).await?;
-        let completed = state.update_task_status(&task.id, TaskStatus::Completed)?;
-        events::emit(app, events::QUEUE_TASK_UPDATED, &completed)?;
-        emit_queue_log(
+        return complete_download_part(
             app,
             state,
             &task.id,
-            QueueLogLevel::Info,
+            &cancel_token,
             "检测到已生成的成品，任务已恢复为完成状态",
-        )?;
-        if let Err(error) = state.record_completed_task(&completed) {
-            tracing::warn!("failed to save recovered completed task record: {error}");
-        }
-        return Ok(());
+        );
     }
 
     run_download_task_inner(app, state, fetcher, task, runtime_options, cancel_token).await
@@ -2431,13 +2448,7 @@ async fn run_download_task_inner(
             emit_queue_log(app, state, &latest.id, QueueLogLevel::Warning, &warning)?;
         }
         export_task_files(app, state, &task.id).await?;
-        let completed = state.update_task_status(&task.id, TaskStatus::Completed)?;
-        events::emit(app, events::QUEUE_TASK_UPDATED, &completed)?;
-        emit_queue_log(app, state, &task.id, QueueLogLevel::Info, "下载完成")?;
-        if let Err(error) = state.record_completed_task(&completed) {
-            tracing::warn!("failed to save completed task record: {error}");
-        }
-        return Ok(());
+        return complete_download_part(app, state, &task.id, &cancel_token, "下载完成");
     }
     crate::media_finalize::prepare_sidecars(&latest).await?;
     let attachments = select_mux_attachments(
@@ -2482,11 +2493,34 @@ async fn run_download_task_inner(
     crate::media_finalize::cleanup_converted_sources(&latest).await?;
     export_task_files(app, state, &task.id).await?;
 
-    let completed = state.update_task_status(&task.id, TaskStatus::Completed)?;
-    events::emit(app, events::QUEUE_TASK_UPDATED, &completed)?;
-    emit_queue_log(app, state, &task.id, QueueLogLevel::Info, "下载完成")?;
+    complete_download_part(app, state, &task.id, &cancel_token, "下载完成")
+}
 
-    if let Err(error) = state.record_completed_task(&completed) {
+fn complete_download_part(
+    app: &AppHandle,
+    state: &AppState,
+    task_id: &str,
+    cancel_token: &FetchCancelToken,
+    message: &str,
+) -> CommandResult<()> {
+    if let Some(task) = state.complete_download_part(task_id, cancel_token)? {
+        publish_download_result(app, state, &task, message)?;
+    }
+    Ok(())
+}
+
+pub(crate) fn publish_download_result(
+    app: &AppHandle,
+    state: &AppState,
+    task: &DownloadTask,
+    message: &str,
+) -> CommandResult<()> {
+    events::emit(app, events::QUEUE_TASK_UPDATED, task)?;
+    if task.status != TaskStatus::Completed {
+        return Ok(());
+    }
+    emit_queue_log(app, state, &task.id, QueueLogLevel::Info, message)?;
+    if let Err(error) = state.record_completed_task(task) {
         tracing::warn!("failed to save completed task record: {error}");
         let _ = emit_queue_log(
             app,

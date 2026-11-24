@@ -103,6 +103,7 @@ pub fn merge_collection_page(
     }
     let mut merged = existing.clone();
     let before = merged.source.loaded_count;
+    let mut cached_page = next.source.loaded_count > 0;
     let has_sections = next.groups.iter().any(|g| g.kind == "collection_section");
     for mut incoming in next.groups {
         let destination =
@@ -125,6 +126,10 @@ pub fn merge_collection_page(
                     .position(|v| v.id == item.id)
                     .map(|i| (g, i))
             });
+            cached_page &= item.nfo_metadata.index > 0
+                && location.is_some_and(|(g, i)| {
+                    merged.groups[g].items[i].nfo_metadata.index == item.nfo_metadata.index
+                });
             match location {
                 Some((g, i))
                     if g != destination
@@ -147,7 +152,7 @@ pub fn merge_collection_page(
         }
     }
     let loaded_count = merged.groups.iter().map(|g| g.items.len()).sum();
-    if sequential && loaded_count == before && next.source.has_more {
+    if sequential && loaded_count == before && next.source.has_more && !cached_page {
         return Err(invalid(
             "paging made no progress while the server reports more items; retry later",
         ));
@@ -167,6 +172,13 @@ pub fn merge_collection_page(
 }
 
 pub const MAX_PAGE_SIZE: u32 = 100;
+
+pub fn page_item_index(request: PageRequest, offset: usize) -> usize {
+    (request.page_number.saturating_sub(1) as usize)
+        .saturating_mul(request.page_size as usize)
+        .saturating_add(offset)
+        .saturating_add(1)
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PagedSourceKind {

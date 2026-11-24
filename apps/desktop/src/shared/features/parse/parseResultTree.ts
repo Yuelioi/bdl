@@ -1,4 +1,4 @@
-import type { NormalizedSourceTree, SourceKind } from '../../api/dto'
+import type { NormalizedItem, NormalizedSourceTree, SourceKind } from '../../api/dto'
 
 export interface PageTreeNode {
   id: string
@@ -28,6 +28,12 @@ export const sourceKindLabels: Record<SourceKind, string> = {
   unknown: '未知',
 }
 
+export const selectsWholePosts = (kind: SourceKind) =>
+  kind === 'uploader' || kind === 'watch_later' || kind === 'favorite' || kind === 'collection' || kind === 'series'
+
+export const selectableParts = (item: NormalizedItem, kind: SourceKind) =>
+  selectsWholePosts(kind) ? item.parts.slice(0, 1) : item.parts
+
 export const toTreeNodes = (tree: NormalizedSourceTree): PageTreeNode[] =>
   tree.groups.flatMap((group) => {
     const itemNodes = group.items.map((item) => itemNode(item, tree.source.kind)).flat()
@@ -39,7 +45,7 @@ export const toTreeNodes = (tree: NormalizedSourceTree): PageTreeNode[] =>
       id: group.id,
       label: group.title,
       meta: `${group.items.length} 项`,
-      partIds: group.items.flatMap((item) => item.parts.map((part) => part.id)),
+      partIds: group.items.flatMap((item) => selectableParts(item, tree.source.kind).map((part) => part.id)),
       children: itemNodes,
     }]
   })
@@ -48,7 +54,8 @@ const itemNode = (
   item: NormalizedSourceTree['groups'][number]['items'][number],
   sourceKind: SourceKind,
 ): PageTreeNode[] => {
-  if (item.parts.length === 1) {
+  if (!item.parts.length) return []
+  if (item.parts.length === 1 || selectsWholePosts(sourceKind)) {
     const part = item.parts[0]
     return [{
       id: item.id,
@@ -94,7 +101,7 @@ export const flattenResultRows = (nodes: PageTreeNode[]): ParseResultRow[] =>
 
 export const sourcePartCount = (tree: NormalizedSourceTree): number =>
   tree.groups.reduce(
-    (groupTotal, group) => groupTotal + group.items.reduce((itemTotal, item) => itemTotal + item.parts.length, 0),
+    (groupTotal, group) => groupTotal + group.items.reduce((itemTotal, item) => itemTotal + selectableParts(item, tree.source.kind).length, 0),
     0,
   )
 

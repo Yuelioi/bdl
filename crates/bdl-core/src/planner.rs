@@ -203,6 +203,8 @@ pub struct DeferredDownload {
     item_index: usize,
     part_index: usize,
     part_count: usize,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub whole_post: bool,
 }
 
 impl DeferredDownload {
@@ -230,69 +232,128 @@ impl DeferredDownload {
         selected.part_count = self.part_count;
         plan_part(tree, selected, &self.options, &mut ReservedPaths::new())
     }
+
+    pub fn post_parts(&self, tree: &NormalizedSourceTree) -> Vec<DeferredDownload> {
+        tree.groups
+            .iter()
+            .flat_map(|group| &group.items)
+            .flat_map(|item| {
+                let mut metadata = item.clone();
+                metadata.parts.clear();
+                item.parts
+                    .iter()
+                    .enumerate()
+                    .map(move |(index, part)| Self {
+                        item: NormalizedItem {
+                            parts: vec![part.clone()],
+                            ..metadata.clone()
+                        },
+                        part_id: part.id.clone(),
+                        part_index: index,
+                        part_count: item.parts.len(),
+                        whole_post: false,
+                        ..self.clone()
+                    })
+            })
+            .collect()
+    }
 }
 
-pub fn defer_selected_parts(
+pub fn plan_queue_selection(
     tree: &NormalizedSourceTree,
     selected_part_ids: &[PartId],
+    prepared_part_ids: &std::collections::HashSet<PartId>,
     options: &DownloadOptions,
     document_tree: Option<&crate::settings::DocumentTreeDirectory>,
     item_index_offset: usize,
 ) -> BdlResult<Vec<DownloadTask>> {
     let mut source = tree.source.clone();
     source.input.clear();
-    selected_part_ids
-        .iter()
-        .map(|id| {
-            let selected = required_part(tree, id)?;
-            let mut part = selected.part.clone();
-            part.streams.clear();
-            part.assets
-                .retain(|asset| asset.kind != AssetKind::Subtitle);
-            let item = NormalizedItem {
-                parts: vec![part],
-                ..selected.item.clone()
-            };
-            Ok(DownloadTask {
-                id: planned_task_id(tree, id, options)?,
-                title: task_title(selected.item, selected.part),
-                source_id: tree.source.id.0.clone(),
-                status: TaskStatus::Waiting,
-                resources: Vec::new(),
-                output_path: PathBuf::new(),
-                export_target: None,
-                refresh_intent: media_refresh_intent(
-                    tree.source.kind,
-                    selected.part,
-                    selected.part_index + 1,
-                )
-                .map(|mut intent| {
-                    intent.cover_url.clone_from(&selected.item.cover_url);
-                    intent.duration_seconds = selected
-                        .part
-                        .duration_seconds
-                        .or(selected.item.duration_seconds);
-                    intent
-                }),
-                scheduled_at: None,
-                speed_limit_bytes_per_second: None,
-                media_selection: DownloadTaskMediaSelection {
-                    deferred: Some(Box::new(DeferredDownload {
-                        options: options.clone(),
-                        document_tree: document_tree.cloned(),
-                        source: source.clone(),
-                        item,
-                        part_id: id.clone(),
-                        item_index: selected.item_index.saturating_add(item_index_offset),
-                        part_index: selected.part_index,
-                        part_count: selected.part_count,
-                    })),
-                    workflow: options.workflow.clone(),
-                    ..Default::default()
-                },
-            })
-        })
-        .collect()
+    let mut tasks = Vec::with_capacity(selected_part_ids.len());
+    let mut reserved_paths = ReservedPaths::new();
+    let whole_post = tree.source.kind.queues_whole_posts();
+    let mut posts = std::collections::HashSet::new();
+    for id in selected_part_ids {
+        let mut selected = required_part(tree, id)?;
+        selected.item_index = selected.item_index.saturating_add(item_index_offset);
+        if selected.item.nfo_metadata.index > 0 {
+            selected.item_index = selected.item.nfo_metadata.index - 1;
+        }
+        if whole_post && !posts.insert(&selected.item.id) {
+            continue;
+        }
+        if !whole_post && prepared_part_ids.contains(id) {
+            if let Some(task) = plan_part(tree, selected, options, &mut reserved_paths)? {
+                tasks.push(task);
+            }
+            continue;
+        }
+        let mut part = selected.part.clone();
+        if whole_post {
+            part.id = PartId(format!(
+                "part:{}",
+                selected
+                    .item
+                    .id
+                    .0
+                    .strip_prefix("item:")
+                    .unwrap_or(&selected.item.id.0)
+            ));
+            part.cid = None;
+        }
+        part.streams.clear();
+        part.assets
+            .retain(|asset| asset.kind != AssetKind::Subtitle);
+        let queued_part_id = part.id.clone();
+        let item = NormalizedItem {
+            parts: vec![part],
+            ..selected.item.clone()
+        };
+        tasks.push(DownloadTask {
+            id: planned_task_id(tree, &queued_part_id, options)?,
+            title: if whole_post {
+                selected.item.title.clone()
+            } else {
+                task_title(selected.item, selected.part)
+            },
+            source_id: tree.source.id.0.clone(),
+            status: TaskStatus::Waiting,
+            resources: Vec::new(),
+            output_path: PathBuf::new(),
+            export_target: None,
+            refresh_intent: media_refresh_intent(
+                tree.source.kind,
+                selected.part,
+                selected.part_index + 1,
+            )
+            .map(|mut intent| {
+                intent.cover_url.clone_from(&selected.item.cover_url);
+                intent.duration_seconds = selected
+                    .part
+                    .duration_seconds
+                    .or(selected.item.duration_seconds);
+                intent
+            }),
+            scheduled_at: None,
+            speed_limit_bytes_per_second: None,
+            media_selection: DownloadTaskMediaSelection {
+                deferred: Some(Box::new(DeferredDownload {
+                    options: options.clone(),
+                    document_tree: document_tree.cloned(),
+                    source: source.clone(),
+                    item,
+                    part_id: queued_part_id,
+                    item_index: selected.item_index,
+                    part_index: selected.part_index,
+                    part_count: selected.part_count,
+                    whole_post,
+                })),
+                workflow: options.workflow.clone(),
+                ..Default::default()
+            },
+        });
+    }
+    Ok(tasks)
 }
 
 impl DownloadOptions {
@@ -538,6 +599,16 @@ fn plan_part(
     if let Some(workflow) = &options.workflow {
         effective_options.output_extension = workflow_output_extension(workflow, item, part)?;
     }
+    let number_file = selected.part_count > 1
+        && selected.part_index > 0
+        && !options.naming_template.split('{').skip(1).any(|segment| {
+            segment.split_once('}').is_some_and(|(name, _)| {
+                matches!(
+                    name.trim(),
+                    "part_index" | "part_title" | "episode_title" | "cid"
+                )
+            })
+        });
     let Some(output_path) = output_path_for(
         tree,
         &selected,
@@ -545,6 +616,7 @@ fn plan_part(
         audio,
         &effective_options,
         reserved_paths,
+        number_file,
     )?
     else {
         return Ok(None);
@@ -630,6 +702,7 @@ fn plan_part(
         ),
         media_selection: DownloadTaskMediaSelection {
             deferred: None,
+            post: None,
             nfo_metadata: crate::nfo::NfoMetadata {
                 aid: part.aid,
                 owner_mid: item.owner_mid,
@@ -691,8 +764,19 @@ fn plan_part(
         scheduled_at: None,
         speed_limit_bytes_per_second: None,
     };
-    reserved_paths.remove(&task.output_path);
-    let task = task.limit_file_names()?;
+    let task = if number_file {
+        let mut name = OsString::from(format!("{} - ", selected.part_index + 1));
+        name.push(task.output_path.file_name().unwrap_or_default());
+        let output = crate::naming::with_counter_suffix(
+            &task.output_path.with_file_name(name),
+            0,
+            task.file_stem_byte_limit()?,
+        );
+        task.with_output_path(output)?
+    } else {
+        reserved_paths.remove(&task.output_path);
+        task.limit_file_names()?
+    };
     if options.workflow.is_some() {
         return crate::workflow::reserve_task_paths(
             task,
@@ -1268,6 +1352,7 @@ fn output_path_for(
     audio: Option<&MediaStream>,
     options: &DownloadOptions,
     reserved_paths: &mut ReservedPaths,
+    number_file: bool,
 ) -> BdlResult<Option<PathBuf>> {
     let item = selected.item;
     let part = selected.part;
@@ -1302,10 +1387,14 @@ fn output_path_for(
         publish_date: item.publish_date.as_deref(),
         ext: &options.output_extension,
     };
-    let relative_path = render_output_path(&options.naming_template, &context)?;
-
+    let path = options
+        .output_dir
+        .join(render_output_path(&options.naming_template, &context)?);
+    if number_file {
+        return Ok(Some(path));
+    }
     Ok(resolve_duplicate_path(
-        options.output_dir.join(relative_path),
+        path,
         reserved_paths,
         options.duplicate_naming_strategy,
     ))

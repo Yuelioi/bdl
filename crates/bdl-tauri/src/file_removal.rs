@@ -368,6 +368,10 @@ fn delete_file(file: &LocalFile) -> BdlResult<bool> {
 }
 
 pub(crate) fn temporary_paths(task: &DownloadTask) -> Vec<PathBuf> {
+    task.file_parts().flat_map(part_temporary_paths).collect()
+}
+
+fn part_temporary_paths(task: &DownloadTask) -> Vec<PathBuf> {
     let mut paths = Vec::new();
     for resource in &task.resources {
         let mut expected = resource.target_path.as_os_str().to_owned();
@@ -384,7 +388,7 @@ pub(crate) fn temporary_paths(task: &DownloadTask) -> Vec<PathBuf> {
         }
         paths.push(resource.target_path.with_extension("m4s.bdl-copy.tmp"));
     }
-    for output in task.file_paths() {
+    for output in task.part_file_paths() {
         let extension = output.extension().and_then(|s| s.to_str()).unwrap_or("bin");
         paths.push(output.with_extension(format!("{extension}.bdl-copy.tmp")));
     }
@@ -430,6 +434,10 @@ fn document_key(uri: &str) -> BdlResult<String> {
     ))
 }
 fn validate_task_paths(task: &DownloadTask) -> BdlResult<()> {
+    task.file_parts().try_for_each(validate_part_paths)
+}
+
+fn validate_part_paths(task: &DownloadTask) -> BdlResult<()> {
     if task.media_selection.deferred.is_some() {
         return Ok(());
     }
@@ -440,7 +448,7 @@ fn validate_task_paths(task: &DownloadTask) -> BdlResult<()> {
     let parent_key = key(parent)?;
     for path in finished_paths(task)
         .into_iter()
-        .chain(temporary_paths(task))
+        .chain(part_temporary_paths(task))
     {
         // Existing records may use relative paths. Only a real file is a
         // deletion candidate; it must stay inside its recorded output folder.
@@ -469,16 +477,17 @@ fn validate_task_paths(task: &DownloadTask) -> BdlResult<()> {
 fn protected_keys(tasks: &[DownloadTask]) -> BdlResult<HashSet<String>> {
     tasks
         .iter()
+        .flat_map(DownloadTask::file_parts)
         .flat_map(|task| {
             finished_paths(task)
                 .into_iter()
-                .chain(temporary_paths(task))
+                .chain(part_temporary_paths(task))
         })
         .map(|path| key(&path))
         .collect()
 }
 fn finished_paths(task: &DownloadTask) -> Vec<PathBuf> {
-    let mut paths = task.file_paths();
+    let mut paths = task.part_file_paths();
     if task.media_selection.workflow.is_none() {
         paths.extend(
             task.resources
@@ -562,6 +571,9 @@ impl AppState {
                 .filter(|task| {
                     requested.contains(&task.id)
                         && task.media_selection.deferred.is_some()
+                        && task
+                            .file_parts()
+                            .all(|part| part.media_selection.deferred.is_some())
                         && !active.contains_key(&task.id)
                         && !removals.contains(&task.id)
                 })
@@ -755,12 +767,14 @@ impl AppState {
         let protected = protected_keys(&others)?;
         let mut protected_documents = others
             .iter()
+            .flat_map(DownloadTask::file_parts)
             .flat_map(task_documents)
             .map(|(_, uri)| document_key(&uri))
             .collect::<BdlResult<HashSet<_>>>()?;
         let authorities = tasks
             .iter()
             .filter(|t| ids.contains(&t.id))
+            .flat_map(DownloadTask::file_parts)
             .flat_map(task_documents)
             .filter_map(|(_, uri)| {
                 url::Url::parse(&uri)
@@ -770,7 +784,7 @@ impl AppState {
             .collect::<HashSet<_>>();
         // A queued export has no receipt yet. Resolve its reserved names only
         // to protect existing documents, never to choose a deletion target.
-        for task in &others {
+        for task in others.iter().flat_map(DownloadTask::file_parts) {
             let Some(DownloadExportTarget::DocumentTree {
                 tree_uri,
                 relative_path,
@@ -815,12 +829,17 @@ impl AppState {
         };
         let mut seen = HashSet::new();
         let mut seen_documents = HashSet::new();
+        let mut selected = Vec::with_capacity(ids.len());
         for id in &ids {
-            let task = tasks
-                .iter()
-                .find(|t| &t.id == id)
-                .ok_or_else(|| error("任务不存在，请刷新列表。"))?;
-            validate_task_paths(task)?;
+            selected.push(
+                tasks
+                    .iter()
+                    .find(|t| &t.id == id)
+                    .ok_or_else(|| error("任务不存在，请刷新列表。"))?,
+            );
+        }
+        for task in selected.into_iter().flat_map(DownloadTask::file_parts) {
+            validate_part_paths(task)?;
             // Only recorded file paths, never a folder or a glob based on title.
             for path in finished_paths(task) {
                 add_local(&mut plan, &path, &protected, &mut seen)?;

@@ -233,17 +233,10 @@ pub(crate) struct PartHydrationRequest {
     pub(crate) target_cid: Option<u64>,
 }
 
-pub(crate) fn selected_hydration_requests(
-    tree: &NormalizedSourceTree,
-    selected_part_ids: &[PartId],
-) -> BdlResult<Vec<PartHydrationRequest>> {
-    selection_hydration_requests(tree, selected_part_ids, false)
-}
-
 pub(crate) fn selection_hydration_requests(
     tree: &NormalizedSourceTree,
     selected_part_ids: &[PartId],
-    force: bool,
+    needs_request: impl Fn(&NormalizedPart) -> bool,
 ) -> BdlResult<Vec<PartHydrationRequest>> {
     let mut seen = HashSet::new();
     let mut requests = Vec::new();
@@ -255,7 +248,7 @@ pub(crate) fn selection_hydration_requests(
         let Some(part) = find_part(tree, part_id) else {
             continue;
         };
-        if !force && part.cid.is_some() && !part.streams.is_empty() {
+        if !needs_request(part) {
             continue;
         }
         requests.push(PartHydrationRequest {
@@ -314,6 +307,24 @@ pub(crate) fn normalize_selected_part_ids(
     }
 
     normalized
+}
+
+pub(crate) fn expand_selected_posts(
+    tree: &NormalizedSourceTree,
+    selected: &[PartId],
+) -> Vec<PartId> {
+    let wanted: HashSet<_> = selected.iter().collect();
+    let mut posts = tree
+        .groups
+        .iter()
+        .flat_map(|group| &group.items)
+        .filter(|item| item.parts.iter().any(|part| wanted.contains(&part.id)))
+        .collect::<Vec<_>>();
+    posts.sort_by_key(|item| item.nfo_metadata.index);
+    posts
+        .into_iter()
+        .flat_map(|item| item.parts.iter().map(|part| part.id.clone()))
+        .collect()
 }
 
 pub(crate) fn hydrate_placeholder_part(
@@ -505,6 +516,9 @@ fn hydrated_item_for_target(
 }
 
 fn merge_missing_item_metadata(target: &mut NormalizedItem, fallback: &NormalizedItem) {
+    if target.nfo_metadata.index == 0 {
+        target.nfo_metadata.index = fallback.nfo_metadata.index;
+    }
     if target.nfo_metadata.description.is_empty() {
         target
             .nfo_metadata

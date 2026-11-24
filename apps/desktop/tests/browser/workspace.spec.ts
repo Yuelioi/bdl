@@ -1923,7 +1923,7 @@ test('library detail supports pagination, parsing and selection', async ({ page 
   await expect(page.getByRole('region', { name: '后台添加下载' })).toContainText('添加完成');
   expect(await page.evaluate(() =>
     (window as unknown as { __LIBRARY_BATCH_SIZES__: number[] }).__LIBRARY_BATCH_SIZES__,
-  )).toEqual([5, 1]);
+  )).toEqual([1, 1, 1, 1, 1, 1]);
 });
 
 test('library page jump loads only the requested page and reuses visited pages', async ({ page }) => {
@@ -3628,26 +3628,26 @@ for (const device of ['desktop', 'android'] as const) {
       const mediaRow = tree.locator('.media-list-row').first();
       await expect(mediaRow.locator('.media-play')).toBeVisible();
       await expect(mediaRow.getByLabel('时长')).toHaveText('1:00');
-      await expect(page.getByRole('button', { name: '下载所选 (11)', exact: true })).toBeEnabled();
-      await tree.getByRole('button', { name: '展开 分组视频 1', exact: true }).click();
+      await expect(page.getByRole('button', { name: '下载所选 (10)', exact: true })).toBeEnabled();
+      await expect(tree.getByRole('button', { name: '展开 分组视频 1', exact: true })).toHaveCount(0);
       const videoNode = tree.getByRole('treeitem').filter({ has: page.getByText('分组视频 1', { exact: true }) });
       await videoNode.focus();
       await page.keyboard.press('Space');
       await expect(page.getByRole('button', { name: '下载所选 (9)', exact: true })).toBeEnabled();
       await page.keyboard.press('Enter');
-      await expect(page.getByRole('button', { name: '下载所选 (11)', exact: true })).toBeEnabled();
+      await expect(page.getByRole('button', { name: '下载所选 (10)', exact: true })).toBeEnabled();
 
-      await tree.getByText('P1 · 分 P 1', { exact: true }).click();
+      await tree.getByRole('checkbox', { name: '选择 分组视频 1', exact: true }).uncheck();
       await expect(tree.getByRole('checkbox', { name: '选择 5A', exact: true })).toHaveAttribute(
         'data-state',
         'indeterminate',
       );
-      await expect(page.getByRole('button', { name: '下载所选 (10)', exact: true })).toBeEnabled();
+      await expect(page.getByRole('button', { name: '下载所选 (9)', exact: true })).toBeEnabled();
       await tree.getByRole('button', { name: '展开 41th', exact: true }).focus();
       await page.keyboard.press('Enter');
       await expect(tree.getByRole('button', { name: '收起 41th', exact: true })).toBeVisible();
       await tree.getByRole('button', { name: '播放 分组视频 3', exact: true }).click();
-      await expect(page.getByRole('button', { name: '下载所选 (10)', exact: true })).toBeEnabled();
+      await expect(page.getByRole('button', { name: '下载所选 (9)', exact: true })).toBeEnabled();
       await tree.locator('.collection-tree-list').evaluate((element) => {
         element.scrollTop = 0;
       });
@@ -3666,8 +3666,8 @@ for (const device of ['desktop', 'android'] as const) {
       await page.getByRole('button', { name: /下一页|Next Page/ }).click();
       await expect(tree.getByRole('checkbox', { name: '选择 5A', exact: true })).toHaveCount(0);
       await tree.getByRole('checkbox', { name: '选择 42th', exact: true }).check();
-      await expect(page.getByRole('button', { name: '下载所选 (16)', exact: true })).toBeEnabled();
-      await page.getByRole('button', { name: '下载所选 (16)', exact: true }).click();
+      await expect(page.getByRole('button', { name: '下载所选 (15)', exact: true })).toBeEnabled();
+      await page.getByRole('button', { name: '下载所选 (15)', exact: true }).click();
       await expect(page.getByRole('dialog', { name: '下载设置', exact: true })).toBeVisible();
       if (device === 'desktop' && theme === 'light') {
         await page.goto('/?treeLarge=1');
@@ -3675,13 +3675,13 @@ for (const device of ['desktop', 'android'] as const) {
         await page.getByRole('button', { name: '开始解析', exact: true }).click();
         await tree.getByRole('checkbox', { name: '选择 5A', exact: true }).check();
         await tree.getByRole('button', { name: '展开 5A', exact: true }).click();
-        await expect(page.getByRole('button', { name: '下载所选 (101)', exact: true })).toBeEnabled();
+        await expect(page.getByRole('button', { name: '下载所选 (100)', exact: true })).toBeEnabled();
         expect(await tree.getByRole('treeitem').count()).toBeLessThan(50);
         await tree.locator('.collection-tree-list').evaluate((element) => {
           element.scrollTop = element.scrollHeight;
         });
         await tree.getByRole('checkbox', { name: '选择 分组视频 100', exact: true }).uncheck();
-        await expect(page.getByRole('button', { name: '下载所选 (100)', exact: true })).toBeEnabled();
+        await expect(page.getByRole('button', { name: '下载所选 (99)', exact: true })).toBeEnabled();
       }
     });
   }

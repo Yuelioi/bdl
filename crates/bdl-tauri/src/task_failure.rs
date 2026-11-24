@@ -1,8 +1,12 @@
 use bdl_core::queue::QueueLogEntry;
 
-pub(crate) fn is_expired_url_error(message: &str) -> bool {
-    bdl_core::diagnostics::classify_failure(message)
-        .is_some_and(|rule| rule.code == "media_url_expired")
+pub(crate) fn should_refresh_media_url(message: &str) -> bool {
+    bdl_core::diagnostics::classify_failure(message).is_some_and(|rule| {
+        rule.code == "media_url_expired"
+            || (rule.code == "remote_forbidden"
+                && (message.contains("[stage=download_视频 code=remote_forbidden]")
+                    || message.contains("[stage=download_音频 code=remote_forbidden]")))
+    })
 }
 
 pub(crate) fn recent_auto_refresh_attempt_count(logs: &[QueueLogEntry]) -> usize {
@@ -16,7 +20,7 @@ pub(crate) fn recent_auto_refresh_attempt_count(logs: &[QueueLogEntry]) -> usize
 
 #[cfg(test)]
 mod tests {
-    use super::{is_expired_url_error, recent_auto_refresh_attempt_count};
+    use super::{recent_auto_refresh_attempt_count, should_refresh_media_url};
     use bdl_core::queue::{QueueLogEntry, QueueLogLevel};
 
     fn log(message: &str) -> QueueLogEntry {
@@ -30,12 +34,20 @@ mod tests {
 
     #[test]
     fn classifies_refreshable_expired_media_errors() {
-        assert!(is_expired_url_error("HTTP 404 Not Found"));
-        assert!(!is_expired_url_error(
+        assert!(should_refresh_media_url("HTTP 404 Not Found"));
+        assert!(!should_refresh_media_url(
             "读取资源长度失败: HTTP 403 Forbidden"
         ));
-        assert!(!is_expired_url_error("读取资源长度失败: request timed out"));
-        assert!(!is_expired_url_error("network timeout"));
+        assert!(should_refresh_media_url(
+            "[stage=download_视频 code=remote_forbidden] HTTP 403 Forbidden"
+        ));
+        assert!(!should_refresh_media_url(
+            "[stage=bilibili_api code=source_verification_required] HTTP 403 Forbidden"
+        ));
+        assert!(!should_refresh_media_url(
+            "读取资源长度失败: request timed out"
+        ));
+        assert!(!should_refresh_media_url("network timeout"));
     }
 
     #[test]

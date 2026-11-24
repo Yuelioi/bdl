@@ -503,7 +503,14 @@ fn collection_tree_from_page(
     let items = page
         .videos
         .into_iter()
-        .map(|video| map_archive_item(&source_key, video))
+        .enumerate()
+        .map(|(offset, video)| {
+            map_archive_item(
+                &source_key,
+                video,
+                super::paged::page_item_index(page.request, offset),
+            )
+        })
         .collect::<Vec<_>>();
 
     let loaded_count = items.len();
@@ -605,7 +612,14 @@ fn series_tree_from_page(
     let items = page
         .videos
         .into_iter()
-        .map(|video| map_archive_item(&source_key, video))
+        .enumerate()
+        .map(|(offset, video)| {
+            map_archive_item(
+                &source_key,
+                video,
+                super::paged::page_item_index(page.request, offset),
+            )
+        })
         .collect::<Vec<_>>();
 
     NormalizedSourceTree {
@@ -633,11 +647,14 @@ fn series_tree_from_page(
     }
 }
 
-fn map_archive_item(source_key: &str, video: ResolvedArchiveVideo) -> NormalizedItem {
+fn map_archive_item(source_key: &str, video: ResolvedArchiveVideo, index: usize) -> NormalizedItem {
     let video_key = format!("{source_key}:{}", video.bvid);
 
     NormalizedItem {
-        nfo_metadata: Default::default(),
+        nfo_metadata: crate::nfo::NfoMetadata {
+            index,
+            ..Default::default()
+        },
         id: ItemId(format!("item:{video_key}")),
         title: video.title.clone(),
         owner_name: video.owner_name.clone(),

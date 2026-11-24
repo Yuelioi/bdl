@@ -1,5 +1,6 @@
 use crate::request::BilibiliRequest;
 use crate::{BpiClient, BpiResult};
+use serde::de::DeserializeOwned;
 
 use super::collection::{
     GetSeasonsArchivesData, GetSeasonsSeriesData, GetSeriesArchivesData, GetSeriesData,
@@ -99,6 +100,14 @@ impl<'a> VideoClient<'a> {
 
     /// 按 AV ID 或 BV ID 以及分 P/内容 ID 获取已签名的 Web 播放 URL。
     pub async fn play_url(&self, params: VideoPlayUrlParams) -> BpiResult<PlayUrlResponseData> {
+        self.play_url_payload(params).await
+    }
+
+    /// Decode the same signed playback endpoint into a caller's response model.
+    pub async fn play_url_payload<T: DeserializeOwned>(
+        &self,
+        params: VideoPlayUrlParams,
+    ) -> BpiResult<T> {
         let params = self.client.get_wbi_sign2(params.query_pairs()).await?;
 
         self.client

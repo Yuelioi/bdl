@@ -93,6 +93,10 @@ async fn cover_and_nfo_plan_succeeds_without_playback_or_subtitle_requests() {
 #[async_trait]
 impl VideoApi for CountingVideoApi {
     async fn view(&self, _id: &VideoInputId) -> Result<ResolvedVideo, BdlError> {
+        self.calls
+            .lock()
+            .expect("calls should lock")
+            .push(("view", 0));
         Ok(ResolvedVideo {
             nfo_metadata: Default::default(),
             aid: 170001,
@@ -145,7 +149,7 @@ impl VideoApi for FakeVideoApi {
 
     async fn play_url(&self, id: &VideoInputId, cid: u64) -> Result<ResolvedPlayUrl, BdlError> {
         assert_eq!(id, &VideoInputId::Bvid("BV1xx411c7mD".to_owned()));
-        assert_eq!(cid, 62131);
+        assert!(self.video.pages.iter().any(|page| page.cid == cid));
         Ok(self.play_url.clone())
     }
 
@@ -155,7 +159,7 @@ impl VideoApi for FakeVideoApi {
         cid: u64,
     ) -> Result<ResolvedPlayerInfo, BdlError> {
         assert_eq!(id, &VideoInputId::Bvid("BV1xx411c7mD".to_owned()));
-        assert_eq!(cid, 62131);
+        assert!(self.video.pages.iter().any(|page| page.cid == cid));
         Ok(self.player_info.clone())
     }
 }
@@ -213,7 +217,14 @@ async fn video_resolver_resolves_bv_without_streams() -> Result<(), BdlError> {
 
 #[tokio::test]
 async fn video_resolver_maps_dash_streams_when_requested() -> Result<(), BdlError> {
-    let resolver = VideoResolver::with_api(fake_api());
+    let mut api = fake_api();
+    api.video.pages.push(ResolvedVideoPage {
+        cid: 62132,
+        index: 2,
+        title: "Ending".into(),
+        duration_seconds: Some(20),
+    });
+    let resolver = VideoResolver::with_api(api);
 
     let tree = resolver
         .resolve(
@@ -249,6 +260,117 @@ async fn video_resolver_maps_dash_streams_when_requested() -> Result<(), BdlErro
     assert_eq!(audio.codec, StreamCodec::Aac);
     assert_eq!(audio.bandwidth, Some(192_000));
 
+    let id = tree.groups[0].items[0].parts[0].id.clone();
+    let mut options = bdl_core::planner::DownloadOptions::new("downloads".into());
+    options.naming_template = "{index}-{title}.{ext}".to_owned();
+    let prepared = bdl_core::planner::plan_queue_selection(
+        &tree,
+        std::slice::from_ref(&id),
+        &std::collections::HashSet::from([id.clone()]),
+        &options,
+        None,
+        6,
+    )?;
+    assert!(prepared[0].media_selection.deferred.is_none());
+    assert!(
+        prepared[0]
+            .output_path
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .starts_with("7-")
+    );
+    assert!(prepared[0].resources.iter().any(|resource| {
+        resource
+            .current_urls
+            .iter()
+            .any(|url| url == "https://example.invalid/video.m4s")
+    }));
+    let queued = bdl_core::planner::plan_queue_selection(
+        &tree,
+        &[id],
+        &std::collections::HashSet::new(),
+        &options,
+        None,
+        6,
+    )?;
+    assert!(queued[0].media_selection.deferred.is_some());
+    assert!(queued[0].resources.is_empty());
+    let later = queued[0]
+        .media_selection
+        .deferred
+        .as_ref()
+        .unwrap()
+        .plan(&tree)?
+        .unwrap();
+    assert_eq!(later.output_path, prepared[0].output_path);
+
+    let mut tree = tree;
+    let ids = tree.groups[0].items[0]
+        .parts
+        .iter()
+        .map(|part| part.id.clone())
+        .collect::<Vec<_>>();
+    let options = bdl_core::planner::DownloadOptions::new("downloads".into());
+    for kind in [
+        SourceKind::Uploader,
+        SourceKind::WatchLater,
+        SourceKind::Favorite,
+        SourceKind::Collection,
+    ] {
+        tree.source.kind = kind;
+        let queue = bdl_core::planner::plan_queue_selection(
+            &tree,
+            &ids,
+            &Default::default(),
+            &options,
+            None,
+            0,
+        )?;
+        assert!(queue.iter().all(|task| task.resources.is_empty()));
+        let plans = if matches!(kind, SourceKind::Uploader | SourceKind::WatchLater) {
+            assert_eq!(queue.len(), 1);
+            queue[0]
+                .media_selection
+                .deferred
+                .as_ref()
+                .unwrap()
+                .post_parts(&tree)
+        } else {
+            assert_eq!(queue.len(), 2);
+            queue
+                .into_iter()
+                .map(|task| *task.media_selection.deferred.unwrap())
+                .collect()
+        };
+        let names = plans
+            .iter()
+            .map(|plan| {
+                let task = plan.plan(&tree)?.unwrap();
+                Ok(task
+                    .output_path
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned())
+            })
+            .collect::<Result<Vec<_>, BdlError>>()?;
+        assert_eq!(names, ["P1 - P1.mp4", "P2 - Ending.mp4"]);
+        let plain_names = plans
+            .into_iter()
+            .map(|mut plan| {
+                plan.options.naming_template = "{title}".into();
+                let task = plan.plan(&tree)?.unwrap();
+                Ok(task
+                    .output_path
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned())
+            })
+            .collect::<Result<Vec<_>, BdlError>>()?;
+        assert_eq!(plain_names, ["fixture video.mp4", "2 - fixture video.mp4"]);
+    }
     Ok(())
 }
 
@@ -265,12 +387,24 @@ async fn video_resolver_hydrates_only_the_selected_cid() -> Result<(), BdlError>
 
     assert_eq!(
         calls.lock().expect("calls should lock").as_slice(),
-        &[("play", 62132), ("player", 62132)]
+        &[("view", 0), ("play", 62132), ("player", 62132)]
     );
     let parts = &tree.groups[0].items[0].parts;
     assert_eq!(parts.len(), 190);
     assert!(parts[0].streams.is_empty());
     assert!(parts[2].streams.is_empty());
+    calls.lock().unwrap().clear();
+    let mut queued_part = parts[1].clone();
+    resolver
+        .load_part_playback(
+            ClassifiedInput::VideoBvid("BV1xx411c7mD".to_owned()),
+            &mut queued_part,
+            true,
+            false,
+        )
+        .await?;
+    assert_eq!(calls.lock().unwrap().as_slice(), &[("play", 62132)]);
+    assert_eq!(queued_part, parts[1]);
     Ok(())
 }
 

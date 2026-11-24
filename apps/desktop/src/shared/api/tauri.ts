@@ -173,8 +173,8 @@ interface BackgroundEnqueueResult {
   blocked: CommandErrorShape | null
 }
 
-export const selectionEnqueueBatch = (request: SelectionCreateTasksRequest, snapshot: NormalizedSourceTree, operationId: string) =>
-  invokeCommand<BackgroundEnqueueResult>('selection_enqueue_batch', { request, snapshot, operationId })
+export const selectionEnqueueBatch = (request: SelectionCreateTasksRequest, snapshot: NormalizedSourceTree, operationId: string, itemIndexOffset: number) =>
+  invokeCommand<BackgroundEnqueueResult>('selection_enqueue_batch', { request, snapshot, operationId, itemIndexOffset })
 
 export const selectionSubmitTasks = (request: SelectionCreateTasksRequest, snapshot: NormalizedSourceTree, origin: string) =>
   invokeCommand<PreparationJob>('selection_submit_tasks', { request, snapshot, origin })
@@ -252,7 +252,7 @@ export const queueDeletePreview = (taskIds: string[]) =>
 export const queueDeleteFiles = (token: string) => invokeCommand<BulkQueueResult>('queue_delete_files', { token })
 export const maintenanceTempPreview = () => invokeCommand<RemovalPreview>('maintenance_temp_preview')
 
-export const queueOpenFile = (taskId: string) => invokeCommand<void>('queue_open_file', { taskId })
+export const queueOpenFile = (taskId: string, cid?: number) => invokeCommand<void>('queue_open_file', { taskId, cid })
 
 export const queueOutputSizes = (taskIds: string[]) =>
   invokeCommand<Record<string, number | null>>('queue_output_sizes', { taskIds })

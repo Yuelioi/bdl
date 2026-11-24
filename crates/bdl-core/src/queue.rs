@@ -151,13 +151,14 @@ impl DownloadTask {
         logical_task_id(&self.id)
     }
 
-    pub fn into_duplicate_copy(
-        mut self,
-        copy_index: usize,
-        output_path: PathBuf,
-    ) -> BdlResult<Self> {
-        let original_id = self.id.clone();
+    pub fn into_duplicate_copy(self, copy_index: usize, output_path: PathBuf) -> BdlResult<Self> {
         let copy_id = format!("{}:copy:{copy_index}", self.logical_id());
+        self.with_task_id(copy_id.clone(), &copy_id)?
+            .with_output_path(output_path)
+    }
+
+    pub fn with_task_id(mut self, task_id: String, resource_prefix: &str) -> BdlResult<Self> {
+        let original_id = self.id.clone();
 
         for resource in &mut self.resources {
             let suffix =
@@ -170,18 +171,18 @@ impl DownloadTask {
                             resource.id
                         ),
                     })?;
-            resource.id = format!("{copy_id}{suffix}");
+            resource.id = format!("{resource_prefix}{suffix}");
         }
 
         for artifact in &mut self.media_selection.artifacts {
             if let Some(resource_id) = &mut artifact.resource_id
                 && let Some(suffix) = resource_id.strip_prefix(&original_id)
             {
-                *resource_id = format!("{copy_id}{suffix}");
+                *resource_id = format!("{resource_prefix}{suffix}");
             }
         }
-        self.id = copy_id;
-        self.with_output_path(output_path)
+        self.id = task_id;
+        Ok(self)
     }
 
     /// Retarget a not-yet-enqueued task without changing its logical identity.
@@ -258,6 +259,18 @@ impl DownloadTask {
     }
 
     pub fn file_paths(&self) -> Vec<PathBuf> {
+        self.file_parts().flat_map(Self::part_file_paths).collect()
+    }
+
+    pub fn file_parts(&self) -> impl Iterator<Item = &Self> {
+        self.media_selection
+            .post
+            .iter()
+            .flat_map(|post| post.finished.iter().chain(&post.replay))
+            .chain(std::iter::once(self))
+    }
+
+    pub fn part_file_paths(&self) -> Vec<PathBuf> {
         if self.media_selection.deferred.is_some() {
             return Vec::new();
         }
@@ -368,6 +381,8 @@ pub struct TaskProcessingOptions {
 pub struct DownloadTaskMediaSelection {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub deferred: Option<Box<crate::planner::DeferredDownload>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub post: Option<Box<PostDownload>>,
     #[serde(default)]
     pub nfo_metadata: crate::nfo::NfoMetadata,
     /// SAF receipts distinguish files created here from "skip existing" files.
@@ -400,6 +415,7 @@ impl Default for DownloadTaskMediaSelection {
     fn default() -> Self {
         Self {
             deferred: None,
+            post: None,
             nfo_metadata: Default::default(),
             owned_document_uris: Vec::new(),
             preserved_document_uris: Vec::new(),
@@ -416,6 +432,16 @@ impl Default for DownloadTaskMediaSelection {
             container: "unknown".to_owned(),
         }
     }
+}
+
+/// The task itself holds the active part. Pending parts contain metadata only.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PostDownload {
+    pub pending: std::collections::VecDeque<crate::planner::DeferredDownload>,
+    #[serde(default, skip_serializing_if = "std::collections::VecDeque::is_empty")]
+    pub replay: std::collections::VecDeque<DownloadTask>,
+    pub finished: Vec<DownloadTask>,
+    pub total: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

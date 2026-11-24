@@ -53,7 +53,7 @@ onUnmounted(() => preparations.stop())
         <p v-if="job.error" class="m-0 break-words text-xs text-(--color-danger)">{{ job.error.message }}</p>
         <ErrorDetails v-if="job.error" :detail="diagnostic(job)" />
         <template v-if="job.status === 'awaiting_confirmation'">
-          <p class="m-0 text-xs">{{ job.duplicates.length }} 个分集已在传输记录中</p>
+          <p class="m-0 text-xs">{{ job.duplicates.length }} 项已在传输记录中</p>
           <ul class="m-0 max-h-40 overflow-auto pl-5 text-xs" aria-label="重复任务">
             <li v-for="match in job.duplicates" :key="match.proposed_task_id" class="break-words">{{ match.title }}</li>
           </ul>

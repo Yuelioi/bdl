@@ -7,7 +7,6 @@ import type {
   DocumentTreeDirectory,
   DownloadMediaMode,
   DuplicateTaskPolicy,
-  NormalizedGroup,
   NormalizedItem,
   NormalizedPart,
   NormalizedSourceTree,
@@ -35,6 +34,7 @@ import { isSingleVideoInput } from '../utils/bilibiliLinks'
 import type { InlineNotice, NoticeTone } from './feedback'
 import { NOTICE_CLEAR_DELAY } from './feedback'
 import { buildBatchSelectionBySource, selectedBatchSourceIds, toggleBatchEntrySelection } from './parseBatch'
+import { selectsWholePosts, selectableParts } from '../features/parse/parseResultTree'
 
 const MAX_BATCH_SOURCES = 20
 const PARSE_CONCURRENCY = 1
@@ -378,6 +378,8 @@ export const useParseStore = defineStore('parse', {
       const epoch = this.sourceEpochById[sourceId]
       const owns = () => this.ownsSource(sourceId, generation, epoch)
       const loadedBefore = current.source.loaded_count
+      const pageNumber = (tree: NormalizedSourceTree) => tree.groups.find(group => group.page)?.page?.page_number
+      const startingPage = pageNumber(current)
       const limit = loadedBefore + Math.max(1, Math.floor(chunkSize))
       if (!this.pacedParsingBySource[sourceId]) this.pacedParsingStopRequestedBySource[sourceId] = false
       this.loadingBySource[sourceId] = true
@@ -387,16 +389,18 @@ export const useParseStore = defineStore('parse', {
         while (owns() && this.sources[sourceId]?.source.has_more && this.sources[sourceId].source.loaded_count < limit) {
           if (this.pacedParsingStopRequestedBySource[sourceId]) break
           const before = this.sources[sourceId].source.loaded_count
-          const pageBefore = this.sources[sourceId].groups[0]?.page?.page_number
+          const pageBefore = pageNumber(this.sources[sourceId])
           const operationId = this.beginOperation(sourceId)
           let tree: NormalizedSourceTree
           try { tree = await parseLoadMore({ source_id: sourceId, snapshot: cloneTree(this.sources[sourceId]), operation_id: operationId }) }
           finally { this.endOperation(sourceId, operationId) }
           if (!owns()) break
           this.upsertSource(tree)
-          if (tree.source.loaded_count <= before && tree.groups[0]?.page?.page_number === pageBefore) break
+          if (tree.source.loaded_count <= before && pageNumber(tree) === pageBefore) break
+          if (chunkSize === 1) break
         }
-        return owns() && (this.sources[sourceId]?.source.loaded_count ?? 0) > loadedBefore
+        return owns() && (this.sources[sourceId].source.loaded_count > loadedBefore
+          || pageNumber(this.sources[sourceId]) !== startingPage)
       } catch (error) {
         if (owns() && !this.pacedParsingStopRequestedBySource[sourceId]) this.recordSourceFailure(sourceId, error)
         return false
@@ -501,14 +505,47 @@ export const useParseStore = defineStore('parse', {
         while (!stopped()) {
           const tree = this.sources[sourceId]
           const parts = indexSourceParts(tree)
-          const pending = (retryIds ?? [...parts.keys()]).filter(id => !done.has(id))
-          const batchSize = tree.groups.find(group => (group.page?.page_size ?? 0) > 0)?.page?.page_size ?? 20
-          for (let start = 0; start < pending.length && !stopped(); start += batchSize) {
-            const ids = pending.slice(start, start + batchSize)
+          const byPost = selectsWholePosts(tree.source.kind)
+          const page = tree.groups.find(group => (group.page?.page_size ?? 0) > 0)?.page
+          const batchSize = page?.page_size ?? 20
+          const latestPosition = !retryIds && byPost && tree.source.has_more && page
+            ? page.page_number * batchSize
+            : Infinity
+          const pending = (retryIds ?? [...parts.keys()]).filter(id =>
+            !done.has(id) && (parts.get(id)?.item.nfo_metadata?.index ?? 0) <= latestPosition,
+          )
+          for (let start = 0; start < pending.length && !stopped();) {
+            const first = parts.get(pending[start])
+            let end = start + 1
+            if (byPost || first?.part.cid != null) {
+              const firstPosition = first?.item.nfo_metadata?.index
+              const endOfPage = byPost && firstPosition ? Math.ceil(firstPosition / batchSize) * batchSize : Infinity
+              while (end < pending.length && end - start < batchSize) {
+                const next = parts.get(pending[end])
+                if ((!byPost && next?.part.cid == null) || (next?.item.nfo_metadata?.index ?? 0) > endOfPage) break
+                end++
+              }
+            }
+            const ids = pending.slice(start, end)
+            start = end
+            const item = ids.length === 1 ? first : undefined
+            let snapshot = tree
+            if (byPost) {
+              const selectedItems = new Set(ids.map(id => parts.get(id)?.item))
+              snapshot = {
+                source: tree.source,
+                groups: tree.groups.flatMap(group => {
+                  const items = group.items.filter(item => selectedItems.has(item))
+                  return items.length ? [{ ...group, items }] : []
+                }),
+              }
+            } else if (item) {
+              snapshot = { source: tree.source, groups: [{ ...item.group, items: [item.item] }] }
+            }
             const operationId = this.beginOperation(sourceId)
             let result: Awaited<ReturnType<typeof selectionEnqueueBatch>>
             try {
-              result = await selectionEnqueueBatch(taskRequest(sourceId, ids, options, defaults), cloneTree(tree), operationId)
+              result = await selectionEnqueueBatch(taskRequest(sourceId, ids, options, defaults), cloneTree(snapshot), operationId, (byPost ? first : item)?.itemIndex ?? 0)
             } finally {
               this.endOperation(sourceId, operationId)
             }
@@ -886,6 +923,11 @@ export const useParseStore = defineStore('parse', {
         this.selectionBySource[sourceId] = uniquePartIds(selection.flatMap(id => {
           if (currentIds.has(id)) return [id]
           const old = oldParts.get(id)
+          const currentItem = old && items.get(old.item.id)
+          if (currentItem && selectsWholePosts(tree.source.kind)) {
+            const first = currentItem.parts[0]
+            return first ? [first.id] : []
+          }
           // Only whole-video placeholders expand; explicit P selections stay scoped.
           if (old && old.part.cid == null) return items.get(old.item.id)?.parts.map(part => part.id) ?? [id]
           return [id]
@@ -906,15 +948,20 @@ export const useParseStore = defineStore('parse', {
 const cloneTree = (tree: NormalizedSourceTree): NormalizedSourceTree => JSON.parse(JSON.stringify(tree)) as NormalizedSourceTree
 
 const indexSourceParts = (tree: NormalizedSourceTree) => {
-  const parts = new Map<string, { item: NormalizedItem; part: NormalizedPart }>()
+  const parts = new Map<string, { item: NormalizedItem; part: NormalizedPart; group: NormalizedSourceTree['groups'][number]; itemIndex: number }>()
+  let itemIndex = 0
   for (const group of tree.groups) {
     for (const item of group.items) {
-      for (const part of item.parts) {
-        if (!parts.has(part.id)) parts.set(part.id, { item, part })
+      for (const part of selectableParts(item, tree.source.kind)) {
+        if (!parts.has(part.id)) parts.set(part.id, { item, part, group, itemIndex })
       }
+      itemIndex++
     }
   }
-  return parts
+  if (!selectsWholePosts(tree.source.kind)) return parts
+  return new Map([...parts].sort(([, left], [, right]) =>
+    (left.item.nfo_metadata?.index || left.itemIndex + 1) - (right.item.nfo_metadata?.index || right.itemIndex + 1),
+  ))
 }
 
 const taskRequest = (
@@ -961,7 +1008,7 @@ const taskRequest = (
 }
 
 export const collectPartIds = (tree: NormalizedSourceTree): string[] =>
-  tree.groups.flatMap((group) => group.items.flatMap((item) => item.parts.map((part) => part.id)))
+  tree.groups.flatMap((group) => group.items.flatMap((item) => selectableParts(item, tree.source.kind).map((part) => part.id)))
 
 const uniquePartIds = (partIds: string[]): string[] => Array.from(new Set(partIds))
 
@@ -1031,12 +1078,12 @@ const defaultSelection = (tree: NormalizedSourceTree): string[] =>
 const partIdsForNode = (tree: NormalizedSourceTree, nodeId: string): string[] => {
   for (const group of tree.groups) {
     if (group.id === nodeId) {
-      return partIdsForGroup(group)
+      return group.items.flatMap(item => selectableParts(item, tree.source.kind).map(part => part.id))
     }
 
     for (const item of group.items) {
       if (item.id === nodeId) {
-        return partIdsForItem(item)
+        return selectableParts(item, tree.source.kind).map(part => part.id)
       }
 
       const part = item.parts.find((candidate) => candidate.id === nodeId)
@@ -1049,9 +1096,6 @@ const partIdsForNode = (tree: NormalizedSourceTree, nodeId: string): string[] =>
   return []
 }
 
-const partIdsForGroup = (group: NormalizedGroup): string[] => group.items.flatMap(partIdsForItem)
-
-const partIdsForItem = (item: NormalizedItem): string[] => item.parts.map((part: NormalizedPart) => part.id)
 
 const errorMessage = (error: unknown): string => {
   if (error instanceof Error) {

@@ -250,26 +250,29 @@ export const useQueueStore = defineStore('queue', {
         return existing && JSON.stringify(existing) === JSON.stringify(task) ? existing : task
       })
     },
-    upsertTask(task: DownloadTask) {
-      const index = this.tasks.findIndex((candidate) => candidate.id === task.id)
+    normalizeTaskUpdate(task: DownloadTask, previous?: DownloadTask): DownloadTask {
       if (task.status !== 'completed' || this.outputSizesByTask[task.id]?.path !== task.output_path) {
         delete this.outputSizesByTask[task.id]
       }
-      const previous = this.tasks[index]
-      task = {
+      if ((task.status === 'waiting' && task.resources.every((resource) => resource.status === 'pending'))
+          || (task.media_selection.post && previous?.resources.length && task.resources[0]?.id !== previous.resources[0]?.id)) {
+        delete this.progressByTask[task.id]
+      }
+      return {
         ...task,
         completed_at: task.status === 'completed'
           ? task.completed_at ?? (previous?.status === 'completed' ? previous.completed_at : null) ?? new Date().toISOString()
           : null,
       }
+    },
+    upsertTask(task: DownloadTask) {
+      const index = this.tasks.findIndex((candidate) => candidate.id === task.id)
+      const updated = this.normalizeTaskUpdate(task, this.tasks[index])
       if (index === -1) {
         // Match the backend's oldest-to-newest order, including batches and refreshes.
-        this.tasks.push(task)
+        this.tasks.push(updated)
       } else {
-        this.tasks[index] = task
-      }
-      if (task.status === 'waiting' && task.resources.every((resource) => resource.status === 'pending')) {
-        delete this.progressByTask[task.id]
+        this.tasks[index] = updated
       }
       this.applyDefaultFilter()
       this.selectedTaskId = this.selectedTaskId ?? task.id
@@ -330,16 +333,14 @@ export const useQueueStore = defineStore('queue', {
       }
 
       const transferProgress = this.progressByTask[task.id]
-      if (transferProgress?.totalBytes && transferProgress.totalBytes > 0) {
-        return Math.min(99, Math.round((transferProgress.downloadedBytes / transferProgress.totalBytes) * 100))
-      }
-
-      if (task.resources.length === 0) {
-        return 0
-      }
-
       const completed = task.resources.filter((resource) => resource.status === 'completed').length
-      return Math.round((completed / task.resources.length) * 100)
+      const fraction = transferProgress?.totalBytes && transferProgress.totalBytes > 0
+        ? Math.min(0.99, transferProgress.downloadedBytes / transferProgress.totalBytes)
+        : task.resources.length ? completed / task.resources.length : 0
+      const post = task.media_selection.post
+      if (!post) return Math.round(fraction * 100)
+      const processed = post.total - post.pending.length - (post.replay?.length ?? 0) - 1
+      return Math.min(99, Math.round((processed + fraction) / post.total * 100))
     },
     taskTransferProgress(taskId: string): TransferProgressSnapshot | null {
       return this.progressByTask[taskId] ?? null
@@ -373,6 +374,8 @@ export const useQueueStore = defineStore('queue', {
       }, 0)
     },
     applyProgress(entry: QueueProgressEntry) {
+      const task = this.tasks.find(task => task.id === entry.task_id)
+      if (task?.media_selection.post && !task.resources.some(resource => resource.id === entry.resource_id)) return
       const existing = this.progressByTask[entry.task_id]
       const resources = {
         ...(existing?.resources ?? {}),
@@ -511,8 +514,8 @@ export const useQueueStore = defineStore('queue', {
         await this.reconcile()
       }
     },
-    async openFile(taskId: string) {
-      await this.runVoidCommand(() => queueOpenFile(taskId))
+    async openFile(taskId: string, cid?: number) {
+      await this.runVoidCommand(() => queueOpenFile(taskId, cid))
     },
     async openDir(taskId: string) {
       await this.runVoidCommand(() => queueOpenDir(taskId))
@@ -586,9 +589,10 @@ export const useQueueStore = defineStore('queue', {
       this.bulkBusy = true
       this.setNotice(`正在${actionLabel.replace(/^已/, '')}任务…`, 'info')
       if (this.noticeTimer !== null) { window.clearTimeout(this.noticeTimer); this.noticeTimer = null }
+      const before = new Map(this.tasks.map(task => [task.id, task]))
       try {
         const result = await command()
-        this.applyBulkResult(result)
+        this.applyBulkResult(result, before)
 
         const succeeded = result.updated.length + result.removed.length
         if (succeeded > 0) {
@@ -607,9 +611,20 @@ export const useQueueStore = defineStore('queue', {
         this.bulkBusy = false
       }
     },
-    applyBulkResult(result: BulkQueueResult) {
-      for (const task of result.updated) {
-        this.upsertTask(task)
+    applyBulkResult(result: BulkQueueResult, before?: ReadonlyMap<string, DownloadTask>) {
+      if (result.updated.length) {
+        const updates = new Map(result.updated.map(task => [task.id, task]))
+        const next = this.tasks.map(previous => {
+          const task = updates.get(previous.id)
+          if (!task) return previous
+          updates.delete(previous.id)
+          // A resumed task can publish a newer state while the command returns.
+          if (before && before.get(task.id) !== previous && task.status === 'waiting'
+            && ['parsing', 'downloading', 'muxing', 'completed', 'failed'].includes(previous.status)) return previous
+          return this.normalizeTaskUpdate(task, previous)
+        })
+        for (const task of updates.values()) next.push(this.normalizeTaskUpdate(task))
+        this.tasks = next
       }
 
       const removed = new Set(result.removed)

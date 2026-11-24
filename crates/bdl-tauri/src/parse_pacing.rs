@@ -10,6 +10,12 @@ use tokio::time::Instant;
 #[derive(Default)]
 pub(crate) struct ParsePacer(Mutex<PaceState>);
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CooldownBehavior {
+    Report,
+    Wait,
+}
+
 #[derive(Default)]
 struct PaceState {
     last_completed: Option<Instant>,
@@ -24,18 +30,19 @@ impl ParsePacer {
     pub(crate) async fn run_retry<T, F: Future<Output = BdlResult<T>>>(
         &self,
         rules: ParseRules,
+        cooldown: CooldownBehavior,
         mut operation: impl FnMut() -> F,
         page_count: impl Fn(&T) -> usize,
         phase: impl Fn(Phase),
     ) -> BdlResult<T> {
         let first = self
-            .run_observed(rules, operation(), &page_count, &phase)
+            .run_observed(rules, cooldown, operation(), &page_count, &phase)
             .await;
         if first.as_ref().is_err_and(is_transient) {
             let until = Instant::now() + Duration::from_secs(2);
             phase(Phase::Waiting(until));
             tokio::time::sleep_until(until).await;
-            self.run_observed(rules, operation(), page_count, phase)
+            self.run_observed(rules, cooldown, operation(), page_count, phase)
                 .await
         } else {
             first
@@ -50,27 +57,43 @@ impl ParsePacer {
         operation: impl Future<Output = BdlResult<T>>,
         page_count: impl FnOnce(&T) -> usize,
     ) -> BdlResult<T> {
-        self.run_observed(rules, operation, page_count, |_| {})
-            .await
+        self.run_observed(
+            rules,
+            CooldownBehavior::Report,
+            operation,
+            page_count,
+            |_| {},
+        )
+        .await
     }
 
     pub(crate) async fn run_observed<T>(
         &self,
         rules: ParseRules,
+        cooldown: CooldownBehavior,
         operation: impl Future<Output = BdlResult<T>>,
         page_count: impl FnOnce(&T) -> usize,
         phase: impl Fn(Phase),
     ) -> BdlResult<T> {
-        phase(Phase::Queued);
-        let mut state = self.0.lock().await;
-        if let Some(until) = state.blocked_until.filter(|until| *until > Instant::now()) {
-            return Err(BdlError::Planning {
-                message: format!(
-                    "解析已因限流暂停，请约 {} 秒后手动重试。",
-                    (until - Instant::now()).as_secs().saturating_add(1)
-                ),
-            });
-        }
+        let mut state = loop {
+            phase(Phase::Queued);
+            let state = self.0.lock().await;
+            let now = Instant::now();
+            let Some(until) = state.blocked_until.filter(|until| *until > now) else {
+                break state;
+            };
+            if cooldown == CooldownBehavior::Report {
+                return Err(BdlError::Planning {
+                    message: format!(
+                        "解析已因限流暂停，请约 {} 秒后手动重试。",
+                        (until - now).as_secs().saturating_add(1)
+                    ),
+                });
+            }
+            drop(state);
+            phase(Phase::Waiting(until));
+            tokio::time::sleep_until(until).await;
+        };
         // Time spent idle is already a rest, including between manual batches.
         if rules.rest_seconds > 0
             && state
@@ -206,6 +229,7 @@ mod tests {
         pacer
             .run_observed(
                 rules,
+                CooldownBehavior::Report,
                 async { Ok(()) },
                 |_| 1,
                 |phase| {
@@ -230,6 +254,7 @@ mod tests {
         let operation = control.begin("source", "test");
         let work = operation.run(pacer.run_observed(
             rules,
+            CooldownBehavior::Report,
             async {
                 panic!("cancelled waiting request must not reach the server");
                 #[allow(unreachable_code)]
@@ -264,6 +289,7 @@ mod tests {
             let result: BdlResult<()> = pacer
                 .run_retry(
                     ParseRules::default(),
+                    CooldownBehavior::Report,
                     || {
                         attempts.fetch_add(1, Ordering::SeqCst);
                         async { Err(BdlError::Bpi(message.into())) }
@@ -374,7 +400,16 @@ mod tests {
             )
             .await;
         assert!(blocked.is_err());
-        tokio::time::advance(Duration::from_secs(60)).await;
-        assert!(pacer.run(rules, async { Ok(()) }, |_| 1).await.is_ok());
+        let waiting_since = Instant::now();
+        let result = pacer
+            .run_observed(
+                rules,
+                CooldownBehavior::Wait,
+                async { Ok(waiting_since.elapsed()) },
+                |_| 0,
+                |_| {},
+            )
+            .await;
+        assert_eq!(result.unwrap(), Duration::from_secs(60));
     }
 }

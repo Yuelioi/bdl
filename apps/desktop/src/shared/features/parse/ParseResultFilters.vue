@@ -14,8 +14,8 @@ const searching = defineModel<boolean>('searching', { default: false });
 const props = defineProps<{
   disabled: boolean;
   grouped?: boolean;
-  loaded?: number;
   mobile?: boolean;
+  listLabel?: string;
   applyRange: (text: string) => string | null;
 }>();
 const rangeOpen = ref(false);
@@ -34,7 +34,7 @@ const select = () => {
 <template>
   <div class="parse-result-filters" :class="{ 'is-mobile': mobile }">
     <div v-if="!mobile" class="result-list-heading">
-      <strong>分集</strong><span v-if="loaded != null">已加载 {{ loaded }} 项</span>
+      <strong>{{ listLabel || '分集' }}</strong>
     </div>
     <UInput
       v-if="!mobile || searching"
@@ -43,7 +43,7 @@ const select = () => {
       type="search"
       aria-label="搜索解析结果"
       icon="i-tabler-search"
-      :placeholder="mobile ? '搜索标题' : '搜索分集标题'"
+      :placeholder="mobile ? '搜索标题' : `搜索${listLabel || '分集'}标题`"
       :disabled="disabled"
       :autofocus="mobile"
       color="neutral"
@@ -144,11 +144,6 @@ const select = () => {
   font-weight: 600;
 }
 
-.result-list-heading span {
-  color: var(--color-muted);
-  font-size: var(--font-12);
-}
-
 .result-search {
   width: min(15rem, 40%);
   margin-left: auto;
@@ -172,10 +167,6 @@ const select = () => {
 
   .result-range {
     padding-inline: 0.375rem;
-  }
-
-  .result-list-heading span {
-    display: none;
   }
 
   .result-search {

@@ -3,6 +3,7 @@ import type { LibraryContentSource, NormalizedItem } from '../../api/dto';
 import { useParseStore } from '../../stores/parse';
 import { bilibiliVideoUrl } from '../../utils/bilibiliLinks';
 import { useSourceParsing } from '../parse/useSourceParsing';
+import { selectableParts } from '../parse/parseResultTree';
 
 export function useLibraryFolderDetail(
   props: { folder: LibraryContentSource; loadingInitial?: boolean },
@@ -49,7 +50,8 @@ export function useLibraryFolderDetail(
     },
     { immediate: true },
   );
-  const itemPartIds = (item: NormalizedItem): string[] => item.parts.map((part) => part.id);
+  const itemPartIds = (item: NormalizedItem): string[] =>
+    selectableParts(item, source.value?.source.kind ?? 'unknown').map((part) => part.id);
   const itemOwnerName = (item: NormalizedItem): string =>
     item.owner_name?.trim() || props.folder.owner_name?.trim() || '未知 UP 主';
   const itemSelected = (item: NormalizedItem): boolean => {

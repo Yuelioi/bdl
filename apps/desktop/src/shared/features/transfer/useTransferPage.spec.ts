@@ -81,5 +81,15 @@ describe('transfer page sorting defaults', () => {
     await page.queue.reconcile();
     const reconciled = new Map(page.taskViews.value.map(view => [view.id, view]));
     expect(after.every(view => reconciled.get(view.id) === view)).toBe(true);
+
+    const paused = page.queue.tasks.slice(0, 400).map(task => ({ ...task, status: 'paused' as const }));
+    page.queue.applyBulkResult({ updated: paused, removed: [], failed: [] });
+    expect(page.queue.tasks.filter(task => task.status === 'paused')).toHaveLength(400);
+    expect(page.taskViews.value.filter(view => view === reconciled.get(view.id))).toHaveLength(100);
+
+    const resumeSnapshot = new Map(page.queue.tasks.map(task => [task.id, task]));
+    page.queue.upsertTask({ ...paused[0], status: 'downloading' });
+    page.queue.applyBulkResult({ updated: [{ ...paused[0], status: 'waiting' }], removed: [], failed: [] }, resumeSnapshot);
+    expect(page.queue.tasks[0]?.status).toBe('downloading');
   });
 });

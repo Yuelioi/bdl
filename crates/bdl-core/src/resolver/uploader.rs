@@ -187,11 +187,14 @@ impl From<UserUploadedVideo> for ResolvedUploaderVideo {
     }
 }
 
-fn map_video_item(source_mid: u64, video: ResolvedUploaderVideo) -> NormalizedItem {
+fn map_video_item(source_mid: u64, video: ResolvedUploaderVideo, index: usize) -> NormalizedItem {
     let video_key = format!("uploader:{source_mid}:{}", video.bvid);
 
     NormalizedItem {
-        nfo_metadata: Default::default(),
+        nfo_metadata: crate::nfo::NfoMetadata {
+            index,
+            ..Default::default()
+        },
         id: ItemId(format!("item:{video_key}")),
         title: video.title.clone(),
         owner_name: video.owner_name.clone(),
@@ -218,7 +221,14 @@ fn normalized_tree_from_page(page: ResolvedUploaderPage) -> NormalizedSourceTree
     let items = page
         .videos
         .into_iter()
-        .map(|video| map_video_item(page.mid, video))
+        .enumerate()
+        .map(|(offset, video)| {
+            map_video_item(
+                page.mid,
+                video,
+                super::paged::page_item_index(page.request, offset),
+            )
+        })
         .collect::<Vec<_>>();
 
     NormalizedSourceTree {

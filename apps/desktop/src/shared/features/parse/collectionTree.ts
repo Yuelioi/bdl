@@ -1,9 +1,10 @@
 import type { NormalizedSourceTree } from '../../api/dto';
+import { selectableParts } from './parseResultTree';
 
 export interface CollectionTreeNode {
   id: string;
   label: string;
-  kind: 'source' | 'group' | 'video' | 'part';
+  kind: 'source' | 'group' | 'video';
   partIds: string[];
   cover?: string | null;
   meta?: string;
@@ -23,7 +24,7 @@ export function collectionTree(source: NormalizedSourceTree, itemIds?: string[],
       if (
         keyword &&
         !groupMatches &&
-        ![item.title, item.owner_name, ...item.parts.map((part) => part.title)].some((text) =>
+        ![item.title, item.owner_name].some((text) =>
           text?.toLocaleLowerCase().includes(keyword),
         )
       )
@@ -35,16 +36,7 @@ export function collectionTree(source: NormalizedSourceTree, itemIds?: string[],
           kind: 'video',
           cover: item.cover_url,
           meta: item.owner_name ?? undefined,
-          partIds: item.parts.map((part) => part.id),
-          children:
-            item.parts.length > 1
-              ? item.parts.map((part, index) => ({
-                  id: part.id,
-                  label: `P${index + 1} · ${part.title}`,
-                  kind: 'part' as const,
-                  partIds: [part.id],
-                }))
-              : undefined,
+          partIds: selectableParts(item, source.source.kind).map((part) => part.id),
         },
       ];
     });

@@ -11,6 +11,7 @@ import type { NormalizedSourceTree } from '../../../shared/api/dto';
 import UiCheckbox from '../../../shared/ui/Checkbox.vue';
 
 import type { ParseResultRow } from '../../../shared/features/parse/parseResultTree';
+import { selectsWholePosts } from '../../../shared/features/parse/parseResultTree';
 
 const props = defineProps<{
   rows: ParseResultRow[];
@@ -25,6 +26,7 @@ const menuEntry = ref<{ id: string; title: string; url?: string | null; selected
 const menuOpen = ref(false);
 const selected = computed(() => new Set(props.selectedIds));
 const entries = computed(() => {
+  const wholePosts = selectsWholePosts(props.source.source.kind);
   const metadata = new Map(
     props.source.groups.flatMap((group) =>
       group.items.flatMap((item) =>
@@ -35,8 +37,8 @@ const entries = computed(() => {
               {
                 url: bilibiliVideoUrl(item),
                 cover: item.cover_url,
-                duration: displayPartDuration(part.duration_seconds, item.duration_seconds, item.parts.length),
-                index: item.parts.length > 1 ? `P${index + 1}` : '',
+                duration: wholePosts ? item.duration_seconds : displayPartDuration(part.duration_seconds, item.duration_seconds, item.parts.length),
+                index: !wholePosts && item.parts.length > 1 ? `P${index + 1}` : '',
               },
             ] as const,
         ),

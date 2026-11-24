@@ -34,6 +34,7 @@ export interface PageState {
 
 export interface NormalizedItem {
   id: string;
+  nfo_metadata?: { index: number };
   title: string;
   owner_name: string | null;
   owner_mid?: number | null;
@@ -179,6 +180,7 @@ export type DownloadTaskRefreshInput =
   | { kind: 'cheese_episode'; ep_id: number };
 
 export interface DownloadTaskMediaSelection {
+  post?: { pending: unknown[]; replay?: DownloadTask[]; finished: DownloadTask[]; total: number };
   owned_document_uris?: string[];
   preserved_document_uris?: string[];
   workflow?: DownloadWorkflow | null;

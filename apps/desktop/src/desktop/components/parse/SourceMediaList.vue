@@ -10,6 +10,7 @@ import { formatBytes } from '../../../shared/stores/transferView';
 import { openExternalUrl } from '../../../shared/api/tauri';
 import { sourceMediaByPart, completedTaskForMedia } from '../../../shared/utils/sourceMedia';
 import type { ParseResultRow } from '../../../shared/features/parse/parseResultTree';
+import { selectsWholePosts } from '../../../shared/features/parse/parseResultTree';
 
 const props = defineProps<{
   rows: ParseResultRow[];
@@ -82,7 +83,9 @@ const entries = computed(() =>
     return {
       ...row,
       index: listWindow.value.start + offset,
-      partIndex: props.compact ? partIndices.value.get(row.partIds[0] ?? '') : undefined,
+      partIndex: props.compact && !selectsWholePosts(props.source.source.kind)
+        ? partIndices.value.get(row.partIds[0] ?? '')
+        : undefined,
       details,
       completed,
       selected: props.selectedRowIds
@@ -106,7 +109,7 @@ watch(
 );
 async function play(entry: (typeof entries.value)[number]) {
   if (entry.completed) {
-    await queue.openFile(entry.completed.id);
+    await queue.openFile(entry.completed.id, entry.details?.wholePost ? undefined : entry.details?.part.cid ?? undefined);
   } else if (entry.details?.url) {
     try {
       await openExternalUrl(entry.details.url);

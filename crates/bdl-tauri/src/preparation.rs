@@ -4,7 +4,8 @@ use std::sync::Mutex;
 use bdl_core::fetcher::FetchCancelToken;
 use bdl_core::ids::PartId;
 use bdl_core::model::{NormalizedGroup, NormalizedSourceTree};
-use bdl_core::planner::{DownloadOptions, defer_selected_parts};
+use bdl_core::naming::DuplicateNamingStrategy;
+use bdl_core::planner::{DownloadOptions, plan_queue_selection};
 use bdl_core::queue::{
     DownloadExportTarget, DownloadTask, DuplicateTaskPolicy, portable_relative_path,
 };
@@ -19,7 +20,8 @@ use crate::commands::{
     BackgroundEnqueueFailure, BackgroundEnqueueResult, CommandError, CommandResult,
     DuplicateTaskMatch, SelectionCreateTasksRequest, SelectionCreateTasksResult,
 };
-use crate::parse_owned::{PreparationContext, SelectionPreparation};
+use crate::download_resolution::SelectionPreparation;
+use crate::parse_owned::PreparationContext;
 use crate::state::AppState;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -179,7 +181,23 @@ pub(crate) fn build_input(
         .cloned()
         .map(PartId)
         .collect::<Vec<_>>();
-    let selected = crate::parse_session::normalize_selected_part_ids(&tree, &requested);
+    let mut selected = crate::parse_session::normalize_selected_part_ids(&tree, &requested);
+    if tree.source.kind.queues_whole_posts() || tree.source.kind.prepares_list_parts() {
+        let wanted: HashSet<_> = selected.into_iter().collect();
+        let mut posts: Vec<_> = tree
+            .groups
+            .iter()
+            .flat_map(|group| &group.items)
+            .filter_map(|item| {
+                item.parts
+                    .iter()
+                    .find(|part| wanted.contains(&part.id))
+                    .map(|part| (item.nfo_metadata.index, part.id.clone()))
+            })
+            .collect();
+        posts.sort_by_key(|(index, _)| *index);
+        selected = posts.into_iter().map(|(_, id)| id).collect();
+    }
     let selected_ids: HashSet<_> = selected.iter().collect();
     // Empty position slots preserve {index}/episode numbering without retaining other videos.
     for item in tree.groups.iter_mut().flat_map(|group| &mut group.items) {
@@ -246,27 +264,43 @@ pub(crate) async fn plan_selection(
     item_index_offset: usize,
     progress: impl Fn(usize, usize) -> BdlResult<()>,
 ) -> BdlResult<(Vec<DownloadTask>, usize)> {
+    let (selected, mode) = if tree.source.kind.prepares_list_parts() {
+        (
+            crate::parse_session::expand_selected_posts(&tree, selected),
+            SelectionPreparation::PostDetails,
+        )
+    } else {
+        (selected.to_vec(), SelectionPreparation::Enqueue)
+    };
     let prepared = state
         .prepare_selection_owned(
             tree,
-            selected,
+            &selected,
             &input.options,
             &input.context,
-            SelectionPreparation::Metadata,
+            mode,
             &progress,
         )
         .await?;
-    let mut tasks = defer_selected_parts(
+    let mut tasks = plan_queue_selection(
         &prepared.tree,
         &prepared.part_ids,
+        &prepared.prepared_for_enqueue,
         &input.options,
         input.document_tree.as_ref(),
         item_index_offset,
     )?;
-    let skipped = prepared.part_ids.len().saturating_sub(tasks.len());
+    let skipped = if prepared.tree.source.kind.queues_whole_posts() {
+        0
+    } else {
+        prepared.part_ids.len().saturating_sub(tasks.len())
+    };
     for task in &mut tasks {
         task.scheduled_at = input.scheduled_at;
         task.speed_limit_bytes_per_second = input.speed_limit;
+        if task.media_selection.deferred.is_none() {
+            set_document_tree_target(task, &input.options, input.document_tree.as_ref())?;
+        }
     }
     Ok((tasks, skipped))
 }
@@ -275,7 +309,27 @@ pub(crate) async fn plan_background_batch(
     state: &AppState,
     input: &PreparationInput,
     part_ids: Vec<String>,
+    item_index_offset: usize,
 ) -> BdlResult<(Vec<DownloadTask>, BackgroundEnqueueResult)> {
+    if input.tree.source.kind.queues_whole_posts() {
+        let (tasks, skipped) = plan_selection(
+            state,
+            input.tree.clone(),
+            &input.selected,
+            input,
+            item_index_offset,
+            |_, _| Ok(()),
+        )
+        .await?;
+        return Ok((
+            tasks,
+            BackgroundEnqueueResult {
+                skipped,
+                processed_part_ids: part_ids,
+                ..Default::default()
+            },
+        ));
+    }
     let mut locations = HashMap::new();
     let items = input
         .tree
@@ -309,7 +363,15 @@ pub(crate) async fn plan_background_batch(
                         items: vec![(*item).clone()],
                     }],
                 };
-                plan_selection(state, tree, &selected, input, *index, |_, _| Ok(())).await
+                plan_selection(
+                    state,
+                    tree,
+                    &selected,
+                    input,
+                    index.saturating_add(item_index_offset),
+                    |_, _| Ok(()),
+                )
+                .await
             } else {
                 Err(BdlError::Planning {
                     message: "这项内容已不在列表中，请重新加载。".into(),
@@ -379,12 +441,41 @@ pub(crate) async fn materialize_queued_download(
     queued: &DownloadTask,
     token: &FetchCancelToken,
 ) -> BdlResult<Option<DownloadTask>> {
+    let mut queued = queued.clone();
     let deferred = queued
         .media_selection
         .deferred
         .as_ref()
         .expect("deferred task");
-    let context = state.preparation_context(uuid::Uuid::new_v4().to_string())?;
+    let mut context = state.preparation_context(uuid::Uuid::new_v4().to_string())?;
+    context.cooldown = crate::parse_pacing::CooldownBehavior::Wait;
+    if deferred.whole_post {
+        let details = state
+            .prepare_selection_owned(
+                deferred.source_tree(),
+                std::slice::from_ref(deferred.part_id()),
+                &deferred.options,
+                &context,
+                SelectionPreparation::PostDetails,
+                |_, _| Ok(()),
+            )
+            .await?;
+        let parts = deferred.post_parts(&details.tree);
+        state.check_account_revision(context.account_revision)?;
+        let Some(staged) = state.stage_post_parts(&queued, parts, token)? else {
+            return Ok(None);
+        };
+        queued = staged;
+    }
+    let mut deferred = queued
+        .media_selection
+        .deferred
+        .as_deref()
+        .expect("deferred task")
+        .clone();
+    if queued.media_selection.post.is_some() && queued.id != queued.logical_id() {
+        deferred.options.duplicate_naming_strategy = DuplicateNamingStrategy::AppendSuffix;
+    }
     let prepared = state
         .prepare_selection_owned(
             deferred.source_tree(),
@@ -396,27 +487,38 @@ pub(crate) async fn materialize_queued_download(
         )
         .await?;
     let mut planned = deferred.plan(&prepared.tree)?;
-    if let (Some(task), Some(directory)) = (&mut planned, &deferred.document_tree) {
+    if let Some(task) = &mut planned {
+        set_document_tree_target(task, &deferred.options, deferred.document_tree.as_ref())?;
+    }
+    state.check_account_revision(context.account_revision)?;
+    state.commit_queued_download(
+        &queued,
+        planned,
+        deferred.options.duplicate_naming_strategy,
+        token,
+    )
+}
+
+fn set_document_tree_target(
+    task: &mut DownloadTask,
+    options: &DownloadOptions,
+    directory: Option<&DocumentTreeDirectory>,
+) -> BdlResult<()> {
+    if let Some(directory) = directory {
         let relative = task
             .output_path
-            .strip_prefix(&deferred.options.output_dir)
+            .strip_prefix(&options.output_dir)
             .map_err(|_| BdlError::Planning {
                 message: "Android 工作路径超出应用私有目录。".into(),
             })?;
         task.export_target = Some(DownloadExportTarget::DocumentTree {
             tree_uri: directory.tree_uri.clone(),
             relative_path: portable_relative_path(relative)?,
-            duplicate_naming_strategy: deferred.options.duplicate_naming_strategy,
+            duplicate_naming_strategy: options.duplicate_naming_strategy,
             document_uri: None,
         });
     }
-    state.check_account_revision(context.account_revision)?;
-    state.commit_queued_download(
-        queued,
-        planned,
-        deferred.options.duplicate_naming_strategy,
-        token,
-    )
+    Ok(())
 }
 
 pub(crate) fn commit(

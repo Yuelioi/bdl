@@ -240,8 +240,38 @@ pub(crate) fn reset_interrupted_resources(resources: &mut [DownloadResource]) {
 
 pub(crate) fn reset_task_for_retry(task: &mut DownloadTask) {
     let redownload_all = task.status == TaskStatus::Completed;
+    if redownload_all && let Some(mut post) = task.media_selection.post.take() {
+        let speed_limit = task.speed_limit_bytes_per_second;
+        let remaining = std::mem::take(&mut post.finished);
+        post.replay.extend(
+            remaining
+                .into_iter()
+                .chain(std::iter::once(task.clone()))
+                .map(|mut part| {
+                    reset_resources_for_retry(&mut part, true);
+                    crate::state::clear_part_media_urls(&mut part);
+                    part
+                }),
+        );
+        post.total = post.replay.len();
+        let mut first = post
+            .replay
+            .pop_front()
+            .expect("completed post has an output");
+        first.speed_limit_bytes_per_second = speed_limit;
+        first.media_selection.post = Some(post);
+        *task = first;
+        return;
+    }
+    reset_resources_for_retry(task, redownload_all);
+}
+
+fn reset_resources_for_retry(task: &mut DownloadTask, redownload_all: bool) {
     task.status = TaskStatus::Waiting;
     task.scheduled_at = None;
+    if redownload_all {
+        task.media_selection.outputs_verified = false;
+    }
     for resource in &mut task.resources {
         if redownload_all || resource.status != ResourceStatus::Completed {
             resource.status = ResourceStatus::Pending;

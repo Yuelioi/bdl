@@ -17,8 +17,9 @@ use bdl_core::model::{
 };
 use bdl_core::naming::DuplicateNamingStrategy;
 use bdl_core::queue::{
-    DownloadResourceIntent, DownloadTask, DownloadTaskRefreshInput, DownloadTaskRefreshIntent,
-    DuplicateTaskPolicy, QueueLogEntry, ResourceStatus, TaskStatus,
+    DownloadResourceIntent, DownloadTask, DownloadTaskMediaSelection, DownloadTaskRefreshInput,
+    DownloadTaskRefreshIntent, DuplicateTaskPolicy, PostDownload, QueueLogEntry, ResourceStatus,
+    TaskStatus,
 };
 use bdl_core::resolver::bangumi::BangumiResolver;
 use bdl_core::resolver::cheese::CheeseResolver;
@@ -36,6 +37,7 @@ use chrono::{DateTime, Utc};
 use tokio::sync::Notify;
 use tokio::time::Instant;
 
+use crate::download_resolution::DownloadResolution;
 use crate::media_mux::MediaMuxBackend;
 use crate::mobile_storage::MobileStorage;
 #[cfg(test)]
@@ -47,7 +49,7 @@ use crate::parse_session::{
 #[cfg(test)]
 use crate::parse_session::{
     hydrate_placeholder_part, merge_browsed_page, normalize_selected_part_ids,
-    remap_selected_part_ids, selected_hydration_requests, should_continue_loading,
+    remap_selected_part_ids, should_continue_loading,
 };
 pub use crate::queue_coordinator::{
     DuplicateTaskEnqueueResult, DuplicateTaskMatch, StartupRecoverySnapshot,
@@ -110,6 +112,7 @@ pub struct PreparedSelection {
     pub tree: NormalizedSourceTree,
     pub part_ids: Vec<PartId>,
     pub tree_updated: bool,
+    pub(crate) prepared_for_enqueue: HashSet<PartId>,
 }
 
 pub(crate) struct QueueEdit<'a> {
@@ -274,6 +277,7 @@ impl AppState {
             .parse_pacer
             .run_retry(
                 self.settings()?.parse_rules,
+                crate::parse_pacing::CooldownBehavior::Report,
                 || {
                     let classified = classified.clone();
                     async move {
@@ -763,9 +767,19 @@ impl AppState {
             result.updated.push(task.clone());
         }
         self.persist_queue_edit(&mut queue)?;
-        for task in &result.updated {
-            if matches!(task.status, TaskStatus::Paused | TaskStatus::Cancelled) {
-                self.cancel_running_task(&task.id)?;
+        if matches!(status, TaskStatus::Paused | TaskStatus::Cancelled)
+            && !result.updated.is_empty()
+        {
+            let cancellations = self
+                .queue_cancellations
+                .lock()
+                .map_err(|_| state_poisoned("queue_cancellations"))?;
+            for token in result
+                .updated
+                .iter()
+                .filter_map(|task| cancellations.get(&task.id))
+            {
+                token.cancel();
             }
         }
         self.notify_queue_changed();
@@ -870,7 +884,11 @@ impl AppState {
         Ok(Some(updated))
     }
 
-    pub async fn refresh_task_media_urls(&self, task_id: &str) -> BdlResult<DownloadTask> {
+    pub(crate) async fn refresh_task_media_urls(
+        &self,
+        task_id: &str,
+        cooldown: crate::parse_pacing::CooldownBehavior,
+    ) -> BdlResult<DownloadTask> {
         let task = self.task_snapshot(task_id)?;
         let account_revision = self.account_revision();
         let needs_audio = task.resources.iter().any(|resource| {
@@ -884,7 +902,7 @@ impl AppState {
         }
         let refresh_ids = task_media_refresh_ids(&task)?;
         let refreshed = self
-            .resolve_media_input_with_streams(refresh_ids.input, Some(refresh_ids.cid))
+            .resolve_media_input_with_streams(refresh_ids.input, Some(refresh_ids.cid), cooldown)
             .await?;
         let part =
             find_part_by_cid(&refreshed, refresh_ids.cid).ok_or_else(|| BdlError::Planning {
@@ -1019,12 +1037,37 @@ impl AppState {
             return Ok(Some(task));
         }
         if let Some(mut planned) = planned {
-            let others = queue
+            let mut others = queue
                 .iter()
-                .filter(|task| task.id != queued.id && task.media_selection.deferred.is_none())
+                .filter(|task| {
+                    task.id != queued.id
+                        && (task.media_selection.deferred.is_none()
+                            || task
+                                .media_selection
+                                .post
+                                .as_ref()
+                                .is_some_and(|post| !post.finished.is_empty()))
+                })
                 .cloned()
                 .collect::<Vec<_>>();
-            if planned.id != queued.id {
+            if let Some(post) = &current.media_selection.post {
+                others.extend(post.finished.iter().cloned().map(|mut part| {
+                    part.status = TaskStatus::Downloading;
+                    part
+                }));
+                let prefix = format!("{}:p:{}", queued.id, post.total - post.pending.len());
+                planned = planned.with_task_id(queued.id.clone(), &prefix)?;
+                planned.title.clone_from(&current.title);
+                if queued.id != queued.logical_id() {
+                    let mut reserved = others.iter().flat_map(DownloadTask::file_paths).collect();
+                    let path = bdl_core::naming::unique_path_with_stem_limit(
+                        planned.output_path.clone(),
+                        &mut reserved,
+                        planned.file_stem_byte_limit()?,
+                    );
+                    planned = planned.with_output_path(path)?;
+                }
+            } else if planned.id != queued.id {
                 let copy_index = queued
                     .id
                     .strip_prefix(&planned.id)
@@ -1043,15 +1086,71 @@ impl AppState {
             }
             planned.status = TaskStatus::Downloading;
             planned.speed_limit_bytes_per_second = current.speed_limit_bytes_per_second;
-            if let Some(task) = reserve_queued_paths(vec![planned], &others, strategy)?.pop() {
+            if let Some(mut task) = reserve_queued_paths(vec![planned], &others, strategy)?.pop() {
+                task.media_selection
+                    .post
+                    .clone_from(&current.media_selection.post);
                 queue[index] = task;
             } else {
-                queue[index].status = TaskStatus::Cancelled;
+                advance_post(&mut queue[index], false);
             }
         } else {
-            queue[index].status = TaskStatus::Cancelled;
+            advance_post(&mut queue[index], false);
         }
         let task = queue[index].clone();
+        self.persist_queue_edit(&mut queue)?;
+        Ok(Some(task))
+    }
+
+    pub(crate) fn stage_post_parts(
+        &self,
+        queued: &DownloadTask,
+        parts: Vec<bdl_core::planner::DeferredDownload>,
+        token: &FetchCancelToken,
+    ) -> BdlResult<Option<DownloadTask>> {
+        let mut queue = self.queue_edit()?;
+        let Some(task) = queue.iter_mut().find(|task| task.id == queued.id) else {
+            return Ok(None);
+        };
+        if token.is_cancelled()
+            || task.status != TaskStatus::Parsing
+            || task.media_selection.deferred != queued.media_selection.deferred
+        {
+            return Ok(None);
+        }
+        let total = parts.len();
+        let mut pending = std::collections::VecDeque::from(parts);
+        let first = pending.pop_front().ok_or_else(|| BdlError::Planning {
+            message: "该投稿没有可下载的视频。".into(),
+        })?;
+        task.media_selection.deferred = Some(Box::new(first));
+        task.media_selection.post = Some(Box::new(PostDownload {
+            pending,
+            replay: Default::default(),
+            finished: Vec::new(),
+            total,
+        }));
+        let task = task.clone();
+        self.persist_queue_edit(&mut queue)?;
+        Ok(Some(task))
+    }
+
+    pub(crate) fn complete_download_part(
+        &self,
+        task_id: &str,
+        token: &FetchCancelToken,
+    ) -> BdlResult<Option<DownloadTask>> {
+        let mut queue = self.queue_edit()?;
+        let Some(task) = queue.iter_mut().find(|task| task.id == task_id) else {
+            return Ok(None);
+        };
+        if task.status != TaskStatus::Muxing
+            && (task.status != TaskStatus::Downloading || token.is_cancelled())
+        {
+            return Ok(None);
+        }
+        advance_post(task, true);
+        let task = task.clone();
         self.persist_queue_edit(&mut queue)?;
         Ok(Some(task))
     }
@@ -1584,6 +1683,7 @@ impl AppState {
         let next = operation
             .run(self.parse_pacer.run_retry(
                 self.settings()?.parse_rules,
+                crate::parse_pacing::CooldownBehavior::Report,
                 || {
                     let mut next = tree.clone();
                     async move {
@@ -1656,41 +1756,19 @@ impl AppState {
         &self,
         input: ClassifiedInput,
         target_cid: Option<u64>,
+        cooldown: crate::parse_pacing::CooldownBehavior,
     ) -> BdlResult<NormalizedSourceTree> {
+        let client = self.shared_resolver_client()?;
+        let resolution = DownloadResolution::for_url_refresh();
         self.parse_pacer
             .run_retry(
                 self.settings()?.parse_rules,
-                || self.resolve_media_input_with_streams_unpaced(input.clone(), target_cid),
+                cooldown,
+                || resolution.resolve_source(client.clone(), input.clone(), target_cid),
                 |_| 0,
                 |_| {},
             )
             .await
-    }
-
-    async fn resolve_media_input_with_streams_unpaced(
-        &self,
-        input: ClassifiedInput,
-        target_cid: Option<u64>,
-    ) -> BdlResult<NormalizedSourceTree> {
-        let options = ResolveOptions {
-            fetch_streams: true,
-        };
-
-        match input.source_kind() {
-            SourceKind::Video => match target_cid {
-                Some(cid) => {
-                    self.video_resolver()?
-                        .resolve_target_streams(input, cid)
-                        .await
-                }
-                None => self.video_resolver()?.resolve(input, options).await,
-            },
-            SourceKind::Bangumi => self.bangumi_resolver()?.resolve(input, options).await,
-            SourceKind::Cheese => self.cheese_resolver()?.resolve(input, options).await,
-            kind => Err(BdlError::UnsupportedSource {
-                kind: source_kind_name(kind).to_owned(),
-            }),
-        }
     }
 
     pub(crate) fn account_revision(&self) -> u64 {
@@ -1892,6 +1970,67 @@ fn load_persisted_account_cookie(secure_store: &SecureStore) -> BdlResult<Option
     }
 }
 
+fn advance_post(task: &mut DownloadTask, completed: bool) {
+    let Some(mut post) = task.media_selection.post.take() else {
+        task.status = if completed {
+            TaskStatus::Completed
+        } else {
+            TaskStatus::Cancelled
+        };
+        return;
+    };
+    if !post.pending.is_empty() || !post.replay.is_empty() {
+        if completed {
+            let mut finished = task.clone();
+            finished.status = TaskStatus::Completed;
+            clear_part_media_urls(&mut finished);
+            post.finished.push(finished);
+        }
+        if let Some(mut next) = post.replay.pop_front() {
+            next.status = TaskStatus::Downloading;
+            next.speed_limit_bytes_per_second = task.speed_limit_bytes_per_second;
+            *task = next;
+        } else if let Some(next) = post.pending.pop_front() {
+            task.status = TaskStatus::Parsing;
+            task.resources.clear();
+            task.output_path.clear();
+            task.export_target = None;
+            task.refresh_intent = None;
+            task.media_selection = DownloadTaskMediaSelection {
+                workflow: next.options.workflow.clone(),
+                deferred: Some(Box::new(next)),
+                ..Default::default()
+            };
+        }
+        task.media_selection.post = Some(post);
+        return;
+    }
+    task.status = if completed {
+        TaskStatus::Completed
+    } else if let Some(mut last) = post.finished.pop() {
+        last.speed_limit_bytes_per_second = task.speed_limit_bytes_per_second;
+        *task = last;
+        TaskStatus::Completed
+    } else {
+        TaskStatus::Cancelled
+    };
+    if post.total > 1 || task.status == TaskStatus::Cancelled {
+        task.media_selection.post = Some(post);
+    }
+}
+
+pub(crate) fn clear_part_media_urls(task: &mut DownloadTask) {
+    for resource in task.resources.iter_mut().filter(|resource| {
+        matches!(
+            resource.intent,
+            DownloadResourceIntent::Video | DownloadResourceIntent::Audio
+        )
+    }) {
+        resource.current_urls.clear();
+        resource.headers.clear();
+    }
+}
+
 fn task_media_refresh_ids(task: &DownloadTask) -> BdlResult<TaskMediaRefreshIds> {
     if let Some(refresh_intent) = &task.refresh_intent {
         return Ok(task_media_refresh_ids_from_intent(refresh_intent));
@@ -2074,8 +2213,8 @@ mod tests {
         append_new_tasks, append_source_page, dedupe_tasks_by_id, hydrate_placeholder_part,
         load_account_snapshot, merge_browsed_page, next_page_request, normalize_selected_part_ids,
         prepare_startup_recovery, remap_selected_part_ids, select_startup_data_dir,
-        select_task_stream, selected_hydration_requests, should_continue_loading,
-        should_expand_initial_source, task_media_refresh_ids,
+        select_task_stream, should_continue_loading, should_expand_initial_source,
+        task_media_refresh_ids,
     };
     use crate::secure_store::SecureStore;
     use chrono::Utc;
@@ -2103,6 +2242,13 @@ mod tests {
     use bdl_core::settings::AppSettings;
     use bdl_core::storage::TaskStorage;
     use tokio::sync::Notify;
+
+    fn missing_stream_resolution() -> crate::download_resolution::DownloadResolution {
+        crate::download_resolution::DownloadResolution::for_selection(
+            crate::download_resolution::SelectionPreparation::MissingStreams,
+            &bdl_core::planner::DownloadOptions::new("downloads".into()),
+        )
+    }
 
     #[test]
     fn bulk_queue_commit_integrates_storage_rollback_cancellation_and_partial_ids() {
@@ -2737,7 +2883,10 @@ mod tests {
 
         let old_refresh = tokio::runtime::Runtime::new()
             .unwrap()
-            .block_on(state.refresh_task_media_urls("task:refresh"))
+            .block_on(state.refresh_task_media_urls(
+                "task:refresh",
+                crate::parse_pacing::CooldownBehavior::Report,
+            ))
             .unwrap_err();
         assert!(old_refresh.to_string().contains("重新创建任务"));
         let video = media_stream(MediaKind::Video, "https://cdn.example/new-video.m4s");
@@ -2986,12 +3135,24 @@ mod tests {
         )];
         let id = part.id.clone();
         assert!(
-            selected_hydration_requests(&tree, std::slice::from_ref(&id))
+            missing_stream_resolution()
+                .requests(&tree, std::slice::from_ref(&id))
                 .unwrap()
                 .is_empty()
         );
-        let refresh =
-            crate::parse_session::selection_hydration_requests(&tree, &[id], true).unwrap();
+        let enqueue = crate::download_resolution::DownloadResolution::for_selection(
+            crate::download_resolution::SelectionPreparation::Enqueue,
+            &bdl_core::planner::DownloadOptions::new("downloads".into()),
+        );
+        assert!(
+            enqueue
+                .requests(&tree, std::slice::from_ref(&id))
+                .unwrap()
+                .is_empty()
+        );
+        let refresh = crate::download_resolution::DownloadResolution::for_url_refresh()
+            .requests(&tree, &[id])
+            .unwrap();
         assert_eq!(refresh.len(), 1);
         assert_eq!(refresh[0].target_cid, Some(123));
     }
@@ -3000,15 +3161,16 @@ mod tests {
     fn selected_hydration_requests_returns_unique_selected_placeholders() {
         let tree = uploader_tree();
         let placeholder = PartId("part:uploader:1001:BV1xx411c7mD".to_owned());
-        let requests = selected_hydration_requests(
-            &tree,
-            &[
-                placeholder.clone(),
-                placeholder.clone(),
-                PartId("part:missing".to_owned()),
-            ],
-        )
-        .expect("hydration requests should be valid");
+        let requests = missing_stream_resolution()
+            .requests(
+                &tree,
+                &[
+                    placeholder.clone(),
+                    placeholder.clone(),
+                    PartId("part:missing".to_owned()),
+                ],
+            )
+            .expect("hydration requests should be valid");
 
         assert_eq!(
             requests,
@@ -3025,7 +3187,8 @@ mod tests {
         let tree = episode_tree(SourceKind::Bangumi, "bangumi");
         let placeholder = PartId("part:bangumi:123:456:789".to_owned());
 
-        let requests = selected_hydration_requests(&tree, std::slice::from_ref(&placeholder))
+        let requests = missing_stream_resolution()
+            .requests(&tree, std::slice::from_ref(&placeholder))
             .expect("hydration requests should be valid");
 
         assert_eq!(

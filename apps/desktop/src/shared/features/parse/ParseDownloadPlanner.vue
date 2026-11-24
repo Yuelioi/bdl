@@ -22,6 +22,7 @@ import UiInlineNotice from '../../ui/InlineNotice.vue';
 import UiSelect from '../../ui/Select.vue';
 import UiTextField from '../../ui/TextField.vue';
 import { hasMp3Output, workflowError, workflowExtension, workflowOutputs } from '../../utils/downloadWorkflow';
+import { selectsWholePosts } from './parseResultTree';
 
 const parse = useParseStore();
 const settings = useSettingsStore();
@@ -113,7 +114,11 @@ const savedDirectory = computed(() =>
 );
 const downloadBusy = computed(() => preparing.value || submitting.value || activeLoading.value || settings.loading ||
   (mobile && Boolean(parse.loadingBySource.__create__)));
-const selectionUnit = computed(() => (parse.isBatch ? '个视频' : '个分集'));
+const selectionUnit = computed(() => {
+  const kind = activeSource.value?.source.kind;
+  if (kind === 'uploader') return '条投稿';
+  return parse.isBatch || (kind && selectsWholePosts(kind)) ? '个视频' : '个分集';
+});
 const selectionTitle = computed(() => (parse.isBatch ? '批量链接' : (activeSource.value?.source.title ?? '')));
 const activeLoading = computed(() => (downloadDialogOpen.value ? dialogSourceIds.value : selectedSourceIds.value)
   .some((sourceId) => parse.loadingBySource[sourceId] || (mobile && parse.pacedParsingBySource[sourceId])));

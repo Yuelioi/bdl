@@ -64,7 +64,7 @@ const showLoadToolbar = computed(() => hasMore.value || activeLoading.value);
     <ParseResultFilters
       v-model:query="query"
       v-model:sort="sort"
-      :loaded="showLoadToolbar ? undefined : tableRows.length"
+      :list-label="activeSource.source.kind === 'uploader' ? '投稿' : ['collection', 'series'].includes(activeSource.source.kind) ? '视频' : undefined"
       :grouped="hasCollectionSections(activeSource)"
       :disabled="activeLoading"
       :apply-range="selectRange"

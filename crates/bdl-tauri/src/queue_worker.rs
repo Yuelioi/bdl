@@ -11,11 +11,11 @@ use tokio::time::Instant;
 
 use crate::commands::{
     CommandResult, DownloadRuntimeOptions, concurrent_tasks, emit_queue_log,
-    queue_task_launch_context, run_download_task,
+    publish_download_result, queue_task_launch_context, run_download_task,
 };
 use crate::events;
 use crate::state::{AppState, SettingsSnapshot};
-use crate::task_failure::{is_expired_url_error, recent_auto_refresh_attempt_count};
+use crate::task_failure::{recent_auto_refresh_attempt_count, should_refresh_media_url};
 
 const MAX_AUTO_REFRESH_ATTEMPTS: usize = 3;
 
@@ -234,66 +234,86 @@ async fn run_download_attempt(
     let outcome = match ReqwestFetcher::with_global_limiter(fetch_config, global_limiter) {
         Ok(fetcher) => {
             async {
-                let resolved = if task.media_selection.deferred.is_some() {
-                    let Some(resolved) = cancellable_refresh(
-                        &cancel_token,
-                        crate::preparation::materialize_queued_download(
-                            state,
-                            &task,
+                let mut current = task.clone();
+                loop {
+                    if current.media_selection.deferred.is_some() {
+                        let Some(resolved) = cancellable_refresh(
                             &cancel_token,
-                        ),
-                    )
-                    .await
-                    else {
-                        return Ok(());
-                    };
-                    let Some(resolved) = resolved? else {
-                        return Ok(());
-                    };
-                    events::emit(app, events::QUEUE_TASK_UPDATED, &resolved)?;
-                    if resolved.status == TaskStatus::Cancelled {
-                        emit_queue_log(
-                            app,
-                            state,
-                            &task.id,
-                            QueueLogLevel::Info,
-                            "已跳过已有文件",
-                        )?;
-                        return Ok(());
+                            crate::preparation::materialize_queued_download(
+                                state,
+                                &current,
+                                &cancel_token,
+                            ),
+                        )
+                        .await
+                        else {
+                            return Ok(());
+                        };
+                        let Some(resolved) = resolved? else {
+                            return Ok(());
+                        };
+                        publish_download_result(app, state, &resolved, "下载完成")?;
+                        match resolved.status {
+                            TaskStatus::Parsing => {
+                                current = resolved;
+                                continue;
+                            }
+                            TaskStatus::Cancelled => {
+                                emit_queue_log(
+                                    app,
+                                    state,
+                                    &task.id,
+                                    QueueLogLevel::Info,
+                                    "已跳过已有文件",
+                                )?;
+                                return Ok(());
+                            }
+                            TaskStatus::Downloading => {}
+                            _ => return Ok(()),
+                        }
+                        emit_queue_log(app, state, &task.id, QueueLogLevel::Info, "开始下载任务")?;
+                        current = resolved;
                     }
-                    if resolved.status != TaskStatus::Downloading {
-                        return Ok(());
-                    }
-                    emit_queue_log(app, state, &task.id, QueueLogLevel::Info, "开始下载任务")?;
-                    resolved
-                } else if task.can_resolve_media_urls()
-                    && task.resources.iter().any(|resource| {
-                        resource.status != ResourceStatus::Completed
-                            && matches!(
+                    if current.media_selection.post.is_some()
+                        && current.resources.iter().any(|resource| {
+                            matches!(
                                 resource.intent,
                                 DownloadResourceIntent::Video | DownloadResourceIntent::Audio
-                            )
-                    })
-                {
-                    let Some(refreshed) =
-                        cancellable_refresh(&cancel_token, state.refresh_task_media_urls(&task.id))
-                            .await
-                    else {
+                            ) && resource.status != ResourceStatus::Completed
+                                && resource.current_urls.is_empty()
+                        })
+                    {
+                        let Some(refreshed) = cancellable_refresh(
+                            &cancel_token,
+                            state.refresh_task_media_urls(
+                                &current.id,
+                                crate::parse_pacing::CooldownBehavior::Wait,
+                            ),
+                        )
+                        .await
+                        else {
+                            return Ok(());
+                        };
+                        current = refreshed?;
+                    }
+                    run_download_task(
+                        app,
+                        state,
+                        &fetcher,
+                        current,
+                        runtime_options.clone(),
+                        cancel_token.clone(),
+                    )
+                    .await?;
+                    current = state.task_snapshot(&task.id)?;
+                    if !matches!(
+                        current.status,
+                        TaskStatus::Parsing | TaskStatus::Downloading
+                    ) || cancel_token.is_cancelled()
+                    {
                         return Ok(());
-                    };
-                    refreshed?
-                } else {
-                    task.clone()
-                };
-                run_download_task(
-                    app,
-                    state,
-                    &fetcher,
-                    resolved,
-                    runtime_options,
-                    cancel_token.clone(),
-                )
-                .await
+                    }
+                }
             }
             .await
         }
@@ -357,8 +377,9 @@ async fn handle_download_outcome(
                 .unwrap_or_default();
             if settings.auto_refresh_expired_urls
                 && matches!(state.task_status(&task.id), Ok(TaskStatus::Downloading))
-                && is_expired_url_error(&error.diagnostic_message())
+                && should_refresh_media_url(&error.diagnostic_message())
                 && auto_refresh_attempts < MAX_AUTO_REFRESH_ATTEMPTS
+                && state.task_snapshot(&task.id)?.can_resolve_media_urls()
             {
                 let attempt = auto_refresh_attempts + 1;
                 emit_queue_log(
@@ -369,18 +390,14 @@ async fn handle_download_outcome(
                     &format!("自动刷新过期链接（{attempt}/{MAX_AUTO_REFRESH_ATTEMPTS}）"),
                 )?;
 
-                if state.task_snapshot(&task.id)?.can_resolve_media_urls() {
-                    if let Some(retried) =
-                        state.finish_task_attempt(&task.id, TaskStatus::Waiting, cancel_token)?
-                    {
-                        events::emit(app, events::QUEUE_TASK_UPDATED, &retried)?;
-                    }
-                    return Ok(());
-                }
-
-                let Some(refreshed) =
-                    cancellable_refresh(cancel_token, state.refresh_task_media_urls(&task.id))
-                        .await
+                let Some(refreshed) = cancellable_refresh(
+                    cancel_token,
+                    state.refresh_task_media_urls(
+                        &task.id,
+                        crate::parse_pacing::CooldownBehavior::Wait,
+                    ),
+                )
+                .await
                 else {
                     return Ok(());
                 };

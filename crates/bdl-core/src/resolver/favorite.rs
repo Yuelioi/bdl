@@ -227,7 +227,14 @@ fn normalized_tree_from_page(
     let items = page
         .videos
         .into_iter()
-        .map(|video| map_video_item(page.media_id, video))
+        .enumerate()
+        .map(|(offset, video)| {
+            map_video_item(
+                page.media_id,
+                video,
+                super::paged::page_item_index(page.request, offset),
+            )
+        })
         .collect::<Vec<_>>();
 
     NormalizedSourceTree {
@@ -250,11 +257,14 @@ fn normalized_tree_from_page(
     }
 }
 
-fn map_video_item(media_id: u64, video: ResolvedFavoriteVideo) -> NormalizedItem {
+fn map_video_item(media_id: u64, video: ResolvedFavoriteVideo, index: usize) -> NormalizedItem {
     let video_key = format!("favorite:{media_id}:{}", video.bvid);
 
     NormalizedItem {
-        nfo_metadata: Default::default(),
+        nfo_metadata: crate::nfo::NfoMetadata {
+            index,
+            ..Default::default()
+        },
         id: ItemId(format!("item:{video_key}")),
         title: video.title.clone(),
         owner_name: video.owner_name.clone(),

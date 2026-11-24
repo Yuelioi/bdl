@@ -185,10 +185,10 @@ describe('parse store', () => {
       { ...part, id: 'part:BVtest:2', cid: 2 },
     ]
     parse.upsertSource(hydrated)
-    expect(parse.activeSelection).toEqual(['part:BVtest:1', 'part:BVtest:2'])
+    expect(parse.activeSelection).toEqual(['part:BVtest:1'])
     parse.selectPartIds(tree.source.id, ['part:BVtest:2'], 'replace')
     parse.upsertSource(hydrated)
-    expect(parse.activeSelection).toEqual(['part:BVtest:2'])
+    expect(parse.activeSelection).toEqual(['part:BVtest:1'])
   })
   it('does not restore a private list after leaving its workspace', async () => {
     let resolve!: (tree: NormalizedSourceTree) => void;
@@ -715,19 +715,25 @@ describe('background parse and download', () => {
   })
 
   it.each([
-    ['uploader', 30],
-    ['favorite', 20],
-    ['collection', 20],
-    ['series', 20],
-    ['watch_later', 20],
-  ] as const)('enqueues %s in batches of %i while preserving selection and download defaults', async (kind, pageSize) => {
+    ['uploader', 30, true],
+    ['uploader', 30, false],
+    ['favorite', 20, false],
+    ['collection', 20, false],
+    ['series', 20, false],
+    ['watch_later', 20, false],
+  ] as const)('enqueues %s with page size %i and known parts %s', async (kind, pageSize, knownParts) => {
     const parse = useParseStore()
     const settings = useSettingsStore()
     const first = sourceTree('source:background', '后台来源')
     const initialCount = pageSize * 2
     const initialIds = Array.from({ length: initialCount }, (_, index) => `part:video-${index}`)
     const template = first.groups[0].items[0]
-    first.groups[0].items = initialIds.map(id => ({ ...template, id: `item:${id}`, parts: [{ ...template.parts[0], id }] }))
+    first.groups[0].items = initialIds.map((id, index) => ({
+      ...template,
+      id: `item:${id}`,
+      nfo_metadata: { index: index + 1 },
+      parts: [{ ...template.parts[0], id, cid: knownParts ? index + 1 : null }],
+    }))
     first.source.kind = kind
     first.source.loaded_count = initialCount
     first.source.has_more = kind !== 'watch_later'
@@ -738,7 +744,15 @@ describe('background parse and download', () => {
     const next = structuredClone(first)
     next.source.loaded_count = initialCount + 1
     next.source.has_more = false
-    next.groups.at(-1)?.items.push({ ...template, id: 'item:next', parts: [{ ...template.parts[0], id: 'part:next' }] })
+    const laterItem = { ...template, id: 'item:next', nfo_metadata: { index: initialCount + 1 }, parts: [{ ...template.parts[0], id: 'part:next' }] }
+    next.groups.at(-1)?.items.push(laterItem)
+    if (kind === 'collection') {
+      // A jump ahead already merged this video into the results, but the
+      // sequential download cursor has not reached its page yet.
+      first.groups.at(-1)?.items.unshift(laterItem)
+      first.source.loaded_count++
+      next.groups.at(-1)!.page!.page_number = 3
+    }
     parse.upsertSource(first)
     parse.selectionBySource[first.source.id] = []
     settings.saved.naming_template = '{title}.{ext}'
@@ -750,8 +764,10 @@ describe('background parse and download', () => {
     })
     api.parseLoadMore.mockImplementation(async () => { order.push('page'); return next })
     await parse.startBackgroundDownload(first.source.id)
-    expect(order).toEqual(first.source.has_more ? ['download', 'download', 'page', 'download'] : ['download', 'download'])
     const batches = [initialIds.slice(0, pageSize), initialIds.slice(pageSize)]
+    const expectedOrder = batches.map(() => 'download')
+    if (first.source.has_more) expectedOrder.push('page', 'download')
+    expect(order).toEqual(expectedOrder)
     if (first.source.has_more) batches.push(['part:next'])
     expect(api.selectionEnqueueBatch.mock.calls.map(([request]) => request.part_ids)).toEqual(batches)
     expect(api.selectionEnqueueBatch.mock.calls.every(([request]) => request.naming_template === '{title}.{ext}' && request.duplicate_policy === 'skip')).toBe(true)
@@ -763,7 +779,7 @@ describe('background parse and download', () => {
     const parse = useParseStore()
     const tree = sourceTree('source:partial', '收藏夹')
     const first = tree.groups[0].items[0]
-    tree.groups[0].items = ['first', 'bad', 'last'].map((name) => ({ ...first, id: `item:${name}`, parts: [{ ...first.parts[0], id: `part:${name}`, title: name }] }))
+    tree.groups[0].items = ['first', 'bad', 'last'].map((name, index) => ({ ...first, id: `item:${name}`, parts: [{ ...first.parts[0], id: `part:${name}`, title: name, cid: index + 1 }] }))
     parse.upsertSource(tree)
     useSettingsStore().saved.naming_template = '{title}.{ext}'
     api.selectionEnqueueBatch.mockImplementation(async (request) => {
@@ -787,7 +803,7 @@ describe('background parse and download', () => {
     const parse = useParseStore()
     const tree = sourceTree('source:restricted', '收藏夹')
     const first = tree.groups[0].items[0]
-    tree.groups[0].items = ['first', 'blocked', 'last'].map((name) => ({ ...first, id: `item:${name}`, parts: [{ ...first.parts[0], id: `part:${name}` }] }))
+    tree.groups[0].items = ['first', 'blocked', 'last'].map((name, index) => ({ ...first, id: `item:${name}`, parts: [{ ...first.parts[0], id: `part:${name}`, cid: index + 1 }] }))
     parse.upsertSource(tree)
     api.selectionEnqueueBatch.mockResolvedValueOnce(enqueued(['part:first'], { blocked: { code: 'login_required', message } }))
     await parse.startBackgroundDownload(tree.source.id)

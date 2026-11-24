@@ -17,6 +17,16 @@ pub enum SourceKind {
     Unknown,
 }
 
+impl SourceKind {
+    pub fn queues_whole_posts(self) -> bool {
+        matches!(self, Self::Uploader | Self::WatchLater)
+    }
+
+    pub fn prepares_list_parts(self) -> bool {
+        matches!(self, Self::Favorite | Self::Collection | Self::Series)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SourceSummary {
     pub id: SourceId,
