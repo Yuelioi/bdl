@@ -369,7 +369,7 @@ checksum = "ac07cdecf99051d9a5238b80f35af32cdeba5b336e55d957b318b50137e18da5"
 
 [[package]]
 name = "bdl-cli"
-version = "0.12.4"
+version = "0.12.5"
 dependencies = [
  "anyhow",
  "bdl-core",
@@ -382,7 +382,7 @@ dependencies = [
 
 [[package]]
 name = "bdl-core"
-version = "0.12.4"
+version = "0.12.5"
 dependencies = [
  "async-trait",
  "bpi-rs",
@@ -406,7 +406,7 @@ dependencies = [
 
 [[package]]
 name = "bdl-desktop"
-version = "0.12.4"
+version = "0.12.5"
 dependencies = [
  "bdl-core",
  "bdl-mobile-credentials",
@@ -436,7 +436,7 @@ dependencies = [
 
 [[package]]
 name = "bdl-mobile-credentials"
-version = "0.12.4"
+version = "0.12.5"
 dependencies = [
  "bdl-core",
  "bdl-tauri",
@@ -448,7 +448,7 @@ dependencies = [
 
 [[package]]
 name = "bdl-mobile-execution"
-version = "0.12.4"
+version = "0.12.5"
 dependencies = [
  "bdl-core",
  "bdl-tauri",
@@ -460,7 +460,7 @@ dependencies = [
 
 [[package]]
 name = "bdl-mobile-media"
-version = "0.12.4"
+version = "0.12.5"
 dependencies = [
  "async-trait",
  "bdl-core",
@@ -473,7 +473,7 @@ dependencies = [
 
 [[package]]
 name = "bdl-mobile-storage"
-version = "0.12.4"
+version = "0.12.5"
 dependencies = [
  "bdl-core",
  "bdl-tauri",
@@ -485,7 +485,7 @@ dependencies = [
 
 [[package]]
 name = "bdl-tauri"
-version = "0.12.4"
+version = "0.12.5"
 dependencies = [
  "async-trait",
  "bdl-core",
