@@ -13,7 +13,6 @@ describe('transfer page lifecycle', () => {
     const queue = {
       list: vi.fn().mockResolvedValue(undefined),
       reconcile: vi.fn().mockResolvedValue(undefined),
-      hasInFlightTasks: true,
     };
     const handlers = {
       closeContextMenu: vi.fn(),

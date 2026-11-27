@@ -67,6 +67,7 @@ interface QueueState {
   loading: boolean
   reconciling: boolean
   reconciledRevision: number | null
+  snapshotRequest: number
   bulkBusy: boolean
   notice: InlineNotice | null
   noticeTimer: number | null
@@ -111,6 +112,7 @@ export const useQueueStore = defineStore('queue', {
     loading: false,
     reconciling: false,
     reconciledRevision: null,
+    snapshotRequest: 0,
     bulkBusy: false,
     notice: null,
     noticeTimer: null,
@@ -126,10 +128,6 @@ export const useQueueStore = defineStore('queue', {
     },
     selectedTask(): DownloadTask | null {
       return this.selectedTaskId ? (this.tasksById.get(this.selectedTaskId) ?? null) : null
-    },
-    hasInFlightTasks(state): boolean {
-      return state.tasks.some(({ status }) =>
-        status === 'parsing' || status === 'downloading' || status === 'mux_queued' || status === 'muxing')
     },
   },
   actions: {
@@ -159,19 +157,16 @@ export const useQueueStore = defineStore('queue', {
     },
     async list() {
       const ui = useUiStore()
+      const request = ++this.snapshotRequest
       this.loading = true
       try {
-        this.tasks = this.mergeTaskSnapshots(await queueList())
-        this.applyDefaultFilter()
-        this.selectedTaskIds = this.selectedTaskIds.filter((taskId) => this.tasksById.has(taskId))
-        this.ensureSelectedTask(true)
-        if (this.selectedTaskId) {
+        if (await this.refreshTaskSnapshot(request, null) && this.selectedTaskId) {
           await this.loadLogs(this.selectedTaskId)
         }
       } catch (error) {
-        ui.pushToast(errorMessage(error), 'danger')
+        if (request === this.snapshotRequest) ui.pushToast(errorMessage(error), 'danger')
       } finally {
-        this.loading = false
+        if (request === this.snapshotRequest) this.loading = false
       }
     },
     async startEventListeners() {
@@ -232,17 +227,41 @@ export const useQueueStore = defineStore('queue', {
       this.reconciling = true
       try {
         const revision = await queueRevision()
-        if (revision === this.reconciledRevision) return
-        this.tasks = this.mergeTaskSnapshots(await queueList())
-        this.reconciledRevision = revision
-        this.selectedTaskIds = this.selectedTaskIds.filter((taskId) => this.tasksById.has(taskId))
-        this.applyDefaultFilter()
-        this.ensureSelectedTask(true)
+        if (this.loading || revision === this.reconciledRevision) return
+        await this.refreshTaskSnapshot(++this.snapshotRequest, revision)
       } catch {
         // Events are primary; a later interval retries this silent consistency check.
       } finally {
         this.reconciling = false
       }
+    },
+    async refreshTaskSnapshot(request: number, revision: number | null): Promise<boolean> {
+      const before = this.tasksById
+      const incoming = await queueList()
+      if (request !== this.snapshotRequest) return false
+
+      const current = this.tasksById
+      if (before === current) {
+        this.tasks = this.mergeTaskSnapshots(incoming)
+        this.reconciledRevision = revision
+      } else {
+        // Preserve updates, additions and removals observed during the IPC read.
+        const incomingIds = new Set(incoming.map(task => task.id))
+        const merged = incoming.flatMap(task => {
+          const latest = current.get(task.id)
+          if (latest === before.get(task.id)) return [task]
+          return latest ? [latest] : []
+        })
+        for (const task of current.values()) {
+          if (!incomingIds.has(task.id) && before.get(task.id) !== task) merged.push(task)
+        }
+        this.tasks = this.mergeTaskSnapshots(merged)
+        this.reconciledRevision = null
+      }
+      this.selectedTaskIds = this.selectedTaskIds.filter((taskId) => this.tasksById.has(taskId))
+      this.applyDefaultFilter()
+      this.ensureSelectedTask(true)
+      return true
     },
     clearNotice() {
       this.notice = null
@@ -281,6 +300,7 @@ export const useQueueStore = defineStore('queue', {
       }
     },
     upsertTask(task: DownloadTask) {
+      this.reconciledRevision = null
       const index = this.tasks.findIndex((candidate) => candidate.id === task.id)
       const updated = this.normalizeTaskUpdate(task, this.tasks[index])
       if (index === -1) {
@@ -302,6 +322,7 @@ export const useQueueStore = defineStore('queue', {
         added.push(task)
       }
       if (!added.length) return
+      this.reconciledRevision = null
       this.tasks.push(...added)
       this.applyDefaultFilter()
       this.selectedTaskId ??= added[0].id
@@ -505,6 +526,7 @@ export const useQueueStore = defineStore('queue', {
       try {
         const result = await queueRemove(taskId)
         if (!result.removed) throw new Error('任务不存在，请刷新列表')
+        this.reconciledRevision = null
         this.tasks = this.tasks.filter((task) => task.id !== taskId)
         this.selectedTaskIds = this.selectedTaskIds.filter((selectedTaskId) => selectedTaskId !== taskId)
         delete this.logsByTask[taskId]
@@ -627,6 +649,7 @@ export const useQueueStore = defineStore('queue', {
       }
     },
     applyBulkResult(result: BulkQueueResult, before?: ReadonlyMap<string, DownloadTask>) {
+      if (result.updated.length || result.removed.length) this.reconciledRevision = null
       if (result.updated.length) {
         const updates = new Map(result.updated.map(task => [task.id, task]))
         const next = this.tasks.map(previous => {

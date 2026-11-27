@@ -38,6 +38,35 @@ describe('queue reconciliation', () => {
     expect(queue.reconciling).toBe(false)
     await queue.reconcile()
     expect(api.queueList).toHaveBeenCalledTimes(1)
+
+    const removed = { ...task('cancelled'), id: 'removed' }
+    const added = { ...task('waiting'), id: 'added' }
+    queue.tasks.push(removed)
+    api.queueRevision.mockResolvedValue(2)
+    let deliverSnapshot!: (tasks: DownloadTask[]) => void
+    api.queueList.mockReturnValueOnce(new Promise<DownloadTask[]>((resolve) => { deliverSnapshot = resolve }))
+    const reconciliation = queue.reconcile()
+    await vi.waitFor(() => expect(api.queueList).toHaveBeenCalledTimes(2))
+    queue.upsertTask(task('downloading'))
+    queue.applyBulkResult({ updated: [], removed: [removed.id], failed: [] })
+    queue.applyCreatedTasks([added])
+    deliverSnapshot([task('completed'), removed])
+    await reconciliation
+    expect(queue.tasks.map(({ id, status }) => [id, status])).toEqual([
+      [task('downloading').id, 'downloading'],
+      [added.id, 'waiting'],
+    ])
+
+    api.queueList.mockResolvedValueOnce([task('completed'), added])
+    await queue.reconcile()
+    expect(api.queueList).toHaveBeenCalledTimes(3)
+    expect(queue.tasks[0]?.status).toBe('completed')
+
+    queue.upsertTask(task('muxing'))
+    api.queueList.mockResolvedValueOnce([task('completed'), added])
+    await queue.reconcile()
+    expect(api.queueList).toHaveBeenCalledTimes(4)
+    expect(queue.tasks[0]?.status).toBe('completed')
   })
 
   it('keeps completion time through events and replaces it when a retried task completes', async () => {

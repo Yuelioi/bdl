@@ -3,7 +3,6 @@ import { onActivated, onDeactivated } from 'vue';
 export interface TransferPageQueue {
   list(): Promise<unknown>;
   reconcile(): Promise<unknown>;
-  readonly hasInFlightTasks: boolean;
 }
 
 export interface TransferPageLifecycleHandlers {
@@ -20,7 +19,7 @@ export const useTransferPageLifecycle = (
   onActivated(() => {
     void queue.list();
     reconcileTimer = eventTarget.setInterval(() => {
-      if (queue.hasInFlightTasks) void queue.reconcile();
+      void queue.reconcile();
     }, 2_000);
     eventTarget.addEventListener('keydown', handlers.closeContextMenuOnEscape);
     eventTarget.addEventListener('blur', handlers.closeContextMenu);
