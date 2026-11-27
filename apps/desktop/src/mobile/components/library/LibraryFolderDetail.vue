@@ -29,7 +29,6 @@ const {
   parse,
   pageSize,
   currentPage,
-  loadBatchSize,
   source,
 
   totalCount,
@@ -154,8 +153,6 @@ const visibleItems = computed(() => {
           @update:page="goToPage"
         />
         <MobileSourceMenu
-          v-model:batch-size="loadBatchSize"
-          preload
           :has-more="hasMore"
           :busy="sourceRequestLoading"
           :parsing="pacedParsing"

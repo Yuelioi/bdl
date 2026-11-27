@@ -49,6 +49,7 @@ const parseSource = async () => {
     }
     submittedInput.value = input;
     activeStage.value = 'content';
+    if (!parse.isBatch && source?.source.has_more) await parse.loadConfiguredBatch(source.source.id, 'first');
   }
 };
 const openCollection = async () => {
@@ -101,6 +102,10 @@ useMobileBack('parse', () => {
         v-model:input="parse.input"
         v-model:single-input="singleInput"
         :busy="createLoading"
+        :paused="Boolean(parse.createPause)"
+        :pausing="Boolean(parse.createPause && parse.operationsBySource.__create__?.length)"
+        @pause="parse.pauseCreation()"
+        @resume="parse.resumeCreation()"
         mobile
         @submit="parseSource"
         @paste="pasteInput"

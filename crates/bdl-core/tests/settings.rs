@@ -89,6 +89,10 @@ fn settings_partial_config_preserves_choices_through_save_and_reload() {
     let settings: AppSettings = serde_json::from_value(saved.clone()).unwrap();
     let settings = settings.normalized();
     settings.validate().unwrap();
+    assert_eq!(settings.parse_batch_size, 50);
+    let mut settings = settings;
+    settings.parse_batch_size = 100;
+    settings.validate().unwrap();
     let complete = serde_json::to_value(&settings).unwrap();
     for (key, value) in saved.as_object().unwrap() {
         if key == "future_unknown_option" {
@@ -109,6 +113,8 @@ fn settings_partial_config_preserves_choices_through_save_and_reload() {
     );
     let reloaded: AppSettings = serde_json::from_value(complete).unwrap();
     assert_eq!(reloaded.normalized(), settings);
+    settings.parse_batch_size = 51;
+    assert!(settings.validate().is_err());
 }
 
 #[test]

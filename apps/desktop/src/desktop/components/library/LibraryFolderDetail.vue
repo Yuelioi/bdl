@@ -9,7 +9,7 @@ import UiInlineNotice from '../../../shared/ui/InlineNotice.vue';
 import UiPagination from '../../../shared/ui/Pagination.vue';
 import SelectionActionBar from '../../../shared/ui/SelectionActionBar.vue';
 import LibrarySourceSummary from '../../../shared/features/library/LibrarySourceSummary.vue';
-import SourceParseControls from '../parse/SourceParseControls.vue';
+import SourceParseControls from '../../../shared/features/parse/SourceParseControls.vue';
 import SourceLoadStatus from '../parse/SourceLoadStatus.vue';
 import { useLibraryFolderDetail } from '../../../shared/features/library/useLibraryFolderDetail';
 import type { LibraryContentSource } from '../../../shared/api/dto';
@@ -23,7 +23,6 @@ const {
   parse,
   pageSize,
   currentPage,
-  loadBatchSize,
   source,
   sourceId,
   items,
@@ -78,9 +77,9 @@ const rows = computed(() =>
           :total="totalCount"
         />
         <SourceParseControls
+          library
           :source-id="sourceId ?? undefined"
           v-if="hasMore || pacedParsing"
-          v-model:batch-size="loadBatchSize"
           :has-more="hasMore"
           :loading="sourceRequestLoading"
           :parsing-all="pacedParsing"

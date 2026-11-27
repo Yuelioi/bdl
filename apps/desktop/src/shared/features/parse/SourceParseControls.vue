@@ -1,43 +1,50 @@
 <script setup lang="ts">
-import UiButton from '../../../shared/ui/Button.vue'
-import ParseBatchSizeSelect from './ParseBatchSizeSelect.vue'
-import ParseActivityStatus from '../../../shared/ui/ParseActivityStatus.vue'
+import { computed } from 'vue'
+import { useParseStore } from '../../stores/parse'
+import UiButton from '../../ui/Button.vue'
+import ParseActivityStatus from '../../ui/ParseActivityStatus.vue'
 
-const batchSize = defineModel<string>('batchSize', { default: '50' })
 const {
+  library,
   hasMore,
   loading = false,
   parsingAll = false,
   stopping = false,
   sourceId,
 } = defineProps<{
+  library?: boolean
   hasMore: boolean
   loading?: boolean
   parsingAll?: boolean
   stopping?: boolean
   sourceId?: string
 }>()
+const parse = useParseStore()
+const batchInProgress = computed(() => {
+  if (library || parsingAll || !sourceId) return false
+  const source = parse.sources[sourceId]?.source
+  return source != null && parse.batchTargetBySource[sourceId] > source.loaded_count
+})
 const emit = defineEmits<{ parseBatch: []; parseAll: []; stop: [] }>()
 </script>
 
 <template>
   <div class="source-parse-controls">
     <template v-if="parsingAll || loading">
-      <span class="paced-parse-status" role="status">
-        <ParseActivityStatus v-if="sourceId" :source-id="sourceId" :stopping="stopping" />
-        <span v-else>{{ stopping ? '正在停止…' : '正在解析…' }}</span>
+      <span v-if="!stopping" class="paced-parse-status" role="status">
+        <ParseActivityStatus v-if="sourceId" :source-id="sourceId" />
+        <span v-else>正在解析…</span>
       </span>
       <UiButton size="compact" variant="secondary" :disabled="stopping" @click="emit('stop')">
-        {{ stopping ? '正在停止' : '停止解析' }}
+        {{ batchInProgress ? (stopping ? '正在暂停…' : '暂停解析') : (stopping ? '正在停止' : '停止解析') }}
       </UiButton>
     </template>
     <template v-else-if="hasMore">
-      <ParseBatchSizeSelect v-model="batchSize" :disabled="loading" />
       <UiButton size="compact" variant="secondary" @click="emit('parseBatch')">
         <UIcon name="i-tabler-list-details" class="size-4" aria-hidden="true" />
-        继续解析
+        {{ library || batchInProgress ? '继续解析' : '解析' }}
       </UiButton>
-      <UiButton size="compact" variant="ghost" @click="emit('parseAll')">
+      <UiButton v-if="library" size="compact" variant="ghost" @click="emit('parseAll')">
         解析全部
       </UiButton>
     </template>
@@ -65,6 +72,10 @@ const emit = defineEmits<{ parseBatch: []; parseAll: []; stop: [] }>()
 }
 
 @media (width <= 700px) {
+  .source-parse-controls > .ui-button {
+    min-height: 2.75rem;
+  }
+
   .source-parse-controls {
     justify-content: flex-start;
     gap: var(--space-6);

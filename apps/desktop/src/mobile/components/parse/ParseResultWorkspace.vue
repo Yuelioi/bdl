@@ -10,13 +10,12 @@ import UiInlineNotice from '../../../shared/ui/InlineNotice.vue';
 import ParseSourceSummary from '../../../shared/features/parse/ParseSourceSummary.vue';
 import ParseResultFilters from '../../../shared/features/parse/ParseResultFilters.vue';
 import ParseResultListMobile from './ParseResultListMobile.vue';
-import MobileSourceMenu from '../MobileSourceMenu.vue';
+import SourceParseControls from '../../../shared/features/parse/SourceParseControls.vue';
 import { useParseResultWorkspace } from '../../../shared/features/parse/useParseResultWorkspace';
 const { embedded = false, inlineDownload = false } = defineProps<{ embedded?: boolean; inlineDownload?: boolean }>();
 const emit = defineEmits<{ download: []; openCollection: [] }>();
 const {
   parse,
-  loadBatchSize,
   activeSource,
   selectedIds,
   selectedCount,
@@ -36,7 +35,6 @@ const {
   canCreateTasks,
   toggleAllResults,
   loadMore,
-  parseAll,
   stopParsing,
   toggleNode,
 } = useParseResultWorkspace();
@@ -65,14 +63,13 @@ useMobileBack('parse', () => {
         所属合集
         <UIcon name="i-tabler-chevron-right" class="size-4" aria-hidden="true" />
       </UiButton>
-      <MobileSourceMenu
-        v-model:batch-size="loadBatchSize"
+      <SourceParseControls
+        :source-id="activeSource.source.id"
         :has-more="hasMore"
-        :busy="sourceRequestLoading"
-        :parsing="pacedParsing"
+        :loading="sourceRequestLoading"
+        :parsing-all="pacedParsing"
         :stopping="pacedStopping"
-        @load="loadMore"
-        @all="parseAll"
+        @parse-batch="loadMore"
         @stop="stopParsing"
       />
     </div>

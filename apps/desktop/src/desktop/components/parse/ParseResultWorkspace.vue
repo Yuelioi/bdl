@@ -9,11 +9,10 @@ import SourceMediaList from './SourceMediaList.vue';
 import SourceLoadStatus from './SourceLoadStatus.vue';
 import ParseSourceSummary from '../../../shared/features/parse/ParseSourceSummary.vue';
 import ParseResultFilters from '../../../shared/features/parse/ParseResultFilters.vue';
-import SourceParseControls from './SourceParseControls.vue';
+import SourceParseControls from '../../../shared/features/parse/SourceParseControls.vue';
 import { useParseResultWorkspace } from '../../../shared/features/parse/useParseResultWorkspace';
 const {
   parse,
-  loadBatchSize,
   activeSource,
   selectedIds,
   tableRows,
@@ -29,7 +28,6 @@ const {
   hasMore,
   toggleAllResults,
   loadMore,
-  parseAll,
   stopParsing,
   toggleNode,
 } = useParseResultWorkspace();
@@ -49,13 +47,11 @@ const showLoadToolbar = computed(() => hasMore.value || activeLoading.value);
         />
         <SourceParseControls
           :source-id="activeSource.source.id"
-          v-model:batch-size="loadBatchSize"
           :has-more="hasMore"
           :loading="sourceRequestLoading"
           :parsing-all="pacedParsing"
           :stopping="pacedStopping"
           @parse-batch="loadMore"
-          @parse-all="parseAll"
           @stop="stopParsing"
         />
       </div>

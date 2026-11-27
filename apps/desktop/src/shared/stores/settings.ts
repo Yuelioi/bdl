@@ -77,6 +77,7 @@ const defaultSettings = (): SettingsSnapshot => ({
   usage_notice_acknowledged: false,
   auto_check_updates: false,
   theme_preference: 'system',
+  parse_batch_size: 50,
   parse_rules: { pages_per_round: 3, interval_seconds: 1, rest_seconds: 3 },
   download_dir: null,
   document_tree_output: null,

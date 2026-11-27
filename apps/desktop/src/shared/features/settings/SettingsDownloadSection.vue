@@ -144,7 +144,7 @@ const speedLimitPreset = computed({
         /></label>
       </div>
     </SettingsCard>
-    <ParseRulesEditor v-if="group === 'links'" v-model="settings.draft.parse_rules" />
+    <ParseRulesEditor v-if="group === 'links'" v-model="settings.draft.parse_rules" v-model:batch-size="settings.draft.parse_batch_size" />
     <SettingsCard v-if="desktopPaths && group === 'saving'" id="settings-ffmpeg" tabindex="-1" title="FFmpeg">
       <div class="directory-row">
         <UiTextField v-model="settingsFfmpegPath" label="FFmpeg 路径" placeholder="留空时使用系统 FFmpeg" />

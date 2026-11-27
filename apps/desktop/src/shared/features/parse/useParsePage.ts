@@ -69,6 +69,8 @@ export function useParsePage() {
     if (parsed) {
       if (mode === 'batch') submittedInput.value = draft;
       activeStage.value = 'content';
+      const source = parse.activeSource?.source;
+      if (!parse.isBatch && source?.has_more) await parse.loadConfiguredBatch(source.id, 'first');
     }
   };
   const returnToInput = () => {

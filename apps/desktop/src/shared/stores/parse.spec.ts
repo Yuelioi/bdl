@@ -337,6 +337,14 @@ describe('parse store', () => {
     await expect(parsing).resolves.toBe('stopped')
     expect(parse.sources[tree.source.id]?.source.loaded_count).toBe(100)
     expect(parse.errorsBySource[tree.source.id]).toBeNull()
+
+    useSettingsStore().loaded = true
+    const batch = parse.loadConfiguredBatch(tree.source.id)
+    await parse.loadConfiguredBatch(tree.source.id)
+    await parse.stopPacedParsing(tree.source.id)
+    await batch
+    expect(parse.batchTargetBySource[tree.source.id]).toBe(150)
+    expect(api.parseLoadMore).toHaveBeenCalledTimes(2)
   })
 
   it('loads only the next page when parsing more from a large source', async () => {
@@ -440,15 +448,23 @@ describe('parse store', () => {
     expect(parse.notice).toBeNull()
   })
 
-  it('parses multiple inputs into selected link-level batch items', async () => {
-    api.parseCreateSource.mockImplementation(({ input }: { input: string }) =>
-      Promise.resolve(sourceTree(`source:${input}`, input)),
-    )
+  it('resumes a paused multi-link parse without repeating completed inputs', async () => {
     const parse = useParseStore()
-
-    await parse.createSource('BV1\nBV2')
-
+    let interrupted = false
+    api.parseCreateSource.mockImplementation(async ({ input }: { input: string }) => {
+      if (input === 'BV2' && !interrupted) {
+        interrupted = true
+        parse.pauseCreation()
+        throw { code: 'parse_cancelled', message: '解析已停止' }
+      }
+      return sourceTree(`source:${input}`, input)
+    })
+    const result = parse.createSource('BV1\nBV2')
+    await vi.waitFor(() => expect(parse.createPause).not.toBeNull())
     expect(api.parseCreateSource).toHaveBeenCalledTimes(2)
+    parse.resumeCreation()
+    expect(await result).toBe(true)
+    expect(api.parseCreateSource.mock.calls.map(([request]) => request.input)).toEqual(['BV1', 'BV2', 'BV2'])
     expect(api.parseCreateSource).toHaveBeenNthCalledWith(1, {
       input: 'BV1',
       fetch_streams: false,

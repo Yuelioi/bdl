@@ -39,7 +39,6 @@ import { buildBatchSelectionBySource, selectedBatchSourceIds, toggleBatchEntrySe
 import { selectsWholePosts, selectableParts } from '../features/parse/parseResultTree'
 
 const MAX_BATCH_SOURCES = 20
-const PARSE_CONCURRENCY = 1
 const PACED_PARSE_POLL_INTERVAL_MS = 100
 
 interface BackgroundParseJob {
@@ -56,7 +55,16 @@ interface BackgroundParseJob {
   options: CreateTaskOptions
 }
 
+interface SourceOutcome {
+  input: string
+  tree: NormalizedSourceTree | null
+  error: string | null
+  detail: string
+}
+
 interface ParseState {
+  createPause: { resumed: Promise<void>; resume: () => void } | null
+  batchTargetBySource: Record<string, number>
   operationsBySource: Record<string, string[]>
   sourceEpochById: Record<string, string>
   preparationBySource: Record<string, { total: number; processed: number; failures: Array<{ itemId: string; title: string; message: string; detail?: string; partIds: string[] }> }>
@@ -149,6 +157,8 @@ export const useParseStore = defineStore('parse', {
     operationsBySource: {},
     sourceEpochById: {},
     createGeneration: 0,
+    createPause: null,
+    batchTargetBySource: {},
     preparationBySource: {},
     backgroundJob: null,
     input: '',
@@ -229,6 +239,17 @@ export const useParseStore = defineStore('parse', {
         this.noticeTimer = null
       }
     },
+    pauseCreation() {
+      if (!this.loadingBySource.__create__ || this.createPause) return
+      let resume!: () => void
+      const resumed = new Promise<void>(resolve => { resume = resolve })
+      this.createPause = { resumed, resume }
+      void this.stopPacedParsing('__create__')
+    },
+    resumeCreation() {
+      this.createPause?.resume()
+      this.createPause = null
+    },
     async createSource(input?: string, options: { singleVideo?: boolean; expandVideoCollection?: boolean } = {}): Promise<boolean> {
       const inputs = splitParseInputs(input ?? this.input)
 
@@ -247,24 +268,37 @@ export const useParseStore = defineStore('parse', {
         return false
       }
 
+      this.resumeCreation()
       const generation = ++this.createGeneration
       const batch = inputs.length > 1
       this.loadingBySource.__create__ = true
       try {
-        const outcomes = await mapWithConcurrency(inputs, PARSE_CONCURRENCY, async (sourceInput) => {
-          if (generation !== this.createGeneration) return { input: sourceInput, tree: null, error: '解析已停止', detail: '' }
-          const operationId = this.beginOperation("__create__")
+        const outcomes: SourceOutcome[] = []
+        while (outcomes.length < inputs.length) {
+          if (this.createPause) await this.createPause.resumed
+          if (generation !== this.createGeneration) return false
+          const sourceInput = inputs[outcomes.length]
+          const operationId = this.beginOperation('__create__')
           try {
             const tree = await parseCreateSource({
               input: sourceInput,
               fetch_streams: false,
               expand_video_collection: !batch && !options.singleVideo && options.expandVideoCollection !== false,
             }, operationId)
-            return { input: sourceInput, tree, error: null, detail: '' }
+            outcomes.push({ input: sourceInput, tree, error: null, detail: '' })
           } catch (error) {
-            return { input: sourceInput, tree: null, error: errorMessage(error), detail: commandDiagnostic(error, `操作: 解析链接\n来源: ${sourceInput}`) }
-          } finally { this.endOperation("__create__", operationId) }
-        })
+            const cancelled = error != null && typeof error === 'object' && 'code' in error && error.code === 'parse_cancelled'
+            if (!this.createPause || !cancelled) {
+              outcomes.push({
+                input: sourceInput,
+                tree: null,
+                error: errorMessage(error),
+                detail: commandDiagnostic(error, `操作: 解析链接\n来源: ${sourceInput}`),
+              })
+            }
+          } finally { this.endOperation('__create__', operationId) }
+        }
+        if (this.createPause) await this.createPause.resumed
         if (generation !== this.createGeneration) {
           return false
         }
@@ -291,8 +325,11 @@ export const useParseStore = defineStore('parse', {
           if (generation !== this.createGeneration) return false
         }
 
+        if (this.createPause) await this.createPause.resumed
+        if (generation !== this.createGeneration) return false
         for (const tree of trees) {
           const sourceId = tree.source.id
+          delete this.batchTargetBySource[sourceId]
           this.sources[sourceId] = tree
           this.sourceEpochById[sourceId] = crypto.randomUUID()
           this.errorsBySource[sourceId] = null
@@ -371,6 +408,32 @@ export const useParseStore = defineStore('parse', {
       } finally {
         this.endOperation(sourceId, operationId)
         if (this.ownsSource(sourceId, generation, epoch)) this.loadingBySource[sourceId] = false
+      }
+    },
+    async loadConfiguredBatch(sourceId: string, mode: 'first' | 'next' | 'all' = 'next') {
+      const source = this.sources[sourceId]
+      if (!source?.source.has_more || this.loadingBySource[sourceId] || this.pacedParsingBySource[sourceId]) return
+      const settings = useSettingsStore()
+      await settings.ensureLoaded()
+      if (this.sources[sourceId] !== source || this.loadingBySource[sourceId] || this.pacedParsingBySource[sourceId]) return
+      if (!settings.loaded) {
+        this.setNotice(settings.error ?? '无法读取解析设置', 'danger')
+        return
+      }
+      const batch = settings.saved.parse_batch_size
+      if (mode === 'all') return this.parseAllPaced(sourceId, batch)
+      const loaded = source.source.loaded_count
+      const pending = this.batchTargetBySource[sourceId]
+      const target = pending > loaded ? pending : (mode === 'first' ? batch : loaded + batch)
+      if (target <= loaded) return
+      const generation = this.createGeneration
+      const epoch = this.sourceEpochById[sourceId]
+      this.batchTargetBySource[sourceId] = target
+      await this.loadChunk(sourceId, target - loaded)
+      if (!this.ownsSource(sourceId, generation, epoch)) return
+      const current = this.sources[sourceId].source
+      if (!this.pacedParsingStopRequestedBySource[sourceId] || !current.has_more || current.loaded_count >= target) {
+        delete this.batchTargetBySource[sourceId]
       }
     },
     async loadChunk(sourceId: string, chunkSize: number): Promise<boolean> {
@@ -646,6 +709,8 @@ export const useParseStore = defineStore('parse', {
     async clearWorkspace(reason: ParseCancelReason = 'workspace_cleared') {
       if (this.backgroundJob?.status === 'running') { this.setNotice('还有内容正在添加，请先停止添加。', 'warning'); return }
       this.createGeneration++
+      this.resumeCreation()
+      this.batchTargetBySource = {}
       const stopping = Object.keys(this.operationsBySource).map(id => this.stopPacedParsing(id, reason))
       this.input = ''
       this.clearNotice()
@@ -674,6 +739,7 @@ export const useParseStore = defineStore('parse', {
       await this.stopPacedParsing(sourceId, 'workspace_cleared')
       if (this.sourceEpochById[sourceId] !== epoch) return
       if (this.backgroundJob?.sourceId === sourceId) this.backgroundJob = null
+      delete this.batchTargetBySource[sourceId]
       delete this.sources[sourceId]
       delete this.sourceEpochById[sourceId]
       delete this.preparationBySource[sourceId]
@@ -1044,24 +1110,6 @@ const batchPart = (tree: NormalizedSourceTree, input: string): NormalizedPart | 
   const requestedPart = /[?&]p=(\d+)/i.exec(input)?.[1]
   const requestedIndex = requestedPart ? Number.parseInt(requestedPart, 10) - 1 : 0
   return parts[requestedIndex] ?? parts[0]
-}
-
-const mapWithConcurrency = async <Input, Output>(
-  inputs: Input[],
-  concurrency: number,
-  mapper: (input: Input) => Promise<Output>,
-): Promise<Output[]> => {
-  const results = new Array<Output>(inputs.length)
-  let nextIndex = 0
-  const workers = Array.from({ length: Math.min(concurrency, inputs.length) }, async () => {
-    while (nextIndex < inputs.length) {
-      const index = nextIndex
-      nextIndex += 1
-      results[index] = await mapper(inputs[index])
-    }
-  })
-  await Promise.all(workers)
-  return results
 }
 
 const splitParseInputs = (input: string): string[] =>

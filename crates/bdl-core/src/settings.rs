@@ -81,7 +81,7 @@ impl ParseRules {
         {
             return Err(crate::error::BdlError::classified(
                 crate::public_error::ErrorCode::SettingsParsePacing,
-                "每批解析需为20～200条，等待时间需为1～120秒，长休息不能短于批间等待。",
+                "连续请求页数需为1～10页，等待时间需为1～120秒，长休息不能短于批间等待。",
             ));
         }
         Ok(())
@@ -113,6 +113,7 @@ pub struct AppSettings {
     pub theme_preference: String,
     pub download_dir: Option<String>,
     pub document_tree_output: Option<DocumentTreeDirectory>,
+    pub parse_batch_size: usize,
     pub parse_rules: ParseRules,
     pub naming_template: String,
     pub naming_presets: Vec<NamingPreset>,
@@ -158,6 +159,7 @@ impl Default for AppSettings {
             theme_preference: "system".to_owned(),
             download_dir: None,
             document_tree_output: None,
+            parse_batch_size: 50,
             parse_rules: ParseRules::default(),
             naming_template: DEFAULT_NAMING_TEMPLATE.to_owned(),
             naming_presets: Vec::new(),
@@ -279,6 +281,12 @@ impl AppSettings {
     }
 
     pub fn validate(&self) -> BdlResult<()> {
+        if !matches!(self.parse_batch_size, 20 | 50 | 100 | 200) {
+            return Err(crate::BdlError::classified(
+                crate::public_error::ErrorCode::SettingsParseBatchSize,
+                format!("parse_batch_size={}", self.parse_batch_size),
+            ));
+        }
         self.parse_rules.validate()?;
         validate_template(&self.naming_template)?;
         validate_naming_presets(&self.naming_presets)?;

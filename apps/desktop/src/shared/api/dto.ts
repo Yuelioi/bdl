@@ -303,6 +303,7 @@ export interface SettingsSnapshot {
   usage_notice_acknowledged: boolean;
   auto_check_updates: boolean;
   theme_preference: 'system' | 'light' | 'dark';
+  parse_batch_size: number;
   parse_rules: ParseRules;
   download_dir: string | null;
   document_tree_output: DocumentTreeDirectory | null;

@@ -5,6 +5,8 @@ import UiSelect from '../../ui/Select.vue';
 import SettingsCard from './SettingsCard.vue';
 
 const model = defineModel<ParseRules>({ required: true });
+const batchSize = defineModel<number>('batchSize', { required: true });
+const batchSizes = [20, 50, 100, 200].map(value => ({ label: `${value} 条`, value: String(value) }));
 const presets = [
   { label: '快速', value: 'fast', rules: { pages_per_round: 4, interval_seconds: 1, rest_seconds: 3 } },
   { label: '标准', value: 'standard', rules: { pages_per_round: 3, interval_seconds: 1, rest_seconds: 3 } },
@@ -30,16 +32,16 @@ const seconds = (current: number) =>
   [...new Set([1, 2, 3, 4, 5, 8, 10, 20, 30, 60, current])]
     .sort((a, b) => a - b)
     .map((value) => ({ label: `${value} 秒`, value: String(value) }));
-const batchOptions = computed(() =>
+const burstOptions = computed(() =>
   [...new Set([1, 2, 3, 4, 5, 10, model.value.pages_per_round])]
     .sort((a, b) => a - b)
-    .map((value) => ({ label: `${value * 20} 条`, value: String(value) })),
+    .map((value) => ({ label: `${value} 页`, value: String(value) })),
 );
 const fields = computed(() => [
   {
     key: 'pages_per_round' as const,
-    label: '每批解析',
-    options: batchOptions.value,
+    label: '连续请求页数',
+    options: burstOptions.value,
   },
   {
     key: 'interval_seconds' as const,
@@ -91,15 +93,19 @@ const estimatedWait = computed(() => {
             <dl class="m-0 grid gap-2 text-xs">
               <div>
                 <dt class="font-medium">解析预设</dt>
-                <dd class="m-0 text-(--color-muted)">快速套用下方三项参数。</dd>
+                <dd class="m-0 text-(--color-muted)">设置连续请求页数、批间等待和长休息。</dd>
               </div>
               <div>
-                <dt class="font-medium">每批解析</dt>
-                <dd class="m-0 text-(--color-muted)">连续获取多少条再等待，条数为估算值。</dd>
+                <dt class="font-medium">单次解析目标</dt>
+                <dd class="m-0 text-(--color-muted)">每次点击「解析」加载一批。来源按整页返回，实际条数可能超过目标。</dd>
+              </div>
+              <div>
+                <dt class="font-medium">连续请求页数</dt>
+                <dd class="m-0 text-(--color-muted)">连续请求这些页后，进入批间等待。</dd>
               </div>
               <div>
                 <dt class="font-medium">批间等待</dt>
-                <dd class="m-0 text-(--color-muted)">只在两批之间暂停，不逐条等待。</dd>
+                <dd class="m-0 text-(--color-muted)">到达下一批之前的等待时间。</dd>
               </div>
               <div>
                 <dt class="font-medium">每100条休息</dt>
@@ -111,6 +117,12 @@ const estimatedWait = computed(() => {
       </UPopover>
     </template>
     <div class="settings-inline-grid">
+      <UiSelect
+        :model-value="String(batchSize)"
+        label="单次解析目标"
+        :options="batchSizes"
+        @update:model-value="batchSize = Number($event)"
+      />
       <UiSelect
         v-model="selectedPreset"
         label="解析预设"
@@ -125,6 +137,6 @@ const estimatedWait = computed(() => {
         @update:model-value="update(field.key, $event)"
       />
     </div>
-    <p class="m-0 text-xs text-(--color-muted)">解析 200 条，预估 {{ estimatedWait }} 秒</p>
+    <p class="m-0 text-xs text-(--color-muted)">按整页加载。解析 200 条预计等待 {{ estimatedWait }} 秒。</p>
   </SettingsCard>
 </template>

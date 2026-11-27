@@ -6,8 +6,19 @@ import { extractBilibiliInputs } from '../../utils/bilibiliLinks';
 const mode = defineModel<'single' | 'batch'>('mode', { required: true });
 const input = defineModel<string>('input', { required: true });
 const singleInput = defineModel<string>('singleInput', { required: true });
-defineProps<{ busy: boolean; mobile?: boolean }>();
-const emit = defineEmits<{ submit: []; paste: []; singlePaste: [event: ClipboardEvent] }>();
+const props = defineProps<{ busy: boolean; paused: boolean; pausing: boolean; mobile?: boolean }>();
+const emit = defineEmits<{ submit: []; pause: []; resume: []; paste: []; singlePaste: [event: ClipboardEvent] }>();
+const primaryLabel = computed(() => {
+  if (props.pausing) return '正在暂停…';
+  if (props.paused) return '继续解析';
+  return props.busy ? '暂停解析' : '解析';
+});
+const submit = () => {
+  if (props.pausing) return;
+  if (props.paused) emit('resume');
+  else if (props.busy) emit('pause');
+  else emit('submit');
+};
 const modeOptions = [
   { label: '视频及所属合集', value: 'batch' },
   { label: '仅当前视频', value: 'single' },
@@ -42,8 +53,8 @@ const paste = (event: ClipboardEvent) => {
   <form
     class="parse-source-input"
     :class="{ 'is-mobile': mobile }"
-    @submit.prevent="emit('submit')"
-    @keydown.ctrl.enter.prevent="emit('submit')"
+    @submit.prevent="submit"
+    @keydown.ctrl.enter.prevent="submit"
   >
     <UTextarea
       v-if="mode === 'batch' && multiline"
@@ -122,10 +133,10 @@ const paste = (event: ClipboardEvent) => {
     <UiButton
       class="source-submit"
       type="submit"
-      :disabled="busy"
-      :aria-label="busy ? '正在解析' : '开始解析'"
+      :disabled="pausing"
+      :aria-label="busy ? primaryLabel : '开始解析'"
     >
-      {{ busy ? '解析中…' : mobile ? '开始解析' : '解析' }}
+      {{ primaryLabel }}
       <UIcon v-if="mobile && !busy" name="i-tabler-arrow-right" class="size-4" aria-hidden="true" />
     </UiButton>
   </form>
