@@ -54,6 +54,7 @@ describe('update preferences', () => {
     const update = useUpdateStore()
     await update.setAutoCheck(true)
     await vi.waitFor(() => expect(check).toHaveBeenCalledOnce())
+    expect(check).toHaveBeenCalledWith(undefined)
     expect(useSettingsStore().saved.auto_check_updates).toBe(true)
   })
 

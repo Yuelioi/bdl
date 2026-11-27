@@ -147,7 +147,7 @@ export const useUpdateStore = defineStore('update', {
         } catch (error) { siteError = error }
         const github = site?.sources.find(s => s.kind === 'github')?.delivery.url
         const quark = site?.sources.find(s => s.kind === 'cloud_drive' && s.delivery.url?.startsWith('https://pan.quark.cn/'))
-        let template = ''
+        let template: string | undefined
         if (this.source.startsWith('official:')) {
           if (!site) throw siteError ?? new Error('软件站暂时无法连接。')
           const selected = this.source.slice('official:'.length)
@@ -190,7 +190,7 @@ export const useUpdateStore = defineStore('update', {
           return
         }
         try {
-          const availableUpdate = await checkUpdate(template ?? undefined)
+          const availableUpdate = await checkUpdate(template)
           this.update = availableUpdate ? markRaw(availableUpdate) : null
           this.availableVersion = this.update?.version ?? null
           this.notes = this.update?.body ?? null
