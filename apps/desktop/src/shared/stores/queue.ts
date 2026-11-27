@@ -1,3 +1,4 @@
+import { problemMessage } from '../utils/publicError'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { defineStore } from 'pinia'
 import { recordCommandFailure } from '../utils/recentFailures'
@@ -178,7 +179,7 @@ export const useQueueStore = defineStore('queue', {
       this.unlisten.push(
         await listen<{ command: string; error: CommandErrorShape }>('diagnostic://operation-error', (event) => {
           recordCommandFailure(event.payload.command, event.payload.error)
-          this.setNotice(event.payload.error.message, event.payload.command === 'queue_worker' ? 'danger' : 'warning')
+          this.setNotice(problemMessage(event.payload.error), event.payload.command === 'queue_worker' ? 'danger' : 'warning')
         }),
       )
       this.unlisten.push(
@@ -637,7 +638,7 @@ export const useQueueStore = defineStore('queue', {
           const note = successNote ? `，${successNote}` : ''
           this.setNotice(`${actionLabel} ${succeeded} 个任务${suffix}${note}`, result.failed.length ? 'warning' : 'success')
         } else if (result.failed.length > 0) {
-          this.setNotice(`${result.failed.length} 个任务处理失败`, 'warning')
+          this.setNotice(result.failed.length === 1 ? problemMessage(result.failed[0]) : `${result.failed.length} 个任务处理失败`, 'warning')
         } else {
           this.setNotice('没有可处理的任务', 'info')
         }

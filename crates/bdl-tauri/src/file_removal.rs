@@ -1,5 +1,6 @@
 //! Exact, previewed file deletion. Queue records outlive their files, never the reverse.
 use crate::{mobile_storage::DocumentSnapshot, state::AppState};
+use bdl_core::public_error::{ErrorCode, ErrorCondition};
 use bdl_core::{
     BdlError, BdlResult,
     fetcher::{segment_path_for, state_path_for, state_temp_path_for},
@@ -15,9 +16,7 @@ use std::{
 };
 
 fn error(message: impl Into<String>) -> BdlError {
-    BdlError::Planning {
-        message: message.into(),
-    }
+    BdlError::classified(ErrorCode::FileCleanupFailed, message)
 }
 fn lock_error() -> BdlError {
     error("文件清理状态锁不可用。")
@@ -37,13 +36,21 @@ fn file_io_error(operation: &str, path: &Path, cause: std::io::Error) -> BdlErro
         Some(112) => "disk_full",
         _ => code,
     };
-    error(format!(
+    let condition = match code {
+        "file_in_use" => ErrorCode::FileInUse,
+        "file_read_only" => ErrorCode::FileReadOnly,
+        "storage_unavailable" => ErrorCode::FileUnavailable,
+        "disk_full" => ErrorCode::FileDiskFull,
+        _ => ErrorCondition::from_io(&cause).code,
+    };
+    let detail = format!(
         "[stage=file_cleanup code={code}] {operation}失败：{}；os_error={}；{cause}",
         path.display(),
         cause
             .raw_os_error()
             .map_or_else(|| "none".to_owned(), |code| code.to_string())
-    ))
+    );
+    BdlError::caused_by(condition, detail, cause)
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -192,20 +199,23 @@ pub(crate) fn validate_ancestors(path: &Path) -> BdlResult<()> {
                         continue;
                     }
                 }
-                return Err(error(format!(
-                    "拒绝清理符号链接或目录联接：{}",
-                    ancestor.display()
-                )));
+                return Err(BdlError::classified(
+                    ErrorCode::FileUnsafePath,
+                    format!("拒绝清理符号链接或目录联接：{}", ancestor.display()),
+                ));
             }
             Ok(_) => {}
             Err(e) if e.kind() == ErrorKind::NotFound =>
             {
                 #[cfg(windows)]
                 if ancestor.parent().is_none() {
-                    return Err(error(format!(
-                        "输出磁盘或共享目录不可访问，尚未清理文件：{}",
-                        ancestor.display()
-                    )));
+                    return Err(BdlError::classified(
+                        ErrorCode::FileUnavailable,
+                        format!(
+                            "输出磁盘或共享目录不可访问，尚未清理文件：{}",
+                            ancestor.display()
+                        ),
+                    ));
                 }
             }
             Err(e) => return Err(file_io_error("读取路径信息", ancestor, e)),
@@ -310,10 +320,10 @@ fn delete_file(file: &LocalFile) -> BdlResult<bool> {
         return Ok(false);
     };
     if current != file.stamp {
-        return Err(error(format!(
-            "文件已变化，请重新确认：{}",
-            file.path.display()
-        )));
+        return Err(BdlError::classified(
+            ErrorCode::FileChanged,
+            format!("文件已变化，请重新确认：{}", file.path.display()),
+        ));
     }
     #[cfg(windows)]
     {
@@ -331,17 +341,23 @@ fn delete_file(file: &LocalFile) -> BdlResult<bool> {
             .metadata()
             .map_err(|e| file_io_error("读取文件信息", &file.path, e))?;
         if metadata.permissions().readonly() {
-            return Err(error(format!(
-                "[stage=file_cleanup code=file_read_only] 文件为只读，未删除：{}",
-                file.path.display()
-            )));
+            return Err(BdlError::classified(
+                ErrorCode::FileReadOnly,
+                format!(
+                    "[stage=file_cleanup code=file_read_only] 文件为只读，未删除：{}",
+                    file.path.display()
+                ),
+            ));
         }
         if is_link(&metadata)
             || windows_identity(&handle)? != file.stamp.identity
             || metadata.len() != file.stamp.size
             || metadata.modified()? != file.stamp.modified
         {
-            return Err(error("文件已变化，请重新确认。"));
+            return Err(BdlError::classified(
+                ErrorCode::FileChanged,
+                "文件已变化，请重新确认。",
+            ));
         }
         let info = FILE_DISPOSITION_INFO { DeleteFile: true };
         if unsafe {
@@ -609,7 +625,10 @@ impl AppState {
             .file_cleanup_active
             .load(std::sync::atomic::Ordering::SeqCst)
         {
-            return Err(error("正在清理文件，请稍后操作。"));
+            return Err(BdlError::classified(
+                ErrorCode::QueueCleanupInProgress,
+                "正在清理文件，请稍后操作。",
+            ));
         }
         if self
             .removals
@@ -617,7 +636,10 @@ impl AppState {
             .map_err(|_| lock_error())?
             .contains(task_id)
         {
-            return Err(error("任务正在清理文件，请等待操作结束。"));
+            return Err(BdlError::classified(
+                ErrorCode::QueueCleanupInProgress,
+                "任务正在清理文件，请等待操作结束。",
+            ));
         }
         Ok(())
     }
@@ -625,11 +647,17 @@ impl AppState {
         let mut queue = self.queue_edit()?;
         let mut removing = self.removals.lock().map_err(|_| lock_error())?;
         if ids.iter().any(|id| removing.contains(id)) {
-            return Err(error("任务正在清理，请勿重复操作。"));
+            return Err(BdlError::classified(
+                ErrorCode::QueueCleanupInProgress,
+                "任务正在清理，请勿重复操作。",
+            ));
         }
         for id in ids {
             if !queue.iter().any(|t| &t.id == id) {
-                return Err(error("任务不存在，请刷新列表。"));
+                return Err(BdlError::classified(
+                    ErrorCode::QueueTaskMissing,
+                    "任务不存在，请刷新列表。",
+                ));
             }
         }
         let guard = RemovalGuard {
@@ -672,7 +700,8 @@ impl AppState {
         .await
         .map_err(|_| error("任务仍在停止或导出，尚未清理任何文件。请稍后重试。"))?
     }
-    fn record_cleanup_failure(&self, stage: &str, ids: &[String], failure: &BdlError) {
+    fn record_cleanup_failure(&self, stage: &str, ids: &[String], failure: BdlError) -> BdlError {
+        let problem = failure.public_problem();
         let raw = failure.to_string();
         let code = bdl_core::diagnostics::classify_failure(&raw)
             .map_or("cleanup_failed", |rule| rule.code.as_str());
@@ -683,6 +712,7 @@ impl AppState {
         for id in ids {
             // Keep the original failure even if recording it also fails.
             if let Err(error) = self.append_task_log(bdl_core::queue::QueueLogEntry {
+                problem: Some(problem.clone()),
                 task_id: id.clone(),
                 level: bdl_core::queue::QueueLogLevel::Warning,
                 message: message.clone(),
@@ -691,13 +721,16 @@ impl AppState {
                 tracing::warn!(detail = %bdl_core::account::redact_sensitive(&error.to_string()), "Failed to record cleanup failure");
             }
         }
+        BdlError::Traced {
+            trace_id: problem.trace_id,
+            source: Box::new(failure),
+        }
     }
     pub(crate) async fn stop_and_remove_task(&self, task_id: &str) -> BdlResult<bool> {
         let result = self.stop_and_remove_task_inner(task_id).await;
-        if let Err(error) = &result {
-            self.record_cleanup_failure("remove_task", &[task_id.to_owned()], error);
-        }
-        result
+        result.map_err(|error| {
+            self.record_cleanup_failure("remove_task", &[task_id.to_owned()], error)
+        })
     }
     async fn stop_and_remove_task_inner(&self, task_id: &str) -> BdlResult<bool> {
         if !self.queue_snapshot()?.iter().any(|t| t.id == task_id) {
@@ -831,12 +864,9 @@ impl AppState {
         let mut seen_documents = HashSet::new();
         let mut selected = Vec::with_capacity(ids.len());
         for id in &ids {
-            selected.push(
-                tasks
-                    .iter()
-                    .find(|t| &t.id == id)
-                    .ok_or_else(|| error("任务不存在，请刷新列表。"))?,
-            );
+            selected.push(tasks.iter().find(|t| &t.id == id).ok_or_else(|| {
+                BdlError::classified(ErrorCode::QueueTaskMissing, "任务不存在，请刷新列表。")
+            })?);
         }
         for task in selected.into_iter().flat_map(DownloadTask::file_parts) {
             validate_part_paths(task)?;
@@ -916,19 +946,13 @@ impl AppState {
         let result = self
             .task_plan(&queue, ids)
             .and_then(|plan| self.save_preview(plan));
-        if let Err(error) = &result {
-            self.record_cleanup_failure("delete_preview", ids, error);
-        }
-        result
+        result.map_err(|error| self.record_cleanup_failure("delete_preview", ids, error))
     }
     pub(crate) async fn delete_task_files(&self, token: &str) -> BdlResult<Vec<String>> {
         let approved = self.consume_preview(token)?;
         let ids = approved.task_ids.clone();
         let result = self.delete_task_files_inner(approved).await;
-        if let Err(error) = &result {
-            self.record_cleanup_failure("delete_files", &ids, error);
-        }
-        result
+        result.map_err(|error| self.record_cleanup_failure("delete_files", &ids, error))
     }
     async fn delete_task_files_inner(&self, approved: Plan) -> BdlResult<Vec<String>> {
         if approved.task_ids.is_empty() {
@@ -1421,7 +1445,7 @@ mod tests {
                 .get(&expected.document_uri)
                 .is_some_and(|file| file != expected)
             {
-                return Err(error("文件已变化"));
+                return Err(BdlError::classified(ErrorCode::FileChanged, "文件已变化"));
             }
             files.remove(&expected.document_uri);
             Ok(())

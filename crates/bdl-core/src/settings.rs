@@ -37,10 +37,12 @@ impl ProxyMode {
             Self::Custom => {
                 let address = required_proxy_url(proxy_url)?;
                 validate_proxy_url(Some(address))?;
-                let proxy =
-                    reqwest::Proxy::all(address).map_err(|_| crate::error::BdlError::Planning {
-                        message: "代理地址无效。".into(),
-                    })?;
+                let proxy = reqwest::Proxy::all(address).map_err(|_| {
+                    crate::error::BdlError::classified(
+                        crate::public_error::ErrorCode::SettingsProxyInvalid,
+                        "代理地址无效。",
+                    )
+                })?;
                 Ok(builder.proxy(proxy))
             }
         }
@@ -77,10 +79,10 @@ impl ParseRules {
             || !(self.interval_seconds..=120).contains(&self.rest_seconds)
             || !(1..=10).contains(&self.pages_per_round)
         {
-            return Err(crate::error::BdlError::Planning {
-                message: "每批解析需为20～200条，等待时间需为1～120秒，长休息不能短于批间等待。"
-                    .into(),
-            });
+            return Err(crate::error::BdlError::classified(
+                crate::public_error::ErrorCode::SettingsParsePacing,
+                "每批解析需为20～200条，等待时间需为1～120秒，长休息不能短于批间等待。",
+            ));
         }
         Ok(())
     }
@@ -289,9 +291,10 @@ impl AppSettings {
         validate_archive_mode(&self.archive_mode)?;
         validate_output_extension(&self.output_extension)?;
         if !matches!(self.audio_output_format.as_str(), "m4s" | "mp3") {
-            return Err(crate::error::BdlError::Planning {
-                message: "音频输出格式仅支持 m4s 或 MP3。".to_owned(),
-            });
+            return Err(crate::error::BdlError::classified(
+                crate::public_error::ErrorCode::SettingsAudioFormat,
+                "音频输出格式仅支持 m4s 或 MP3。",
+            ));
         }
         validate_embedding_container(
             &self.output_extension,
@@ -309,17 +312,22 @@ impl AppSettings {
         }
         validate_segment_count(self.segment_count)?;
         if self.task_start_interval_seconds == 0 {
-            return Err(crate::error::BdlError::Planning {
-                message: "任务间隔至少为 1 秒。".into(),
-            });
+            return Err(crate::error::BdlError::classified(
+                crate::public_error::ErrorCode::SettingsTaskInterval,
+                "任务间隔至少为 1 秒。",
+            ));
         }
-        validate_speed_limit(self.global_speed_limit_bytes_per_second, "全局下载限速")?;
+        validate_speed_limit(
+            self.global_speed_limit_bytes_per_second,
+            SpeedLimitScope::Global,
+        )?;
         if let Some(directory) = &self.document_tree_output
             && !directory.tree_uri.starts_with("content://")
         {
-            return Err(crate::error::BdlError::Planning {
-                message: "Android 导出目录无效，请重新选择保存位置。".to_owned(),
-            });
+            return Err(crate::error::BdlError::classified(
+                crate::public_error::ErrorCode::SettingsExportDirectory,
+                "Android 导出目录无效，请重新选择保存位置。",
+            ));
         }
         Ok(())
     }
@@ -329,9 +337,10 @@ fn validate_naming_presets(presets: &[NamingPreset]) -> BdlResult<()> {
     let mut ids = std::collections::HashSet::new();
     let mut names = std::collections::HashSet::new();
     if presets.len() > 32 {
-        return Err(crate::error::BdlError::Planning {
-            message: "命名预设最多保存 32 个。".into(),
-        });
+        return Err(crate::error::BdlError::classified(
+            crate::public_error::ErrorCode::SettingsNamingLimit,
+            "命名预设最多保存 32 个。",
+        ));
     }
     for preset in presets {
         if preset.id.is_empty()
@@ -340,9 +349,10 @@ fn validate_naming_presets(presets: &[NamingPreset]) -> BdlResult<()> {
             || !ids.insert(&preset.id)
             || !names.insert(preset.name.trim())
         {
-            return Err(crate::error::BdlError::Planning {
-                message: "命名预设需要唯一标识和不重复的名称，名称最多 40 个字符。".into(),
-            });
+            return Err(crate::error::BdlError::classified(
+                crate::public_error::ErrorCode::SettingsNamingPreset,
+                "命名预设需要唯一标识和不重复的名称，名称最多 40 个字符。",
+            ));
         }
         validate_template(&preset.template)?;
     }
@@ -355,9 +365,10 @@ pub fn validate_embedding_container(
     embed_subtitles: bool,
 ) -> BdlResult<()> {
     if output_extension != "mkv" && (embed_cover || embed_subtitles) {
-        return Err(crate::error::BdlError::Planning {
-            message: "嵌入封面和字幕仅支持 MKV 封装，请改用 MKV 或关闭嵌入选项。".to_owned(),
-        });
+        return Err(crate::error::BdlError::classified(
+            crate::public_error::ErrorCode::SettingsEmbeddingContainer,
+            "嵌入封面和字幕仅支持 MKV 封装，请改用 MKV 或关闭嵌入选项。",
+        ));
     }
 
     Ok(())
@@ -366,27 +377,30 @@ pub fn validate_embedding_container(
 fn validate_archive_mode(value: &str) -> BdlResult<()> {
     match value {
         "fast" | "complete_archive" | "custom" => Ok(()),
-        other => Err(crate::error::BdlError::Planning {
-            message: format!("下载内容模式设置无效：`{other}`。"),
-        }),
+        other => Err(crate::error::BdlError::classified(
+            crate::public_error::ErrorCode::SettingsArchiveMode,
+            format!("下载内容模式设置无效：`{other}`。"),
+        )),
     }
 }
 
 fn validate_output_extension(value: &str) -> BdlResult<()> {
     match value {
         "mp4" | "mkv" => Ok(()),
-        other => Err(crate::error::BdlError::Planning {
-            message: format!("封装格式设置无效：`{other}`。"),
-        }),
+        other => Err(crate::error::BdlError::classified(
+            crate::public_error::ErrorCode::SettingsContainer,
+            format!("封装格式设置无效：`{other}`。"),
+        )),
     }
 }
 
 fn validate_log_level(value: &str) -> BdlResult<()> {
     match value {
         "debug" | "info" | "warning" | "error" => Ok(()),
-        other => Err(crate::error::BdlError::Planning {
-            message: format!("日志级别设置无效：`{other}`。"),
-        }),
+        other => Err(crate::error::BdlError::classified(
+            crate::public_error::ErrorCode::SettingsLogLevel,
+            format!("日志级别设置无效：`{other}`。"),
+        )),
     }
 }
 
@@ -394,8 +408,11 @@ fn required_proxy_url(value: Option<&str>) -> BdlResult<&str> {
     value
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .ok_or_else(|| crate::error::BdlError::Planning {
-            message: "手动设置代理时，请填写代理地址。".into(),
+        .ok_or_else(|| {
+            crate::error::BdlError::classified(
+                crate::public_error::ErrorCode::SettingsProxyInvalid,
+                "手动设置代理时，请填写代理地址。",
+            )
         })
 }
 
@@ -403,21 +420,26 @@ fn validate_proxy_url(value: Option<&str>) -> BdlResult<()> {
     let Some(value) = value else {
         return Ok(());
     };
-    let parsed = url::Url::parse(value).map_err(|error| crate::error::BdlError::Planning {
-        message: format!("代理地址无效：{error}"),
+    let parsed = url::Url::parse(value).map_err(|error| {
+        crate::error::BdlError::classified(
+            crate::public_error::ErrorCode::SettingsProxyInvalid,
+            format!("代理地址无效：{error}"),
+        )
     })?;
     if matches!(parsed.scheme(), "http" | "https" | "socks5" | "socks5h")
         && (parsed.host_str().is_none() || parsed.fragment().is_some() || parsed.query().is_some())
     {
-        return Err(crate::error::BdlError::Planning {
-            message: "代理地址须包含主机，且不能包含查询参数或片段。".into(),
-        });
+        return Err(crate::error::BdlError::classified(
+            crate::public_error::ErrorCode::SettingsProxyInvalid,
+            "代理地址须包含主机，且不能包含查询参数或片段。",
+        ));
     }
     match parsed.scheme() {
         "http" | "https" | "socks5" | "socks5h" => Ok(()),
-        scheme => Err(crate::error::BdlError::Planning {
-            message: format!("代理地址协议不支持：`{scheme}`。"),
-        }),
+        scheme => Err(crate::error::BdlError::classified(
+            crate::public_error::ErrorCode::SettingsProxyInvalid,
+            format!("代理地址协议不支持：`{scheme}`。"),
+        )),
     }
 }
 
@@ -431,20 +453,32 @@ fn normalize_segment_count(value: usize) -> usize {
 fn validate_segment_count(value: usize) -> BdlResult<()> {
     match value {
         1 | 2 | 4 | 8 => Ok(()),
-        other => Err(crate::error::BdlError::Planning {
-            message: format!("单任务分段数设置无效：`{other}`。"),
-        }),
+        other => Err(crate::error::BdlError::classified(
+            crate::public_error::ErrorCode::SettingsSegments,
+            format!("单任务分段数设置无效：`{other}`。"),
+        )),
     }
 }
 
-pub fn validate_speed_limit(value: Option<u64>, label: &str) -> BdlResult<()> {
+pub enum SpeedLimitScope {
+    Global,
+    Task,
+}
+
+pub fn validate_speed_limit(value: Option<u64>, scope: SpeedLimitScope) -> BdlResult<()> {
     let Some(value) = value else {
         return Ok(());
     };
     if value == 0 || value > MAX_SPEED_LIMIT_BYTES_PER_SECOND {
-        return Err(crate::error::BdlError::Planning {
-            message: format!("{label}必须大于 0 且不超过 10 GiB/s。"),
-        });
+        use crate::public_error::ErrorCode;
+        let (code, label) = match scope {
+            SpeedLimitScope::Global => (ErrorCode::SettingsSpeedLimit, "全局下载限速"),
+            SpeedLimitScope::Task => (ErrorCode::SettingsTaskSpeedLimit, "单任务下载限速"),
+        };
+        return Err(crate::error::BdlError::classified(
+            code,
+            format!("{label}必须大于 0 且不超过 10 GiB/s，收到 {value} B/s。"),
+        ));
     }
     Ok(())
 }

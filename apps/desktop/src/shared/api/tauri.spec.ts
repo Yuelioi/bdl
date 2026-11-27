@@ -1,3 +1,4 @@
+import { describeProblem } from '../utils/publicError'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { invoke } from '@tauri-apps/api/core'
 import { accountLibraryList, parseCreateSource, queueResume, diagnosticsExport, diagnosticsOpenDirectory } from './tauri'
@@ -68,6 +69,19 @@ describe('user-facing BPI failures', () => {
     const error = await parseCreateSource({ input: 'fixture' }, 'request-fixture').catch(error => error)
     expect(error.detail).toContain('API错误 [-400]: fixture cause')
     await expect(parseCreateSource({ input: 'fixture' }, 'request-fixture')).rejects.not.toThrow('fixture cause')
+    for (const [code, matchedCode] of [
+      ['bdl.download.body_failed', 'bdl.download.body_failed'],
+      ['bdl.download.http_failed', 'bdl.download'],
+      ['bdl.download.future_condition', 'bdl.download'],
+    ]) {
+      const problem = { code, traceId: 'a'.repeat(32) }
+      vi.mocked(invoke).mockRejectedValueOnce({ code, problem, message: '操作失败', detail: 'HTTP 403; fixture cause' }).mockResolvedValueOnce(undefined)
+      const failure = await queueResume('task:1').catch(error => error)
+      expect(failure.problem).toEqual(problem)
+      expect(describeProblem(failure.problem, 'en')?.matchedCode).toBe(matchedCode)
+      expect(failure.message).toContain(describeProblem(problem)?.advice)
+      expect(failure.message).not.toContain('fixture cause')
+    }
   })
   it.each([
     ['course_preview_only', '当前账号只能试看此分集，请登录已购买该课程的账号后重试。'],

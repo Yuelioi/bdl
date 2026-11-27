@@ -1,3 +1,4 @@
+use bdl_core::public_error::ErrorCode;
 use tauri::Manager;
 use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 #[cfg(desktop)]
@@ -5,18 +6,23 @@ mod mcp;
 mod updates;
 
 #[tauri::command]
-fn desktop_read_clipboard_text(app: tauri::AppHandle) -> Result<String, String> {
+fn desktop_read_clipboard_text(
+    app: tauri::AppHandle,
+) -> bdl_tauri::commands::CommandResult<String> {
     #[cfg(desktop)]
     {
         use tauri_plugin_clipboard_manager::ClipboardExt;
-        app.clipboard()
-            .read_text()
-            .map_err(|error| error.to_string())
+        app.clipboard().read_text().map_err(|error| {
+            bdl_tauri::commands::CommandError::coded(ErrorCode::PlatformClipboardRead, error)
+        })
     }
     #[cfg(mobile)]
     {
         let _ = app;
-        Err("Use the mobile clipboard bridge".into())
+        Err(bdl_tauri::commands::CommandError::coded(
+            ErrorCode::PlatformUnsupported,
+            "Use the mobile clipboard bridge",
+        ))
     }
 }
 
@@ -31,6 +37,7 @@ fn desktop_write_clipboard_text(
         app.clipboard()
             .write_text(text)
             .map_err(|error| bdl_tauri::commands::CommandError {
+                problem: Some(Box::new(ErrorCode::PlatformClipboardWrite.into())),
                 code: "clipboard_write_failed".into(),
                 message: "无法写入剪贴板。".into(),
                 detail: Some(bdl_core::account::redact_diagnostic(&error.to_string())),
@@ -40,6 +47,7 @@ fn desktop_write_clipboard_text(
     {
         let _ = (app, text);
         Err(bdl_tauri::commands::CommandError {
+            problem: Some(Box::new(ErrorCode::PlatformUnsupported.into())),
             code: "unsupported_platform".into(),
             message: "当前平台使用原生移动剪贴板。".into(),
             detail: None,

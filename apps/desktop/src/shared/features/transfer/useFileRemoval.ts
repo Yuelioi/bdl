@@ -23,7 +23,7 @@ export function useFileRemoval(
   const setFailure = (failure: unknown) => {
     error.value = redactDiagnosticMessage(failure instanceof Error ? failure.message : String(failure));
     errorDetails.value = failure instanceof BdlCommandError
-      ? redactDiagnosticMessage(`code=${failure.code}\n${failure.detail ?? ''}`) : '';
+      ? redactDiagnosticMessage(`错误码: ${failure.problem?.code ?? failure.code}\n${failure.problem ? `追踪编号: ${failure.problem.traceId}\n` : ''}${failure.detail ?? ''}`) : '';
   };
   watch(open, (value) => { if (!value) { generation++; if (!executing.value) busy.value = false; } });
   const refresh = async () => {

@@ -387,7 +387,7 @@ test.describe('specific failure diagnostics', () => {
           Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Linux; Android 12) Mobile' }),
         );
       await installTauriMock(page, 'light', true, true);
-      await page.addInitScript(() => {
+      await page.addInitScript((structured: boolean) => {
         const target = window as unknown as {
           __TAURI_INTERNALS__: { invoke: (command: string, args?: Record<string, unknown>) => Promise<unknown> };
           __COPIED_DIAGNOSTIC__: string;
@@ -439,6 +439,7 @@ test.describe('specific failure diagnostics', () => {
               : [
                   {
                     task_id: task.id,
+                    ...(structured && { problem: { code: 'bdl.download.no_tracks', traceId: 'a'.repeat(32) } }),
                     level: 'error',
                     message: `[stage=download_video code=remote_forbidden] 请求资源长度失败: HTTP 403 Forbidden\n${'source=1 response cause; '.repeat(200)}\nsource=3 cause=last-source\nCookie: SESSDATA=private-cookie\nhttps://cdn.test/video?token=private-token`,
                     created_at: '2026-10-14T12:02:00Z',
@@ -448,25 +449,30 @@ test.describe('specific failure diagnostics', () => {
                 ];
           return invoke(command, args);
         };
-      });
+      }, device === 'desktop');
       await page.goto('/');
       await page.getByRole('button', { name: /传输/ }).click();
       const row = page
         .getByRole('list', { name: '传输任务', includeHidden: true })
         .getByRole('listitem', { includeHidden: true })
         .filter({ hasText: '403 下载测试' });
-      await expect(row).toContainText('B 站请求被拒绝');
+      const summary = device === 'desktop' ? '所选条目没有可下载的媒体轨道。' : 'B 站请求被拒绝';
+      await expect(row).toContainText(summary);
       await row.getByRole('button', { name: /更多操作/ }).click();
       await expect(page.getByRole(device === 'desktop' ? 'menuitem' : 'button', { name: /设置限速|定时开始/ })).toHaveCount(0);
       await page.getByRole(device === 'desktop' ? 'menuitem' : 'button', { name: '详情和诊断', exact: true }).click();
       const dialog = page.getByRole('dialog', { name: '403 下载测试', exact: true });
-      await expect(dialog.getByRole('heading', { name: '任务失败：B 站请求被拒绝' })).toBeVisible();
-      await expect(dialog).toContainText('确认当前账号能播放');
+      await expect(dialog.getByRole('heading', { name: `任务失败：${summary}` })).toBeVisible();
+      await expect(dialog).toContainText(device === 'desktop' ? '请用当前账号确认该条目' : '确认当前账号能播放');
       await dialog.getByRole('tab', { name: /日志/ }).click();
       await dialog.getByRole('button', { name: '复制诊断信息', exact: true }).click();
       const copied = await page.evaluate(
         () => (window as unknown as { __COPIED_DIAGNOSTIC__: string }).__COPIED_DIAGNOSTIC__,
       );
+      if (device === 'desktop') {
+        expect(copied).toContain('bdl.download.no_tracks');
+        expect(copied).toContain('a'.repeat(32));
+      }
       expect(copied).toContain('HTTP 403 Forbidden');
       expect(copied).toContain('stage=download_video');
       expect(copied).toContain('source=3 cause=last-source');

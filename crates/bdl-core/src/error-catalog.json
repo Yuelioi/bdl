@@ -1,0 +1,1066 @@
+{
+  "bdl.account": {
+    "advice": {
+      "en": "Check the account and its access to this content on Bilibili.",
+      "zh-CN": "请确认当前账号在哔哩哔哩能否访问该内容。"
+    }
+  },
+  "bdl.account.changed": {
+    "message": {
+      "en": "The active account changed during preparation.",
+      "zh-CN": "准备任务期间账号已变更。"
+    },
+    "advice": {
+      "en": "Confirm the active account and restart preparation.",
+      "zh-CN": "请确认当前账号后重新准备任务。"
+    }
+  },
+  "bdl.account.cookie_invalid": {
+    "message": {
+      "en": "The cookie has no usable SESSDATA.",
+      "zh-CN": "Cookie 缺少有效的 SESSDATA。"
+    },
+    "advice": {
+      "en": "Supply a current login cookie with a nonempty SESSDATA field.",
+      "zh-CN": "请提供含非空 SESSDATA 字段的当前登录 Cookie。"
+    }
+  },
+  "bdl.account.cookie_missing": {
+    "message": {
+      "en": "No login cookie was provided.",
+      "zh-CN": "尚未提供登录 Cookie。"
+    },
+    "advice": {
+      "en": "Set BDL_COOKIE or pass --cookie-file <path>.",
+      "zh-CN": "请设置 BDL_COOKIE 或使用 --cookie-file <路径>。"
+    }
+  },
+  "bdl.account.failed": {
+    "message": {
+      "en": "The account operation failed.",
+      "zh-CN": "账号操作失败。"
+    }
+  },
+  "bdl.account.login_required": {
+    "message": {
+      "en": "Login is required.",
+      "zh-CN": "需要登录哔哩哔哩。"
+    },
+    "advice": {
+      "en": "Sign in with an account that can access the source, then retry.",
+      "zh-CN": "请登录有权访问此来源的账号后重试。"
+    }
+  },
+  "bdl.account.preview_only": {
+    "message": {
+      "en": "This account only has preview access.",
+      "zh-CN": "当前账号只能试看。"
+    },
+    "advice": {
+      "en": "Sign in with the account that purchased the course.",
+      "zh-CN": "请使用已购买该课程的账号登录。"
+    }
+  },
+  "bdl.account.vip_required": {
+    "message": {
+      "en": "Access to the selected quality requires a membership.",
+      "zh-CN": "当前账号无权访问所选清晰度。"
+    },
+    "advice": {
+      "en": "Select an available quality or sign in with an eligible account.",
+      "zh-CN": "请选择可访问的清晰度，或登录具有相应权限的账号。"
+    }
+  },
+  "bdl.cli": {
+    "advice": {
+      "en": "Check the command options and collect a diagnostic record for a persistent failure.",
+      "zh-CN": "请核对命令参数，持续失败时收集诊断记录。"
+    }
+  },
+  "bdl.cli.arguments": {
+    "message": {
+      "en": "Invalid command arguments.",
+      "zh-CN": "命令参数有误。"
+    },
+    "advice": {
+      "en": "Run bdl <command> --help and check the option names and values.",
+      "zh-CN": "运行 bdl <命令> --help，核对选项名称和取值。"
+    }
+  },
+  "bdl.cli.missing_argument": {
+    "message": {
+      "en": "Missing required argument(s): {arguments}.",
+      "zh-CN": "缺少必填命令参数 {arguments}。"
+    },
+    "advice": {
+      "en": "Supply the indicated arguments. Run bdl <command> --help for the accepted format.",
+      "zh-CN": "请补齐所列参数，运行 bdl <命令> --help 查看格式。"
+    }
+  },
+  "bdl.download": {
+    "advice": {
+      "en": "Check that the selected media plays on Bilibili and that the output folder is writable and has free space.",
+      "zh-CN": "请确认所选内容在哔哩哔哩可以播放，并检查保存目录是否可写、磁盘是否有剩余空间。"
+    }
+  },
+  "bdl.download.body_failed": {
+    "message": {
+      "en": "The media response was interrupted.",
+      "zh-CN": "下载响应读取失败。"
+    },
+    "advice": {
+      "en": "Retry this task individually. If it persists, reduce the segment count to one.",
+      "zh-CN": "请单独重试此任务。若仍失败，可将分段数调为 1。"
+    }
+  },
+  "bdl.download.failed": {
+    "message": {
+      "en": "The download did not complete.",
+      "zh-CN": "下载未能完成。"
+    }
+  },
+  "bdl.download.fetch_failed": {
+    "message": {
+      "en": "The media download failed.",
+      "zh-CN": "媒体下载失败。"
+    }
+  },
+  "bdl.download.forbidden": {
+    "message": {
+      "en": "The media server refused the request.",
+      "zh-CN": "媒体服务器拒绝了下载请求。"
+    },
+    "advice": {
+      "en": "Check access to this item and quality on Bilibili, then refresh the download URL.",
+      "zh-CN": "请确认当前账号可以播放所选清晰度，再刷新下载地址。"
+    }
+  },
+  "bdl.download.http_failed": {
+    "message": {
+      "en": "The media server returned an HTTP error.",
+      "zh-CN": "媒体服务器返回了 HTTP 错误。"
+    }
+  },
+  "bdl.download.incomplete": {
+    "message": {
+      "en": "The received media length did not match the expected length.",
+      "zh-CN": "下载内容的长度与预期不符。"
+    },
+    "advice": {
+      "en": "Retry the incomplete track; if it recurs, refresh the source URL.",
+      "zh-CN": "请重试未完成的轨道；若再次失败，请刷新下载地址。"
+    }
+  },
+  "bdl.download.no_tracks": {
+    "message": {
+      "en": "The selected item has no downloadable media tracks.",
+      "zh-CN": "所选条目没有可下载的媒体轨道。"
+    },
+    "advice": {
+      "en": "Check that this item plays with the current account, then parse it again or choose a different item.",
+      "zh-CN": "请用当前账号确认该条目可以播放，再重新解析或选择其他条目。"
+    }
+  },
+  "bdl.download.no_url": {
+    "message": {
+      "en": "No download URL was supplied.",
+      "zh-CN": "资源没有可用的下载地址。"
+    },
+    "advice": {
+      "en": "Parse the source again to obtain a new URL.",
+      "zh-CN": "请重新解析来源以获取下载地址。"
+    }
+  },
+  "bdl.download.plan_failed": {
+    "message": {
+      "en": "A download plan could not be prepared.",
+      "zh-CN": "无法生成下载计划。"
+    }
+  },
+  "bdl.download.range_rejected": {
+    "message": {
+      "en": "The server did not return the requested byte range.",
+      "zh-CN": "服务器未返回请求的分段范围。"
+    },
+    "advice": {
+      "en": "Use one segment and redownload the affected track.",
+      "zh-CN": "请将分段数设为 1，并重新下载该轨道。"
+    }
+  },
+  "bdl.download.selection_changed": {
+    "message": {
+      "en": "The refreshed media no longer matches the selected output.",
+      "zh-CN": "刷新后的媒体与选定输出不匹配。"
+    },
+    "advice": {
+      "en": "Parse the source again and check the selected media before starting a new download.",
+      "zh-CN": "请重新解析来源，核对所选媒体后再发起下载。"
+    }
+  },
+  "bdl.download.url_expired": {
+    "message": {
+      "en": "The download URL is no longer available.",
+      "zh-CN": "下载地址已失效或资源已移除。"
+    },
+    "advice": {
+      "en": "Refresh the media URL and confirm the source is still available.",
+      "zh-CN": "请刷新下载地址，并确认原内容仍可播放。"
+    }
+  },
+  "bdl.file": {
+    "advice": {
+      "en": "Check that the selected location is accessible and permits this operation.",
+      "zh-CN": "请检查所选位置是否可访问，并确认拥有执行此操作的权限。"
+    }
+  },
+  "bdl.file.access_denied": {
+    "message": {
+      "en": "File access was denied.",
+      "zh-CN": "文件访问被拒绝。"
+    },
+    "advice": {
+      "en": "Check permissions on the affected file and its parent directory.",
+      "zh-CN": "请检查该文件及其父目录的访问权限。"
+    }
+  },
+  "bdl.file.changed": {
+    "message": {
+      "en": "The selected file has changed.",
+      "zh-CN": "待清理文件已变化。"
+    },
+    "advice": {
+      "en": "Preview the file list again before confirming removal.",
+      "zh-CN": "请重新预览待清理文件并确认。"
+    }
+  },
+  "bdl.file.cleanup_failed": {
+    "message": {
+      "en": "File cleanup failed.",
+      "zh-CN": "文件清理失败。"
+    }
+  },
+  "bdl.file.disk_full": {
+    "message": {
+      "en": "The disk is full.",
+      "zh-CN": "磁盘空间不足。"
+    },
+    "advice": {
+      "en": "Free space on the affected volume before continuing.",
+      "zh-CN": "请释放对应磁盘的空间后继续。"
+    }
+  },
+  "bdl.file.in_use": {
+    "message": {
+      "en": "The file is in use.",
+      "zh-CN": "文件正被其他程序占用。"
+    },
+    "advice": {
+      "en": "Close the application using the file and retry.",
+      "zh-CN": "请关闭占用文件的程序后重试。"
+    }
+  },
+  "bdl.file.invalid_path": {
+    "message": {
+      "en": "The specified path is invalid.",
+      "zh-CN": "指定路径无效。"
+    },
+    "advice": {
+      "en": "Select an existing file or directory appropriate for the operation.",
+      "zh-CN": "请为此操作重新选择有效的文件或目录。"
+    }
+  },
+  "bdl.file.io_failed": {
+    "message": {
+      "en": "A local file operation failed.",
+      "zh-CN": "本地文件操作失败。"
+    }
+  },
+  "bdl.file.not_found": {
+    "message": {
+      "en": "The required file was not found.",
+      "zh-CN": "找不到所需文件。"
+    },
+    "advice": {
+      "en": "Check the file path and that its drive is connected.",
+      "zh-CN": "请核对文件路径并确认磁盘已连接。"
+    }
+  },
+  "bdl.file.open_failed": {
+    "message": {
+      "en": "The system could not open the selected location.",
+      "zh-CN": "系统无法打开所选位置。"
+    }
+  },
+  "bdl.file.read_only": {
+    "message": {
+      "en": "The file or volume is read-only.",
+      "zh-CN": "文件或磁盘只读。"
+    },
+    "advice": {
+      "en": "Choose a writable location or enable writing on the selected one.",
+      "zh-CN": "请改用可写位置，或检查当前位置的写入权限。"
+    }
+  },
+  "bdl.file.unavailable": {
+    "message": {
+      "en": "The storage location is unavailable.",
+      "zh-CN": "存储位置不可访问。"
+    },
+    "advice": {
+      "en": "Reconnect the drive or network share before retrying.",
+      "zh-CN": "请重新连接磁盘或网络共享后重试。"
+    }
+  },
+  "bdl.file.unsafe_path": {
+    "message": {
+      "en": "The selected path is outside the permitted cleanup scope.",
+      "zh-CN": "所选路径不在可安全清理的范围内。"
+    },
+    "advice": {
+      "en": "Review the location in the file manager before handling it manually.",
+      "zh-CN": "请在文件管理器核对路径后手动处理。"
+    }
+  },
+  "bdl.input": {
+    "advice": {
+      "en": "Check the source, options and item numbers.",
+      "zh-CN": "请核对输入的来源、选项和条目编号。"
+    }
+  },
+  "bdl.input.archive_mode": {
+    "message": {
+      "en": "The archive mode is invalid.",
+      "zh-CN": "归档模式无效。"
+    }
+  },
+  "bdl.input.invalid": {
+    "message": {
+      "en": "The input is invalid.",
+      "zh-CN": "输入有误。"
+    }
+  },
+  "bdl.input.item_out_of_range": {
+    "message": {
+      "en": "The selected item number is outside the source list.",
+      "zh-CN": "所选条目编号超出来源列表范围。"
+    }
+  },
+  "bdl.input.need_selection": {
+    "message": {
+      "en": "Select --parts or --items, or use --all with --state.",
+      "zh-CN": "请选择 --parts 或 --items，或搭配 --state 使用 --all。"
+    },
+    "advice": {
+      "en": "Choose the intended range before downloading.",
+      "zh-CN": "指定要下载的分集或条目范围。"
+    }
+  },
+  "bdl.input.need_state": {
+    "message": {
+      "en": "--all requires --state <path>.",
+      "zh-CN": "--all 需要 --state <路径>。"
+    },
+    "advice": {
+      "en": "Choose a checkpoint file so the operation can resume.",
+      "zh-CN": "请选择进度文件，以便恢复操作。"
+    }
+  },
+  "bdl.input.part_out_of_range": {
+    "message": {
+      "en": "The selected part number is outside the part list.",
+      "zh-CN": "所选分集编号超出分集列表范围。"
+    }
+  },
+  "bdl.input.parts_not_supported": {
+    "message": {
+      "en": "This source requires --items instead of --parts.",
+      "zh-CN": "该来源需要使用 --items 选择条目。"
+    }
+  },
+  "bdl.input.quality": {
+    "message": {
+      "en": "Invalid media quality.",
+      "zh-CN": "清晰度选项有误。"
+    },
+    "advice": {
+      "en": "Use best or a positive quality ID. Video also accepts sdr.",
+      "zh-CN": "请使用 best 或有效的正整数清晰度编号，视频也支持 sdr。"
+    }
+  },
+  "bdl.integration": {
+    "advice": {
+      "en": "Review the local AI connection in Settings.",
+      "zh-CN": "请在设置中检查本机 AI 接入状态。"
+    }
+  },
+  "bdl.integration.disabled": {
+    "message": {
+      "en": "The local integration is disabled.",
+      "zh-CN": "本机 AI 接入尚未启用。"
+    },
+    "advice": {
+      "en": "Enable the local integration first.",
+      "zh-CN": "请先启用本机 AI 接入。"
+    }
+  },
+  "bdl.integration.failed": {
+    "message": {
+      "en": "The local integration operation failed.",
+      "zh-CN": "本机 AI 接入操作失败。"
+    }
+  },
+  "bdl.integration.port_busy": {
+    "message": {
+      "en": "The local integration port is already in use.",
+      "zh-CN": "本机 AI 接入端口已被占用。"
+    },
+    "advice": {
+      "en": "Stop the process using the configured port, then enable the integration again.",
+      "zh-CN": "请释放被占用的端口后重新启用接入。"
+    }
+  },
+  "bdl.integration.token_invalid": {
+    "message": {
+      "en": "The local integration token is invalid.",
+      "zh-CN": "本机 AI 接入令牌已损坏。"
+    },
+    "advice": {
+      "en": "Reset the local integration credentials.",
+      "zh-CN": "请重置本机 AI 接入设置。"
+    }
+  },
+  "bdl.media": {
+    "advice": {
+      "en": "Check that the input tracks are present and readable, and verify FFmpeg with ffmpeg-check.",
+      "zh-CN": "请检查输入轨道是否存在且可读，并用 ffmpeg-check 检查 FFmpeg。"
+    }
+  },
+  "bdl.media.attachment_format": {
+    "message": {
+      "en": "The attachment format cannot be embedded in this container.",
+      "zh-CN": "当前容器不支持嵌入所选附件。"
+    },
+    "advice": {
+      "en": "Save the attachment separately or choose a compatible output format.",
+      "zh-CN": "请单独保存该附件，或选择支持嵌入它的输出格式。"
+    }
+  },
+  "bdl.media.attachment_missing": {
+    "message": {
+      "en": "A requested attachment is unavailable.",
+      "zh-CN": "缺少所选的附件。"
+    },
+    "advice": {
+      "en": "Parse again to refresh the attachment list, or disable this attachment in the download options.",
+      "zh-CN": "请重新解析以刷新附件列表，或在下载选项中取消该附件。"
+    }
+  },
+  "bdl.media.drm_protected": {
+    "message": {
+      "en": "This media uses DRM protection.",
+      "zh-CN": "此媒体受 DRM 保护。"
+    },
+    "advice": {
+      "en": "Watch it on Bilibili.",
+      "zh-CN": "请前往哔哩哔哩观看。"
+    }
+  },
+  "bdl.media.empty_output": {
+    "message": {
+      "en": "The media processor produced an empty output.",
+      "zh-CN": "媒体处理生成了空文件。"
+    }
+  },
+  "bdl.media.ffmpeg_missing": {
+    "message": {
+      "en": "FFmpeg could not be found.",
+      "zh-CN": "未找到 FFmpeg。"
+    },
+    "advice": {
+      "en": "Install FFmpeg or select its executable in the FFmpeg configuration.",
+      "zh-CN": "请安装 FFmpeg，或在 FFmpeg 配置中选择可执行文件。"
+    }
+  },
+  "bdl.media.input_missing": {
+    "message": {
+      "en": "A media input track is missing.",
+      "zh-CN": "缺少输入媒体轨道。"
+    }
+  },
+  "bdl.media.mux_failed": {
+    "message": {
+      "en": "The media processor failed to merge the tracks.",
+      "zh-CN": "媒体轨道合并失败。"
+    }
+  },
+  "bdl.media.probe_failed": {
+    "message": {
+      "en": "The media processor could not be verified.",
+      "zh-CN": "无法验证媒体处理程序。"
+    }
+  },
+  "bdl.media.sidecar_format": {
+    "message": {
+      "en": "The attachment cannot be converted to the selected format.",
+      "zh-CN": "附件无法转换为所选格式。"
+    },
+    "advice": {
+      "en": "Save the original attachment or choose a supported export format.",
+      "zh-CN": "请保留原始附件，或选择支持的导出格式。"
+    }
+  },
+  "bdl.media.subtitle_invalid": {
+    "message": {
+      "en": "The subtitle could not be converted.",
+      "zh-CN": "字幕文件无法转换。"
+    },
+    "advice": {
+      "en": "Save the original subtitle and check its contents before converting it.",
+      "zh-CN": "请保存原始字幕并检查文件内容，再尝试转换。"
+    }
+  },
+  "bdl.network": {
+    "advice": {
+      "en": "Check connectivity and the configured proxy before retrying.",
+      "zh-CN": "请检查连接和代理配置后再试。"
+    }
+  },
+  "bdl.network.request_failed": {
+    "message": {
+      "en": "The network request failed.",
+      "zh-CN": "网络请求失败。"
+    }
+  },
+  "bdl.network.timeout": {
+    "message": {
+      "en": "The network request timed out.",
+      "zh-CN": "网络请求超时。"
+    }
+  },
+  "bdl.parse": {
+    "advice": {
+      "en": "Open the source on Bilibili and confirm it is available to this account.",
+      "zh-CN": "请在哔哩哔哩打开来源，确认当前账号可以访问。"
+    }
+  },
+  "bdl.parse.cancelled": {
+    "message": {
+      "en": "Parsing was cancelled.",
+      "zh-CN": "解析已取消。"
+    },
+    "advice": {
+      "en": "Start parsing again when ready.",
+      "zh-CN": "需要继续时重新发起解析。"
+    }
+  },
+  "bdl.parse.cooldown": {
+    "message": {
+      "en": "Parsing is paused for at least {retryAfterSeconds} seconds.",
+      "zh-CN": "解析已暂停，请至少等待 {retryAfterSeconds} 秒。"
+    },
+    "advice": {
+      "en": "Wait for the indicated cooldown before manually resuming.",
+      "zh-CN": "请等待提示的冷却时间结束后手动继续。"
+    }
+  },
+  "bdl.parse.empty_source": {
+    "message": {
+      "en": "The source returned no items.",
+      "zh-CN": "该来源没有可用条目。"
+    }
+  },
+  "bdl.parse.failed": {
+    "message": {
+      "en": "Source parsing failed.",
+      "zh-CN": "来源解析失败。"
+    }
+  },
+  "bdl.parse.unsupported_source": {
+    "message": {
+      "en": "This source type is unsupported.",
+      "zh-CN": "暂不支持该来源类型。"
+    },
+    "advice": {
+      "en": "Supply a supported Bilibili link or video ID.",
+      "zh-CN": "请使用支持的哔哩哔哩链接或视频编号。"
+    }
+  },
+  "bdl.parse.upstream_failed": {
+    "message": {
+      "en": "The Bilibili API request failed.",
+      "zh-CN": "哔哩哔哩接口请求失败。"
+    }
+  },
+  "bdl.platform": {
+    "advice": {
+      "en": "Check system permissions and include the diagnostic record when reporting a persistent failure.",
+      "zh-CN": "请核对系统权限。持续失败时反馈诊断记录。"
+    }
+  },
+  "bdl.platform.clipboard_read": {
+    "message": {
+      "en": "The clipboard could not be read.",
+      "zh-CN": "无法读取剪贴板。"
+    },
+    "advice": {
+      "en": "Check clipboard access or paste the text manually.",
+      "zh-CN": "请检查剪贴板访问权限，或手动粘贴文本。"
+    }
+  },
+  "bdl.platform.clipboard_write": {
+    "message": {
+      "en": "The clipboard could not be written.",
+      "zh-CN": "无法写入剪贴板。"
+    },
+    "advice": {
+      "en": "Check clipboard access or copy the text manually.",
+      "zh-CN": "请检查剪贴板访问权限，或手动复制文本。"
+    }
+  },
+  "bdl.platform.event_failed": {
+    "message": {
+      "en": "The application could not deliver an event.",
+      "zh-CN": "应用事件发送失败。"
+    }
+  },
+  "bdl.platform.failed": {
+    "message": {
+      "en": "The system operation failed.",
+      "zh-CN": "系统操作失败。"
+    }
+  },
+  "bdl.platform.open_url_failed": {
+    "message": {
+      "en": "The system could not open the link.",
+      "zh-CN": "系统无法打开链接。"
+    }
+  },
+  "bdl.platform.unsupported": {
+    "message": {
+      "en": "This operation is unavailable on this platform.",
+      "zh-CN": "当前平台不支持此操作。"
+    }
+  },
+  "bdl.platform.url_blocked": {
+    "message": {
+      "en": "This external address is not allowed.",
+      "zh-CN": "此外部链接不在允许范围内。"
+    },
+    "advice": {
+      "en": "Use the original link from a trusted source.",
+      "zh-CN": "请使用受信来源提供的原始链接。"
+    }
+  },
+  "bdl.queue": {
+    "advice": {
+      "en": "Check the current task state and reopen its details.",
+      "zh-CN": "请查看任务的当前状态，再选择可用操作。"
+    }
+  },
+  "bdl.queue.cleanup_in_progress": {
+    "message": {
+      "en": "Task file cleanup is still in progress.",
+      "zh-CN": "正在清理任务文件。"
+    },
+    "advice": {
+      "en": "Wait for cleanup to finish, then refresh the queue.",
+      "zh-CN": "请等待清理完成后刷新队列。"
+    }
+  },
+  "bdl.queue.duplicate_policy": {
+    "message": {
+      "en": "A duplicate task requires confirmation.",
+      "zh-CN": "重复任务需要确认。"
+    },
+    "advice": {
+      "en": "Choose how to handle duplicate tasks before continuing.",
+      "zh-CN": "请先选择重复任务的处理方式，再继续。"
+    }
+  },
+  "bdl.queue.in_use": {
+    "message": {
+      "en": "Another BDL instance is using the queue.",
+      "zh-CN": "队列正被另一个 BDL 实例使用。"
+    },
+    "advice": {
+      "en": "Close the other instance before reopening the queue.",
+      "zh-CN": "请关闭占用队列的实例后再打开。"
+    }
+  },
+  "bdl.queue.invalid_start_time": {
+    "message": {
+      "en": "The start time must be a valid time in the future.",
+      "zh-CN": "开始时间必须有效且晚于当前时间。"
+    },
+    "advice": {
+      "en": "Choose a future date and time, or clear the schedule to start immediately.",
+      "zh-CN": "请重新选择将来的日期和时间，或取消定时以立即开始。"
+    }
+  },
+  "bdl.queue.pause_before_limit": {
+    "message": {
+      "en": "The task must be paused before changing its speed limit.",
+      "zh-CN": "需要暂停任务才能修改限速。"
+    },
+    "advice": {
+      "en": "Pause the task, update its speed limit, and resume it.",
+      "zh-CN": "请暂停任务，修改限速后继续下载。"
+    }
+  },
+  "bdl.queue.preparation_full": {
+    "message": {
+      "en": "There are already 20 batches being prepared.",
+      "zh-CN": "已有 20 批任务正在准备。"
+    },
+    "advice": {
+      "en": "Wait for a batch to finish or stop an unneeded batch before submitting again.",
+      "zh-CN": "请等待一批任务完成，或停止不需要的准备任务，再提交。"
+    }
+  },
+  "bdl.queue.preparation_interrupted": {
+    "message": {
+      "en": "Task preparation was interrupted.",
+      "zh-CN": "任务准备已中断。"
+    },
+    "advice": {
+      "en": "Restart preparation for the selected items.",
+      "zh-CN": "请重新发起所选条目的准备操作。"
+    }
+  },
+  "bdl.queue.preset_missing": {
+    "message": {
+      "en": "The selected download preset no longer exists.",
+      "zh-CN": "所选下载预设已不存在。"
+    },
+    "advice": {
+      "en": "Choose an existing preset and submit again.",
+      "zh-CN": "请重新选择一个下载预设，再提交任务。"
+    }
+  },
+  "bdl.queue.recipe_missing": {
+    "message": {
+      "en": "The task is missing its download configuration.",
+      "zh-CN": "任务缺少下载流程配置。"
+    },
+    "advice": {
+      "en": "Create the task again with the desired download options.",
+      "zh-CN": "请重新选择下载选项并创建任务。"
+    }
+  },
+  "bdl.queue.refresh_metadata_missing": {
+    "message": {
+      "en": "The task lacks identifiers needed to refresh the download.",
+      "zh-CN": "任务缺少刷新下载地址所需的媒体信息。"
+    },
+    "advice": {
+      "en": "Parse the source again and create a new download task.",
+      "zh-CN": "请重新解析来源并创建下载任务。"
+    }
+  },
+  "bdl.queue.schedule_unavailable": {
+    "message": {
+      "en": "This task cannot currently be scheduled.",
+      "zh-CN": "该任务当前无法设置开始时间。"
+    },
+    "advice": {
+      "en": "Schedule a waiting or paused task.",
+      "zh-CN": "请在任务排队或暂停时设置开始时间。"
+    }
+  },
+  "bdl.queue.selection_changed": {
+    "message": {
+      "en": "The selection is no longer available.",
+      "zh-CN": "所选内容已发生变化。"
+    },
+    "advice": {
+      "en": "Reload the source and select the items again.",
+      "zh-CN": "请重新加载来源并选择要下载的内容。"
+    }
+  },
+  "bdl.queue.selection_missing": {
+    "message": {
+      "en": "No content is selected.",
+      "zh-CN": "尚未选择要下载的内容。"
+    },
+    "advice": {
+      "en": "Select at least one item in the parsed list, then create the download task.",
+      "zh-CN": "请从解析结果中至少勾选一项，再创建下载任务。"
+    }
+  },
+  "bdl.queue.task_missing": {
+    "message": {
+      "en": "The task no longer exists.",
+      "zh-CN": "任务已不存在。"
+    },
+    "advice": {
+      "en": "Refresh the queue and select an existing task.",
+      "zh-CN": "请刷新队列并重新选择任务。"
+    }
+  },
+  "bdl.queue.transition_blocked": {
+    "message": {
+      "en": "The current task state does not allow this operation.",
+      "zh-CN": "当前任务状态不允许此操作。"
+    }
+  },
+  "bdl.settings": {
+    "advice": {
+      "en": "Review the selected option in Settings and save again.",
+      "zh-CN": "请在设置中重新选择有效选项并保存。"
+    }
+  },
+  "bdl.settings.archive_mode": {
+    "message": {
+      "en": "Invalid archive mode.",
+      "zh-CN": "下载内容模式无效。"
+    }
+  },
+  "bdl.settings.audio_format": {
+    "message": {
+      "en": "Invalid audio format.",
+      "zh-CN": "音频输出格式无效。"
+    },
+    "advice": {
+      "en": "Select m4s or MP3.",
+      "zh-CN": "请选择 m4s 或 MP3。"
+    }
+  },
+  "bdl.settings.container": {
+    "message": {
+      "en": "Invalid output container.",
+      "zh-CN": "输出封装格式无效。"
+    },
+    "advice": {
+      "en": "Select MP4 or MKV.",
+      "zh-CN": "请选择 MP4 或 MKV。"
+    }
+  },
+  "bdl.settings.embedding_container": {
+    "message": {
+      "en": "The selected container does not support embedding.",
+      "zh-CN": "当前封装格式不支持嵌入封面或字幕。"
+    },
+    "advice": {
+      "en": "Select MKV or disable embedding.",
+      "zh-CN": "请改用 MKV 或关闭嵌入选项。"
+    }
+  },
+  "bdl.settings.export_directory": {
+    "message": {
+      "en": "The export directory is invalid.",
+      "zh-CN": "导出目录无效。"
+    },
+    "advice": {
+      "en": "Select the destination directory again.",
+      "zh-CN": "请重新选择保存目录。"
+    }
+  },
+  "bdl.settings.log_level": {
+    "message": {
+      "en": "Invalid log level.",
+      "zh-CN": "日志级别无效。"
+    }
+  },
+  "bdl.settings.naming_limit": {
+    "message": {
+      "en": "Too many naming presets.",
+      "zh-CN": "命名预设过多。"
+    },
+    "advice": {
+      "en": "Keep at most 32 naming presets.",
+      "zh-CN": "请将命名预设数量减少到 32 个以内。"
+    }
+  },
+  "bdl.settings.naming_preset": {
+    "message": {
+      "en": "Invalid naming preset.",
+      "zh-CN": "命名预设无效。"
+    },
+    "advice": {
+      "en": "Use unique identifiers and names of at most 40 characters.",
+      "zh-CN": "请使用唯一标识和不重复的名称，名称不超过 40 个字符。"
+    }
+  },
+  "bdl.settings.parse_pacing": {
+    "message": {
+      "en": "Invalid parsing pace.",
+      "zh-CN": "解析节奏设置超出允许范围。"
+    },
+    "advice": {
+      "en": "Use batches of 20–200 and waits of 1–120 seconds. The long break must be at least the batch delay.",
+      "zh-CN": "每批设为 20～200 条，等待设为 1～120 秒，长休息应不少于批间等待。"
+    }
+  },
+  "bdl.settings.proxy_invalid": {
+    "message": {
+      "en": "Invalid proxy address.",
+      "zh-CN": "代理地址无效。"
+    },
+    "advice": {
+      "en": "Check the host, protocol and port in proxy settings.",
+      "zh-CN": "请检查代理设置里的协议、主机和端口。"
+    }
+  },
+  "bdl.settings.segments": {
+    "message": {
+      "en": "Invalid segment count.",
+      "zh-CN": "下载分段数无效。"
+    },
+    "advice": {
+      "en": "Select 1, 2, 4 or 8 segments.",
+      "zh-CN": "请选择 1、2、4 或 8 个分段。"
+    }
+  },
+  "bdl.settings.speed_limit": {
+    "message": {
+      "en": "The global download speed limit is out of range.",
+      "zh-CN": "全局下载限速超出范围。"
+    },
+    "advice": {
+      "en": "Disable the limit or enter a positive value up to 10 GiB/s.",
+      "zh-CN": "请关闭限速，或输入不超过 10 GiB/s 的正数。"
+    }
+  },
+  "bdl.settings.task_interval": {
+    "message": {
+      "en": "The task interval is too short.",
+      "zh-CN": "任务间隔过短。"
+    },
+    "advice": {
+      "en": "Use an interval of at least one second.",
+      "zh-CN": "请将任务间隔设为至少 1 秒。"
+    }
+  },
+  "bdl.settings.task_speed_limit": {
+    "message": {
+      "en": "The per-task download speed limit is out of range.",
+      "zh-CN": "单任务下载限速超出范围。"
+    },
+    "advice": {
+      "en": "Enter a positive limit up to 10 GiB/s, or remove the limit.",
+      "zh-CN": "请输入不超过 10 GiB/s 的正数，或取消该任务的限速。"
+    }
+  },
+  "bdl.source": {
+    "advice": {
+      "en": "Check whether the original content opens on Bilibili and whether the service is available.",
+      "zh-CN": "请在哔哩哔哩打开原内容，确认来源和服务是否可访问。"
+    }
+  },
+  "bdl.source.forbidden": {
+    "message": {
+      "en": "Bilibili refused the request.",
+      "zh-CN": "哔哩哔哩拒绝了本次请求。"
+    }
+  },
+  "bdl.source.http_failed": {
+    "message": {
+      "en": "Bilibili returned an HTTP error.",
+      "zh-CN": "哔哩哔哩返回了 HTTP 错误。"
+    }
+  },
+  "bdl.source.rate_limited": {
+    "message": {
+      "en": "Bilibili is limiting requests.",
+      "zh-CN": "哔哩哔哩限制了请求频率。"
+    },
+    "advice": {
+      "en": "Pause batch operations and wait before manually resuming.",
+      "zh-CN": "请暂停批量操作，等待一段时间后再手动继续。"
+    }
+  },
+  "bdl.source.verification_required": {
+    "message": {
+      "en": "The source requires verification.",
+      "zh-CN": "来源请求需要验证。"
+    },
+    "advice": {
+      "en": "Pause batch operations. Complete any verification shown by Bilibili before resuming.",
+      "zh-CN": "请暂停批量操作。若哔哩哔哩页面要求验证，请完成验证后再继续。"
+    }
+  },
+  "bdl.state": {
+    "advice": {
+      "en": "Check the --state file, its options and whether another process is using it.",
+      "zh-CN": "请核对 --state 文件、启动选项，以及是否有其他进程正在使用它。"
+    }
+  },
+  "bdl.state.exists": {
+    "message": {
+      "en": "The checkpoint file already exists.",
+      "zh-CN": "进度文件已存在。"
+    },
+    "advice": {
+      "en": "Use --resume with the same options or select a new --state path.",
+      "zh-CN": "请使用相同参数加 --resume 恢复，或选择新的 --state 路径。"
+    }
+  },
+  "bdl.state.invalid_data": {
+    "message": {
+      "en": "The checkpoint data is invalid.",
+      "zh-CN": "进度文件格式有误。"
+    }
+  },
+  "bdl.state.mismatch": {
+    "message": {
+      "en": "The checkpoint belongs to different options or an unsupported version.",
+      "zh-CN": "进度文件的启动选项或版本不匹配。"
+    }
+  },
+  "bdl.storage": {
+    "advice": {
+      "en": "Keep the original data and check the storage location and file version.",
+      "zh-CN": "请保留原数据，检查存储位置及文件版本。"
+    }
+  },
+  "bdl.storage.database_failed": {
+    "message": {
+      "en": "The local database operation failed.",
+      "zh-CN": "本地数据库操作失败。"
+    }
+  },
+  "bdl.storage.invalid_data": {
+    "message": {
+      "en": "Application data could not be decoded or encoded.",
+      "zh-CN": "应用数据编解码失败。"
+    }
+  },
+  "bdl.update": {
+    "advice": {
+      "en": "Check your connection and update source, then check again.",
+      "zh-CN": "请检查网络和更新来源后重新检测。"
+    }
+  },
+  "bdl.update.check_failed": {
+    "message": {
+      "en": "Update check failed.",
+      "zh-CN": "更新检测失败。"
+    }
+  },
+  "bdl.update.invalid_response": {
+    "message": {
+      "en": "The update service returned invalid data.",
+      "zh-CN": "更新服务返回了无效数据。"
+    }
+  },
+  "bdl.update.invalid_url": {
+    "message": {
+      "en": "The update URL is invalid or untrusted.",
+      "zh-CN": "更新地址无效或来源未经验证。"
+    },
+    "advice": {
+      "en": "Choose the official release or correct the HTTPS mirror configuration.",
+      "zh-CN": "请选择官方发布来源，或检查 HTTPS 镜像地址。"
+    }
+  },
+  "bdl.update.proxy_invalid": {
+    "message": {
+      "en": "The update proxy settings are invalid.",
+      "zh-CN": "更新代理配置无效。"
+    },
+    "advice": {
+      "en": "Correct the proxy address in network settings.",
+      "zh-CN": "请在网络设置中修正代理地址。"
+    }
+  }
+}

@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { invoke } from '@tauri-apps/api/core';
+import { invokeCommand as invoke, type CommandErrorShape } from '../../../shared/api/tauri';
+import { problemMessage } from '../../../shared/utils/publicError';
 import { onMounted, ref } from 'vue';
 import SettingsCard from '../../../shared/features/settings/SettingsCard.vue';
 import UiButton from '../../../shared/ui/Button.vue';
 import UiInlineNotice from '../../../shared/ui/InlineNotice.vue';
 import { writeClipboardText } from '../../../shared/utils/clipboard';
 
-type Connection = { enabled: boolean; url: string; error?: string | null };
+type Connection = { enabled: boolean; url: string; error?: CommandErrorShape | null };
 
 const connection = ref<Connection>();
 const busy = ref(false);
@@ -19,9 +20,9 @@ async function refresh() {
   copied.value = false;
   try {
     connection.value = await invoke<Connection>('desktop_mcp_status');
-  } catch {
+  } catch (cause) {
     connection.value = undefined;
-    error.value = '无法读取 AI 接入状态。';
+    error.value = cause instanceof Error ? cause.message : '无法读取 AI 接入状态。';
   } finally {
     busy.value = false;
   }
@@ -36,7 +37,7 @@ async function setEnabled(enabled: boolean) {
   try {
     connection.value = await invoke<Connection>('desktop_mcp_set_enabled', { enabled });
   } catch (cause) {
-    error.value = typeof cause === 'string' ? cause : '无法更改 AI 接入状态。';
+    error.value = cause instanceof Error ? cause.message : '无法更改 AI 接入状态。';
   } finally {
     busy.value = false;
   }
@@ -56,9 +57,9 @@ async function copyConfig() {
     await writeClipboardText(JSON.stringify({ mcpServers: { bdl: server } }, null, 2));
     error.value = '';
     copied.value = true;
-  } catch {
+  } catch (cause) {
     copied.value = false;
-    error.value = '无法复制配置，请重试。';
+    error.value = cause instanceof Error ? cause.message : '无法复制配置，请重试。';
   } finally {
     busy.value = false;
   }
@@ -76,7 +77,7 @@ async function copyConfig() {
         </div>
         <p class="mcp-description">将配置粘贴到客户端的 MCP 设置。配置含接入令牌，请妥善保管。</p>
       </template>
-      <UiInlineNotice v-if="error || connection?.error" tone="danger">{{ error || connection?.error }}</UiInlineNotice>
+      <UiInlineNotice v-if="error || connection?.error" tone="danger">{{ error || (connection?.error && problemMessage(connection.error)) }}</UiInlineNotice>
       <div class="mcp-actions">
         <template v-if="connection?.enabled">
           <UiButton variant="secondary" :disabled="busy" @click="setEnabled(false)">关闭接入</UiButton>

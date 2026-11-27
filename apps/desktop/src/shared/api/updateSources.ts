@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core'
+import { invokeCommand as invoke } from './tauri'
 import { Update } from '@tauri-apps/plugin-updater'
 
 export interface DownloadSource {

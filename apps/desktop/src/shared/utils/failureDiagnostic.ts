@@ -33,11 +33,18 @@ export const failureGuidance = (rule: FailureRule, stage: 'parse' | 'download', 
   }
 }
 
-export const latestFailure = (logs: QueueLogEntry[]): string | undefined => {
+export const latestFailureEntry = (logs: QueueLogEntry[]): QueueLogEntry | undefined => {
   const ordered = [...logs].sort((a, b) => b.created_at.localeCompare(a.created_at))
   for (const log of ordered) {
     if (['重试任务', '开始下载任务', '刷新下载地址'].includes(log.message)) return undefined
-    if (log.level === 'error') return log.message
+    if (log.level === 'error') return log
   }
   return undefined
 }
+
+
+export const ruleForCode = (code: string) => rules.find(rule => rule.public_code === code)
+
+export const ruleForEntry = (entry?: QueueLogEntry) => entry?.problem
+  ? ruleForCode(entry.problem.code)
+  : classifyFailure(entry?.message ?? '')

@@ -1,12 +1,11 @@
 use bdl_core::queue::QueueLogEntry;
 
-pub(crate) fn should_refresh_media_url(message: &str) -> bool {
-    bdl_core::diagnostics::classify_failure(message).is_some_and(|rule| {
-        rule.code == "media_url_expired"
-            || (rule.code == "remote_forbidden"
-                && (message.contains("[stage=download_视频 code=remote_forbidden]")
-                    || message.contains("[stage=download_音频 code=remote_forbidden]")))
-    })
+pub(crate) fn should_refresh_media_url(code: bdl_core::public_error::ErrorCode) -> bool {
+    use bdl_core::public_error::ErrorCode;
+    matches!(
+        code,
+        ErrorCode::DownloadUrlExpired | ErrorCode::DownloadForbidden
+    )
 }
 
 pub(crate) fn recent_auto_refresh_attempt_count(logs: &[QueueLogEntry]) -> usize {
@@ -25,6 +24,7 @@ mod tests {
 
     fn log(message: &str) -> QueueLogEntry {
         QueueLogEntry {
+            problem: None,
             task_id: "task:test".to_owned(),
             level: QueueLogLevel::Warning,
             message: message.to_owned(),
@@ -34,20 +34,18 @@ mod tests {
 
     #[test]
     fn classifies_refreshable_expired_media_errors() {
-        assert!(should_refresh_media_url("HTTP 404 Not Found"));
-        assert!(!should_refresh_media_url(
-            "读取资源长度失败: HTTP 403 Forbidden"
-        ));
-        assert!(should_refresh_media_url(
-            "[stage=download_视频 code=remote_forbidden] HTTP 403 Forbidden"
-        ));
-        assert!(!should_refresh_media_url(
-            "[stage=bilibili_api code=source_verification_required] HTTP 403 Forbidden"
-        ));
-        assert!(!should_refresh_media_url(
-            "读取资源长度失败: request timed out"
-        ));
-        assert!(!should_refresh_media_url("network timeout"));
+        use bdl_core::public_error::ErrorCode;
+        assert!(should_refresh_media_url(ErrorCode::DownloadUrlExpired));
+        assert!(should_refresh_media_url(ErrorCode::DownloadForbidden));
+        for code in [
+            ErrorCode::SourceForbidden,
+            ErrorCode::SourceVerificationRequired,
+            ErrorCode::NetworkTimeout,
+            ErrorCode::SourceRateLimited,
+            ErrorCode::FileDiskFull,
+        ] {
+            assert!(!should_refresh_media_url(code));
+        }
     }
 
     #[test]

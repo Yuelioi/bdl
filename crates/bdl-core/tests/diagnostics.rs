@@ -205,6 +205,7 @@ fn resource(
 
 fn log(level: QueueLogLevel, message: &str) -> QueueLogEntry {
     QueueLogEntry {
+        problem: None,
         task_id: "task:video:1".to_owned(),
         level,
         message: message.to_owned(),

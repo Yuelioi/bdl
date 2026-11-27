@@ -1,3 +1,5 @@
+import preparationBlockingCodes from '../../../../../crates/bdl-tauri/src/preparation-blocking-codes.json'
+import { problemMessage } from '../utils/publicError'
 import { defineStore } from 'pinia'
 
 import { commandDiagnostic } from '../utils/commandDiagnostic'
@@ -451,7 +453,7 @@ export const useParseStore = defineStore('parse', {
             const message = errorMessage(error)
             progress.failures = progress.failures.filter(failure => failure.itemId !== target.itemId)
             progress.failures.push({ ...target, message, detail: commandDiagnostic(error, `操作: 解析视频\n来源: ${source.source.title}\n视频: ${target.title}`) })
-            if (shouldStopBackgroundParsing(errorCause(error))) {
+            if (shouldStopBackgroundParsing(error)) {
               this.recordSourceFailure(sourceId, error)
               progress.processed++
               break
@@ -558,7 +560,7 @@ export const useParseStore = defineStore('parse', {
             job.failures = job.failures.filter(failure => !processed.has(failure.partId))
             for (const { part_id: partId, error } of result.failures) {
               const title = parts.get(partId)?.part.title ?? previousFailures.get(partId)?.title ?? partId
-              job.failures.push({ partId, title, message: error.message, detail: commandDiagnostic(error, `来源: ${source.source.title}\n条目: ${title}`) })
+              job.failures.push({ partId, title, message: problemMessage(error), detail: commandDiagnostic(error, `来源: ${source.source.title}\n条目: ${title}`) })
             }
             for (const id of processed) {
               done.add(id)
@@ -883,7 +885,7 @@ export const useParseStore = defineStore('parse', {
           } catch (error) {
             const message = errorMessage(error)
             aggregate.failedSourceIds.push(sourceId)
-            aggregate.failures.push({ sourceId, message, stopBackground: shouldStopBackgroundParsing(errorCause(error)), detail: commandDiagnostic(error, failureContext) })
+            aggregate.failures.push({ sourceId, message, stopBackground: shouldStopBackgroundParsing(error), detail: commandDiagnostic(error, failureContext) })
           }
         }
 
@@ -1110,7 +1112,14 @@ const errorCause = (error: unknown): string => {
   return `${errorMessage(error)}${typeof detail === 'string' ? `\n${detail}` : ''}`
 }
 
-const shouldStopBackgroundParsing = (message: string): boolean => {
+const shouldStopBackgroundParsing = (error: unknown): boolean => {
+  if (error && typeof error === 'object' && 'problem' in error) {
+    const problem = error.problem
+    if (problem && typeof problem === 'object' && 'code' in problem && typeof problem.code === 'string') {
+      return preparationBlockingCodes.includes(problem.code)
+    }
+  }
+  const message = errorCause(error)
   // Content titles may themselves contain restriction words or HTTP-like numbers.
   if (message.startsWith('planning error:') && /缺少(?:视频|音频)流|没有符合.*偏好|没有可用的 SDR/.test(message)) return false
   const code = classifyFailure(message)?.code

@@ -13,7 +13,7 @@ use serde::Serialize;
 #[derive(Default)]
 pub(crate) struct QueueMutationResult {
     pub updated: Vec<DownloadTask>,
-    pub failed: Vec<(String, String)>,
+    pub failed: Vec<(String, bdl_core::BdlError)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

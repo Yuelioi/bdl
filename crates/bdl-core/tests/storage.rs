@@ -164,12 +164,14 @@ fn task_storage_reloads_task_logs_after_reopen() -> BdlResult<()> {
         "开始下载任务",
         &(now - Duration::seconds(1)).to_rfc3339(),
     );
-    let second = sample_log(
+    let mut second = sample_log(
         &task.id,
         QueueLogLevel::Error,
         "fetch error: HTTP 403",
         &now.to_rfc3339(),
     );
+
+    second.problem = Some(bdl_core::public_error::ErrorCode::DownloadForbidden.into());
 
     {
         let mut storage = TaskStorage::open(&fixture.db_path)?;
@@ -458,6 +460,7 @@ fn sample_log(
     created_at: &str,
 ) -> QueueLogEntry {
     QueueLogEntry {
+        problem: None,
         task_id: task_id.to_owned(),
         level,
         message: message.to_owned(),

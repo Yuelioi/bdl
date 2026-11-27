@@ -1,7 +1,8 @@
+import { describeProblem } from '../utils/publicError'
 import type { DownloadResourceIntent, DownloadTask, QueueLogEntry, TaskStatus } from '../api/dto'
 import { formatSpeedLimit } from '../utils/speedLimit'
 import { bilibiliTaskUrl } from '../utils/bilibiliLinks'
-import { classifyFailure, latestFailure } from '../utils/failureDiagnostic'
+import { classifyFailure, latestFailureEntry, ruleForEntry } from '../utils/failureDiagnostic'
 import { videoQualityLevels } from '../features/settings/settingsCatalog'
 import { formatDuration } from '../utils/duration'
 import { isPausable } from '../features/transfer/transferQueries'
@@ -336,8 +337,8 @@ export const createTaskTimeline = (task: DownloadTask, logs: QueueLogEntry[] = [
 
   return logs.map((log, index) => {
     const issue = log.level === 'error' ? classifyTaskIssue(task, [log]) : null
-    const cleanup = isFileCleanupLog(log.message) ? classifyFailure(log.message) : null
-    const title = cleanup ? `文件清理失败：${cleanup.summary}` : issue ? `下载失败：${issue.label}` : humanLogTitle(log.message)
+    const cleanup = isFileCleanupLog(log.message) ? (log.problem ? describeProblem(log.problem)?.message : classifyFailure(log.message)?.summary) : null
+    const title = cleanup ? `文件清理失败：${cleanup}` : issue ? `下载失败：${issue.label}` : humanLogTitle(log.message)
 
     return {
       id: `${log.created_at}:${index}:${log.message}`,
@@ -493,16 +494,18 @@ const classifyTaskIssue = (task: DownloadTask, logs: QueueLogEntry[]): Classifie
     }
   }
 
-  const rule = classifyFailure(latestFailure(logs) ?? '')
-  if (rule) {
-    const recommendedAction = rule.recommended_action === 'retry' || rule.recommended_action === 'login_then_retry'
-      ? 'retry' : rule.recommended_action === 'refresh_urls_and_retry' ? 'refresh_retry' : null
+  const entry = latestFailureEntry(logs)
+  const diagnosis = entry?.problem && describeProblem(entry.problem)
+  const rule = ruleForEntry(entry)
+  if (rule || diagnosis) {
+    const recommendedAction = rule?.recommended_action === 'retry' || rule?.recommended_action === 'login_then_retry'
+      ? 'retry' : rule?.recommended_action === 'refresh_urls_and_retry' ? 'refresh_retry' : null
     return {
-      label: rule.summary,
-      detail: rule.detail,
+      label: diagnosis?.message ?? rule!.summary,
+      detail: diagnosis?.advice ?? rule!.detail,
       trackLabel,
       recommendedAction,
-      recommendedActionLabel: rule.recommended_action === 'login_then_retry' ? '登录后重试'
+      recommendedActionLabel: rule?.recommended_action === 'login_then_retry' ? '登录后重试'
         : recommendedAction ? actionLabel(recommendedAction) : '查看原始日志',
     }
   }

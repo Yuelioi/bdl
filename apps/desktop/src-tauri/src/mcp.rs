@@ -1,3 +1,5 @@
+use bdl_core::public_error::ErrorCode;
+use bdl_tauri::commands::{CommandError, CommandResult};
 use std::convert::Infallible;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
@@ -40,7 +42,7 @@ const SUPPORTED_VERSIONS: &[&str] = &[VERSION, "2025-06-18", "2025-03-26"];
 #[derive(Default)]
 struct ServiceState {
     running: Option<Running>,
-    startup_error: Option<String>,
+    startup_error: Option<CommandError>,
 }
 
 pub(crate) struct McpService {
@@ -63,7 +65,7 @@ impl Drop for Running {
 pub(crate) struct McpStatus {
     enabled: bool,
     url: &'static str,
-    error: Option<String>,
+    error: Option<CommandError>,
 }
 
 impl McpService {
@@ -87,35 +89,38 @@ impl McpService {
         service
     }
 
-    fn read_token(&self) -> Result<Option<String>, String> {
+    fn read_token(&self) -> CommandResult<Option<String>> {
         match fs::read_to_string(&self.token_path) {
             Ok(token) if Uuid::try_parse(&token).is_ok() => Ok(Some(token)),
-            Ok(_) => Err("接入令牌已损坏，请重置接入。".into()),
+            Ok(_) => Err(CommandError::coded(
+                ErrorCode::IntegrationTokenInvalid,
+                "invalid token file",
+            )),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-            Err(_) => Err("无法读取 AI 接入设置。".into()),
+            Err(e) => Err(CommandError::from(bdl_core::BdlError::Io(e))),
         }
     }
 
-    fn start(&self, app: &AppHandle, token: String, save: bool) -> Result<Running, String> {
+    fn start(&self, app: &AppHandle, token: String, save: bool) -> CommandResult<Running> {
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, PORT)).map_err(|error| {
             if error.kind() == std::io::ErrorKind::AddrInUse {
-                format!("本机端口 {PORT} 已被占用。释放端口后重试。")
+                CommandError::coded(ErrorCode::IntegrationPortBusy, error)
             } else {
-                "无法启动本机 AI 接口。".into()
+                CommandError::coded(ErrorCode::IntegrationFailed, error)
             }
         })?;
         listener
             .set_nonblocking(true)
-            .map_err(|_| "无法启动本机 AI 接口。".to_string())?;
+            .map_err(|e| CommandError::from(bdl_core::BdlError::Io(e)))?;
         let runtime = tauri::async_runtime::handle();
         let listener = {
             let _runtime = runtime.inner().enter();
             tokio::net::TcpListener::from_std(listener)
-                .map_err(|_| "无法启动本机 AI 接口。".to_string())?
+                .map_err(|e| CommandError::from(bdl_core::BdlError::Io(e)))?
         };
         if save {
             self.save_token(&token)
-                .map_err(|_| "无法保存 AI 接入设置。".to_string())?;
+                .map_err(|e| CommandError::from(bdl_core::BdlError::Io(e)))?;
         }
         let app = app.clone();
         let authorization = Arc::<[u8]>::from(format!("Bearer {token}").into_bytes());
@@ -153,11 +158,11 @@ impl ServiceState {
 }
 
 #[tauri::command]
-pub(crate) fn desktop_mcp_status(service: State<'_, McpService>) -> Result<McpStatus, String> {
+pub(crate) fn desktop_mcp_status(service: State<'_, McpService>) -> CommandResult<McpStatus> {
     Ok(service
         .state
         .lock()
-        .map_err(|_| "无法读取 AI 接入状态。")?
+        .map_err(|_| CommandError::coded(ErrorCode::IntegrationFailed, "无法读取 AI 接入状态。"))?
         .status())
 }
 
@@ -166,9 +171,11 @@ pub(crate) async fn desktop_mcp_set_enabled(
     app: AppHandle,
     service: State<'_, McpService>,
     enabled: bool,
-) -> Result<McpStatus, String> {
+) -> CommandResult<McpStatus> {
     let (status, stopped) = {
-        let mut state = service.state.lock().map_err(|_| "无法更改 AI 接入状态。")?;
+        let mut state = service.state.lock().map_err(|_| {
+            CommandError::coded(ErrorCode::IntegrationFailed, "无法更改 AI 接入状态。")
+        })?;
         let stopped = if enabled {
             if state.running.is_none() {
                 let (token, save) = match service.read_token()? {
@@ -182,7 +189,7 @@ pub(crate) async fn desktop_mcp_set_enabled(
             match fs::remove_file(&service.token_path) {
                 Ok(()) => {}
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                Err(_) => return Err("无法删除 AI 接入设置。".into()),
+                Err(e) => return Err(CommandError::from(bdl_core::BdlError::Io(e))),
             }
             state.running.take()
         };
@@ -197,15 +204,15 @@ pub(crate) async fn desktop_mcp_set_enabled(
 }
 
 #[tauri::command]
-pub(crate) fn desktop_mcp_token(service: State<'_, McpService>) -> Result<String, String> {
+pub(crate) fn desktop_mcp_token(service: State<'_, McpService>) -> CommandResult<String> {
     service
         .state
         .lock()
-        .map_err(|_| "无法读取接入令牌。")?
+        .map_err(|_| CommandError::coded(ErrorCode::IntegrationFailed, "无法读取接入令牌。"))?
         .running
         .as_ref()
         .map(|running| running.token.clone())
-        .ok_or_else(|| "AI 接入尚未启用。".into())
+        .ok_or_else(|| CommandError::coded(ErrorCode::IntegrationDisabled, "service disabled"))
 }
 
 async fn serve(listener: tokio::net::TcpListener, app: AppHandle, authorization: Arc<[u8]>) {
@@ -704,7 +711,7 @@ impl SettingsPatch {
                 return Err(invalid_setting("下载总限速必须为 0 或正数。"));
             }
             let limit = (mb_s != 0.0).then_some((mb_s * BYTES_PER_MB).round() as u64);
-            validate_speed_limit(limit, "全局下载限速")?;
+            validate_speed_limit(limit, bdl_core::settings::SpeedLimitScope::Global)?;
             settings.global_speed_limit_bytes_per_second = limit;
         }
         if let Some(count) = self.concurrent_tasks {

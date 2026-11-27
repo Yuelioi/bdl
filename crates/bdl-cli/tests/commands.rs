@@ -3,6 +3,8 @@ use std::process::{Command, Output};
 fn run(args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_bdl"))
         .env_remove("BDL_COOKIE")
+        .env_remove("BDL_LANG")
+        .env_remove("BDL_DIAGNOSTICS_DIR")
         .args(args)
         .output()
         .expect("CLI should start")
@@ -21,6 +23,8 @@ fn invalid_arguments_have_json_errors_and_usage_exit_code() {
     let output = run(&["download", "BV1xx411c7mD", "--json"]);
     let error = json_error(&output, 2);
     assert!(error["error"].as_str().unwrap().contains("--output"));
+    assert_eq!(error["problem"]["code"], "bdl.cli.missing_argument");
+    assert_eq!(error["solution"]["matchedCode"], "bdl.cli.missing_argument");
 }
 
 #[test]
@@ -40,6 +44,7 @@ fn invalid_quality_fails_before_network_or_ffmpeg_lookup() {
     ]);
     let error = json_error(&output, 1);
     assert!(!error["error"].as_str().unwrap().contains("ffmpeg"));
+    assert_eq!(error["problem"]["code"], "bdl.input.quality");
 }
 
 #[test]
@@ -80,7 +85,8 @@ fn cookie_check_does_not_print_secrets() {
             let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
             assert_eq!(value, serde_json::json!({"valid": true}));
         } else {
-            json_error(&output, 1);
+            let report = json_error(&output, 1);
+            assert_eq!(report["problem"]["code"], "bdl.account.cookie_invalid");
         }
     }
 }

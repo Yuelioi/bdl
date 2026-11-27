@@ -106,7 +106,30 @@ Cookie 文件为 UTF-8 的完整 Cookie header 文本。也可以设置 `BDL_COO
 
 ## 脚本协议
 
-`--json` 可放在子命令前后。成功结果写入 stdout，运行错误或参数错误以 `{"ok":false,"error":"..."}` 写入 stderr。帮助和版本始终为文本；文件清理警告也写入 stderr。
+`--json` 可放在子命令前后。成功结果写入 stdout，参数错误和运行失败写入 stderr。帮助和版本始终为文本，文件清理警告也写入 stderr。
+
+例如，使用无效的音视频清晰度会得到以下错误。脚本可按 `problem.code` 判断失败原因。需要反馈某一次失败时，可复制 `traceId`。
+
+```json
+{
+  "ok": false,
+  "error": "Invalid media quality.",
+  "problem": {
+    "code": "bdl.input.quality",
+    "traceId": "4bf92f3577b34da6a3ce929d0e0e4736"
+  },
+  "solution": {
+    "matchedCode": "bdl.input.quality",
+    "advice": "Use best or a positive quality ID. Video also accepts sdr."
+  }
+}
+```
+
+- 错误码和可选的 `problem.params` 独立于语言。CLI 默认显示英文，设置进程环境变量 `BDL_LANG=zh-CN` 可显示中文。冷却时间以整数秒放在 `retryAfterSeconds` 中。
+- 内置方案优先匹配完整码，再逐级查找点分父类。例如 `bdl.download.selection_changed` 有专用建议，`bdl.download.no_tracks` 使用 `bdl.download` 的建议，同时保留“没有可下载轨道”的具体错误。方案只用于提示。
+- 需要本地诊断时，在运行前把 `BDL_DIAGNOSTICS_DIR` 设为已存在的可写目录。失败时会创建 `<traceId>.json`，记录命令、公开码和能提取的类型化原因，如 OS 错误号或上游 HTTP 状态。文件名引用本次 CLI 调用。默认不写诊断文件；指定目录写入失败时，原错误继续返回，并附带 `diagnosticWriteError`。
+
+错误目录在 [error-catalog.json](../crates/bdl-core/src/error-catalog.json)。新增具体码时填写中英文消息，可以给该码配置专用建议，或沿用最近父类的建议。Rust 构建从目录生成错误码枚举，并检查每个具体码都有可用方案。接入其他语言可直接读取同一份 JSON。
 
 下载成功输出：
 

@@ -1,3 +1,4 @@
+import { problemMessage, type PublicError } from '../utils/publicError'
 import { invoke } from '@tauri-apps/api/core'
 import { recordCommandFailure, replaceRecentFailures, clearRecentFailures } from '../utils/recentFailures'
 import { redactDiagnosticMessage } from '../stores/transferView'
@@ -36,20 +37,23 @@ import type {
 } from './dto'
 
 export interface CommandErrorShape {
+  problem?: PublicError | null
   code: string
   message: string
   detail?: string
 }
 
 export class BdlCommandError extends Error {
+  readonly problem?: PublicError | null
   readonly code: string
   readonly detail?: string
 
   constructor(error: CommandErrorShape) {
-    super(error.message)
+    super(problemMessage(error))
+    this.problem = error.problem
     this.name = 'BdlCommandError'
     this.code = error.code
-    this.detail = typeof error.detail === 'string' ? error.detail : undefined
+    this.detail = error.detail ?? (error.problem && error.message !== this.message ? error.message : undefined)
   }
 }
 
@@ -310,13 +314,13 @@ export const diagnosticsEnvironment = () => invokeCommand<DiagnosticEnvironment>
 
 export const openExternalUrl = (url: string) => invokeCommand<void>('open_external_url', { url })
 
-const invokeCommand = async <T>(command: string, args?: Record<string, unknown>): Promise<T> => {
+export const invokeCommand = async <T>(command: string, args?: Record<string, unknown>): Promise<T> => {
   try {
     return await invoke<T>(command, args)
   } catch (error) {
     let normalized = normalizeCommandError(error, command)
     if (normalized.code === 'parse_cancelled') throw normalized
-    const safe = { code: normalized.code, message: boundedDiagnostic(normalized.message, 4000),
+    const safe = { problem: normalized.problem, code: normalized.code, message: boundedDiagnostic(normalized.message, 4000),
       detail: normalized.detail ? boundedDiagnostic(normalized.detail) : undefined }
     try {
       // Raw invoke avoids recursively trying to journal a journal-write failure.
@@ -335,10 +339,10 @@ const normalizeCommandError = (error: unknown, command: string): BdlCommandError
   const value = error && typeof error === 'object' ? error as Record<string, unknown> : {}
   const normalized = isCommandErrorShape(error)
     ? error
-    : { code: 'frontend_error', message: typeof value.message === 'string' ? value.message : String(error), detail: typeof value.detail === 'string' ? value.detail : undefined }
+    : { problem: undefined, code: 'frontend_error', message: typeof value.message === 'string' ? value.message : String(error), detail: typeof value.detail === 'string' ? value.detail : undefined }
   const internalBpiError = ['bilibili_response_decode_failed', 'bilibili_api_error'].includes(normalized.code)
     || /bpi error:|failed to decode response/i.test(normalized.message)
-  if (internalBpiError) {
+  if (!normalized.problem && internalBpiError) {
     const action = command.startsWith('parse_') || command.startsWith('selection_')
       ? '解析失败'
       : command === 'account_library_list'

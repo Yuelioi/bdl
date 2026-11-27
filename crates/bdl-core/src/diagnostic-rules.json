@@ -171,6 +171,7 @@
   },
   {
     "code": "media_url_expired",
+    "public_code": "bdl.download.url_expired",
     "summary": "链接可能已过期",
     "detail": "下载地址可能已过期或资源已移除，请刷新链接后重试。",
     "recommended_action": "refresh_urls_and_retry",
@@ -218,6 +219,7 @@
   },
   {
     "code": "login_required",
+    "public_code": "bdl.account.login_required",
     "summary": "需要登录 B 站",
     "detail": "请在 BDL 登录 B 站账号后重试。已登录时，请重新登录。",
     "recommended_action": "login_then_retry",
@@ -242,6 +244,7 @@
   },
   {
     "code": "source_rate_limited",
+    "public_code": "bdl.source.rate_limited",
     "summary": "B 站限制了请求频率",
     "detail": "先暂停批量操作，稍后再试。",
     "recommended_action": "inspect_raw_log",
@@ -260,6 +263,7 @@
   },
   {
     "code": "source_verification_required",
+    "public_code": "bdl.source.verification_required",
     "summary": "可能触发了 B 站风控",
     "detail": "先暂停批量操作，稍后重试。若 B 站网页要求验证，请先完成验证。",
     "recommended_action": "inspect_raw_log",
@@ -291,6 +295,7 @@
   },
   {
     "code": "source_access_restricted",
+    "public_code": "bdl.parse.cooldown",
     "summary": "B 站请求暂时受限",
     "detail": "请暂停批量操作，稍后手动重试。",
     "recommended_action": "inspect_raw_log",
@@ -303,6 +308,7 @@
   },
   {
     "code": "missing_ffmpeg",
+    "public_code": "bdl.media.ffmpeg_missing",
     "summary": "未找到 FFmpeg",
     "detail": "请在设置中选择 FFmpeg 可执行文件，检查就绪并保存后重试。",
     "recommended_action": "configure_ffmpeg",
@@ -327,6 +333,7 @@
   },
   {
     "code": "network_timeout",
+    "public_code": "bdl.network.timeout",
     "summary": "网络超时",
     "detail": "请求未在限定时间内完成，请检查网络后重试。",
     "recommended_action": "retry",

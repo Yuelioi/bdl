@@ -4,7 +4,7 @@ import UiButton from './Button.vue'
 import { openExternalUrl } from '../api/tauri'
 import { captureDiagnosticEnvironment } from '../utils/diagnosticEnvironment'
 import { redactDiagnosticMessage } from '../stores/transferView'
-import { classifyFailure, failureGuidance, failureRule } from '../utils/failureDiagnostic'
+import { classifyFailure, failureGuidance, failureRule, ruleForCode } from '../utils/failureDiagnostic'
 import { writeClipboardText } from '../utils/clipboard'
 import { useUiStore } from '../stores/ui'
 import { isMobilePlatform } from '../platform/environment'
@@ -14,14 +14,16 @@ const emit = defineEmits<{ openSettings: [] }>()
 const ui = useUiStore()
 const mobile = isMobilePlatform()
 const detail = computed(() => redactDiagnosticMessage(props.detail))
+const publicCode = computed(() => detail.value.match(/^错误码: (bdl\.[a-z0-9_.]+)$/m)?.[1])
 const diagnosis = computed(() => {
   if (props.showAdvice === false) return undefined
+  if (publicCode.value) return ruleForCode(publicCode.value)
   const code = detail.value.match(/^错误码: ([a-z_]+)$/m)?.[1]
   return (code && failureRule(code)) || classifyFailure(detail.value)
 })
 const guidance = computed(() => diagnosis.value && failureGuidance(diagnosis.value, 'parse', mobile))
 const advice = computed(() => {
-  if (!diagnosis.value) return ''
+  if (publicCode.value || !diagnosis.value) return ''
   const { summary, detail: advice } = diagnosis.value
   const message = `${summary}。${advice}`
   if (detail.value.split('\n').includes(message)) return ''

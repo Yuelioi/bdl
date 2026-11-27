@@ -40,6 +40,24 @@ pub fn file_io_error(operation: &str, path: &std::path::Path, source: std::io::E
 
 #[derive(Debug, thiserror::Error)]
 pub enum BdlError {
+    #[error("{context}")]
+    DownloadHttp {
+        status: reqwest::StatusCode,
+        context: String,
+    },
+    #[error("{source}")]
+    Traced {
+        trace_id: uuid::Uuid,
+        #[source]
+        source: Box<BdlError>,
+    },
+    #[error("{context}")]
+    Classified {
+        code: crate::public_error::ErrorCode,
+        context: String,
+        #[source]
+        source: Option<Box<dyn std::error::Error + Send + Sync>>,
+    },
     #[error("invalid input: {message}")]
     InvalidInput { message: String },
 
@@ -48,6 +66,14 @@ pub enum BdlError {
 
     #[error("bpi error: {0}")]
     Bpi(String),
+
+    #[error("bpi error: [stage=bilibili_api origin={origin}] {source}")]
+    BpiHttp {
+        status: u16,
+        origin: &'static std::panic::Location<'static>,
+        #[source]
+        source: Box<bpi_rs::BpiError>,
+    },
 
     #[error("{context}: {source}")]
     BpiTransport {
@@ -124,6 +150,24 @@ fn sqlite_error_context(error: &rusqlite::Error) -> String {
 }
 
 impl BdlError {
+    pub fn classified(code: crate::public_error::ErrorCode, context: impl Into<String>) -> Self {
+        Self::Classified {
+            code,
+            context: context.into(),
+            source: None,
+        }
+    }
+    pub fn caused_by(
+        code: crate::public_error::ErrorCode,
+        context: String,
+        source: impl std::error::Error + Send + Sync + 'static,
+    ) -> Self {
+        Self::Classified {
+            code,
+            context,
+            source: Some(Box::new(source)),
+        }
+    }
     pub fn is_local_io(&self) -> bool {
         matches!(self.root_cause(), Self::FileIo { .. } | Self::Io(_))
     }
@@ -136,7 +180,7 @@ impl BdlError {
 
     pub fn root_cause(&self) -> &Self {
         match self {
-            Self::Context { source, .. } => source.root_cause(),
+            Self::Context { source, .. } | Self::Traced { source, .. } => source.root_cause(),
             _ => self,
         }
     }
@@ -148,6 +192,27 @@ impl BdlError {
 pub fn bpi_error(error: impl Into<bpi_rs::BpiError>) -> BdlError {
     let error = error.into();
     let location = std::panic::Location::caller();
+    if let bpi_rs::BpiError::Http { status } | bpi_rs::BpiError::HttpStatus { status } = error {
+        return BdlError::BpiHttp {
+            status,
+            origin: location,
+            source: Box::new(error),
+        };
+    }
+    use crate::public_error::ErrorCode;
+    let semantic = match error.semantic_error() {
+        Some("requires_login") => Some(ErrorCode::AccountLoginRequired),
+        Some("requires_vip") => Some(ErrorCode::AccountVipRequired),
+        Some("risk_control") => Some(ErrorCode::SourceVerificationRequired),
+        Some("permission_denied") => Some(ErrorCode::SourceForbidden),
+        _ => None,
+    };
+    if let Some(code) = semantic {
+        let detail = crate::account::redact_diagnostic(&format!(
+            "[stage=bilibili_api origin={location}] {error}"
+        ));
+        return BdlError::caused_by(code, detail, error);
+    }
     let mut message = if matches!(error, bpi_rs::BpiError::Decode { .. }) {
         safe_decode_cause(&error.to_string())
     } else {

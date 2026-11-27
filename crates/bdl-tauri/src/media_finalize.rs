@@ -1,5 +1,6 @@
 use bdl_core::error::IoResultExt;
 use bdl_core::muxer::{supports_cover_embedding, supports_subtitle_embedding};
+use bdl_core::public_error::ErrorCode;
 use bdl_core::queue::{DownloadResource, DownloadResourceIntent, DownloadTask, ResourceStatus};
 use bdl_core::subtitles::{SubtitleFormat, bilibili_json_to_ass, bilibili_json_to_srt};
 use bdl_core::{BdlError, BdlResult};
@@ -9,7 +10,7 @@ use tokio::fs;
 pub(crate) struct MuxAttachmentSelection {
     pub(crate) cover_path: Option<PathBuf>,
     pub(crate) subtitle_paths: Vec<PathBuf>,
-    pub(crate) warnings: Vec<String>,
+    pub(crate) warnings: Vec<BdlError>,
 }
 
 pub(crate) async fn select_mux_attachments(
@@ -37,12 +38,14 @@ pub(crate) async fn select_mux_attachments_for_output(
             Some(resource) if supports_cover_embedding(output_path, &resource.target_path) => {
                 selection.cover_path = Some(resource.target_path.clone());
             }
-            Some(_) => selection
-                .warnings
-                .push("跳过封面嵌入：当前封面格式或封装格式不支持。".to_owned()),
-            None => selection
-                .warnings
-                .push("跳过封面嵌入：没有已下载的封面文件。".to_owned()),
+            Some(_) => selection.warnings.push(BdlError::classified(
+                ErrorCode::MediaAttachmentFormat,
+                "跳过封面嵌入：当前封面格式或封装格式不支持。",
+            )),
+            None => selection.warnings.push(BdlError::classified(
+                ErrorCode::MediaAttachmentMissing,
+                "跳过封面嵌入：没有已下载的封面文件。",
+            )),
         }
     }
 
@@ -57,9 +60,10 @@ pub(crate) async fn select_mux_attachments_for_output(
             })
             .collect::<Vec<_>>();
         if resources.is_empty() {
-            selection
-                .warnings
-                .push("跳过字幕嵌入：没有已下载的字幕文件。".to_owned());
+            selection.warnings.push(BdlError::classified(
+                ErrorCode::MediaAttachmentMissing,
+                "跳过字幕嵌入：没有已下载的字幕文件。",
+            ));
         }
         for resource in resources {
             let converted_path = sidecar_output_path(task, resource);
@@ -80,12 +84,13 @@ pub(crate) async fn select_mux_attachments_for_output(
                     Ok(srt_path) => selection.subtitle_paths.push(srt_path),
                     Err(error) => selection
                         .warnings
-                        .push(format!("跳过字幕嵌入：JSON 转 SRT 失败：{error}")),
+                        .push(error.with_context("跳过字幕嵌入：JSON 转 SRT 失败")),
                 }
             } else {
-                selection
-                    .warnings
-                    .push("跳过字幕嵌入：当前字幕格式或封装格式不支持。".to_owned());
+                selection.warnings.push(BdlError::classified(
+                    ErrorCode::MediaAttachmentFormat,
+                    "跳过字幕嵌入：当前字幕格式或封装格式不支持。",
+                ));
             }
         }
     }
@@ -184,9 +189,7 @@ pub(crate) async fn prepare_sidecars(task: &DownloadTask) -> BdlResult<()> {
                     SubtitleFormat::Srt => bilibili_json_to_srt(&raw),
                     SubtitleFormat::Ass => bilibili_json_to_ass(&raw),
                 };
-                converted.map_err(|error| BdlError::Planning {
-                    message: format!("字幕转换失败：{error}"),
-                })?
+                converted.map_err(subtitle_conversion_error)?
             }
             DownloadResourceIntent::Danmaku
                 if source.extension().is_some_and(|ext| ext == "xml") =>
@@ -202,16 +205,18 @@ pub(crate) async fn prepare_sidecars(task: &DownloadTask) -> BdlResult<()> {
                         bdl_core::danmaku::DanmakuFormat::Ass,
                     )?,
                     _ => {
-                        return Err(BdlError::Planning {
-                            message: "弹幕转换格式无效。".into(),
-                        });
+                        return Err(BdlError::classified(
+                            ErrorCode::MediaSidecarFormat,
+                            "弹幕转换格式无效。",
+                        ));
                     }
                 }
             }
             _ => {
-                return Err(BdlError::Planning {
-                    message: format!("无法将 {} 转换为所选格式。", source.display()),
-                });
+                return Err(BdlError::classified(
+                    ErrorCode::MediaSidecarFormat,
+                    format!("无法将 {} 转换为所选格式。", source.display()),
+                ));
             }
         };
         fs::write(&output, content)
@@ -239,22 +244,30 @@ pub(crate) async fn cleanup_converted_sources(task: &DownloadTask) -> BdlResult<
     Ok(())
 }
 
-async fn convert_subtitle(
-    path: &std::path::Path,
-) -> Result<PathBuf, Box<dyn std::error::Error + Send + Sync>> {
+fn subtitle_conversion_error(error: bdl_core::subtitles::SubtitleError) -> BdlError {
+    BdlError::caused_by(
+        ErrorCode::MediaSubtitleInvalid,
+        format!("字幕转换失败：{error}"),
+        error,
+    )
+}
+
+async fn convert_subtitle(path: &std::path::Path) -> BdlResult<PathBuf> {
     let json = fs::read_to_string(path)
         .await
         .path_context("read_subtitle", path)?;
-    let srt = bilibili_json_to_srt(&json)?;
+    let srt = bilibili_json_to_srt(&json).map_err(subtitle_conversion_error)?;
     let output = path.with_extension("srt");
-    fs::write(&output, srt).await?;
+    fs::write(&output, srt)
+        .await
+        .path_context("write_subtitle", &output)?;
     Ok(output)
 }
 
 pub(crate) async fn cleanup_embedded_sources(
     task: &DownloadTask,
     selection: &MuxAttachmentSelection,
-) -> Vec<String> {
+) -> Vec<BdlError> {
     let Some(keep) = task
         .media_selection
         .processing
@@ -300,10 +313,10 @@ pub(crate) async fn cleanup_embedded_sources(
             if let Err(error) = fs::remove_file(path).await
                 && error.kind() != std::io::ErrorKind::NotFound
             {
-                warnings.push(format!(
-                    "嵌入成功，清理临时素材失败：{}",
+                warnings.push(
                     bdl_core::error::file_io_error("cleanup_embedded_source", path, error)
-                ));
+                        .with_context("嵌入成功，清理临时素材失败"),
+                );
             }
         }
     }
@@ -393,8 +406,8 @@ mod tests {
         let selection = select_mux_attachments(&task(resources), true, true).await;
 
         assert_eq!(selection.warnings.len(), 2);
-        assert!(selection.warnings[0].contains("封面"));
-        assert!(selection.warnings[1].contains("字幕"));
+        assert!(selection.warnings[0].to_string().contains("封面"));
+        assert!(selection.warnings[1].to_string().contains("字幕"));
         assert!(selection.cover_path.is_none());
         assert!(selection.subtitle_paths.is_empty());
     }
@@ -449,7 +462,7 @@ mod tests {
         let broken = select_mux_attachments(&task, true, true).await;
         assert!(broken.subtitle_paths.is_empty());
         assert!(broken.cover_path.is_some());
-        assert!(broken.warnings[0].contains("JSON 转 SRT 失败"));
+        assert!(broken.warnings[0].to_string().contains("JSON 转 SRT 失败"));
         tokio::fs::remove_dir_all(dir).await.unwrap();
     }
 

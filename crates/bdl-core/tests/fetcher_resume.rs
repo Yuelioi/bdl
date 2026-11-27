@@ -175,11 +175,23 @@ async fn segment_body_failure_keeps_underlying_cause_and_range_context() {
         ..FetchConfig::default()
     })
     .unwrap();
-    let failure = fetcher
-        .fetch(&resource, None)
-        .await
-        .unwrap_err()
-        .to_string();
+    let error = fetcher.fetch(&resource, None).await.unwrap_err();
+    assert_eq!(
+        error.public_condition().code,
+        bdl_core::public_error::ErrorCode::DownloadBodyFailed
+    );
+    let mut cause = std::error::Error::source(&error);
+    while let Some(source) = cause {
+        if source.is::<reqwest::Error>() {
+            break;
+        }
+        cause = source.source();
+    }
+    assert!(
+        cause.is_some(),
+        "download must retain its HTTP client error"
+    );
+    let failure = error.to_string();
     server.abort();
     assert!(failure.contains("读取分段响应失败"), "{failure}");
     assert!(

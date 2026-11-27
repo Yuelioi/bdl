@@ -16,6 +16,7 @@ const MAX_OPERATION_ERRORS: usize = 200;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct OperationErrorRecord {
+    pub problem: Option<crate::public_error::PublicError>,
     pub id: i64,
     pub command: String,
     pub code: String,
@@ -125,6 +126,7 @@ impl TaskStorage {
 
     pub fn append_operation_error(
         &mut self,
+        problem: Option<&crate::public_error::PublicError>,
         command: &str,
         code: &str,
         message: &str,
@@ -133,9 +135,9 @@ impl TaskStorage {
     ) -> BdlResult<i64> {
         let tx = self.conn.transaction()?;
         tx.execute(
-            "INSERT INTO operation_errors (command, code, message, detail, environment, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT INTO operation_errors (command, code, message, detail, environment, created_at, problem) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![redact_sensitive(command), redact_sensitive(code), redact_sensitive(message),
-                detail.map(crate::account::redact_diagnostic), serde_json::to_string(environment)?, Utc::now().to_rfc3339()],
+                detail.map(crate::account::redact_diagnostic), serde_json::to_string(environment)?, Utc::now().to_rfc3339(), problem.map(serialize_json).transpose()?],
         )?;
         let id = tx.last_insert_rowid();
         prune_operation_errors(&tx)?;
@@ -145,7 +147,7 @@ impl TaskStorage {
 
     pub fn operation_errors(&self, limit: usize) -> BdlResult<Vec<OperationErrorRecord>> {
         let mut statement = self.conn.prepare(
-            "SELECT id, command, code, message, detail, environment, created_at FROM operation_errors ORDER BY id DESC LIMIT ?1",
+            "SELECT id, command, code, message, detail, environment, created_at, problem FROM operation_errors ORDER BY id DESC LIMIT ?1",
         )?;
         let rows = statement.query_map([limit.min(MAX_OPERATION_ERRORS) as i64], |row| {
             Ok((
@@ -156,11 +158,13 @@ impl TaskStorage {
                 row.get::<_, Option<String>>(4)?,
                 row.get::<_, String>(5)?,
                 row.get::<_, String>(6)?,
+                row.get::<_, Option<String>>(7)?,
             ))
         })?;
         rows.map(|row| {
-            let (id, command, code, message, detail, environment, created_at) = row?;
+            let (id, command, code, message, detail, environment, created_at, problem) = row?;
             Ok(OperationErrorRecord {
+                problem: problem.as_deref().map(deserialize_json).transpose()?,
                 id,
                 command,
                 code,
@@ -175,7 +179,7 @@ impl TaskStorage {
 
     pub fn operation_error_usage(&self) -> BdlResult<(u64, u64)> {
         Ok(self.conn.query_row(
-            "SELECT COUNT(*), COALESCE(SUM(length(CAST(command || code || message || COALESCE(detail, '') || environment AS BLOB))), 0) FROM operation_errors",
+            "SELECT COUNT(*), COALESCE(SUM(length(CAST(command || code || message || COALESCE(detail, '') || environment || COALESCE(problem, '') AS BLOB))), 0) FROM operation_errors",
             [], |row| Ok((row.get(0)?, row.get(1)?)),
         )?)
     }
@@ -234,6 +238,15 @@ impl TaskStorage {
         next: &[DownloadTask],
     ) -> BdlResult<()> {
         self.transact_queue_changes(previous, next, |_| Ok(()))
+    }
+
+    pub fn apply_queue_failure(
+        &mut self,
+        previous: &[DownloadTask],
+        next: &[DownloadTask],
+        failure: &QueueLogEntry,
+    ) -> BdlResult<()> {
+        self.transact_queue_changes(previous, next, |tx| append_task_log_in_tx(tx, failure))
     }
 
     pub fn apply_queue_completion(
@@ -569,25 +582,7 @@ impl TaskStorage {
 
     pub fn append_task_log(&mut self, entry: &QueueLogEntry) -> BdlResult<()> {
         let tx = self.conn.transaction()?;
-        tx.execute(
-            r#"
-            INSERT INTO task_logs (task_id, level, message, created_at)
-            VALUES (?1, ?2, ?3, ?4)
-            "#,
-            params![
-                entry.task_id.as_str(),
-                serialize_json(&entry.level)?,
-                entry.message.as_str(),
-                entry.created_at.as_str(),
-            ],
-        )?;
-        prune_expired_task_logs(&tx)?;
-        tx.execute(
-            "DELETE FROM task_logs WHERE task_id = ?1 AND id <= (
-                SELECT id FROM task_logs WHERE task_id = ?1 ORDER BY id DESC LIMIT 1 OFFSET ?2
-            )",
-            params![entry.task_id, MAX_TASK_LOGS_PER_TASK as i64],
-        )?;
+        append_task_log_in_tx(&tx, entry)?;
         tx.commit()?;
         Ok(())
     }
@@ -595,7 +590,7 @@ impl TaskStorage {
     pub fn load_task_logs(&self, task_id: &str, limit: usize) -> BdlResult<Vec<QueueLogEntry>> {
         let limit = i64::try_from(limit).unwrap_or(i64::MAX);
         let mut stmt = self.conn.prepare(
-            "SELECT task_id, level, message, created_at
+            "SELECT task_id, level, message, created_at, problem
              FROM task_logs
              WHERE task_id = ?1
              ORDER BY id DESC
@@ -603,6 +598,7 @@ impl TaskStorage {
         )?;
         let log_rows = stmt.query_map(params![task_id, limit], |row| {
             Ok(TaskLogRow {
+                problem_json: row.get(4)?,
                 task_id: row.get(0)?,
                 level_json: row.get(1)?,
                 message: row.get(2)?,
@@ -614,6 +610,11 @@ impl TaskStorage {
         for log_row in log_rows {
             let log_row = log_row?;
             logs.push(QueueLogEntry {
+                problem: log_row
+                    .problem_json
+                    .as_deref()
+                    .map(deserialize_json)
+                    .transpose()?,
                 task_id: log_row.task_id,
                 level: deserialize_json(&log_row.level_json)?,
                 message: log_row.message,
@@ -665,7 +666,7 @@ impl TaskStorage {
     pub fn task_log_usage(&self) -> BdlResult<(u64, u64, u64)> {
         let (operations, operation_bytes) = self.operation_error_usage()?;
         let (count, bytes, cleanable): (u64, u64, u64) = self.conn.query_row(
-            "SELECT COUNT(*), COALESCE(SUM(length(CAST(message AS BLOB))), 0),
+            "SELECT COUNT(*), COALESCE(SUM(length(CAST(message || COALESCE(problem, '') AS BLOB))), 0),
                     COALESCE(SUM(CASE WHEN tasks.status IN ('\"completed\"', '\"failed\"', '\"cancelled\"') THEN 1 ELSE 0 END), 0)
              FROM task_logs JOIN tasks ON tasks.id = task_logs.task_id",
             [],
@@ -701,6 +702,30 @@ impl TaskStorage {
             task_ids,
         })
     }
+}
+
+fn append_task_log_in_tx(tx: &Transaction<'_>, entry: &QueueLogEntry) -> BdlResult<()> {
+    tx.execute(
+        r#"
+            INSERT INTO task_logs (task_id, level, message, created_at, problem)
+            VALUES (?1, ?2, ?3, ?4, ?5)
+            "#,
+        params![
+            entry.task_id.as_str(),
+            serialize_json(&entry.level)?,
+            entry.message.as_str(),
+            entry.created_at.as_str(),
+            entry.problem.as_ref().map(serialize_json).transpose()?,
+        ],
+    )?;
+    prune_expired_task_logs(tx)?;
+    tx.execute(
+        "DELETE FROM task_logs WHERE task_id = ?1 AND id <= (
+                SELECT id FROM task_logs WHERE task_id = ?1 ORDER BY id DESC LIMIT 1 OFFSET ?2
+            )",
+        params![entry.task_id, MAX_TASK_LOGS_PER_TASK as i64],
+    )?;
+    Ok(())
 }
 
 fn prune_expired_task_logs(conn: &Connection) -> BdlResult<()> {
@@ -750,6 +775,7 @@ struct ResourceRow {
 }
 
 struct TaskLogRow {
+    problem_json: Option<String>,
     task_id: String,
     level_json: String,
     message: String,
@@ -899,6 +925,8 @@ fn run_migrations(conn: &Connection) -> BdlResult<()> {
         "container",
         "container TEXT NOT NULL DEFAULT 'unknown'",
     )?;
+    add_column_if_missing(conn, "task_logs", "problem", "problem TEXT")?;
+    add_column_if_missing(conn, "operation_errors", "problem", "problem TEXT")?;
     add_column_if_missing(conn, "history", "error_summary", "error_summary TEXT")?;
     conn.execute(
         "UPDATE tasks SET status = ?1 WHERE status = ?2",

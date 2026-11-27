@@ -1,3 +1,5 @@
+use bdl_core::public_error::ErrorCode;
+use bdl_tauri::commands::{CommandError, CommandResult};
 use std::time::Duration;
 use url::Url;
 
@@ -6,8 +8,9 @@ const MANIFEST: &str = "https://github.com/Yuelioi/bdl/releases/latest/download/
 
 // The URL template is transport configuration; the embedded updater public key
 // remains the authority for installation, including with a user-supplied mirror.
-fn mirrored(template: &str, original: &str) -> Result<Url, String> {
-    let upstream = Url::parse(original).map_err(|e| e.to_string())?;
+fn mirrored(template: &str, original: &str) -> CommandResult<Url> {
+    let upstream =
+        Url::parse(original).map_err(|e| CommandError::coded(ErrorCode::UpdateInvalidUrl, e))?;
     if upstream.host_str() != Some("github.com")
         || !upstream.path().starts_with("/Yuelioi/bdl/releases/")
         || upstream.scheme() != "https"
@@ -16,7 +19,10 @@ fn mirrored(template: &str, original: &str) -> Result<Url, String> {
         || upstream.port().is_some()
         || upstream.fragment().is_some()
     {
-        return Err("更新清单包含非 BDL 官方下载地址。".into());
+        return Err(CommandError::coded(
+            ErrorCode::UpdateInvalidUrl,
+            "更新清单包含非 BDL 官方下载地址。",
+        ));
     }
     let value = if template.contains("{url}") {
         template.replace("{url}", original)
@@ -25,14 +31,18 @@ fn mirrored(template: &str, original: &str) -> Result<Url, String> {
     } else {
         format!("{}/{original}", template.trim_end_matches('/'))
     };
-    let url = Url::parse(&value).map_err(|_| "加速地址无效。")?;
+    let url = Url::parse(&value)
+        .map_err(|_| CommandError::coded(ErrorCode::UpdateInvalidUrl, "加速地址无效。"))?;
     if url.scheme() != "https"
         || url.host_str().is_none()
         || !url.username().is_empty()
         || url.password().is_some()
         || url.fragment().is_some()
     {
-        return Err("加速地址须为不含账号和片段的 HTTPS 地址。".into());
+        return Err(CommandError::coded(
+            ErrorCode::UpdateInvalidUrl,
+            "加速地址须为不含账号和片段的 HTTPS 地址。",
+        ));
     }
     Ok(url)
 }
@@ -44,15 +54,19 @@ pub struct DownloadMirror {
     official_url: String,
 }
 
-fn download_url(value: &str, mirror: Option<&DownloadMirror>) -> Result<Url, String> {
-    let url = Url::parse(value).map_err(|_| "更新下载地址无效。")?;
+fn download_url(value: &str, mirror: Option<&DownloadMirror>) -> CommandResult<Url> {
+    let url = Url::parse(value)
+        .map_err(|_| CommandError::coded(ErrorCode::UpdateInvalidUrl, "更新下载地址无效。"))?;
     if url.scheme() != "https"
         || !url.username().is_empty()
         || url.password().is_some()
         || url.port().is_some()
         || url.fragment().is_some()
     {
-        return Err("更新下载地址须为不含账号和片段的 HTTPS 地址。".into());
+        return Err(CommandError::coded(
+            ErrorCode::UpdateInvalidUrl,
+            "更新下载地址须为不含账号和片段的 HTTPS 地址。",
+        ));
     }
     if let Some(mirror) = mirror {
         if mirrored(mirror.template.trim(), &mirror.official_url)? == url {
@@ -66,7 +80,10 @@ fn download_url(value: &str, mirror: Option<&DownloadMirror>) -> Result<Url, Str
     {
         return Ok(url);
     }
-    Err("此地址不是已验证的 BDL 更新下载来源。".into())
+    Err(CommandError::coded(
+        ErrorCode::UpdateInvalidUrl,
+        "此地址不是已验证的 BDL 更新下载来源。",
+    ))
 }
 
 #[tauri::command]
@@ -74,19 +91,19 @@ pub fn update_open_download(
     app: tauri::AppHandle,
     url: String,
     mirror: Option<DownloadMirror>,
-) -> Result<(), String> {
+) -> CommandResult<()> {
     use tauri_plugin_opener::OpenerExt;
     let url = download_url(&url, mirror.as_ref())?;
     app.opener()
         .open_url(url.as_str(), None::<&str>)
-        .map_err(|error| error.to_string())
+        .map_err(|e| CommandError::coded(ErrorCode::PlatformOpenUrlFailed, e))
 }
 
 #[tauri::command]
 pub async fn update_distribution(
     state: tauri::State<'_, bdl_tauri::state::AppState>,
-) -> Result<serde_json::Value, String> {
-    let settings = state.settings().map_err(|e| e.to_string())?;
+) -> CommandResult<serde_json::Value> {
+    let settings = state.settings()?;
     let platform = std::env::consts::OS;
     let arch = match std::env::consts::ARCH {
         "x86_64" => "amd64",
@@ -96,10 +113,10 @@ pub async fn update_distribution(
     settings
         .proxy_mode
         .configure_client(reqwest::Client::builder(), settings.proxy_url.as_deref())
-        .map_err(|e| e.to_string())?
+        .map_err(|e| CommandError::coded(ErrorCode::UpdateProxyInvalid, e))?
         .timeout(Duration::from_secs(15))
         .build()
-        .map_err(|e| e.to_string())?
+        .map_err(|e| CommandError::coded(ErrorCode::UpdateCheckFailed, e))?
         .get("https://apps.yuelili.com/api/v1/software/bdl/download-config")
         .query(&[
             ("platform", platform),
@@ -108,12 +125,21 @@ pub async fn update_distribution(
         ])
         .send()
         .await
-        .map_err(|e| format!("软件站连接失败：{e}"))?
+        .map_err(|e| {
+            CommandError::coded(
+                if e.is_timeout() {
+                    ErrorCode::NetworkTimeout
+                } else {
+                    ErrorCode::NetworkRequestFailed
+                },
+                e.without_url(),
+            )
+        })?
         .error_for_status()
-        .map_err(|e| format!("软件站检测失败：{e}"))?
+        .map_err(|e| CommandError::coded(ErrorCode::UpdateCheckFailed, e.without_url()))?
         .json()
         .await
-        .map_err(|e| format!("软件站响应无效：{e}"))
+        .map_err(|e| CommandError::coded(ErrorCode::UpdateInvalidResponse, e.without_url()))
 }
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -122,19 +148,20 @@ pub async fn update_check(
     webview: tauri::Webview,
     state: tauri::State<'_, bdl_tauri::state::AppState>,
     template: Option<String>,
-) -> Result<Option<serde_json::Value>, String> {
+) -> CommandResult<Option<serde_json::Value>> {
     use tauri::Manager;
     use tauri_plugin_updater::UpdaterExt;
-    let settings = state.settings().map_err(|e| e.to_string())?;
+    let settings = state.settings()?;
     let endpoint = match template.as_deref() {
         Some(template) => mirrored(template.trim(), MANIFEST)?,
-        None => Url::parse(MANIFEST).map_err(|e| e.to_string())?,
+        None => Url::parse(MANIFEST)
+            .map_err(|e| CommandError::coded(ErrorCode::UpdateCheckFailed, e))?,
     };
     let mut builder = webview
         .updater_builder()
         .timeout(Duration::from_secs(20))
         .endpoints(vec![endpoint])
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| CommandError::coded(ErrorCode::UpdateCheckFailed, e))?;
     builder = match settings.proxy_mode {
         bdl_core::settings::ProxyMode::System => builder,
         bdl_core::settings::ProxyMode::Direct => builder.no_proxy(),
@@ -143,16 +170,21 @@ pub async fn update_check(
                 .proxy_url
                 .as_deref()
                 .filter(|url| !url.trim().is_empty())
-                .ok_or("手动设置代理时，请填写代理地址。")?;
-            builder.proxy(Url::parse(proxy).map_err(|_| "代理地址无效。")?)
+                .ok_or_else(|| {
+                    CommandError::coded(ErrorCode::UpdateProxyInvalid, "未填写代理地址")
+                })?;
+            builder.proxy(
+                Url::parse(proxy)
+                    .map_err(|e| CommandError::coded(ErrorCode::UpdateProxyInvalid, e))?,
+            )
         }
     };
     let result = builder
         .build()
-        .map_err(|e| e.to_string())?
+        .map_err(|e| CommandError::coded(ErrorCode::UpdateCheckFailed, e))?
         .check()
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| CommandError::coded(ErrorCode::UpdateCheckFailed, e))?;
     let Some(mut update) = result else {
         return Ok(None);
     };
@@ -169,8 +201,11 @@ pub async fn update_check(
 
 #[cfg(any(target_os = "android", target_os = "ios"))]
 #[tauri::command]
-pub async fn update_check() -> Result<Option<serde_json::Value>, String> {
-    Err("移动端请下载安装包后手动安装。".into())
+pub async fn update_check() -> CommandResult<Option<serde_json::Value>> {
+    Err(CommandError::coded(
+        ErrorCode::PlatformUnsupported,
+        "移动端请下载安装包后手动安装。",
+    ))
 }
 
 #[cfg(all(test, not(any(target_os = "android", target_os = "ios"))))]

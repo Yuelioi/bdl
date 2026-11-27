@@ -26,6 +26,7 @@ pub struct TaskDiagnostic {
 /// Shared with the frontend so persisted legacy logs and new errors use the same guidance.
 #[derive(Debug, Deserialize)]
 pub struct FailureRule {
+    pub public_code: Option<crate::public_error::ErrorCode>,
     pub code: String,
     pub summary: String,
     pub detail: String,
@@ -86,6 +87,10 @@ fn has_http_status(message: &str, status: u16) -> bool {
 }
 
 pub fn latest_failure(logs: &[QueueLogEntry]) -> Option<&str> {
+    latest_failure_entry(logs).map(|entry| entry.message.as_str())
+}
+
+fn latest_failure_entry(logs: &[QueueLogEntry]) -> Option<&QueueLogEntry> {
     // Storage and live events are newest first. Preserve that order for equal
     // timestamps so an earlier error cannot cross a new attempt boundary.
     let mut ordered: Vec<_> = logs.iter().collect();
@@ -98,7 +103,7 @@ pub fn latest_failure(logs: &[QueueLogEntry]) -> Option<&str> {
             return None;
         }
         if log.level == QueueLogLevel::Error {
-            return Some(log.message.as_str());
+            return Some(log);
         }
     }
     None
@@ -112,7 +117,24 @@ pub fn diagnose_task(task: &DownloadTask, logs: &[QueueLogEntry]) -> TaskDiagnos
         )
         .then_some(resource.intent)
     });
-    if let Some(rule) = latest_failure(logs).and_then(classify_failure) {
+    let entry = latest_failure_entry(logs);
+    if let Some(problem) = entry.and_then(|entry| entry.problem.as_ref()) {
+        let code = problem.condition.code;
+        let (_, advice) = crate::public_error::find_solution(code.as_str())
+            .expect("build-checked solution coverage");
+        return TaskDiagnostic {
+            summary: problem.condition.message(true),
+            detail: advice.zh_cn.clone(),
+            recommended_action: rules()
+                .iter()
+                .find(|r| r.public_code == Some(code))
+                .map_or(RecommendedAction::InspectRawLog, |rule| {
+                    rule.recommended_action
+                }),
+            failed_intent,
+        };
+    }
+    if let Some(rule) = entry.and_then(|entry| classify_failure(&entry.message)) {
         return TaskDiagnostic {
             summary: rule.summary.clone(),
             detail: rule.detail.clone(),

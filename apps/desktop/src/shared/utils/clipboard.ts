@@ -1,11 +1,11 @@
 import { invoke, isTauri } from '@tauri-apps/api/core'
 
 import { isAndroidPlatform } from '../platform/environment'
-import { writeNativeClipboardText } from '../api/tauri'
+import { invokeCommand, writeNativeClipboardText } from '../api/tauri'
 
 export const readClipboardText = async (android = isAndroidPlatform()): Promise<string> => {
   if (android) return invoke<string>('mobile_read_clipboard_text')
-  if (isTauri()) return invoke<string>('desktop_read_clipboard_text')
+  if (isTauri()) return invokeCommand<string>('desktop_read_clipboard_text')
   return navigator.clipboard.readText()
 }
 

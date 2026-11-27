@@ -530,9 +530,9 @@ struct VideoDownloadResponse {
 impl VideoDownloadResponse {
     fn into_play_url(self) -> BdlResult<ResolvedPlayUrl> {
         if self.v_voucher.is_some() {
-            return Err(BdlError::Bpi(
-                "[stage=bilibili_api code=source_verification_required] 播放地址响应包含验证标记。"
-                    .into(),
+            return Err(BdlError::classified(
+                crate::public_error::ErrorCode::SourceVerificationRequired,
+                "[stage=bilibili_api code=source_verification_required] 播放地址响应包含验证标记。",
             ));
         }
         Ok(self

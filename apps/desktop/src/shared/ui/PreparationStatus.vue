@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { problemMessage } from '../utils/publicError'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { usePreparationsStore } from '../stores/preparations'
 import { commandDiagnostic } from '../utils/commandDiagnostic'
@@ -50,7 +51,7 @@ onUnmounted(() => preparations.stop())
             <template v-if="job.skipped_existing"> · 跳过 {{ job.skipped_existing }} 项</template>
           </p>
         </div>
-        <p v-if="job.error" class="m-0 break-words text-xs text-(--color-danger)">{{ job.error.message }}</p>
+        <p v-if="job.error" class="m-0 break-words text-xs text-(--color-danger)">{{ problemMessage(job.error) }}</p>
         <ErrorDetails v-if="job.error" :detail="diagnostic(job)" @open-settings="open = false" />
         <template v-if="job.status === 'awaiting_confirmation'">
           <p class="m-0 text-xs">{{ job.duplicates.length }} 项已在传输记录中</p>

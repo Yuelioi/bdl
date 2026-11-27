@@ -1,3 +1,4 @@
+import type { PublicError } from '../utils/publicError'
 export type SourceKind =
   'video' | 'bangumi' | 'cheese' | 'favorite' | 'watch_later' | 'collection' | 'series' | 'uploader' | 'unknown';
 
@@ -155,7 +156,7 @@ export interface PreparationJob {
   created: number;
   skipped_existing: number;
   duplicates: DuplicateTaskMatch[];
-  error: { code: string; message: string; detail?: string } | null;
+  error: { problem?: PublicError | null; code: string; message: string; detail?: string } | null;
   created_at: string;
 }
 
@@ -217,6 +218,7 @@ export interface QueueRemoveResponse {
 }
 
 export interface BulkQueueFailure {
+  problem?: PublicError | null;
   task_id: string;
   code: string;
   message: string;
@@ -230,6 +232,7 @@ export interface BulkQueueResult {
 }
 
 export interface QueueLogEntry {
+  problem?: PublicError | null;
   task_id: string;
   level: 'info' | 'warning' | 'error';
   message: string;
@@ -439,6 +442,7 @@ export interface TaskLogCleanup {
 }
 
 export interface OperationErrorRecord {
+  problem?: PublicError | null;
   id: number;
   command: string;
   code: string;

@@ -2,6 +2,7 @@
 use crate::media_mux::MediaMuxBackend;
 use bdl_core::error::IoResultExt;
 use bdl_core::muxer::MuxRequest;
+use bdl_core::public_error::ErrorCode;
 use bdl_core::queue::{DownloadResourceIntent as Intent, DownloadTask};
 use bdl_core::{BdlError, BdlResult};
 use std::path::{Path, PathBuf};
@@ -45,9 +46,10 @@ async fn copy(source: &Path, output: &Path) -> BdlResult<()> {
         .path_context("copy_artifact", &temporary)
         .map_err(|error| error.with_context(format!("source={}", source.display())))?;
     if !nonempty(&temporary).await? {
-        return Err(BdlError::Planning {
-            message: "保存内容为空，已保留原始素材。".into(),
-        });
+        return Err(BdlError::classified(
+            ErrorCode::MediaEmptyOutput,
+            "保存内容为空，已保留原始素材。",
+        ));
     }
     fs::rename(&temporary, output)
         .await
@@ -60,14 +62,10 @@ pub(crate) async fn execute(
     task: &DownloadTask,
     mux: &MediaMuxBackend,
     ffmpeg: Option<PathBuf>,
-) -> BdlResult<Vec<String>> {
-    let workflow = task
-        .media_selection
-        .workflow
-        .as_ref()
-        .ok_or_else(|| BdlError::Planning {
-            message: "任务缺少下载流程配置。".into(),
-        })?;
+) -> BdlResult<Vec<BdlError>> {
+    let workflow = task.media_selection.workflow.as_ref().ok_or_else(|| {
+        BdlError::classified(ErrorCode::QueueRecipeMissing, "任务缺少下载流程配置。")
+    })?;
     workflow.validate()?;
     let mut warnings = Vec::new();
     for (enabled, intent, label) in [
@@ -81,7 +79,10 @@ pub(crate) async fn execute(
                 .iter()
                 .any(|resource| resource.intent == intent)
         {
-            warnings.push(format!("来源没有提供{label}，已跳过。"));
+            warnings.push(BdlError::classified(
+                ErrorCode::MediaAttachmentMissing,
+                format!("来源没有提供{label}，已跳过。"),
+            ));
         }
     }
     for resource in &task.resources {
@@ -98,8 +99,8 @@ pub(crate) async fn execute(
             .resources
             .iter()
             .find(|resource| &resource.id == id)
-            .ok_or_else(|| BdlError::Planning {
-                message: "任务产物缺少对应素材。".into(),
+            .ok_or_else(|| {
+                BdlError::classified(ErrorCode::MediaInputMissing, "任务产物缺少对应素材。")
             })?;
         if !resource.target_path.is_file() && nonempty(&artifact.path).await? {
             continue;
@@ -112,10 +113,8 @@ pub(crate) async fn execute(
                 &artifact.path,
             )
             .await;
-            if !attachments.warnings.is_empty() {
-                return Err(BdlError::Planning {
-                    message: attachments.warnings.join("\n"),
-                });
+            if let Some(error) = attachments.warnings.into_iter().next() {
+                return Err(error);
             }
             mux.mux(
                 &MuxRequest {
@@ -158,9 +157,9 @@ pub(crate) async fn execute(
                 && path_for(Intent::Subtitle).is_some()
                 && attachments.subtitle_paths.is_empty())
         {
-            return Err(BdlError::Planning {
-                message: attachments.warnings.join("\n"),
-            });
+            return Err(attachments.warnings.into_iter().next().unwrap_or_else(|| {
+                BdlError::classified(ErrorCode::MediaAttachmentMissing, "没有可嵌入的附件。")
+            }));
         }
         warnings.extend(attachments.warnings);
         mux.mux(
@@ -176,14 +175,15 @@ pub(crate) async fn execute(
         .await?;
     }
     if !outputs_complete(task).await? {
-        return Err(BdlError::Planning {
-            message: "部分输出文件未生成或为空，已保留素材以便重试。".into(),
-        });
+        return Err(BdlError::classified(
+            ErrorCode::MediaEmptyOutput,
+            "部分输出文件未生成或为空，已保留素材以便重试。",
+        ));
     }
     Ok(warnings)
 }
 
-pub(crate) async fn cleanup(task: &DownloadTask) -> Vec<String> {
+pub(crate) async fn cleanup(task: &DownloadTask) -> Vec<BdlError> {
     let mut warnings = Vec::new();
     if !task.media_selection.outputs_verified {
         return warnings;
@@ -192,7 +192,7 @@ pub(crate) async fn cleanup(task: &DownloadTask) -> Vec<String> {
         Ok(true) => {}
         Ok(false) => return warnings,
         Err(error) => {
-            warnings.push(format!("清理前无法验证成品，已保留素材：{error}"));
+            warnings.push(error.with_context("清理前无法验证成品，已保留素材"));
             return warnings;
         }
     }
@@ -214,10 +214,10 @@ pub(crate) async fn cleanup(task: &DownloadTask) -> Vec<String> {
             match fs::remove_file(&path).await {
                 Ok(()) => {}
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                Err(error) => warnings.push(format!(
-                    "输出已生成，临时素材清理失败：{}",
+                Err(error) => warnings.push(
                     bdl_core::error::file_io_error("cleanup_source", &path, error)
-                )),
+                        .with_context("输出已生成，临时素材清理失败"),
+                ),
             }
         }
     }

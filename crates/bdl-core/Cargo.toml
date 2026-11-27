@@ -28,3 +28,6 @@ uuid = { workspace = true, features = ["v5"] }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
+
+[build-dependencies]
+serde_json.workspace = true

@@ -1,5 +1,6 @@
 use anyhow::{Context, bail};
 use bdl_core::model::NormalizedSourceTree;
+use bdl_core::public_error::{ErrorCode, ErrorCondition};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,
@@ -49,22 +50,19 @@ impl Progress {
         let saved = if resume {
             let path = path.as_ref().context("--resume requires --state")?;
             let saved: Saved =
-                serde_json::from_slice(&std::fs::read(path).context("cannot read progress file")?)?;
+                serde_json::from_slice(&std::fs::read(path).context("cannot read progress file")?)
+                    .context(ErrorCondition::new(ErrorCode::StateInvalidData))?;
             if saved.version != 1 || saved.signature != signature {
-                bail!(
-                    "progress file belongs to different inputs/options or an unsupported version"
-                );
+                bail!(ErrorCondition::new(ErrorCode::StateMismatch));
             }
-            if saved.blocked_until > now() {
-                bail!(
-                    "source restriction cooldown remains active for {} seconds; do not automatically retry",
-                    saved.blocked_until - now()
-                );
+            let remaining = saved.blocked_until.saturating_sub(now());
+            if remaining > 0 {
+                bail!(ErrorCondition::cooldown(remaining));
             }
             saved
         } else {
             if path.as_ref().is_some_and(|path| path.exists()) {
-                bail!("progress file already exists; use --resume or a different --state path");
+                bail!(ErrorCondition::new(ErrorCode::StateExists));
             }
             Saved {
                 version: 1,

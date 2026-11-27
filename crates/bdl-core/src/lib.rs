@@ -12,6 +12,7 @@ pub mod naming;
 pub mod nfo;
 pub mod planner;
 mod process;
+pub mod public_error;
 pub mod queue;
 pub mod resolver;
 pub mod settings;

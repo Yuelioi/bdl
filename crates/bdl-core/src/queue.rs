@@ -67,6 +67,8 @@ pub enum QueueLogLevel {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct QueueLogEntry {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub problem: Option<crate::public_error::PublicError>,
     pub task_id: String,
     pub level: QueueLogLevel,
     pub message: String,

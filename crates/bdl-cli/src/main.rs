@@ -1,7 +1,9 @@
 use std::env;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+mod failure;
 mod progress;
+use bdl_core::public_error::{ErrorCode, ErrorCondition, ErrorParams};
 use bdl_core::resolver::pacing::{ResolvePolicy, is_source_restriction};
 use progress::Progress;
 
@@ -245,6 +247,7 @@ struct DownloadRequest {
 
 #[tokio::main]
 async fn main() -> ExitCode {
+    let invocation = failure::Invocation::new();
     let args = env::args_os().collect::<Vec<_>>();
     let json_requested = args
         .iter()
@@ -253,28 +256,46 @@ async fn main() -> ExitCode {
     let cli = match Cli::try_parse_from(args) {
         Ok(cli) => cli,
         Err(error) => {
-            if json_requested && error.use_stderr() {
-                print_error(&error.to_string(), true);
+            if error.use_stderr() {
+                let condition = match (
+                    error.kind(),
+                    error.get(clap::error::ContextKind::InvalidArg),
+                ) {
+                    (
+                        clap::error::ErrorKind::MissingRequiredArgument,
+                        Some(clap::error::ContextValue::Strings(arguments)),
+                    ) => ErrorCondition {
+                        code: ErrorCode::CliMissingArgument,
+                        params: Some(ErrorParams::MissingArguments {
+                            arguments: arguments.clone(),
+                        }),
+                    },
+                    _ => ErrorCondition::new(ErrorCode::CliArguments),
+                };
+                invocation.report(
+                    "arguments",
+                    &anyhow::Error::new(error).context(condition),
+                    ErrorCode::CliArguments,
+                    json_requested,
+                );
                 return ExitCode::from(2);
             }
             error.exit();
         }
     };
     let json = cli.json;
+    let (operation, default_code) = match &cli.command {
+        Command::Parse { .. } => ("parse", ErrorCode::ParseFailed),
+        Command::Download { .. } => ("download", ErrorCode::DownloadFailed),
+        Command::VerifyCookie => ("verify-cookie", ErrorCode::AccountFailed),
+        Command::FfmpegCheck { .. } => ("ffmpeg-check", ErrorCode::MediaProbeFailed),
+    };
     match run(cli).await {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
-            print_error(&format!("{error:#}"), json);
+            invocation.report(operation, &error, default_code, json);
             ExitCode::FAILURE
         }
-    }
-}
-
-fn print_error(message: &str, json: bool) {
-    if json {
-        eprintln!("{}", serde_json::json!({ "ok": false, "error": message }));
-    } else {
-        eprintln!("error: {message}");
     }
 }
 
@@ -285,9 +306,7 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
         Command::Parse { all: true, .. } | Command::Download { all: true, .. }
     ) && cli.state.is_none()
     {
-        bail!(
-            "--all requires --state <path> so interrupted enumeration can resume without starting over"
-        );
+        bail!(ErrorCondition::new(ErrorCode::InputNeedState));
     }
     if let Command::Download {
         all: false,
@@ -298,9 +317,7 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
         && items.is_empty()
         && parts.is_empty()
     {
-        bail!(
-            "select a bounded download with --items or --parts, or explicitly use --all --state <path>"
-        );
+        bail!(ErrorCondition::new(ErrorCode::InputNeedSelection));
     }
     let signature = format!("cwd={:?};{:?}", env::current_dir()?, cli.command);
     let mut progress = Progress::open(cli.state, cli.resume, signature)?;
@@ -444,9 +461,7 @@ async fn download_command(
         };
         progress.remember(input, &tree)?;
         if !request.parts.is_empty() && tree.source.kind != SourceKind::Video {
-            bail!(
-                "--parts supports ordinary multi-part videos; use --items for lists and episodes"
-            );
+            bail!(ErrorCondition::new(ErrorCode::InputPartsNotSupported));
         }
         let limit = if request.all {
             None
@@ -462,7 +477,7 @@ async fn download_command(
             .collect::<Vec<_>>();
         let selected = select_item_positions(positions.len(), &request.items)?;
         if selected.is_empty() {
-            bail!("resolved source {input} has no items");
+            bail!(ErrorCondition::new(ErrorCode::ParseEmptySource));
         }
         let mut outputs = Vec::new();
         for position in selected {
@@ -504,7 +519,7 @@ async fn download_command(
                             .find(|candidate| {
                                 candidate.id == task.id && candidate.output_path == task.output_path
                             })
-                            .context("refreshed media no longer matches the planned output")?;
+                            .context(ErrorCondition::new(ErrorCode::DownloadSelectionChanged))?;
                         fetch_media(&fetcher, &task)
                             .await
                             .context("download failed after one media URL refresh")?;
@@ -518,10 +533,7 @@ async fn download_command(
                         .iter()
                         .find(|resource| resource.intent == DownloadResourceIntent::Audio);
                     if video.is_none() && audio.is_none() {
-                        bail!(
-                            "planned task {} has no downloadable media tracks",
-                            task.title
-                        );
+                        bail!(ErrorCondition::new(ErrorCode::DownloadNoTracks));
                     }
                     muxer
                         .mux(&MuxRequest {
@@ -537,7 +549,7 @@ async fn download_command(
                         .await
                         .context("FFmpeg finished without a readable output file")?;
                     if !metadata.is_file() || metadata.len() == 0 {
-                        bail!("FFmpeg finished without a non-empty media file");
+                        bail!(ErrorCondition::new(ErrorCode::MediaEmptyOutput));
                     }
 
                     progress.finish(task.id.clone(), &task.output_path)?;
@@ -649,8 +661,10 @@ async fn load_pages(
 
 fn download_options(request: &DownloadRequest) -> anyhow::Result<DownloadOptions> {
     let mut options = DownloadOptions::new(request.output.clone());
-    options.video_quality = StreamPreference::parse_video(&request.quality)?;
-    options.audio_quality = StreamPreference::parse(&request.audio_quality, "音频质量")?;
+    options.video_quality = StreamPreference::parse_video(&request.quality)
+        .context(ErrorCondition::new(ErrorCode::InputQuality))?;
+    options.audio_quality = StreamPreference::parse(&request.audio_quality, "音频质量")
+        .context(ErrorCondition::new(ErrorCode::InputQuality))?;
     options.video_codec = parse_stream_codec(request.codec.as_core_value())?;
     options.media_mode = request.media_mode.into();
     options.output_extension = request.container.extension().to_owned();
@@ -662,7 +676,7 @@ fn download_options(request: &DownloadRequest) -> anyhow::Result<DownloadOptions
 fn select_item_positions(count: usize, numbers: &[u32]) -> anyhow::Result<Vec<usize>> {
     for number in numbers {
         if *number == 0 || *number as usize > count {
-            bail!("item {number} is out of range; source has {count} items");
+            bail!(ErrorCondition::new(ErrorCode::InputItemOutOfRange));
         }
     }
     Ok((0..count)
@@ -671,13 +685,13 @@ fn select_item_positions(count: usize, numbers: &[u32]) -> anyhow::Result<Vec<us
 }
 
 fn verify_cookie_command(cookie: Option<&str>, json: bool) -> anyhow::Result<()> {
-    let cookie = cookie.context("set BDL_COOKIE or pass --cookie-file <path>")?;
+    let cookie = cookie.context(ErrorCondition::new(ErrorCode::AccountCookieMissing))?;
     let has_sessdata = cookie
         .split(';')
         .filter_map(|pair| pair.trim().split_once('='))
         .any(|(name, value)| name == "SESSDATA" && !value.trim().is_empty());
     if !has_sessdata {
-        bail!("cookie does not contain SESSDATA");
+        bail!(ErrorCondition::new(ErrorCode::AccountCookieInvalid));
     }
 
     if json {
@@ -750,10 +764,7 @@ fn select_part_ids(ids: &[PartId], numbers: &[u32]) -> anyhow::Result<Vec<PartId
     }
     for number in numbers {
         if *number == 0 || *number as usize > ids.len() {
-            bail!(
-                "part {number} is out of range; source has {} parts",
-                ids.len()
-            );
+            bail!(ErrorCondition::new(ErrorCode::InputPartOutOfRange));
         }
     }
     Ok(ids

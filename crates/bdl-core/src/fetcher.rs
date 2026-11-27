@@ -1,3 +1,4 @@
+use crate::public_error::ErrorCode;
 use std::ffi::OsString;
 use std::io::Read as _;
 use std::path::{Path, PathBuf};
@@ -307,7 +308,10 @@ impl ReqwestFetcher {
             .filter(|url| !url.trim().is_empty())
             .collect::<Vec<_>>();
         if urls.is_empty() {
-            return Err(fetch_error("资源没有可用下载地址，请重新解析后再试。"));
+            return Err(BdlError::classified(
+                ErrorCode::DownloadNoUrl,
+                "资源没有可用下载地址，请重新解析后再试。",
+            ));
         }
 
         let mut last_error = None;
@@ -337,7 +341,13 @@ impl ReqwestFetcher {
                             )));
                         }
                         if self.stop_on_restriction
-                            && crate::resolver::pacing::is_source_restriction(&error.to_string())
+                            && matches!(
+                                error.public_condition().code,
+                                ErrorCode::DownloadForbidden
+                                    | ErrorCode::SourceForbidden
+                                    | ErrorCode::SourceRateLimited
+                                    | ErrorCode::SourceVerificationRequired
+                            )
                         {
                             return Err(error);
                         }
@@ -350,8 +360,14 @@ impl ReqwestFetcher {
                             "source={} host={host}: {message}",
                             source_index + 1
                         ));
-                        retryable_error_seen |= !message.contains("HTTP 404");
-                        last_error = Some(message);
+                        retryable_error_seen |= !matches!(
+                            error.root_cause(),
+                            BdlError::DownloadHttp {
+                                status: StatusCode::NOT_FOUND,
+                                ..
+                            }
+                        );
+                        last_error = Some(error);
                     }
                 }
             }
@@ -360,15 +376,34 @@ impl ReqwestFetcher {
             }
         }
 
-        let failure_code = last_error
-            .as_deref()
-            .and_then(crate::diagnostics::classify_failure)
-            .map_or("download_failed", |rule| rule.code.as_str());
-        Err(fetch_error(format!(
-            "[stage=fetch_resource code={failure_code}] 下载 `{}` 失败，已尝试 {attempted} attempts across {} URLs: {}\n失败时配置: segment_count={} max_retries={} proxy_mode={}\n各下载源最后错误：\n{}",
+        let Some(last_error) = last_error else {
+            return Err(fetch_error("没有完成任何下载尝试。"));
+        };
+        let mut code = last_error.public_condition().code;
+        if code == ErrorCode::DownloadForbidden
+            && !matches!(
+                resource.intent,
+                crate::queue::DownloadResourceIntent::Audio
+                    | crate::queue::DownloadResourceIntent::Video
+            )
+        {
+            code = ErrorCode::SourceForbidden;
+        }
+        let message = crate::account::redact_diagnostic(&last_error.to_string());
+        let failure_code = match code {
+            ErrorCode::DownloadUrlExpired => "media_url_expired",
+            ErrorCode::DownloadForbidden | ErrorCode::SourceForbidden => "remote_forbidden",
+            ErrorCode::NetworkTimeout => "network_timeout",
+            ErrorCode::DownloadBodyFailed => "response_body_failed",
+            ErrorCode::NetworkRequestFailed => "network_request_failed",
+            ErrorCode::SourceRateLimited => "source_rate_limited",
+            ErrorCode::SourceVerificationRequired => "source_verification_required",
+            _ => "download_failed",
+        };
+        let context = format!(
+            "[stage=fetch_resource code={failure_code}] 下载 `{}` 失败，已尝试 {attempted} attempts across {} URLs: {message}\n失败时配置: segment_count={} max_retries={} proxy_mode={}\n各下载源最后错误：\n{}",
             resource.id,
             urls.len(),
-            last_error.unwrap_or_else(|| "unknown error".to_owned()),
             self.config.segment_count,
             self.config.max_retries,
             self.config.proxy_mode.as_str(),
@@ -377,7 +412,8 @@ impl ReqwestFetcher {
                 .flatten()
                 .collect::<Vec<_>>()
                 .join("\n")
-        )))
+        );
+        Err(BdlError::caused_by(code, context, last_error))
     }
 }
 
@@ -479,9 +515,10 @@ impl ReqwestFetcher {
         if let Some(total_bytes) = metadata.total_bytes
             && downloaded_bytes != total_bytes
         {
-            return Err(fetch_error(format!(
-                "下载长度不完整: expected {total_bytes}, got {downloaded_bytes}"
-            )));
+            return Err(BdlError::classified(
+                ErrorCode::DownloadIncomplete,
+                format!("下载长度不完整: expected {total_bytes}, got {downloaded_bytes}"),
+            ));
         }
 
         if resource.target_path.exists() {
@@ -535,9 +572,10 @@ impl ReqwestFetcher {
         if let Some(total_bytes) = metadata.total_bytes
             && downloaded_bytes != total_bytes
         {
-            return Err(fetch_error(format!(
-                "下载长度不完整: expected {total_bytes}, got {downloaded_bytes}"
-            )));
+            return Err(BdlError::classified(
+                ErrorCode::DownloadIncomplete,
+                format!("下载长度不完整: expected {total_bytes}, got {downloaded_bytes}"),
+            ));
         }
 
         let decoded = decode_deflate_body(&encoded)?;
@@ -649,7 +687,10 @@ impl ReqwestFetcher {
                     error.with_context(format!("destination={}", resource.temp_path.display()))
                 })?;
             if copied != end - start + 1 {
-                return Err(fetch_error("分段文件长度异常，已停止拼接，请重试下载。"));
+                return Err(BdlError::classified(
+                    ErrorCode::DownloadIncomplete,
+                    "分段文件长度异常，已停止拼接，请重试下载。",
+                ));
             }
         }
         temp_file
@@ -664,7 +705,10 @@ impl ReqwestFetcher {
             .len()
             != total_bytes
         {
-            return Err(fetch_error("拼接后的文件长度异常，请重试下载。"));
+            return Err(BdlError::classified(
+                ErrorCode::DownloadIncomplete,
+                "拼接后的文件长度异常，请重试下载。",
+            ));
         }
 
         if resource.target_path.exists() {
@@ -720,10 +764,10 @@ impl ReqwestFetcher {
         };
 
         if response.status() != StatusCode::PARTIAL_CONTENT {
-            return Err(fetch_error(format!(
-                "分段下载请求失败: HTTP {}",
-                response.status()
-            )));
+            return Err(media_http_failure(
+                response.status(),
+                format!("分段下载请求失败: HTTP {}", response.status()),
+            ));
         }
         let response_info = response_diagnostic_context(&response);
 
@@ -765,9 +809,10 @@ impl ReqwestFetcher {
             .path_context("flush_segment", &segment_path)?;
 
         if downloaded_bytes != expected_len {
-            return Err(fetch_error(format!(
-                "分段下载长度不完整: expected {expected_len}, got {downloaded_bytes}"
-            )));
+            return Err(BdlError::classified(
+                ErrorCode::DownloadIncomplete,
+                format!("分段下载长度不完整: expected {expected_len}, got {downloaded_bytes}"),
+            ));
         }
 
         Ok(())
@@ -810,13 +855,11 @@ impl ReqwestFetcher {
         if response.status().is_success() {
             return remote_resource_metadata(response.headers(), false);
         }
-        if self.stop_on_restriction
-            && crate::resolver::pacing::is_source_restriction(&response.status().to_string())
-        {
-            return Err(fetch_error(format!(
-                "请求资源长度失败: HTTP {}",
-                response.status()
-            )));
+        if self.stop_on_restriction && matches!(response.status().as_u16(), 403 | 412 | 429) {
+            return Err(media_http_failure(
+                response.status(),
+                format!("请求资源长度失败: HTTP {}", response.status()),
+            ));
         }
 
         let request = self
@@ -831,10 +874,10 @@ impl ReqwestFetcher {
         };
 
         if !response.status().is_success() {
-            return Err(fetch_error(format!(
-                "请求资源长度失败: HTTP {}",
-                response.status()
-            )));
+            return Err(media_http_failure(
+                response.status(),
+                format!("请求资源长度失败: HTTP {}", response.status()),
+            ));
         }
 
         remote_resource_metadata(
@@ -864,13 +907,19 @@ fn request_send_error(phase: &str, context: &str, error: reqwest::Error) -> BdlE
     } else {
         "network_request_failed"
     };
-    fetch_error(crate::account::redact_sensitive(&format!(
+    let condition = if error.is_timeout() {
+        ErrorCode::NetworkTimeout
+    } else {
+        ErrorCode::NetworkRequestFailed
+    };
+    let detail = crate::account::redact_sensitive(&format!(
         "[stage=request_send code={code}] {phase}: {error}; {context}; is_connect={} is_timeout={} is_request={}; cause={}",
         error.is_connect(),
         error.is_timeout(),
         error.is_request(),
         request_error_causes(&error)
-    )))
+    ));
+    BdlError::caused_by(condition, detail, error)
 }
 
 fn request_error_causes(error: &reqwest::Error) -> String {
@@ -884,13 +933,19 @@ fn response_body_error(phase: &str, context: &str, error: reqwest::Error) -> Bdl
     } else {
         "response_body_failed"
     };
-    fetch_error(crate::account::redact_sensitive(&format!(
+    let condition = if error.is_timeout() {
+        ErrorCode::NetworkTimeout
+    } else {
+        ErrorCode::DownloadBodyFailed
+    };
+    let detail = crate::account::redact_sensitive(&format!(
         "[stage=response_body code={code}] {phase}: {error}; {context}; is_decode={} is_body={} is_timeout={}; cause={}",
         error.is_decode(),
         error.is_body(),
         error.is_timeout(),
         request_error_causes(&error)
-    )))
+    ));
+    BdlError::caused_by(condition, detail, error)
 }
 
 fn remote_resource_metadata(
@@ -1212,19 +1267,33 @@ fn header_to_string(headers: &HeaderMap, name: HeaderName) -> BdlResult<Option<S
         .transpose()
 }
 
+fn media_http_failure(status: StatusCode, detail: String) -> BdlError {
+    BdlError::DownloadHttp {
+        status,
+        context: detail,
+    }
+}
+
 fn validate_get_status(status: StatusCode, resume_from: u64) -> BdlResult<()> {
     if resume_from > 0 && status != StatusCode::PARTIAL_CONTENT {
-        return Err(fetch_error(format!(
-            "服务器未按 Range 返回分段响应: HTTP {status}"
-        )));
+        return Err(media_http_failure(
+            status,
+            format!("服务器未按 Range 返回分段响应: HTTP {status}"),
+        ));
     }
 
     if resume_from == 0 && !status.is_success() {
-        return Err(fetch_error(format!("下载请求失败: HTTP {status}")));
+        return Err(media_http_failure(
+            status,
+            format!("下载请求失败: HTTP {status}"),
+        ));
     }
 
     if resume_from > 0 && !status.is_success() {
-        return Err(fetch_error(format!("续传请求失败: HTTP {status}")));
+        return Err(media_http_failure(
+            status,
+            format!("续传请求失败: HTTP {status}"),
+        ));
     }
 
     Ok(())

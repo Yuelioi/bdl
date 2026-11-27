@@ -1,3 +1,4 @@
+use bdl_core::public_error::ErrorCode;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Runtime};
 
@@ -21,8 +22,7 @@ where
     T: Serialize + Clone,
 {
     app.emit(event, payload).map_err(|error| CommandError {
-        detail: None,
         code: "event_emit_failed".to_owned(),
-        message: error.to_string(),
+        ..CommandError::coded(ErrorCode::PlatformEventFailed, error)
     })
 }

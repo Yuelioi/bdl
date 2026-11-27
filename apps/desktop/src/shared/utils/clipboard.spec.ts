@@ -28,7 +28,7 @@ it('reads the desktop native clipboard without browser permissions', async () =>
   vi.mocked(isTauri).mockReturnValue(true)
   vi.mocked(invoke).mockResolvedValue('BV1xx411c7mD')
   await expect(readClipboardText(false)).resolves.toBe('BV1xx411c7mD')
-  expect(invoke).toHaveBeenCalledWith('desktop_read_clipboard_text')
+  expect(invoke).toHaveBeenCalledWith('desktop_read_clipboard_text', undefined)
   await writeClipboardText('diagnostic final cause', false)
   expect(invoke).toHaveBeenLastCalledWith('desktop_write_clipboard_text', { text: 'diagnostic final cause' })
 })

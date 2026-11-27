@@ -480,7 +480,7 @@ async fn handle_download_outcome(
         Ok(TaskStatus::Completed) => {
             let completed = state.task_snapshot(&task.id)?;
             events::emit(app, events::QUEUE_TASK_UPDATED, &completed)?;
-            emit_queue_log(
+            crate::commands::persist_queue_log(
                 app,
                 state,
                 &task.id,
@@ -489,6 +489,7 @@ async fn handle_download_outcome(
                     "成品已生成，但收尾处理未完全完成：{}",
                     error.diagnostic_message()
                 ),
+                error.problem.as_deref().cloned(),
             )?;
         }
         _ => {
@@ -496,19 +497,27 @@ async fn handle_download_outcome(
                 .task_logs(&task.id, 50)
                 .map(|logs| recent_auto_refresh_attempt_count(&logs))
                 .unwrap_or_default();
+            let mut stage = "task";
             if settings.auto_refresh_expired_urls
                 && matches!(state.task_status(&task.id), Ok(TaskStatus::Downloading))
-                && should_refresh_media_url(&error.diagnostic_message())
+                && error
+                    .problem
+                    .as_ref()
+                    .is_some_and(|problem| should_refresh_media_url(problem.condition.code))
                 && auto_refresh_attempts < MAX_AUTO_REFRESH_ATTEMPTS
                 && state.task_snapshot(&task.id)?.can_resolve_media_urls()
             {
                 let attempt = auto_refresh_attempts + 1;
-                emit_queue_log(
+                crate::commands::persist_queue_log(
                     app,
                     state,
                     &task.id,
                     QueueLogLevel::Warning,
-                    &format!("自动刷新过期链接（{attempt}/{MAX_AUTO_REFRESH_ATTEMPTS}）"),
+                    &format!(
+                        "自动刷新过期链接（{attempt}/{MAX_AUTO_REFRESH_ATTEMPTS}）\n{}",
+                        error.diagnostic_message()
+                    ),
+                    error.problem.as_deref().cloned(),
                 )?;
 
                 let Some(refreshed) = cancellable_refresh(
@@ -528,43 +537,28 @@ async fn handle_download_outcome(
                             &task.id,
                             TaskStatus::Waiting,
                             cancel_token,
+                            None,
                         )? {
                             events::emit(app, events::QUEUE_TASK_UPDATED, &retried)?;
                         }
                         return Ok(());
                     }
                     Err(refresh_error) => {
-                        let failure = crate::commands::CommandError::from(refresh_error);
-                        emit_queue_log(
-                            app,
-                            state,
-                            &task.id,
-                            QueueLogLevel::Error,
-                            &format!(
-                                "[stage=refresh_urls code={}] 自动刷新过期链接失败：{}",
-                                failure.code,
-                                failure.diagnostic_message()
-                            ),
-                        )?;
-                        error = failure;
+                        error = crate::commands::CommandError::from(refresh_error);
+                        stage = "refresh_urls";
                     }
                 }
             }
 
-            if let Some(failed) =
-                state.finish_task_attempt(&task.id, TaskStatus::Failed, cancel_token)?
-            {
+            let entry = error.task_log(&task.id, stage);
+            if let Some(failed) = state.finish_task_attempt(
+                &task.id,
+                TaskStatus::Failed,
+                cancel_token,
+                Some(&entry),
+            )? {
+                events::emit(app, events::QUEUE_LOG_APPENDED, &entry)?;
                 events::emit(app, events::QUEUE_TASK_UPDATED, &failed)?;
-                let message = if error.diagnostic_message().starts_with("[stage=") {
-                    error.diagnostic_message()
-                } else {
-                    format!(
-                        "[stage=task code={}] {}",
-                        error.code,
-                        error.diagnostic_message()
-                    )
-                };
-                emit_queue_log(app, state, &task.id, QueueLogLevel::Error, &message)?;
             }
         }
     }

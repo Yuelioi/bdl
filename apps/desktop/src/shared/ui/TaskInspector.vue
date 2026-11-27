@@ -20,7 +20,7 @@ import UiTabs from './Tabs.vue'
 import { isMobilePlatform } from '../platform/environment'
 import { captureDiagnosticEnvironment } from '../utils/diagnosticEnvironment'
 import { writeClipboardText } from '../utils/clipboard'
-import { classifyFailure, failureGuidance, latestFailure } from '../utils/failureDiagnostic'
+import { failureGuidance, latestFailureEntry, ruleForEntry } from '../utils/failureDiagnostic'
 import { audioCodecOptions, audioQualityOptions, codecOptions, videoQualityOptions } from '../features/settings/settingsCatalog'
 
 const { task, progress, logs, logsLoading = false } = defineProps<{
@@ -57,8 +57,9 @@ const recoveryAction = computed(() =>
 )
 const canRecover = computed(() => !logs.length || ['retry', 'refresh_retry'].some(action => action === diagnostic.value?.recommendedAction))
 const guidance = computed(() => {
-  const failure = latestFailure(logs) ?? ''
-  const rule = classifyFailure(failure)
+  const entry = latestFailureEntry(logs)
+  const failure = entry?.message ?? ''
+  const rule = ruleForEntry(entry)
   const stage = failure.startsWith('[stage=refresh_urls ') ? 'parse' : 'download'
   return rule && failureGuidance(rule, stage, mobile)
 })
@@ -109,7 +110,7 @@ const overviewFacts = computed(() => {
 const redactedLogs = computed(() =>
   logs.map((log) => ({
     ...log,
-    message: redactDiagnosticMessage(log.message),
+    message: redactDiagnosticMessage(log.problem ? `${log.message}\n错误码: ${log.problem.code}\n追踪编号: ${log.problem.traceId}` : log.message),
   })),
 )
 const mediaSelectionText = computed(() => {

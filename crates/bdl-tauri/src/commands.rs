@@ -1,3 +1,4 @@
+use bdl_core::public_error::{ErrorCode, ErrorCondition, PublicError};
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
@@ -54,6 +55,8 @@ pub type CommandResult<T> = Result<T, CommandError>;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CommandError {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub problem: Option<Box<PublicError>>,
     pub code: String,
     pub message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -62,7 +65,21 @@ pub struct CommandError {
 
 impl From<BdlError> for CommandError {
     fn from(error: BdlError) -> Self {
+        let problem = Some(Box::new(error.public_problem()));
         let cause = error.root_cause();
+        if matches!(
+            cause,
+            BdlError::Classified { .. } | BdlError::DownloadHttp { .. }
+        ) {
+            let condition = error.public_condition();
+            let detail = bdl_core::account::redact_diagnostic(&error.to_string());
+            return Self {
+                problem,
+                code: condition.code.to_string(),
+                message: condition.message(true),
+                detail: Some(detail),
+            };
+        }
         if let BdlError::ParseRestricted { source, .. } = cause {
             let original = source.as_ref().map(ToString::to_string);
             let rule = original.as_deref().and_then(classify_failure);
@@ -76,6 +93,7 @@ impl From<BdlError> for CommandError {
             let detail = Some(bdl_core::account::redact_diagnostic(&detail));
             tracing::warn!(code, message, detail = ?detail, "BDL operation failed");
             return Self {
+                problem,
                 code: code.to_owned(),
                 message,
                 detail,
@@ -96,6 +114,7 @@ impl From<BdlError> for CommandError {
         let detail = (raw != message).then_some(raw);
         tracing::warn!(code, message, detail = ?detail, "BDL operation failed");
         Self {
+            problem,
             code,
             message,
             detail,
@@ -104,12 +123,38 @@ impl From<BdlError> for CommandError {
 }
 
 impl CommandError {
+    pub fn coded(code: ErrorCode, diagnostic: impl std::fmt::Display) -> Self {
+        let condition = ErrorCondition::new(code);
+        Self {
+            code: code.to_string(),
+            message: condition.message(true),
+            detail: Some(bdl_core::account::redact_diagnostic(
+                &diagnostic.to_string(),
+            )),
+            problem: Some(Box::new(PublicError::new(condition))),
+        }
+    }
+
     pub(crate) fn with_context(mut self, context: &str) -> Self {
         let detail = self.detail.take().unwrap_or_else(|| self.message.clone());
         self.detail = Some(bdl_core::account::redact_diagnostic(&format!(
             "{context}\n{detail}"
         )));
         self
+    }
+
+    pub(crate) fn task_log(&self, task_id: &str, stage: &str) -> QueueLogEntry {
+        QueueLogEntry {
+            task_id: task_id.to_owned(),
+            level: QueueLogLevel::Error,
+            message: bdl_core::account::redact_diagnostic(&format!(
+                "[stage={stage} code={}] {}",
+                self.code,
+                self.diagnostic_message()
+            )),
+            problem: self.problem.as_deref().cloned(),
+            created_at: Utc::now().to_rfc3339(),
+        }
     }
 
     pub(crate) fn diagnostic_message(&self) -> String {
@@ -140,7 +185,7 @@ fn command_error_code(error: &BdlError) -> &'static str {
         BdlError::Bpi(message) if message.contains("failed to decode response") => {
             "bilibili_response_decode_failed"
         }
-        BdlError::Bpi(_) => "bilibili_api_error",
+        BdlError::Bpi(_) | BdlError::BpiHttp { .. } => "bilibili_api_error",
         BdlError::BpiTransport { source, .. } => {
             if source.is_timeout() {
                 "network_timeout"
@@ -176,7 +221,9 @@ fn command_error_message(error: &BdlError) -> Option<String> {
         BdlError::Bpi(message) if message.contains("failed to decode response") => Some(
             "解析失败，返回的数据暂时无法解析。请稍后重试；如果持续失败，请反馈问题。".to_owned(),
         ),
-        BdlError::Bpi(_) => Some("操作失败，暂时无法获取 Bilibili 数据，请稍后重试。".to_owned()),
+        BdlError::Bpi(_) | BdlError::BpiHttp { .. } => {
+            Some("操作失败，暂时无法获取 Bilibili 数据，请稍后重试。".to_owned())
+        }
         BdlError::Fetch { .. } => Some("下载失败，请查看错误详情。".into()),
         BdlError::Platform { message } => Some(message.clone()),
         _ => None,
@@ -242,6 +289,7 @@ pub struct SpeedLimitTaskRequest {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct BulkQueueFailure {
+    pub problem: Option<Box<PublicError>>,
     pub task_id: String,
     pub code: String,
     pub message: String,
@@ -252,6 +300,7 @@ impl BulkQueueFailure {
     fn from_error(task_id: String, error: CommandError) -> Self {
         Self {
             task_id,
+            problem: error.problem,
             code: error.code,
             message: error.message,
             detail: error.detail,
@@ -262,6 +311,7 @@ impl BulkQueueFailure {
         Self::from_error(
             task_id,
             CommandError {
+                problem: Some(Box::new(ErrorCode::QueueTaskMissing.into())),
                 code: "task_operation_failed".into(),
                 message,
                 detail: None,
@@ -279,6 +329,7 @@ async fn journal_bulk_failures(state: &AppState, command: &str, result: &mut Bul
         .and_then(|environment| serde_json::to_value(environment).map_err(Into::into));
     for failure in &mut result.failed {
         let mut error = CommandError {
+            problem: failure.problem.clone(),
             code: failure.code.clone(),
             message: failure.message.clone(),
             detail: failure.detail.clone(),
@@ -290,6 +341,7 @@ async fn journal_bulk_failures(state: &AppState, command: &str, result: &mut Bul
         let recorded = match &environment {
             Ok(environment) => state
                 .append_operation_error(
+                    error.problem.as_deref(),
                     command,
                     &error.code,
                     &error.message,
@@ -769,10 +821,9 @@ pub async fn selection_prepare(
     operation_id: String,
 ) -> CommandResult<NormalizedSourceTree> {
     if source_id != snapshot.source.id.0 {
-        return Err(BdlError::Planning {
-            message: "所选来源已变化。".into(),
-        }
-        .into());
+        return Err(
+            BdlError::classified(ErrorCode::QueueSelectionChanged, "所选来源已变化。").into(),
+        );
     }
     let ids = part_ids.into_iter().map(PartId).collect::<Vec<_>>();
     let context = state.preparation_context(operation_id)?;
@@ -792,12 +843,13 @@ pub async fn selection_prepare(
         let ready = crate::parse_session::find_part(&prepared.tree, id)
             .is_some_and(|part| part.cid.is_some() && !part.streams.is_empty());
         if !ready {
-            return Err(BdlError::Planning {
-                message: format!(
+            return Err(BdlError::classified(
+                ErrorCode::DownloadNoTracks,
+                format!(
                     "分 P `{}` 尚无可用音视频流，请检查视频是否可播放后重试。",
                     id.0
                 ),
-            }
+            )
             .into());
         }
     }
@@ -817,8 +869,11 @@ pub async fn selection_estimate_size(
             .download_presets
             .iter()
             .find(|preset| &preset.id == id)
-            .ok_or_else(|| BdlError::Planning {
-                message: "下载预设已不存在，请重新选择。".into(),
+            .ok_or_else(|| {
+                BdlError::classified(
+                    ErrorCode::QueuePresetMissing,
+                    "下载预设已不存在，请重新选择。",
+                )
             })?
             .workflow;
         workflow
@@ -879,8 +934,11 @@ pub(crate) fn download_options_from_request(
             .download_presets
             .iter()
             .find(|preset| &preset.id == id)
-            .ok_or_else(|| BdlError::Planning {
-                message: "下载预设已不存在，请重新选择。".into(),
+            .ok_or_else(|| {
+                BdlError::classified(
+                    ErrorCode::QueuePresetMissing,
+                    "下载预设已不存在，请重新选择。",
+                )
             })?
             .workflow;
         #[cfg(target_os = "android")]
@@ -890,9 +948,10 @@ pub(crate) fn download_options_from_request(
                 || (workflow.has_media_output() && workflow.container == "mkv")))
             || (workflow.subtitles.enabled && workflow.subtitles.embed)
         {
-            return Err(BdlError::Planning {
-                message: "Android 仅支持在 MP3 中嵌入封面，视频附件请保存独立文件。".into(),
-            }
+            return Err(BdlError::classified(
+                ErrorCode::SettingsEmbeddingContainer,
+                "Android 仅支持在 MP3 中嵌入封面，视频附件请保存独立文件。",
+            )
             .into());
         }
         workflow
@@ -929,9 +988,10 @@ pub(crate) fn download_options_from_request(
     if (audio_only && !matches!(output_extension.as_str(), "m4s" | "mp3"))
         || (!audio_only && !matches!(output_extension.as_str(), "mp4" | "mkv"))
     {
-        return Err(BdlError::Planning {
-            message: "仅音频请选择 m4s 或 MP3；包含视频请选择 MP4 或 MKV。".to_owned(),
-        }
+        return Err(BdlError::classified(
+            ErrorCode::SettingsContainer,
+            "仅音频请选择 m4s 或 MP3；包含视频请选择 MP4 或 MKV。",
+        )
         .into());
     }
     let processing = bdl_core::queue::TaskProcessingOptions {
@@ -1166,9 +1226,7 @@ pub fn queue_schedule(
 ) -> CommandResult<DownloadTask> {
     let scheduled_at =
         parse_future_schedule(Some(&request.scheduled_at), Utc::now())?.ok_or_else(|| {
-            BdlError::Planning {
-                message: "请选择任务开始时间。".to_owned(),
-            }
+            BdlError::classified(ErrorCode::QueueInvalidStartTime, "请选择任务开始时间。")
         })?;
     let task = state.set_task_schedule(&request.task_id, Some(scheduled_at))?;
     events::emit(&app, events::QUEUE_TASK_UPDATED, &task)?;
@@ -1208,7 +1266,7 @@ pub fn queue_set_speed_limit(
     state: State<'_, AppState>,
     request: SpeedLimitTaskRequest,
 ) -> CommandResult<DownloadTask> {
-    let speed_limit = parse_speed_limit(request.speed_limit_bytes_per_second, "单任务下载限速")?;
+    let speed_limit = parse_speed_limit(request.speed_limit_bytes_per_second)?;
     let task = state.set_task_speed_limit(&request.task_id, speed_limit)?;
     events::emit(&app, events::QUEUE_TASK_UPDATED, &task)?;
     let message = speed_limit.map_or_else(
@@ -1405,17 +1463,8 @@ async fn refresh_urls_and_retry(
         .await
     {
         let error = CommandError::from(error);
-        emit_queue_log(
-            &app,
-            state,
-            task_id,
-            QueueLogLevel::Error,
-            &format!(
-                "[stage=refresh_urls code={}] 刷新下载地址失败：{}",
-                error.code,
-                error.diagnostic_message()
-            ),
-        )?;
+        let entry = state.append_task_log(error.task_log(task_id, "refresh_urls"))?;
+        events::emit(&app, events::QUEUE_LOG_APPENDED, &entry)?;
         return Err(error);
     }
 
@@ -1466,7 +1515,7 @@ fn bulk_mutate_tasks(
         failed: changed
             .failed
             .into_iter()
-            .map(|(task_id, message)| BulkQueueFailure::from_message(task_id, message))
+            .map(|(task_id, error)| BulkQueueFailure::from_error(task_id, error.into()))
             .collect(),
     };
     // The invocation returns the committed tasks to the queue view in one batch.
@@ -1503,9 +1552,8 @@ pub async fn queue_delete_preview(
     })
     .await
     .map_err(|e| CommandError {
-        detail: None,
         code: "cleanup_failed".into(),
-        message: e.to_string(),
+        ..CommandError::coded(ErrorCode::FileCleanupFailed, e)
     })?
     .map_err(Into::into)
 }
@@ -1532,9 +1580,8 @@ pub async fn maintenance_temp_preview(
     tauri::async_runtime::spawn_blocking(move || app.state::<AppState>().preview_temp_cleanup())
         .await
         .map_err(|e| CommandError {
-            detail: None,
             code: "cleanup_failed".into(),
-            message: e.to_string(),
+            ..CommandError::coded(ErrorCode::FileCleanupFailed, e)
         })?
         .map_err(Into::into)
 }
@@ -1556,8 +1603,8 @@ pub fn queue_open_file(
                     .is_some_and(|intent| intent.cid == cid)
             })
         })
-        .ok_or_else(|| BdlError::Planning {
-            message: "找不到这个分 P 的下载记录。".into(),
+        .ok_or_else(|| {
+            BdlError::classified(ErrorCode::QueueTaskMissing, "找不到这个分 P 的下载记录。")
         })?;
     if let Some(target) = task.export_target.as_ref() {
         state.mobile_storage().open_exported_file(target)?;
@@ -1574,6 +1621,7 @@ pub fn queue_open_file(
     {
         Err(CommandError {
             detail: None,
+            problem: Some(Box::new(ErrorCode::FileNotFound.into())),
             code: "output_file_missing".to_owned(),
             message: "找不到下载文件，文件可能已被移动或删除。".to_owned(),
         })
@@ -1614,6 +1662,7 @@ pub fn open_external_url(app: AppHandle, url: String) -> CommandResult<()> {
     if !is_allowed_external_url(&url) {
         return Err(CommandError {
             detail: None,
+            problem: Some(Box::new(ErrorCode::PlatformUrlBlocked.into())),
             code: "external_url_not_allowed".to_owned(),
             message: "该链接不在允许打开的列表中。".to_owned(),
         });
@@ -1622,9 +1671,8 @@ pub fn open_external_url(app: AppHandle, url: String) -> CommandResult<()> {
     app.opener()
         .open_url(url, None::<String>)
         .map_err(|error| CommandError {
-            detail: None,
             code: "open_url_failed".to_owned(),
-            message: format!("打开链接失败：{error}"),
+            ..CommandError::coded(ErrorCode::PlatformOpenUrlFailed, error)
         })
 }
 
@@ -1703,8 +1751,12 @@ pub async fn maintenance_cleanup_cache(
         crate::file_removal::clear_cache_directory(&cleanup_dir)
     })
     .await
-    .map_err(|error| BdlError::Planning {
-        message: format!("缓存清理任务失败：{error}"),
+    .map_err(|error| {
+        BdlError::caused_by(
+            ErrorCode::PlatformFailed,
+            format!("缓存清理任务失败：{error}"),
+            error,
+        )
     })??;
     Ok(MaintenanceResult {
         removed_files,
@@ -1726,9 +1778,8 @@ pub async fn maintenance_cleanup_temp(
     })
     .await
     .map_err(|e| CommandError {
-        detail: None,
         code: "cleanup_failed".into(),
-        message: e.to_string(),
+        ..CommandError::coded(ErrorCode::FileCleanupFailed, e)
     })?
 }
 
@@ -1757,6 +1808,7 @@ pub(crate) async fn record_runtime_error(
         serde_json::to_value(crate::diagnostic_export::collect_environment(state).await?)
             .map_err(BdlError::from)?;
     state.append_operation_error(
+        error.problem.as_deref(),
         command,
         &error.code,
         &error.message,
@@ -1838,9 +1890,10 @@ pub async fn diagnostic_report(
     if let Some(task_id) = task_id {
         tasks.retain(|task| task.id == task_id);
         if tasks.is_empty() {
-            return Err(BdlError::Planning {
-                message: "任务不存在，请刷新任务列表。".into(),
-            });
+            return Err(BdlError::classified(
+                ErrorCode::QueueTaskMissing,
+                "任务不存在，请刷新任务列表。",
+            ));
         }
     }
     let redacted_tasks = tasks
@@ -1904,8 +1957,12 @@ pub async fn export_diagnostics(
     let data_dir = state.data_dir();
     tauri::async_runtime::spawn_blocking(move || crate::diagnostic_files::write(&data_dir, &bytes))
         .await
-        .map_err(|error| BdlError::Planning {
-            message: format!("诊断导出任务失败：{error}"),
+        .map_err(|error| {
+            BdlError::caused_by(
+                ErrorCode::PlatformFailed,
+                format!("诊断导出任务失败：{error}"),
+                error,
+            )
         })?
 }
 
@@ -1934,8 +1991,12 @@ pub async fn maintenance_log_usage(app: AppHandle) -> CommandResult<LogMaintenan
         })
     })
     .await
-    .map_err(|error| BdlError::Planning {
-        message: format!("读取日志用量失败：{error}"),
+    .map_err(|error| {
+        BdlError::caused_by(
+            ErrorCode::PlatformFailed,
+            format!("读取日志用量失败：{error}"),
+            error,
+        )
     })?
 }
 
@@ -1949,8 +2010,12 @@ pub async fn maintenance_cleanup_logs(
             .map_err(CommandError::from)
     })
     .await
-    .map_err(|error| BdlError::Planning {
-        message: format!("清理任务日志失败：{error}"),
+    .map_err(|error| {
+        BdlError::caused_by(
+            ErrorCode::PlatformFailed,
+            format!("清理任务日志失败：{error}"),
+            error,
+        )
     })?
 }
 
@@ -1961,8 +2026,12 @@ pub async fn maintenance_cleanup_diagnostics(app: AppHandle) -> CommandResult<us
             .map_err(CommandError::from)
     })
     .await
-    .map_err(|error| BdlError::Planning {
-        message: format!("清理诊断文件失败：{error}"),
+    .map_err(|error| {
+        BdlError::caused_by(
+            ErrorCode::PlatformFailed,
+            format!("清理诊断文件失败：{error}"),
+            error,
+        )
     })?
 }
 
@@ -2103,9 +2172,10 @@ fn update_task_status(
 ) -> CommandResult<DownloadTask> {
     let task = state.update_task_status(task_id, status)?;
     if task.status != status && matches!(status, TaskStatus::Paused | TaskStatus::Cancelled) {
-        return Err(BdlError::Planning {
-            message: "任务已开始合并或已完成，无法暂停或取消。".into(),
-        }
+        return Err(BdlError::classified(
+            ErrorCode::QueueTransitionBlocked,
+            "任务已开始合并或已完成，无法暂停或取消。",
+        )
         .into());
     }
     events::emit(&app, events::QUEUE_TASK_UPDATED, &task)?;
@@ -2136,21 +2206,26 @@ pub(crate) fn parse_future_schedule(
         return Ok(None);
     };
     let scheduled_at = DateTime::parse_from_rfc3339(value)
-        .map_err(|_| BdlError::Planning {
-            message: "开始时间格式无效，请重新选择。".to_owned(),
+        .map_err(|error| {
+            BdlError::caused_by(
+                ErrorCode::QueueInvalidStartTime,
+                format!("开始时间格式无效：{error}"),
+                error,
+            )
         })?
         .with_timezone(&Utc);
     if scheduled_at <= now {
-        return Err(BdlError::Planning {
-            message: "开始时间必须晚于当前时间。".to_owned(),
-        });
+        return Err(BdlError::classified(
+            ErrorCode::QueueInvalidStartTime,
+            "开始时间必须晚于当前时间。",
+        ));
     }
     Ok(Some(scheduled_at))
 }
 
-pub(crate) fn parse_speed_limit(value: Option<u64>, label: &str) -> CommandResult<Option<u64>> {
+pub(crate) fn parse_speed_limit(value: Option<u64>) -> CommandResult<Option<u64>> {
     let value = value.filter(|limit| *limit > 0);
-    validate_speed_limit(value, label)?;
+    validate_speed_limit(value, bdl_core::settings::SpeedLimitScope::Task)?;
     Ok(value)
 }
 
@@ -2307,7 +2382,7 @@ pub(crate) async fn run_download_task(
             finalize_archive_assets(app, state, &task).await?;
         } else {
             for warning in crate::workflow_execution::cleanup(&task).await {
-                emit_queue_log(app, state, &task.id, QueueLogLevel::Warning, &warning)?;
+                emit_queue_warning(app, state, &task.id, &warning)?;
             }
         }
         export_task_files(app, state, &task.id).await?;
@@ -2469,7 +2544,7 @@ async fn run_download_task_inner(
         )
         .await?;
         for warning in warnings {
-            emit_queue_log(app, state, &latest.id, QueueLogLevel::Warning, &warning)?;
+            emit_queue_warning(app, state, &latest.id, &warning)?;
         }
         for resource in latest
             .resources
@@ -2480,7 +2555,7 @@ async fn run_download_task_inner(
         }
         let verified = state.verify_task_outputs(&latest.id)?;
         for warning in crate::workflow_execution::cleanup(&verified).await {
-            emit_queue_log(app, state, &latest.id, QueueLogLevel::Warning, &warning)?;
+            emit_queue_warning(app, state, &latest.id, &warning)?;
         }
         export_task_files(app, state, &task.id).await?;
         return complete_download_part(app, state, &task.id, &cancel_token, "下载完成");
@@ -2493,7 +2568,7 @@ async fn run_download_task_inner(
     )
     .await;
     for warning in &attachments.warnings {
-        emit_queue_log(app, state, &latest.id, QueueLogLevel::Warning, warning)?;
+        emit_queue_warning(app, state, &latest.id, warning)?;
     }
     if attachments.cover_path.is_some() || !attachments.subtitle_paths.is_empty() {
         emit_queue_log(app, state, &latest.id, QueueLogLevel::Info, "嵌入归档素材")?;
@@ -2517,7 +2592,7 @@ async fn run_download_task_inner(
         .await?;
 
     for warning in crate::media_finalize::cleanup_embedded_sources(&latest, &attachments).await {
-        emit_queue_log(app, state, &latest.id, QueueLogLevel::Warning, &warning)?;
+        emit_queue_warning(app, state, &latest.id, &warning)?;
     }
 
     if !runtime_options.retain_raw_streams {
@@ -2785,14 +2860,13 @@ async fn export_file_with_storage(
 }
 
 fn should_fetch(resource: &DownloadResource) -> bool {
-    matches!(
-        resource.intent,
-        DownloadResourceIntent::Video
-            | DownloadResourceIntent::Audio
-            | DownloadResourceIntent::Cover
-            | DownloadResourceIntent::Subtitle
-            | DownloadResourceIntent::Danmaku
-    ) && !resource.current_urls.is_empty()
+    match resource.intent {
+        DownloadResourceIntent::Video | DownloadResourceIntent::Audio => true,
+        DownloadResourceIntent::Cover
+        | DownloadResourceIntent::Subtitle
+        | DownloadResourceIntent::Danmaku => !resource.current_urls.is_empty(),
+        DownloadResourceIntent::Nfo => false,
+    }
 }
 
 fn progress_sender(app: &AppHandle, task_id: &str) -> ProgressSender {
@@ -2982,6 +3056,7 @@ fn open_task_output_dir(app: &AppHandle, task: &DownloadTask) -> CommandResult<(
         .or_else(|| task.output_path.parent())
         .ok_or_else(|| CommandError {
             detail: None,
+            problem: Some(Box::new(ErrorCode::FileInvalidPath.into())),
             code: "invalid_output_path".to_owned(),
             message: format!("任务 `{}` 没有有效输出目录。", task.title),
         })?;
@@ -2993,10 +3068,25 @@ fn open_path(app: &AppHandle, path: &Path) -> CommandResult<()> {
     app.opener()
         .open_path(path.to_string_lossy().into_owned(), None::<String>)
         .map_err(|error| CommandError {
-            detail: None,
             code: "open_path_failed".to_owned(),
-            message: format!("打开路径失败：{error}"),
+            ..CommandError::coded(ErrorCode::FileOpenFailed, error)
         })
+}
+
+fn emit_queue_warning(
+    app: &AppHandle,
+    state: &AppState,
+    task_id: &str,
+    warning: &BdlError,
+) -> CommandResult<()> {
+    persist_queue_log(
+        app,
+        state,
+        task_id,
+        QueueLogLevel::Warning,
+        &bdl_core::account::redact_diagnostic(&warning.to_string()),
+        Some(warning.public_problem()),
+    )
 }
 
 pub(crate) fn emit_queue_log(
@@ -3006,11 +3096,23 @@ pub(crate) fn emit_queue_log(
     level: QueueLogLevel,
     message: &str,
 ) -> CommandResult<()> {
+    persist_queue_log(app, state, task_id, level, message, None)
+}
+
+pub(crate) fn persist_queue_log(
+    app: &AppHandle,
+    state: &AppState,
+    task_id: &str,
+    level: QueueLogLevel,
+    message: &str,
+    problem: Option<PublicError>,
+) -> CommandResult<()> {
     if !queue_log_enabled(state, level)? {
         return Ok(());
     }
 
     let entry = state.append_task_log(QueueLogEntry {
+        problem,
         task_id: task_id.to_owned(),
         level,
         message: message.to_owned(),
@@ -3060,6 +3162,7 @@ fn parse_archive_mode(value: &str) -> CommandResult<ArchiveMode> {
         "custom" => Ok(ArchiveMode::Custom),
         other => Err(CommandError {
             detail: None,
+            problem: Some(Box::new(ErrorCode::InputArchiveMode.into())),
             code: "invalid_archive_mode".to_owned(),
             message: format!("unknown archive mode `{other}`"),
         }),
@@ -3279,15 +3382,14 @@ mod tests {
     #[test]
     fn zero_speed_limit_normalizes_to_unlimited() {
         assert_eq!(
-            super::parse_speed_limit(Some(0), "单任务下载限速")
-                .expect("zero should mean unlimited"),
+            super::parse_speed_limit(Some(0)).expect("zero should mean unlimited"),
             None
         );
     }
 
     #[test]
     fn excessive_task_speed_limit_is_rejected() {
-        let error = super::parse_speed_limit(Some(10 * 1024 * 1024 * 1024 + 1), "单任务下载限速")
+        let error = super::parse_speed_limit(Some(10 * 1024 * 1024 * 1024 + 1))
             .expect_err("excessive task limit should fail");
 
         assert!(error.message.contains("单任务下载限速"));
@@ -3331,10 +3433,14 @@ mod tests {
     }
 
     #[test]
-    fn should_fetch_skips_empty_cover_asset() {
-        let resource = resource(DownloadResourceIntent::Cover, Vec::new());
-
-        assert!(!should_fetch(&resource));
+    fn missing_urls_reach_the_fetcher_for_required_tracks_only() {
+        assert!(!should_fetch(&resource(
+            DownloadResourceIntent::Cover,
+            Vec::new()
+        )));
+        for intent in [DownloadResourceIntent::Video, DownloadResourceIntent::Audio] {
+            assert!(should_fetch(&resource(intent, Vec::new())));
+        }
     }
 
     #[test]
@@ -3491,6 +3597,7 @@ mod tests {
 
         task = redact_task_for_diagnostics(task);
         let log = redact_log_for_diagnostics(QueueLogEntry {
+            problem: None,
             task_id: "task:fixture".to_owned(),
             level: QueueLogLevel::Error,
             message: "Authorization: Bearer secret-token".to_owned(),

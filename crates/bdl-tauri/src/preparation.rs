@@ -1,3 +1,4 @@
+use bdl_core::public_error::ErrorCode;
 use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 
@@ -23,6 +24,14 @@ use crate::commands::{
 use crate::download_resolution::SelectionPreparation;
 use crate::parse_owned::PreparationContext;
 use crate::state::{AppState, DuplicateTaskEnqueueResult};
+
+fn preparation_blocking_codes() -> &'static [ErrorCode] {
+    static CODES: std::sync::OnceLock<Vec<ErrorCode>> = std::sync::OnceLock::new();
+    CODES.get_or_init(|| {
+        serde_json::from_str(include_str!("preparation-blocking-codes.json"))
+            .expect("valid preparation error codes")
+    })
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -120,6 +129,7 @@ impl PreparationRegistry {
                 job.status = PreparationStatus::Interrupted;
                 job.duplicates.clear();
                 job.error = Some(CommandError {
+                    problem: Some(Box::new(ErrorCode::QueuePreparationInterrupted.into())),
                     code: "preparation_interrupted".into(),
                     message: "上次任务准备因应用退出而中断，请重新提交。".into(),
                     detail: Some(format!("[stage=preparation_recovery] job_id={}", job.id)),
@@ -147,9 +157,7 @@ fn persist(state: &AppState, job: &PreparationJob) -> BdlResult<()> {
     state
         .storage
         .lock()
-        .map_err(|_| BdlError::Planning {
-            message: "任务准备记录不可用。".into(),
-        })?
+        .map_err(|_| BdlError::classified(ErrorCode::PlatformFailed, "任务准备记录不可用。"))?
         .save_preparation_record(&job.id, job.status.name(), &serde_json::to_value(job)?)
 }
 
@@ -160,9 +168,10 @@ pub(crate) fn build_input(
     id: String,
 ) -> CommandResult<PreparationInput> {
     if tree.source.id.0 != request.source_id {
-        return Err(BdlError::Planning {
-            message: "提交的来源与所选内容不一致，请重新选择。".into(),
-        }
+        return Err(BdlError::classified(
+            ErrorCode::QueueSelectionChanged,
+            "提交的来源与所选内容不一致，请重新选择。",
+        )
         .into());
     }
     let settings = state.settings()?;
@@ -218,15 +227,13 @@ pub(crate) fn build_input(
         }
     }
     if selected.is_empty() {
-        return Err(BdlError::Planning {
-            message: "请选择要下载的内容。".into(),
-        }
-        .into());
+        return Err(
+            BdlError::classified(ErrorCode::QueueSelectionMissing, "请选择要下载的内容。").into(),
+        );
     }
     let scheduled_at =
         crate::commands::parse_future_schedule(request.scheduled_at.as_deref(), Utc::now())?;
-    let speed_limit =
-        crate::commands::parse_speed_limit(request.speed_limit_bytes_per_second, "单任务下载限速")?;
+    let speed_limit = crate::commands::parse_speed_limit(request.speed_limit_bytes_per_second)?;
     Ok(PreparationInput {
         tree,
         selected,
@@ -373,9 +380,10 @@ pub(crate) async fn plan_background_batch(
                 )
                 .await
             } else {
-                Err(BdlError::Planning {
-                    message: "这项内容已不在列表中，请重新加载。".into(),
-                })
+                Err(BdlError::classified(
+                    ErrorCode::QueueSelectionChanged,
+                    "这项内容已不在列表中，请重新加载。",
+                ))
             };
         match planned {
             Ok((planned, skipped)) => {
@@ -389,35 +397,9 @@ pub(crate) async fn plan_background_batch(
                 }
             }
             Err(error) => {
-                let planning_or_account = match error.root_cause() {
-                    BdlError::Account { .. } | BdlError::ParseRestricted { .. } => Some(true),
-                    BdlError::Planning { .. } => Some(false),
-                    _ => None,
-                };
+                let code = error.public_condition().code;
+                let blocked = preparation_blocking_codes().contains(&code);
                 let command_error = CommandError::from(error);
-                let blocked = planning_or_account.unwrap_or({
-                    matches!(
-                        command_error.code.as_str(),
-                        "source_rate_limited"
-                            | "source_verification_required"
-                            | "source_access_restricted"
-                            | "remote_forbidden"
-                            | "login_required"
-                            | "network_timeout"
-                            | "bilibili_request_failed"
-                            | "network_request_failed"
-                            | "database_error"
-                            | "data_format_error"
-                            | "file_access_denied"
-                            | "file_not_found"
-                            | "file_path_invalid"
-                            | "file_read_only"
-                            | "disk_full"
-                            | "local_io_failed"
-                            | "platform_error"
-                            | "parse_cancelled"
-                    )
-                });
                 if blocked {
                     result.blocked = Some(command_error);
                     break;
@@ -505,8 +487,11 @@ fn set_document_tree_target(
         let relative = task
             .output_path
             .strip_prefix(&options.output_dir)
-            .map_err(|_| BdlError::Planning {
-                message: "Android 工作路径超出应用私有目录。".into(),
+            .map_err(|_| {
+                BdlError::classified(
+                    ErrorCode::FileUnsafePath,
+                    "Android 工作路径超出应用私有目录。",
+                )
             })?;
         task.export_target = Some(DownloadExportTarget::DocumentTree {
             tree_uri: directory.tree_uri.clone(),
@@ -662,9 +647,10 @@ pub(crate) fn register(
             .count()
             >= 20
         {
-            return Err(BdlError::Planning {
-                message: "已有20批任务正在准备，请稍后再提交。".into(),
-            }
+            return Err(BdlError::classified(
+                ErrorCode::QueuePreparationFull,
+                "已有20批任务正在准备，请稍后再提交。",
+            )
             .into());
         }
         state.task_execution().set_preparation_active(&id, true)?;
@@ -754,7 +740,7 @@ pub(crate) async fn run(
     let _permit = tokio::select! {
         biased;
         _ = token.cancelled() => return Ok(None),
-        permit = state.preparations.gate.acquire() => permit.map_err(|_| BdlError::Planning { message: "准备队列已关闭。".into() })?,
+        permit = state.preparations.gate.acquire() => permit.map_err(|_| BdlError::classified(ErrorCode::QueuePreparationInterrupted, "准备队列已关闭。"))?,
     };
     let checkpoint_every = input
         .tree
@@ -873,6 +859,7 @@ impl AppState {
             entry.plan = None;
             entry.job.status = PreparationStatus::Failed;
             entry.job.error = Some(CommandError {
+                problem: Some(Box::new(ErrorCode::AccountChanged.into())),
                 code: "account_changed".into(),
                 message: "账号已变化，任务准备已停止，请重新提交。".into(),
                 detail: Some(format!(
@@ -893,18 +880,19 @@ pub async fn preparation_confirm(
     policy: DuplicateTaskPolicy,
 ) -> CommandResult<()> {
     if matches!(policy, DuplicateTaskPolicy::Ask) {
-        return Err(BdlError::Planning {
-            message: "请选择重复任务处理方式。".into(),
-        }
+        return Err(BdlError::classified(
+            ErrorCode::QueueDuplicatePolicy,
+            "请选择重复任务处理方式。",
+        )
         .into());
     }
     let result = {
         let mut entries = state.preparations.entries.lock().unwrap();
-        let entry = entries.get_mut(&job_id).ok_or_else(|| BdlError::Planning {
-            message: "未找到准备任务。".into(),
-        })?;
-        let plan = entry.plan.as_ref().ok_or_else(|| BdlError::Planning {
-            message: "该任务当前无需确认。".into(),
+        let entry = entries
+            .get_mut(&job_id)
+            .ok_or_else(|| BdlError::classified(ErrorCode::QueueTaskMissing, "未找到准备任务。"))?;
+        let plan = entry.plan.as_ref().ok_or_else(|| {
+            BdlError::classified(ErrorCode::QueueTransitionBlocked, "该任务当前无需确认。")
         })?;
         state.check_account_revision(plan.account_revision)?;
         let result = commit_prepared_job(
@@ -929,10 +917,9 @@ pub fn preparation_dismiss(state: tauri::State<'_, AppState>, job_id: String) ->
         .get(&job_id)
         .is_some_and(|entry| entry.job.status.active())
     {
-        return Err(BdlError::Planning {
-            message: "请先停止任务准备。".into(),
-        }
-        .into());
+        return Err(
+            BdlError::classified(ErrorCode::QueueTransitionBlocked, "请先停止任务准备。").into(),
+        );
     }
     state
         .storage

@@ -1,3 +1,4 @@
+use bdl_core::public_error::ErrorCode;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::PathBuf;
@@ -471,9 +472,10 @@ impl AppState {
     ) -> BdlResult<DuplicateTaskEnqueueResult> {
         let mut queue = self.queue_edit()?;
         if self.file_cleanup_active.load(Ordering::SeqCst) {
-            return Err(BdlError::Planning {
-                message: "正在清理文件，请稍后创建任务。".into(),
-            });
+            return Err(BdlError::classified(
+                ErrorCode::QueueCleanupInProgress,
+                "正在清理文件，请稍后创建任务。",
+            ));
         }
         dedupe_tasks_by_id(&mut queue);
         let duplicates = duplicate_task_matches(&tasks, &queue);
@@ -674,13 +676,17 @@ impl AppState {
         let task = queue
             .iter_mut()
             .find(|task| task.id == task_id)
-            .ok_or_else(|| BdlError::Planning {
-                message: format!("任务 `{task_id}` 不存在。"),
+            .ok_or_else(|| {
+                BdlError::classified(
+                    bdl_core::public_error::ErrorCode::QueueTaskMissing,
+                    format!("任务 `{task_id}` 不存在。"),
+                )
             })?;
         if !matches!(task.status, TaskStatus::Waiting | TaskStatus::Paused) {
-            return Err(BdlError::Planning {
-                message: "只有排队中或已暂停的任务可以设置开始时间。".to_owned(),
-            });
+            return Err(BdlError::classified(
+                ErrorCode::QueueScheduleUnavailable,
+                "只有排队中或已暂停的任务可以设置开始时间。",
+            ));
         }
 
         task.status = TaskStatus::Waiting;
@@ -696,21 +702,28 @@ impl AppState {
         task_id: &str,
         speed_limit_bytes_per_second: Option<u64>,
     ) -> BdlResult<DownloadTask> {
-        validate_speed_limit(speed_limit_bytes_per_second, "单任务下载限速")?;
+        validate_speed_limit(
+            speed_limit_bytes_per_second,
+            bdl_core::settings::SpeedLimitScope::Task,
+        )?;
         let mut queue = self.queue_edit()?;
         let task = queue
             .iter_mut()
             .find(|task| task.id == task_id)
-            .ok_or_else(|| BdlError::Planning {
-                message: format!("任务 `{task_id}` 不存在。"),
+            .ok_or_else(|| {
+                BdlError::classified(
+                    bdl_core::public_error::ErrorCode::QueueTaskMissing,
+                    format!("任务 `{task_id}` 不存在。"),
+                )
             })?;
         if !matches!(
             task.status,
             TaskStatus::Waiting | TaskStatus::Paused | TaskStatus::Failed
         ) {
-            return Err(BdlError::Planning {
-                message: "请先暂停任务，再修改单任务下载限速。".to_owned(),
-            });
+            return Err(BdlError::classified(
+                ErrorCode::QueuePauseBeforeLimit,
+                "请先暂停任务，再修改单任务下载限速。",
+            ));
         }
 
         task.speed_limit_bytes_per_second = speed_limit_bytes_per_second;
@@ -728,8 +741,11 @@ impl AppState {
         let task_index = queue
             .iter()
             .position(|task| task.id == task_id)
-            .ok_or_else(|| BdlError::Planning {
-                message: format!("任务 `{task_id}` 不存在。"),
+            .ok_or_else(|| {
+                BdlError::classified(
+                    bdl_core::public_error::ErrorCode::QueueTaskMissing,
+                    format!("任务 `{task_id}` 不存在。"),
+                )
             })?;
 
         let current = queue[task_index].status;
@@ -782,15 +798,19 @@ impl AppState {
                 continue;
             }
             let Some(&index) = indices.get(id) else {
-                result
-                    .failed
-                    .push((id.clone(), format!("任务 `{id}` 不存在。")));
+                result.failed.push((
+                    id.clone(),
+                    bdl_core::BdlError::classified(
+                        bdl_core::public_error::ErrorCode::QueueTaskMissing,
+                        format!("任务 `{id}` 不存在。"),
+                    ),
+                ));
                 continue;
             };
             if (status.can_start() || retry)
                 && let Err(error) = self.ensure_not_removing(id)
             {
-                result.failed.push((id.clone(), error.to_string()));
+                result.failed.push((id.clone(), error));
                 continue;
             }
             let task = &mut queue[index];
@@ -800,7 +820,10 @@ impl AppState {
                 if ignores_status_transition(task.status, status) {
                     result.failed.push((
                         id.clone(),
-                        "任务已开始合并或已完成，无法暂停或取消。".into(),
+                        bdl_core::BdlError::classified(
+                            bdl_core::public_error::ErrorCode::QueueTransitionBlocked,
+                            "任务已开始合并或已完成，无法暂停或取消。",
+                        ),
                     ));
                     continue;
                 }
@@ -865,16 +888,22 @@ impl AppState {
         let current = queue
             .iter_mut()
             .find(|task| task.id == task_id)
-            .ok_or_else(|| BdlError::Planning {
-                message: format!("任务 `{task_id}` 不存在。"),
+            .ok_or_else(|| {
+                BdlError::classified(
+                    bdl_core::public_error::ErrorCode::QueueTaskMissing,
+                    format!("任务 `{task_id}` 不存在。"),
+                )
             })?;
         let mut task = current.clone();
         let resource = task
             .resources
             .iter_mut()
             .find(|resource| resource.id == resource_id)
-            .ok_or_else(|| BdlError::Planning {
-                message: format!("资源 `{resource_id}` 不存在。"),
+            .ok_or_else(|| {
+                BdlError::classified(
+                    ErrorCode::MediaInputMissing,
+                    format!("资源 `{resource_id}` 不存在。"),
+                )
             })?;
 
         resource.status = status;
@@ -887,8 +916,11 @@ impl AppState {
         let task_index = queue
             .iter()
             .position(|task| task.id == task_id)
-            .ok_or_else(|| BdlError::Planning {
-                message: format!("任务 `{task_id}` 不存在。"),
+            .ok_or_else(|| {
+                BdlError::classified(
+                    bdl_core::public_error::ErrorCode::QueueTaskMissing,
+                    format!("任务 `{task_id}` 不存在。"),
+                )
             })?;
 
         reset_task_for_retry(&mut queue[task_index]);
@@ -903,6 +935,7 @@ impl AppState {
         task_id: &str,
         next: TaskStatus,
         cancel_token: &FetchCancelToken,
+        failure: Option<&QueueLogEntry>,
     ) -> BdlResult<Option<DownloadTask>> {
         let mut queue = self.queue_edit()?;
         let Some(task) = queue.iter_mut().find(|task| task.id == task_id) else {
@@ -927,7 +960,15 @@ impl AppState {
             task.status = next;
         }
         let updated = task.clone();
-        self.persist_queue_edit(&mut queue)?;
+        if let Some(failure) = failure {
+            self.storage
+                .lock()
+                .map_err(|_| state_poisoned("storage"))?
+                .apply_queue_failure(&queue.current, &queue.next, failure)?;
+            self.install_queue_edit(&mut queue);
+        } else {
+            self.persist_queue_edit(&mut queue)?;
+        }
         Ok(Some(updated))
     }
 
@@ -943,21 +984,24 @@ impl AppState {
                 && resource.status != ResourceStatus::Completed
         });
         if needs_audio && task.media_selection.audio_codec.is_none() {
-            return Err(BdlError::Planning {
-                message: "此旧任务未记录音频编码，无法刷新下载地址，请重新创建任务。".to_owned(),
-            });
+            return Err(BdlError::classified(
+                ErrorCode::QueueRefreshMetadataMissing,
+                "此旧任务未记录音频编码，无法刷新下载地址，请重新创建任务。",
+            ));
         }
         let refresh_ids = task_media_refresh_ids(&task)?;
         let refreshed = self
             .resolve_media_input_with_streams(refresh_ids.input, Some(refresh_ids.cid), cooldown)
             .await?;
-        let part =
-            find_part_by_cid(&refreshed, refresh_ids.cid).ok_or_else(|| BdlError::Planning {
-                message: format!(
+        let part = find_part_by_cid(&refreshed, refresh_ids.cid).ok_or_else(|| {
+            BdlError::classified(
+                ErrorCode::QueueSelectionChanged,
+                format!(
                     "刷新下载地址失败：视频解析结果缺少 CID `{}`。",
                     refresh_ids.cid
                 ),
-            })?;
+            )
+        })?;
         let needs_video = task.resources.iter().any(|resource| {
             resource.intent == DownloadResourceIntent::Video
                 && resource.status != ResourceStatus::Completed
@@ -971,8 +1015,11 @@ impl AppState {
                     Some(&task.media_selection.video_codec),
                     task.media_selection.video_bandwidth,
                 )
-                .ok_or_else(|| BdlError::Planning {
-                    message: format!("刷新下载地址失败：`{}` 缺少视频流。", part.title),
+                .ok_or_else(|| {
+                    BdlError::classified(
+                        ErrorCode::DownloadNoTracks,
+                        format!("刷新下载地址失败：`{}` 缺少视频流。", part.title),
+                    )
                 })?,
             )
         } else {
@@ -987,8 +1034,11 @@ impl AppState {
                     task.media_selection.audio_codec.as_deref(),
                     task.media_selection.audio_bandwidth,
                 )
-                .ok_or_else(|| BdlError::Planning {
-                    message: format!("刷新下载地址失败：`{}` 缺少音频流。", part.title),
+                .ok_or_else(|| {
+                    BdlError::classified(
+                        ErrorCode::DownloadNoTracks,
+                        format!("刷新下载地址失败：`{}` 缺少音频流。", part.title),
+                    )
                 })?,
             )
         } else {
@@ -1006,8 +1056,11 @@ impl AppState {
             .iter()
             .find(|task| task.id == task_id)
             .map(|task| task.status)
-            .ok_or_else(|| BdlError::Planning {
-                message: format!("任务 `{task_id}` 不存在。"),
+            .ok_or_else(|| {
+                BdlError::classified(
+                    bdl_core::public_error::ErrorCode::QueueTaskMissing,
+                    format!("任务 `{task_id}` 不存在。"),
+                )
             })
     }
 
@@ -1050,8 +1103,11 @@ impl AppState {
             .iter()
             .find(|task| task.id == task_id)
             .cloned()
-            .ok_or_else(|| BdlError::Planning {
-                message: format!("任务 `{task_id}` 不存在。"),
+            .ok_or_else(|| {
+                BdlError::classified(
+                    bdl_core::public_error::ErrorCode::QueueTaskMissing,
+                    format!("任务 `{task_id}` 不存在。"),
+                )
             })
     }
 
@@ -1131,8 +1187,11 @@ impl AppState {
                     .strip_prefix(&planned.id)
                     .and_then(|suffix| suffix.strip_prefix(":copy:"))
                     .and_then(|index| index.parse().ok())
-                    .ok_or_else(|| BdlError::Planning {
-                        message: "下载任务标识已改变。".into(),
+                    .ok_or_else(|| {
+                        BdlError::classified(
+                            ErrorCode::QueueSelectionChanged,
+                            "下载任务标识已改变。",
+                        )
                     })?;
                 let mut reserved = others.iter().flat_map(DownloadTask::file_paths).collect();
                 let path = bdl_core::naming::unique_path_with_stem_limit(
@@ -1178,8 +1237,8 @@ impl AppState {
         }
         let total = parts.len();
         let mut pending = std::collections::VecDeque::from(parts);
-        let first = pending.pop_front().ok_or_else(|| BdlError::Planning {
-            message: "该投稿没有可下载的视频。".into(),
+        let first = pending.pop_front().ok_or_else(|| {
+            BdlError::classified(ErrorCode::DownloadNoTracks, "该投稿没有可下载的视频。")
         })?;
         task.media_selection.deferred = Some(Box::new(first));
         task.media_selection.post = Some(Box::new(PostDownload {
@@ -1242,8 +1301,11 @@ impl AppState {
         let task_index = queue
             .iter()
             .position(|task| task.id == task_id)
-            .ok_or_else(|| BdlError::Planning {
-                message: format!("任务 `{task_id}` 不存在。"),
+            .ok_or_else(|| {
+                BdlError::classified(
+                    bdl_core::public_error::ErrorCode::QueueTaskMissing,
+                    format!("任务 `{task_id}` 不存在。"),
+                )
             })?;
 
         for resource in &mut queue[task_index].resources {
@@ -1281,6 +1343,7 @@ impl AppState {
 
     pub fn append_operation_error(
         &self,
+        problem: Option<&bdl_core::public_error::PublicError>,
         command: &str,
         code: &str,
         message: &str,
@@ -1290,7 +1353,7 @@ impl AppState {
         self.storage
             .lock()
             .map_err(|_| state_poisoned("storage"))?
-            .append_operation_error(command, code, message, detail, environment)
+            .append_operation_error(problem, command, code, message, detail, environment)
     }
 
     pub fn operation_errors(
@@ -1361,8 +1424,11 @@ impl AppState {
         let task = queue
             .iter_mut()
             .find(|task| task.id == task_id)
-            .ok_or_else(|| BdlError::Planning {
-                message: format!("未找到任务 {task_id}。"),
+            .ok_or_else(|| {
+                BdlError::classified(
+                    ErrorCode::QueueTaskMissing,
+                    format!("未找到任务 {task_id}。"),
+                )
             })?;
         task.export_target = export_target;
         let updated = task.clone();
@@ -1382,8 +1448,11 @@ impl AppState {
         let task = queue
             .iter_mut()
             .find(|task| task.id == task_id)
-            .ok_or_else(|| BdlError::Planning {
-                message: format!("未找到任务 {task_id}。"),
+            .ok_or_else(|| {
+                BdlError::classified(
+                    ErrorCode::QueueTaskMissing,
+                    format!("未找到任务 {task_id}。"),
+                )
             })?;
         task.export_target = export_target;
         task.media_selection.artifacts = artifacts;
@@ -1407,8 +1476,11 @@ impl AppState {
         let task = queue
             .iter_mut()
             .find(|task| task.id == task_id)
-            .ok_or_else(|| BdlError::Planning {
-                message: format!("未找到任务 {task_id}。"),
+            .ok_or_else(|| {
+                BdlError::classified(
+                    ErrorCode::QueueTaskMissing,
+                    format!("未找到任务 {task_id}。"),
+                )
             })?;
         task.media_selection.outputs_verified = true;
         let updated = task.clone();
@@ -2013,9 +2085,10 @@ pub type SettingsSnapshot = AppSettings;
 pub type AccountSnapshot = AccountSummary;
 
 fn state_poisoned(name: &'static str) -> BdlError {
-    BdlError::Planning {
-        message: format!("state lock `{name}` is poisoned"),
-    }
+    BdlError::classified(
+        ErrorCode::PlatformFailed,
+        format!("state lock `{name}` is poisoned"),
+    )
 }
 
 fn account_session_changed() -> BdlError {
@@ -2190,8 +2263,11 @@ fn legacy_task_media_refresh_ids(task: &DownloadTask) -> BdlResult<TaskMediaRefr
         .id
         .split_once(":part:")
         .map(|(_, part_segment)| part_segment)
-        .ok_or_else(|| BdlError::Planning {
-            message: format!("任务 `{}` 缺少可刷新媒体标识。", task.title),
+        .ok_or_else(|| {
+            BdlError::classified(
+                ErrorCode::QueueRefreshMetadataMissing,
+                format!("任务 `{}` 缺少可刷新媒体标识。", task.title),
+            )
         })?;
 
     if let Some(ids) = episode_task_media_refresh_ids(part_segment, "bangumi")? {
@@ -2206,14 +2282,20 @@ fn legacy_task_media_refresh_ids(task: &DownloadTask) -> BdlResult<TaskMediaRefr
     let video_key = parts
         .next()
         .filter(|value| !value.is_empty())
-        .ok_or_else(|| BdlError::Planning {
-            message: format!("任务 `{}` 缺少视频 ID，无法刷新下载地址。", task.title),
+        .ok_or_else(|| {
+            BdlError::classified(
+                ErrorCode::QueueRefreshMetadataMissing,
+                format!("任务 `{}` 缺少视频 ID，无法刷新下载地址。", task.title),
+            )
         })?;
     let cid = parts
         .next()
         .and_then(|value| value.parse::<u64>().ok())
-        .ok_or_else(|| BdlError::Planning {
-            message: format!("任务 `{}` 缺少 CID，无法刷新下载地址。", task.title),
+        .ok_or_else(|| {
+            BdlError::classified(
+                ErrorCode::QueueRefreshMetadataMissing,
+                format!("任务 `{}` 缺少 CID，无法刷新下载地址。", task.title),
+            )
         })?;
     let input = match classify_input(video_key)? {
         ClassifiedInput::VideoAid(aid) => ClassifiedInput::VideoAid(aid),
@@ -2237,14 +2319,23 @@ fn episode_task_media_refresh_ids(
         return Ok(None);
     }
 
-    let _season_id = parse_positive_u64(parts.next()).ok_or_else(|| BdlError::Planning {
-        message: format!("任务缺少 {kind} season ID，无法刷新下载地址。"),
+    let _season_id = parse_positive_u64(parts.next()).ok_or_else(|| {
+        BdlError::classified(
+            ErrorCode::QueueRefreshMetadataMissing,
+            format!("任务缺少 {kind} season ID，无法刷新下载地址。"),
+        )
     })?;
-    let ep_id = parse_positive_u64(parts.next()).ok_or_else(|| BdlError::Planning {
-        message: format!("任务缺少 {kind} ep ID，无法刷新下载地址。"),
+    let ep_id = parse_positive_u64(parts.next()).ok_or_else(|| {
+        BdlError::classified(
+            ErrorCode::QueueRefreshMetadataMissing,
+            format!("任务缺少 {kind} ep ID，无法刷新下载地址。"),
+        )
     })?;
-    let cid = parse_positive_u64(parts.next()).ok_or_else(|| BdlError::Planning {
-        message: format!("任务缺少 {kind} CID，无法刷新下载地址。"),
+    let cid = parse_positive_u64(parts.next()).ok_or_else(|| {
+        BdlError::classified(
+            ErrorCode::QueueRefreshMetadataMissing,
+            format!("任务缺少 {kind} CID，无法刷新下载地址。"),
+        )
     })?;
     let raw_url = format!("https://www.bilibili.com/{kind}/play/ep{ep_id}");
     let input = match kind {
@@ -2590,7 +2681,7 @@ mod tests {
         assert!(state.take_next_startable_task().unwrap().is_none());
         assert!(
             state
-                .finish_task_attempt("task:refresh", TaskStatus::Failed, &token)
+                .finish_task_attempt("task:refresh", TaskStatus::Failed, &token, None)
                 .unwrap()
                 .is_none()
         );
@@ -2616,7 +2707,7 @@ mod tests {
         let state = test_state_with_tasks(&data_dir, vec![task]);
         let token = state.register_task_cancel_token("task:refresh").unwrap();
         let retried = state
-            .finish_task_attempt("task:refresh", TaskStatus::Waiting, &token)
+            .finish_task_attempt("task:refresh", TaskStatus::Waiting, &token, None)
             .unwrap()
             .unwrap();
         assert_eq!(retried.status, TaskStatus::Waiting);
@@ -2671,12 +2762,24 @@ mod tests {
             .unwrap();
         assert!(state.queue_revision() > revision);
         token.cancel(); // Pause during muxing is ignored; a real mux failure still counts.
+        let problem = crate::commands::CommandError::coded(
+            bdl_core::public_error::ErrorCode::MediaFfmpegMissing,
+            "ffmpeg",
+        );
+        let entry = problem.task_log("task:refresh", "mux");
         let failed = state
-            .finish_task_attempt("task:refresh", TaskStatus::Failed, &token)
+            .finish_task_attempt("task:refresh", TaskStatus::Failed, &token, Some(&entry))
             .unwrap()
             .unwrap();
         assert_eq!(failed.status, TaskStatus::Failed);
         drop(state);
+        let reopened = TaskStorage::open(data_dir.join("tasks.sqlite")).unwrap();
+        assert_eq!(reopened.load_tasks().unwrap()[0].status, TaskStatus::Failed);
+        assert_eq!(
+            reopened.load_task_logs("task:refresh", 1).unwrap()[0].problem,
+            entry.problem
+        );
+        drop(reopened);
         let _ = std::fs::remove_dir_all(data_dir);
     }
 
@@ -2693,7 +2796,7 @@ mod tests {
                 state.update_task_status("task:refresh", status).unwrap();
                 assert!(
                     state
-                        .finish_task_attempt("task:refresh", next, &token)
+                        .finish_task_attempt("task:refresh", next, &token, None)
                         .unwrap()
                         .is_none()
                 );
@@ -3958,18 +4061,14 @@ mod tests {
             })
             .collect::<Vec<_>>()
             .join("\n");
-        let failure = crate::commands::CommandError::from(bdl_core::BdlError::Fetch {
-            message: format!(
+        let failure = crate::commands::CommandError::from(bdl_core::BdlError::classified(
+            bdl_core::public_error::ErrorCode::DownloadBodyFailed,
+            format!(
                 "[stage=fetch_resource code=response_body_failed] {sources}\nCookie: SESSDATA=private-cookie\nhttps://cdn.test/video?token=private-token"
             ),
-        });
+        ));
         state
-            .append_task_log(bdl_core::queue::QueueLogEntry {
-                task_id: task_id.to_owned(),
-                level: bdl_core::queue::QueueLogLevel::Error,
-                message: failure.diagnostic_message(),
-                created_at: Utc::now().to_rfc3339(),
-            })
+            .append_task_log(failure.task_log(task_id, "download_video"))
             .expect("diagnostic should persist");
         let log =
             crate::diagnostic_export::redact_log(state.task_logs(task_id, 10).unwrap().remove(0));
@@ -3981,6 +4080,7 @@ mod tests {
         assert!(!log.message.contains("<truncated>"));
         state
             .append_operation_error(
+                failure.problem.as_deref(),
                 "selection_create_tasks",
                 &failure.code,
                 &failure.message,
@@ -3991,6 +4091,8 @@ mod tests {
         drop(state);
         let reopened = TaskStorage::open(data_dir.join("tasks.sqlite")).unwrap();
         let persisted = reopened.operation_errors(20).unwrap();
+        assert_eq!(persisted[0].problem.as_ref(), failure.problem.as_deref());
+        assert_eq!(log.problem.as_ref(), failure.problem.as_deref());
         let detail = persisted[0].detail.as_deref().unwrap();
         for source in 1..=3 {
             assert!(detail.contains(&format!("cause=source-{source}-end")));
