@@ -9,6 +9,7 @@ use bdl_core::account::{
     AccountLibraryFolderKind, AccountLibraryPage, AccountSummary, ImportedCookie,
     account_library_page, verify_cookie_session,
 };
+use bdl_core::error::IoResultExt;
 use bdl_core::fetcher::{BandwidthLimiter, FetchCancelToken};
 use bdl_core::ids::PartId;
 use bdl_core::input::{ClassifiedInput, classify_input};
@@ -93,6 +94,7 @@ pub struct AppState {
     mobile_storage: MobileStorage,
     media_mux: MediaMuxBackend,
     task_execution: TaskExecutionBackend,
+    _queue_owner: fs::File,
 }
 
 #[derive(serde::Serialize)]
@@ -204,6 +206,7 @@ impl AppState {
             .as_deref()
             .map(PathBuf::from)
             .unwrap_or(default_data_dir);
+        let queue_owner = lock_queue_directory(&data_dir)?;
         let mut storage = TaskStorage::open(data_dir.join("tasks.sqlite"))?;
         let mut queue = storage.load_tasks()?;
         let startup_recovery = prepare_startup_recovery(&mut queue, settings.startup_auto_recovery);
@@ -255,6 +258,7 @@ impl AppState {
             mobile_storage,
             media_mux,
             task_execution,
+            _queue_owner: queue_owner,
         })
     }
 
@@ -2032,6 +2036,26 @@ fn has_persisted_state(path: &std::path::Path) -> bool {
     path.join("settings.json").is_file() || path.join("tasks.sqlite").is_file()
 }
 
+fn lock_queue_directory(data_dir: &std::path::Path) -> BdlResult<fs::File> {
+    fs::create_dir_all(data_dir).path_context("create_queue_directory", data_dir)?;
+    let path = data_dir.join("queue.lock");
+    // Keep the same inode across restarts. Only the OS lock grants ownership.
+    let file = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(&path)
+        .path_context("open_queue_lock", &path)?;
+    match fs2::FileExt::try_lock_exclusive(&file) {
+        Ok(()) => Ok(file),
+        Err(error) if error.raw_os_error() == fs2::lock_contended_error().raw_os_error() => {
+            Err(BdlError::QueueInUse)
+        }
+        Err(error) => Err(error).path_context("lock_queue_directory", &path),
+    }
+}
+
 fn load_settings(path: &PathBuf) -> BdlResult<SettingsSnapshot> {
     match fs::read_to_string(path) {
         Ok(raw) => Ok(serde_json::from_str::<SettingsSnapshot>(&raw)?.normalized()),
@@ -2488,6 +2512,38 @@ mod tests {
         std::fs::write(preferred.join("settings.json"), "{}")
             .expect("preferred marker should be written");
         assert_eq!(select_startup_data_dir(&preferred, &legacy), preferred);
+
+        let state = AppState::new(&preferred, root.join("downloads")).unwrap();
+        let mut task = task_with_id("task:owned");
+        task.status = TaskStatus::Waiting;
+        state
+            .enqueue_tasks_with_duplicate_policy(
+                vec![task],
+                DuplicateTaskPolicy::Skip,
+                DuplicateNamingStrategy::AppendSuffix,
+            )
+            .unwrap();
+        state.take_next_startable_task().unwrap().unwrap();
+        assert!(matches!(
+            AppState::new(&preferred, root.join("downloads")),
+            Err(bdl_core::BdlError::QueueInUse)
+        ));
+        assert_eq!(
+            state.task_status("task:owned").unwrap(),
+            TaskStatus::Downloading
+        );
+        let persisted = TaskStorage::open(preferred.join("tasks.sqlite"))
+            .unwrap()
+            .load_tasks()
+            .unwrap();
+        assert_eq!(persisted[0].status, TaskStatus::Downloading);
+        drop(state);
+        let reopened = AppState::new(&preferred, root.join("downloads")).unwrap();
+        assert_eq!(
+            reopened.task_status("task:owned").unwrap(),
+            TaskStatus::Paused
+        );
+        drop(reopened);
 
         let _ = std::fs::remove_dir_all(root);
     }
@@ -3960,6 +4016,7 @@ mod tests {
             mobile_storage: crate::mobile_storage::MobileStorage::unsupported(),
             media_mux: crate::media_mux::MediaMuxBackend::platform_default(),
             task_execution: crate::task_execution::TaskExecutionBackend::noop(),
+            _queue_owner: super::lock_queue_directory(data_dir).unwrap(),
         }
     }
 

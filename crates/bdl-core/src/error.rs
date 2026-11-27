@@ -65,6 +65,9 @@ pub enum BdlError {
     #[error("planning error: {message}")]
     Planning { message: String },
 
+    #[error("此数据目录正在被另一个 BDL 实例使用。请关闭另一个实例后再打开。")]
+    QueueInUse,
+
     #[error("解析已停止。\n{context}")]
     ParseCancelled { context: String },
 

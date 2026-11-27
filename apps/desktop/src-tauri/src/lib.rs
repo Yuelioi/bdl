@@ -1,4 +1,5 @@
 use tauri::Manager;
+use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 #[cfg(desktop)]
 mod mcp;
 mod updates;
@@ -89,10 +90,28 @@ pub fn run() {
                 app.state::<bdl_tauri::task_execution::TaskExecutionBackend>()
                     .inner()
                     .clone(),
-            )?;
+            );
 
             #[cfg(not(target_os = "android"))]
-            let state = bdl_tauri::state::AppState::new(data_dir, download_dir)?;
+            let state = bdl_tauri::state::AppState::new(data_dir, download_dir);
+
+            let state = match state {
+                Ok(state) => state,
+                Err(error @ bdl_core::BdlError::QueueInUse) => {
+                    #[cfg(desktop)]
+                    for window in app.webview_windows().values() {
+                        window.hide()?;
+                    }
+                    let handle = app.handle().clone();
+                    app.dialog()
+                        .message(error.to_string())
+                        .title("BDL")
+                        .kind(MessageDialogKind::Warning)
+                        .show(move |_| handle.exit(0));
+                    return Ok(());
+                }
+                Err(error) => return Err(error.into()),
+            };
 
             app.manage(state);
             #[cfg(desktop)]

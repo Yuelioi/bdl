@@ -491,6 +491,7 @@ dependencies = [
  "bdl-core",
  "bpi-rs",
  "chrono",
+ "fs2",
  "futures",
  "keyring",
  "percent-encoding",
