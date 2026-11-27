@@ -46,7 +46,7 @@ pub(crate) fn ignores_status_transition(current: TaskStatus, next: TaskStatus) -
             TaskStatus::Paused | TaskStatus::Cancelled
         ) | (
             TaskStatus::Paused | TaskStatus::Cancelled,
-            TaskStatus::Muxing
+            TaskStatus::MuxQueued | TaskStatus::Muxing
         )
     )
 }
@@ -209,6 +209,7 @@ pub(crate) fn prepare_startup_recovery(
             TaskStatus::Waiting
                 | TaskStatus::Parsing
                 | TaskStatus::Downloading
+                | TaskStatus::MuxQueued
                 | TaskStatus::Muxing
         ) {
             continue;

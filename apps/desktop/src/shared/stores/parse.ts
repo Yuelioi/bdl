@@ -1114,6 +1114,6 @@ const shouldStopBackgroundParsing = (message: string): boolean => {
   // Content titles may themselves contain restriction words or HTTP-like numbers.
   if (message.startsWith('planning error:') && /缺少(?:视频|音频)流|没有符合.*偏好|没有可用的 SDR/.test(message)) return false
   const code = classifyFailure(message)?.code
-  if (code && ['file_not_found', 'file_path_invalid', 'file_access_denied', 'file_read_only', 'disk_full', 'local_io_failed', 'database_error', 'data_format_error', 'bilibili_request_failed', 'network_request_failed', 'network_timeout', 'parse_cancelled'].includes(code)) return true
+  if (code && ['file_not_found', 'file_path_invalid', 'file_access_denied', 'file_read_only', 'disk_full', 'local_io_failed', 'database_error', 'data_format_error', 'bilibili_request_failed', 'network_request_failed', 'network_timeout', 'parse_cancelled', 'login_required', 'source_rate_limited', 'source_verification_required', 'source_access_restricted', 'remote_forbidden'].includes(code)) return true
   return /(?:^|[^\d])(?:-352|-412|-509|-799|401|403|412|429)(?:[^\d]|$)|限流|验证|风控|captcha|too many requests|解析已因|源站限制|登录状态可能已失效|storage error|io error|platform error|保存目录|磁盘|空间不足|后台创建下载任务失败/i.test(message)
 }

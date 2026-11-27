@@ -218,13 +218,16 @@
   },
   {
     "code": "login_required",
-    "summary": "登录状态失效",
-    "detail": "请求缺少有效登录凭据，请重新登录后重试。",
+    "summary": "需要登录 B 站",
+    "detail": "请在 BDL 登录 B 站账号后重试。已登录时，请重新登录。",
     "recommended_action": "login_then_retry",
     "contains": [
       "[-101]",
       "code=-101",
       "未登录",
+      "需要登录",
+      "请先登录",
+      "登录状态失效",
       "cookie 已失效",
       "cookie已失效",
       "cookie expired",
@@ -239,8 +242,8 @@
   },
   {
     "code": "source_rate_limited",
-    "summary": "请求过于频繁",
-    "detail": "源站限制了请求频率。请暂停批量任务，稍后降低任务并发和分段数再试；如日志有等待时间，请按该时间重试。",
+    "summary": "B 站限制了请求频率",
+    "detail": "先暂停批量操作，稍后再试。",
     "recommended_action": "inspect_raw_log",
     "contains": [
       "[-509]",
@@ -258,7 +261,7 @@
   {
     "code": "source_verification_required",
     "summary": "可能触发了 B 站风控",
-    "detail": "请稍后重试。如果持续出现此提示，请反馈问题。",
+    "detail": "先暂停批量操作，稍后重试。若 B 站网页要求验证，请先完成验证。",
     "recommended_action": "inspect_raw_log",
     "contains": [
       "[-352]",
@@ -276,8 +279,8 @@
   },
   {
     "code": "remote_forbidden",
-    "summary": "源站拒绝访问",
-    "detail": "源站拒绝了请求，单凭 403 无法判断登录、资源权限或访问限制。请查看原始日志，并在 B 站确认来源内容可播放。",
+    "summary": "B 站请求被拒绝",
+    "detail": "请在 B 站打开原内容，确认当前账号能播放。若能播放，请稍后再试。",
     "recommended_action": "inspect_raw_log",
     "contains": [
       "forbidden"
@@ -288,19 +291,20 @@
   },
   {
     "code": "source_access_restricted",
-    "summary": "源站访问受限",
-    "detail": "源站限制了访问，请查看原始日志中的状态码及等待时间，稍后手动重试。",
+    "summary": "B 站请求暂时受限",
+    "detail": "请暂停批量操作，稍后手动重试。",
     "recommended_action": "inspect_raw_log",
     "contains": [
       "source restriction",
-      "shared http budget"
+      "shared http budget",
+      "b 站请求暂时受限"
     ],
     "http_statuses": []
   },
   {
     "code": "missing_ffmpeg",
     "summary": "未找到 FFmpeg",
-    "detail": "未检测到可用的 FFmpeg，请在设置中配置后重试。",
+    "detail": "请在设置中选择 FFmpeg 可执行文件，检查就绪并保存后重试。",
     "recommended_action": "configure_ffmpeg",
     "contains": [
       "ffmpeg not found",

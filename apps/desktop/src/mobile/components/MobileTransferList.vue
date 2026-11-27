@@ -11,8 +11,9 @@ import MediaArtwork from './MediaArtwork.vue';
 import MobileListCard from './MobileListCard.vue';
 import { useQueueStore } from '../../shared/stores/queue';
 import { useParseStore } from '../../shared/stores/parse';
+import type { TransferTaskRow } from '../../shared/features/transfer/useTransferPage';
 const props = defineProps<{
-  views: TransferTaskView[];
+  rows: TransferTaskRow[];
   selectedTaskIds: string[];
   managing: boolean;
   loading?: boolean;
@@ -25,8 +26,8 @@ const emit = defineEmits<{
 }>();
 const queue = useQueueStore();
 const parse = useParseStore();
-const artwork = computed(() => {
-  const parts = new Map(
+const parts = computed(() =>
+  new Map(
     Object.values(parse.sources).flatMap((source) =>
       source.groups.flatMap((group) =>
         group.items.flatMap((item) =>
@@ -39,22 +40,15 @@ const artwork = computed(() => {
         ),
       ),
     ),
-  );
-  return new Map(
-    queue.tasks.map((task) => {
-      const metadata = task.refresh_intent ? parts.get(task.refresh_intent.cid) : undefined;
-      return [
-        task.id,
-        {
-          src:
-            task.refresh_intent?.cover_url ??
-            metadata?.src ??
-            task.resources.find((resource) => resource.intent === 'cover')?.current_urls[0],
-        },
-      ];
-    }),
-  );
-});
+  ),
+);
+const artwork = (taskId: string) => {
+  const task = queue.tasksById.get(taskId);
+  if (!task) return;
+  return task.refresh_intent?.cover_url ??
+    (task.refresh_intent ? parts.value.get(task.refresh_intent.cid)?.src : undefined) ??
+    task.resources.find((resource) => resource.intent === 'cover')?.current_urls[0];
+};
 const offset = ref(0);
 const height = ref(600);
 const listCard = ref<InstanceType<typeof MobileListCard>>();
@@ -79,13 +73,13 @@ onMounted(() => {
   resizeObserver = new ResizeObserver(updateGeometry);
   if (scroller.value) resizeObserver.observe(scroller.value);
 });
-watch(() => props.views.length, updateGeometry, { flush: 'post' });
+watch(() => props.rows.length, updateGeometry, { flush: 'post' });
 onUnmounted(() => {
   resizeObserver?.disconnect();
   cancelPress();
 });
-const window = computed(() => calculateVirtualWindow(props.views.length, offset.value, height.value, rowHeight.value));
-const visible = computed(() => props.views.slice(window.value.start, window.value.end));
+const window = computed(() => calculateVirtualWindow(props.rows.length, offset.value, height.value, rowHeight.value));
+const visible = computed(() => props.rows.slice(window.value.start, window.value.end).map((row) => row.view.value));
 const selected = computed(() => new Set(props.selectedTaskIds));
 const actionTask = ref<TransferTaskView | null>(null);
 const actionsOpen = ref(false);
@@ -138,8 +132,10 @@ const run = (kind: Exclude<TaskActionKind, 'none'>) => {
 };
 const hasProgress = (view: TransferTaskView) =>
   ['downloading', 'paused'].includes(view.statusBadge) && view.stageProgressLabel !== '';
-const taskMetaLabel = (view: TransferTaskView) =>
-  [view.statusLabel, hasProgress(view) ? view.progressLabel : view.mediaLabel].filter(Boolean).join(' · ');
+const taskMetaLabel = (view: TransferTaskView) => {
+  if (view.statusBadge === 'error' && !['-', '任务失败'].includes(view.issueLabel)) return view.issueLabel;
+  return [view.statusLabel, hasProgress(view) ? view.progressLabel : view.mediaLabel].filter(Boolean).join(' · ');
+};
 const taskMetaValue = (view: TransferTaskView) =>
   view.isCompleted ? (view.sizeLabel === '--' ? '' : view.sizeLabel) : view.speedLabel === '--' ? '' : view.speedLabel;
 </script>
@@ -177,7 +173,7 @@ const taskMetaValue = (view: TransferTaskView) =>
           <div class="task-artwork-wrap">
             <MediaArtwork
               class="task-artwork"
-              :src="artwork.get(view.id)?.src"
+              :src="artwork(view.id)"
             />
           </div>
 

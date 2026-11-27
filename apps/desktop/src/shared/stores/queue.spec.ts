@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DownloadTask } from '../api/dto'
 import { useQueueStore } from './queue'
 
-const api = vi.hoisted(() => ({ queueList: vi.fn(), queueOutputSizes: vi.fn() }))
+const api = vi.hoisted(() => ({ queueList: vi.fn(), queueRevision: vi.fn(), queueOutputSizes: vi.fn() }))
 vi.mock('../api/tauri', () => api)
 
 const task = (status: DownloadTask['status']): DownloadTask => ({
@@ -24,6 +24,7 @@ describe('queue reconciliation', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     api.queueList.mockReset()
+    api.queueRevision.mockResolvedValue(1)
   })
 
   it('repairs a stale muxing view from durable completed state without manual refresh', async () => {
@@ -35,6 +36,8 @@ describe('queue reconciliation', () => {
 
     expect(queue.tasks[0]?.status).toBe('completed')
     expect(queue.reconciling).toBe(false)
+    await queue.reconcile()
+    expect(api.queueList).toHaveBeenCalledTimes(1)
   })
 
   it('keeps completion time through events and replaces it when a retried task completes', async () => {

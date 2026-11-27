@@ -62,8 +62,26 @@ pub struct CommandError {
 
 impl From<BdlError> for CommandError {
     fn from(error: BdlError) -> Self {
-        let raw = bdl_core::account::redact_diagnostic(&error.to_string());
         let cause = error.root_cause();
+        if let BdlError::ParseRestricted { source, .. } = cause {
+            let original = source.as_ref().map(ToString::to_string);
+            let rule = original.as_deref().and_then(classify_failure);
+            let code = rule.map_or("source_access_restricted", |rule| rule.code.as_str());
+            let reason = rule.map_or("B 站请求暂时受限", |rule| rule.summary.as_str());
+            let message = format!("{reason}。{cause}");
+            let detail = original.map_or_else(
+                || error.to_string(),
+                |original| format!("{error}\n原始错误：{original}"),
+            );
+            let detail = Some(bdl_core::account::redact_diagnostic(&detail));
+            tracing::warn!(code, message, detail = ?detail, "BDL operation failed");
+            return Self {
+                code: code.to_owned(),
+                message,
+                detail,
+            };
+        }
+        let raw = bdl_core::account::redact_diagnostic(&error.to_string());
         let explicit = bdl_core::diagnostics::explicit_failure(&raw);
         let code = explicit.map_or_else(
             || command_error_code(cause).to_owned(),
@@ -144,9 +162,9 @@ fn command_error_message(error: &BdlError) -> Option<String> {
         BdlError::DrmProtected | BdlError::CoursePreviewOnly => Some(error.to_string()),
         BdlError::InvalidInput { message } => Some(message.clone()),
         BdlError::UnsupportedSource { kind } => Some(format!("暂不支持 `{kind}` 类型的来源。")),
-        BdlError::Mux(MuxError::FfmpegNotFound { .. }) => {
-            Some("未找到 FFmpeg，请在设置中配置 FFmpeg 路径。".to_owned())
-        }
+        BdlError::Mux(MuxError::FfmpegNotFound { .. }) => Some(
+            "未找到 FFmpeg。请在设置中选择 FFmpeg 可执行文件，检查就绪并保存后重试。".to_owned(),
+        ),
         BdlError::Io(error) if error.kind() == ErrorKind::PermissionDenied => {
             Some("本地文件访问被拒绝，请检查文件或目录权限。".to_owned())
         }
@@ -1011,17 +1029,19 @@ pub fn queue_list(
 }
 
 #[tauri::command]
+pub fn queue_revision(state: State<'_, AppState>) -> u64 {
+    state.queue_revision()
+}
+
+#[tauri::command]
 pub async fn queue_output_sizes(
     state: State<'_, AppState>,
     task_ids: Vec<String>,
 ) -> CommandResult<std::collections::BTreeMap<String, Option<u64>>> {
     let requested: std::collections::HashSet<_> = task_ids.into_iter().take(200).collect();
-    let tasks = state.queue_snapshot()?;
+    let tasks = state.completed_task_snapshots(&requested)?;
     let mut sizes = std::collections::BTreeMap::new();
     for task in tasks {
-        if !requested.contains(&task.id) || task.status != TaskStatus::Completed {
-            continue;
-        }
         let mut size: Option<u64> = None;
         for part in task
             .file_parts()
@@ -2275,8 +2295,14 @@ pub(crate) async fn run_download_task(
     task: DownloadTask,
     runtime_options: DownloadRuntimeOptions,
     cancel_token: FetchCancelToken,
+    slots: &mut crate::queue_worker::TaskSlots<'_>,
 ) -> CommandResult<()> {
     if has_recoverable_completed_output(&task).await? {
+        let Some(_permit) =
+            begin_post_processing(app, state, &task.id, &cancel_token, slots).await?
+        else {
+            return Ok(());
+        };
         if task.media_selection.workflow.is_none() {
             finalize_archive_assets(app, state, &task).await?;
         } else {
@@ -2294,7 +2320,16 @@ pub(crate) async fn run_download_task(
         );
     }
 
-    run_download_task_inner(app, state, fetcher, task, runtime_options, cancel_token).await
+    run_download_task_inner(
+        app,
+        state,
+        fetcher,
+        task,
+        runtime_options,
+        cancel_token,
+        slots,
+    )
+    .await
 }
 
 async fn run_download_task_inner(
@@ -2304,6 +2339,7 @@ async fn run_download_task_inner(
     task: DownloadTask,
     runtime_options: DownloadRuntimeOptions,
     cancel_token: FetchCancelToken,
+    slots: &mut crate::queue_worker::TaskSlots<'_>,
 ) -> CommandResult<()> {
     let runtime_options = runtime_options.with_processing(task.media_selection.processing);
     let media_mux = state.media_mux();
@@ -2412,11 +2448,10 @@ async fn run_download_task_inner(
         return Ok(());
     }
 
-    let muxing = state.update_task_status(&task.id, TaskStatus::Muxing)?;
-    if muxing.status != TaskStatus::Muxing {
+    let Some(_permit) = begin_post_processing(app, state, &task.id, &cancel_token, slots).await?
+    else {
         return Ok(());
-    }
-    events::emit(app, events::QUEUE_TASK_UPDATED, &muxing)?;
+    };
     emit_queue_log(
         app,
         state,
@@ -2494,6 +2529,40 @@ async fn run_download_task_inner(
     export_task_files(app, state, &task.id).await?;
 
     complete_download_part(app, state, &task.id, &cancel_token, "下载完成")
+}
+
+async fn begin_post_processing<'a>(
+    app: &AppHandle,
+    state: &AppState,
+    task_id: &str,
+    cancel: &FetchCancelToken,
+    slots: &mut crate::queue_worker::TaskSlots<'a>,
+) -> CommandResult<Option<tokio::sync::SemaphorePermit<'a>>> {
+    let (permit, expected) = if let Some(permit) = slots.try_post_process() {
+        (permit, TaskStatus::Downloading)
+    } else {
+        let Some(waiting) = state.transition_post_processing(
+            task_id,
+            TaskStatus::Downloading,
+            TaskStatus::MuxQueued,
+            cancel,
+        )?
+        else {
+            return Ok(None);
+        };
+        events::emit(app, events::QUEUE_TASK_UPDATED, &waiting)?;
+        let Some(permit) = slots.wait_for_post_process(cancel).await else {
+            return Ok(None);
+        };
+        (permit, TaskStatus::MuxQueued)
+    };
+    let Some(muxing) =
+        state.transition_post_processing(task_id, expected, TaskStatus::Muxing, cancel)?
+    else {
+        return Ok(None);
+    };
+    events::emit(app, events::QUEUE_TASK_UPDATED, &muxing)?;
+    Ok(Some(permit))
 }
 
 fn complete_download_part(
@@ -2981,7 +3050,7 @@ fn queue_log_level_rank(level: QueueLogLevel) -> u8 {
 }
 
 pub(crate) fn concurrent_tasks(settings: &SettingsSnapshot) -> usize {
-    settings.concurrent_tasks.clamp(1, 5)
+    settings.concurrent_tasks.clamp(1, 10)
 }
 
 fn retry_count(settings: &SettingsSnapshot) -> usize {

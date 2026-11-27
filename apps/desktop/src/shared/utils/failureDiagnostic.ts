@@ -1,11 +1,15 @@
 import rules from '../../../../../crates/bdl-core/src/diagnostic-rules.json'
 import type { QueueLogEntry } from '../api/dto'
 
+export type FailureRule = typeof rules[number]
+
+export const failureRule = (code: string) => rules.find((rule) => rule.code === code)
+
 // One catalog owns both backend classification and legacy-log presentation.
 export const classifyFailure = (message: string) => {
   const lower = message.toLowerCase()
   for (const match of lower.matchAll(/code=([a-z_]+)\]/g)) {
-    const rule = rules.find((rule) => rule.code === match[1])
+    const rule = failureRule(match[1])
     if (rule) return rule
   }
   return rules.find((rule) =>
@@ -15,6 +19,18 @@ export const classifyFailure = (message: string) => {
       ),
     ),
   )
+}
+
+export const failureGuidance = (rule: FailureRule, stage: 'parse' | 'download', mobile: boolean) => {
+  if (rule.recommended_action === 'login_then_retry') return { label: '登录 B 站', section: null, tip: '' } as const
+  if (rule.recommended_action === 'configure_ffmpeg' && !mobile) {
+    return { label: '配置 FFmpeg', section: 'settings-download', tip: '' } as const
+  }
+  if (['source_rate_limited', 'source_verification_required', 'source_access_restricted'].includes(rule.code)) {
+    return stage === 'parse'
+      ? { label: '调整解析节奏', section: 'settings-links', tip: '下次批量解析时，可将解析预设改为「慢速」。' } as const
+      : { label: '调整下载设置', section: 'settings-tasks', tip: '下次可减少同时下载任务数和单任务分段数，延长任务间隔。下载总限速只控制带宽。' } as const
+  }
 }
 
 export const latestFailure = (logs: QueueLogEntry[]): string | undefined => {

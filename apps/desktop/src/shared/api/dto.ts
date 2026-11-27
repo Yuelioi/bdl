@@ -90,7 +90,7 @@ export interface DerivedAsset {
 }
 
 export type TaskStatus =
-  'waiting' | 'parsing' | 'downloading' | 'muxing' | 'completed' | 'failed' | 'paused' | 'cancelled';
+  'waiting' | 'parsing' | 'downloading' | 'mux_queued' | 'muxing' | 'completed' | 'failed' | 'paused' | 'cancelled';
 
 export type ResourceStatus = 'pending' | 'downloading' | 'completed' | 'failed' | 'paused' | 'cancelled';
 

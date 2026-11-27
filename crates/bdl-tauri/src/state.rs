@@ -83,6 +83,7 @@ pub struct AppState {
     queue_worker_active: AtomicBool,
     last_queue_start: Mutex<Option<Instant>>,
     queue_changed: Notify,
+    queue_revision: AtomicU64,
     pub(crate) queue_cancellations: Mutex<HashMap<String, FetchCancelToken>>,
     pub(crate) removals: Mutex<HashSet<String>>,
     pub(crate) removal_previews: Mutex<crate::file_removal::PreviewStore>,
@@ -244,6 +245,7 @@ impl AppState {
             queue_worker_active: AtomicBool::new(false),
             last_queue_start: Mutex::new(None),
             queue_changed: Notify::new(),
+            queue_revision: AtomicU64::new(0),
             queue_cancellations: Mutex::new(HashMap::new()),
             removals: Default::default(),
             removal_previews: Default::default(),
@@ -504,6 +506,10 @@ impl AppState {
         self.queue_changed.notify_one();
     }
 
+    pub(crate) fn queue_revision(&self) -> u64 {
+        self.queue_revision.load(Ordering::Acquire)
+    }
+
     pub async fn wait_for_queue_change(&self) {
         self.queue_changed.notified().await;
     }
@@ -536,7 +542,7 @@ impl AppState {
         &self,
         now: DateTime<Utc>,
     ) -> BdlResult<Option<DownloadTask>> {
-        let mut queue = self.queue_edit()?;
+        let mut queue = self.queue.lock().map_err(|_| state_poisoned("queue"))?;
         if self.file_cleanup_active.load(Ordering::SeqCst) {
             return Ok(None);
         }
@@ -549,22 +555,21 @@ impl AppState {
             .removals
             .lock()
             .map_err(|_| state_poisoned("removals"))?;
-        let Some(task_index) = queue.iter().position(|task| {
+        let Some(current) = queue.iter_mut().find(|task| {
             task.can_start_at(now)
                 && !cancellations.contains_key(&task.id)
                 && !removals.contains(&task.id)
         }) else {
             return Ok(None);
         };
-
-        queue[task_index].status = if queue[task_index].media_selection.deferred.is_some() {
+        let mut task = current.clone();
+        task.status = if task.media_selection.deferred.is_some() {
             TaskStatus::Parsing
         } else {
             TaskStatus::Downloading
         };
-        queue[task_index].scheduled_at = None;
-        let task = queue[task_index].clone();
-        self.persist_queue_edit(&mut queue)?;
+        task.scheduled_at = None;
+        let task = self.persist_task_update(current, task)?;
         cancellations.insert(task.id.clone(), FetchCancelToken::new());
         Ok(Some(task))
     }
@@ -815,14 +820,15 @@ impl AppState {
         resource_id: &str,
         status: ResourceStatus,
     ) -> BdlResult<DownloadTask> {
-        let mut queue = self.queue_edit()?;
-        let task_index = queue
-            .iter()
-            .position(|task| task.id == task_id)
+        let mut queue = self.queue.lock().map_err(|_| state_poisoned("queue"))?;
+        let current = queue
+            .iter_mut()
+            .find(|task| task.id == task_id)
             .ok_or_else(|| BdlError::Planning {
                 message: format!("任务 `{task_id}` 不存在。"),
             })?;
-        let resource = queue[task_index]
+        let mut task = current.clone();
+        let resource = task
             .resources
             .iter_mut()
             .find(|resource| resource.id == resource_id)
@@ -831,9 +837,7 @@ impl AppState {
             })?;
 
         resource.status = status;
-        let task = queue[task_index].clone();
-        self.persist_queue_edit(&mut queue)?;
-        Ok(task)
+        self.persist_task_update(current, task)
     }
 
     pub fn retry_task(&self, task_id: &str) -> BdlResult<DownloadTask> {
@@ -867,7 +871,9 @@ impl AppState {
         // completion must also leave an explicitly resumed/scheduled task alone.
         let can_finish = match (task.status, next) {
             (TaskStatus::Downloading, TaskStatus::Waiting | TaskStatus::Failed)
-            | (TaskStatus::Parsing, TaskStatus::Failed) => !cancel_token.is_cancelled(),
+            | (TaskStatus::Parsing | TaskStatus::MuxQueued, TaskStatus::Failed) => {
+                !cancel_token.is_cancelled()
+            }
             (TaskStatus::Muxing, TaskStatus::Failed) => true,
             _ => false,
         };
@@ -1009,6 +1015,20 @@ impl AppState {
             .ok_or_else(|| BdlError::Planning {
                 message: format!("任务 `{task_id}` 不存在。"),
             })
+    }
+
+    pub(crate) fn completed_task_snapshots(
+        &self,
+        ids: &HashSet<String>,
+    ) -> BdlResult<Vec<DownloadTask>> {
+        Ok(self
+            .queue
+            .lock()
+            .map_err(|_| state_poisoned("queue"))?
+            .iter()
+            .filter(|task| task.status == TaskStatus::Completed && ids.contains(&task.id))
+            .cloned()
+            .collect())
     }
 
     pub(crate) fn commit_queued_download(
@@ -1155,6 +1175,25 @@ impl AppState {
         Ok(Some(task))
     }
 
+    pub(crate) fn transition_post_processing(
+        &self,
+        task_id: &str,
+        expected: TaskStatus,
+        next: TaskStatus,
+        token: &FetchCancelToken,
+    ) -> BdlResult<Option<DownloadTask>> {
+        let mut queue = self.queue.lock().map_err(|_| state_poisoned("queue"))?;
+        let Some(current) = queue.iter_mut().find(|task| task.id == task_id) else {
+            return Ok(None);
+        };
+        if current.status != expected || token.is_cancelled() {
+            return Ok(None);
+        }
+        let mut task = current.clone();
+        task.status = next;
+        self.persist_task_update(current, task).map(Some)
+    }
+
     fn replace_task_media_urls(
         &self,
         task_id: &str,
@@ -1253,6 +1292,7 @@ impl AppState {
             .lock()
             .map_err(|_| state_poisoned("storage"))?
             .save_completed_record(task, &logs)?;
+        self.queue_revision.fetch_add(1, Ordering::Release);
         Ok(())
     }
 
@@ -1653,9 +1693,27 @@ impl AppState {
     }
 
     pub(crate) fn persist_queue_edit(&self, queue: &mut QueueEdit<'_>) -> BdlResult<()> {
+        if *queue.current == queue.next {
+            return Ok(());
+        }
         self.persist_queue(&queue.current, &queue.next)?;
         queue.current.clone_from(&queue.next);
+        self.queue_revision.fetch_add(1, Ordering::Release);
         Ok(())
+    }
+
+    fn persist_task_update(
+        &self,
+        current: &mut DownloadTask,
+        next: DownloadTask,
+    ) -> BdlResult<DownloadTask> {
+        if *current != next {
+            // A task-local update preserves its persisted sort order and touches only changed resources.
+            self.persist_queue(std::slice::from_ref(current), std::slice::from_ref(&next))?;
+            current.clone_from(&next);
+            self.queue_revision.fetch_add(1, Ordering::Release);
+        }
+        Ok(next)
     }
 
     pub(crate) fn persist_queue(
@@ -2465,8 +2523,29 @@ mod tests {
         assert_eq!(retried.resources[0].status, ResourceStatus::Completed);
         assert_eq!(retried.resources[1].status, ResourceStatus::Pending);
         state
-            .update_task_status("task:refresh", TaskStatus::Muxing)
+            .update_task_status("task:refresh", TaskStatus::Downloading)
             .unwrap();
+        let waiting = state
+            .transition_post_processing(
+                "task:refresh",
+                TaskStatus::Downloading,
+                TaskStatus::MuxQueued,
+                &token,
+            )
+            .unwrap()
+            .unwrap();
+        assert_eq!(waiting.status, TaskStatus::MuxQueued);
+        let revision = state.queue_revision();
+        state
+            .transition_post_processing(
+                "task:refresh",
+                TaskStatus::MuxQueued,
+                TaskStatus::Muxing,
+                &token,
+            )
+            .unwrap()
+            .unwrap();
+        assert!(state.queue_revision() > revision);
         token.cancel(); // Pause during muxing is ignored; a real mux failure still counts.
         let failed = state
             .finish_task_attempt("task:refresh", TaskStatus::Failed, &token)
@@ -2655,15 +2734,20 @@ mod tests {
         interrupted.resources = vec![resource_with_status(ResourceStatus::Downloading)];
         let mut completed = task_with_id("task:completed");
         completed.status = TaskStatus::Completed;
-        let mut queue = vec![interrupted, completed];
+        let mut pending_mux = task_with_id("task:pending-mux");
+        pending_mux.status = TaskStatus::MuxQueued;
+        pending_mux.resources = vec![resource_with_status(ResourceStatus::Completed)];
+        let mut queue = vec![interrupted, completed, pending_mux];
 
         let snapshot = prepare_startup_recovery(&mut queue, false);
 
-        assert_eq!(snapshot.task_ids, ["task:interrupted"]);
+        assert_eq!(snapshot.task_ids, ["task:interrupted", "task:pending-mux"]);
         assert!(!snapshot.auto_recovery_enabled);
         assert_eq!(queue[0].status, TaskStatus::Paused);
         assert_eq!(queue[0].resources[0].status, ResourceStatus::Pending);
         assert_eq!(queue[1].status, TaskStatus::Completed);
+        assert_eq!(queue[2].status, TaskStatus::Paused);
+        assert_eq!(queue[2].resources[0].status, ResourceStatus::Completed);
     }
 
     #[test]
@@ -3752,6 +3836,7 @@ mod tests {
             queue_worker_active: AtomicBool::new(false),
             last_queue_start: Mutex::new(None),
             queue_changed: Notify::new(),
+            queue_revision: AtomicU64::new(0),
             queue_cancellations: Mutex::new(HashMap::new()),
             startup_recovery: Mutex::new(StartupRecoverySnapshot::default()),
             removals: Default::default(),

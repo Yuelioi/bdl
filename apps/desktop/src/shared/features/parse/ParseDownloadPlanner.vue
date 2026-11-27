@@ -431,10 +431,10 @@ defineExpose({ openDialog, openAllDialog, downloadSaved });
     :description="dialogDescription"
   >
     <div class="download-options-scroll">
-      <UiInlineNotice v-if="downloadNotice" :tone="downloadNotice.tone" :detail="downloadNotice.detail">{{
+      <UiInlineNotice v-if="downloadNotice" :tone="downloadNotice.tone" :detail="downloadNotice.detail" @open-settings="downloadDialogOpen = false">{{
         downloadNotice.message
       }}</UiInlineNotice>
-      <ErrorDetails v-if="!allSourceId && sizeEstimateError && !downloadNotice" :detail="sizeEstimateError" />
+      <ErrorDetails v-if="!allSourceId && sizeEstimateError && !downloadNotice" :detail="sizeEstimateError" @open-settings="downloadDialogOpen = false" />
       <p v-if="allInBackground" class="download-scope-note">
         剩余内容会在后台继续添加，已加入队列的任务会陆续下载。
       </p>

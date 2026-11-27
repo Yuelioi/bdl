@@ -72,6 +72,10 @@
   gap: var(--space-8);
 }
 
+.diagnosis-actions .mobile-recovery {
+  min-height: 3rem;
+}
+
 .overview-strip {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

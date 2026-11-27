@@ -390,11 +390,8 @@ pub(crate) async fn plan_background_batch(
             }
             Err(error) => {
                 let planning_or_account = match error.root_cause() {
-                    BdlError::Account { .. } => Some(true),
-                    BdlError::Planning { message } => Some(
-                        message.starts_with("解析已因限流暂停")
-                            || message.starts_with("源站限制了请求，已停止解析"),
-                    ),
+                    BdlError::Account { .. } | BdlError::ParseRestricted { .. } => Some(true),
+                    BdlError::Planning { .. } => Some(false),
                     _ => None,
                 };
                 let command_error = CommandError::from(error);

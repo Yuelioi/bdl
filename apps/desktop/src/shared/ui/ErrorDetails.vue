@@ -4,12 +4,40 @@ import UiButton from './Button.vue'
 import { openExternalUrl } from '../api/tauri'
 import { captureDiagnosticEnvironment } from '../utils/diagnosticEnvironment'
 import { redactDiagnosticMessage } from '../stores/transferView'
-import { classifyFailure } from '../utils/failureDiagnostic'
+import { classifyFailure, failureGuidance, failureRule } from '../utils/failureDiagnostic'
 import { writeClipboardText } from '../utils/clipboard'
+import { useUiStore } from '../stores/ui'
+import { isMobilePlatform } from '../platform/environment'
 
-const props = defineProps<{ detail: string; showAdvice?: boolean }>()
+const props = withDefaults(defineProps<{ detail: string; showAdvice?: boolean }>(), { showAdvice: true })
+const emit = defineEmits<{ openSettings: [] }>()
+const ui = useUiStore()
+const mobile = isMobilePlatform()
 const detail = computed(() => redactDiagnosticMessage(props.detail))
-const diagnosis = computed(() => props.showAdvice === false ? undefined : classifyFailure(detail.value))
+const diagnosis = computed(() => {
+  if (props.showAdvice === false) return undefined
+  const code = detail.value.match(/^错误码: ([a-z_]+)$/m)?.[1]
+  return (code && failureRule(code)) || classifyFailure(detail.value)
+})
+const guidance = computed(() => diagnosis.value && failureGuidance(diagnosis.value, 'parse', mobile))
+const advice = computed(() => {
+  if (!diagnosis.value) return ''
+  const { summary, detail: advice } = diagnosis.value
+  const message = `${summary}。${advice}`
+  if (detail.value.split('\n').includes(message)) return ''
+  if (detail.value.includes(`${summary}。解析已暂停`)) {
+    return diagnosis.value.code === 'source_verification_required' ? '若 B 站网页要求验证，请先完成验证。' : ''
+  }
+  return message
+})
+const followGuidance = () => {
+  if (!guidance.value) return
+  const { section } = guidance.value
+  if (section) {
+    emit('openSettings')
+    ui.openSettingsSection(section, section === 'settings-download')
+  } else ui.openLoginDialog()
+}
 const copied = ref(false)
 const busy = ref(false)
 const actionError = ref('')
@@ -41,7 +69,10 @@ const feedback = async () => {
 
 <template>
   <div class="error-details">
-    <p v-if="diagnosis">{{ diagnosis.summary }}：{{ diagnosis.detail }}</p>
+    <p v-if="advice || guidance?.tip">{{ advice }}{{ guidance?.tip }}</p>
+    <UiButton v-if="guidance" class="recovery-action justify-self-start" :class="{ 'mobile-recovery': mobile }" :size="mobile ? 'default' : 'compact'" variant="secondary" @click="followGuidance">
+      {{ guidance.label }}
+    </UiButton>
     <details>
       <summary>错误详情</summary>
       <pre>{{ detail }}</pre>
@@ -65,6 +96,10 @@ const feedback = async () => {
 
 .error-details p {
   margin: 0;
+}
+
+.recovery-action.mobile-recovery {
+  min-height: 3rem;
 }
 
 summary {

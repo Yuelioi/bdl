@@ -16,6 +16,7 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   action: []
+  openSettings: []
 }>()
 </script>
 
@@ -26,7 +27,7 @@ const emit = defineEmits<{
     <UiButton v-if="props.actionLabel" size="compact" variant="secondary" @click="emit('action')">
       {{ props.actionLabel }}
     </UiButton>
-    <ErrorDetails v-if="props.detail" class="notice-details" :detail="props.detail" />
+    <ErrorDetails v-if="props.detail" class="notice-details" :detail="props.detail" @open-settings="emit('openSettings')" />
   </div>
 </template>
 

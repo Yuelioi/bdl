@@ -1,5 +1,6 @@
 import { mount } from '@vue/test-utils';
-import { describe, expect, it } from 'vitest';
+import { computed } from 'vue';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { TransferTaskView } from '../../../shared/stores/transferView';
 import TransferTaskTable from './TransferTaskTable.vue';
@@ -31,8 +32,10 @@ const view = (index: number): TransferTaskView => ({
 describe('TransferTaskTable virtualization', () => {
   it('keeps selection scope complete while rendering a bounded large-list window', async () => {
     const views = Array.from({ length: 250 }, (_, index) => view(index));
+    const project = vi.fn((item: TransferTaskView) => item);
+    const rows = views.map((item) => ({ id: item.id, view: computed(() => project(item)) }));
     const wrapper = mount(TransferTaskTable, {
-      props: { views, selectedTaskId: null, selectedTaskIds: [] },
+      props: { rows, selectedTaskId: null, selectedTaskIds: [] },
       global: {
         stubs: {
           UiCheckbox: true,
@@ -48,6 +51,7 @@ describe('TransferTaskTable virtualization', () => {
 
     expect(wrapper.find('.task-table-row').attributes('aria-setsize')).toBe('250');
     expect(wrapper.findAll('.task-table-row').length).toBeLessThan(views.length);
+    expect(project).toHaveBeenCalledTimes(wrapper.findAll('.task-table-row').length);
     const scroll = wrapper.find('.transfer-scroll');
     Object.defineProperty(scroll.element, 'scrollTop', { value: Number.MAX_SAFE_INTEGER, configurable: true });
     Object.defineProperty(scroll.element, 'clientHeight', { value: 600, configurable: true });

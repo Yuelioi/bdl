@@ -8,11 +8,12 @@ import UiProgressBar from '../../../shared/ui/ProgressBar.vue';
 import UiStatusBadge from '../../../shared/ui/StatusBadge.vue';
 import TaskActionMenu from '../../../shared/ui/TaskActionMenu.vue';
 import { calculateVirtualWindow } from '../../../shared/utils/virtualWindow';
+import type { TransferTaskRow } from '../../../shared/features/transfer/useTransferPage';
 
 const ROW_STRIDE = 64;
 const props = withDefaults(
   defineProps<{
-    views: TransferTaskView[];
+    rows: TransferTaskRow[];
     selectedTaskId: string | null;
     selectedTaskIds: string[];
     loading?: boolean;
@@ -28,7 +29,7 @@ const emit = defineEmits<{
   openContextMenu: [taskId: string, event: MouseEvent];
   visibleTasks: [taskIds: string[]];
 }>();
-const visibleIds = computed(() => props.views.map((view) => view.id));
+const visibleIds = computed(() => props.rows.map((row) => row.id));
 const selected = computed(() => new Set(props.selectedTaskIds));
 const selection = computed<boolean | 'indeterminate'>(() => {
   const count = visibleIds.value.filter((id) => selected.value.has(id)).length;
@@ -47,11 +48,11 @@ onMounted(() => {
 });
 onBeforeUnmount(() => resizeObserver?.disconnect());
 const taskWindow = computed(() =>
-  calculateVirtualWindow(props.views.length, scrollOffset.value, viewportSize.value, ROW_STRIDE),
+  calculateVirtualWindow(props.rows.length, scrollOffset.value, viewportSize.value, ROW_STRIDE),
 );
 const renderedViews = computed(() =>
-  props.views.slice(taskWindow.value.start, taskWindow.value.end).map((view, offset) => ({
-    view,
+  props.rows.slice(taskWindow.value.start, taskWindow.value.end).map((row, offset) => ({
+    view: row.view.value,
     index: taskWindow.value.start + offset,
   })),
 );
@@ -83,7 +84,7 @@ const hasProgress = (view: TransferTaskView) =>
         :model-value="selection"
         label="选择当前筛选任务"
         compact
-        :disabled="!views.length || loading"
+        :disabled="!rows.length || loading"
         @update:model-value="emit('toggleVisibleSelection', visibleIds, selection !== true)"
       />
       <span>文件</span>
@@ -102,7 +103,7 @@ const hasProgress = (view: TransferTaskView) =>
           :class="{ inspected: selectedTaskId === row.view.id }"
           :style="{ transform: `translateY(${row.index * ROW_STRIDE}px)` }"
           :aria-posinset="row.index + 1"
-          :aria-setsize="views.length"
+          :aria-setsize="rows.length"
           role="listitem"
           @contextmenu.prevent="emit('openContextMenu', row.view.id, $event)"
         >

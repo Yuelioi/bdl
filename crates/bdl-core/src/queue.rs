@@ -22,6 +22,7 @@ pub enum TaskStatus {
     Waiting,
     Parsing,
     Downloading,
+    MuxQueued,
     Muxing,
     Completed,
     Failed,

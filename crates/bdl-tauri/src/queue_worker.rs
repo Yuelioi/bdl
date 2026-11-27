@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use bdl_core::fetcher::{BandwidthLimiter, FetchCancelToken, FetchConfig, ReqwestFetcher};
@@ -7,6 +8,7 @@ use bdl_core::queue::{
 };
 use futures::stream::{FuturesUnordered, StreamExt};
 use tauri::{AppHandle, Manager};
+use tokio::sync::{Notify, Semaphore, SemaphorePermit};
 use tokio::time::Instant;
 
 use crate::commands::{
@@ -18,6 +20,98 @@ use crate::state::{AppState, SettingsSnapshot};
 use crate::task_failure::{recent_auto_refresh_attempt_count, should_refresh_media_url};
 
 const MAX_AUTO_REFRESH_ATTEMPTS: usize = 3;
+const CONCURRENT_POST_PROCESSING: usize = 1;
+
+struct QueueSlots<'a> {
+    state: &'a AppState,
+    download_limit: AtomicUsize,
+    downloading: AtomicUsize,
+    continuing: AtomicUsize,
+    download_available: Notify,
+    post_processing: Semaphore,
+}
+
+impl QueueSlots<'_> {
+    fn set_download_limit(&self, limit: usize) {
+        if self.download_limit.swap(limit, Ordering::Relaxed) < limit {
+            self.download_available.notify_waiters();
+        }
+    }
+
+    fn try_download(&self) -> Option<DownloadSlot<'_>> {
+        let limit = self.download_limit.load(Ordering::Relaxed);
+        self.downloading
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |active| {
+                (active < limit).then_some(active + 1)
+            })
+            .ok()
+            .map(|_| DownloadSlot(self))
+    }
+
+    fn can_start_new_download(&self) -> bool {
+        // Give later parts of an existing attempt the next available download slot.
+        self.continuing.load(Ordering::Relaxed) == 0
+            && self.downloading.load(Ordering::Relaxed)
+                < self.download_limit.load(Ordering::Relaxed)
+    }
+}
+
+struct DownloadSlot<'a>(&'a QueueSlots<'a>);
+
+impl Drop for DownloadSlot<'_> {
+    fn drop(&mut self) {
+        self.0.downloading.fetch_sub(1, Ordering::Relaxed);
+        self.0.download_available.notify_one();
+        self.0.state.notify_queue_changed();
+    }
+}
+
+pub(crate) struct TaskSlots<'a> {
+    slots: &'a QueueSlots<'a>,
+    download: Option<DownloadSlot<'a>>,
+}
+
+impl<'a> TaskSlots<'a> {
+    async fn continue_download(&mut self, cancel: &FetchCancelToken) -> bool {
+        if self.download.is_some() {
+            return true;
+        }
+        self.slots.continuing.fetch_add(1, Ordering::Relaxed);
+        let download = tokio::select! {
+            biased;
+            () = cancel.cancelled() => None,
+            slot = async {
+                loop {
+                    let available = self.slots.download_available.notified();
+                    if let Some(slot) = self.slots.try_download() {
+                        break slot;
+                    }
+                    available.await;
+                }
+            } => Some(slot),
+        };
+        self.slots.continuing.fetch_sub(1, Ordering::Relaxed);
+        self.slots.state.notify_queue_changed();
+        self.download = download;
+        self.download.is_some()
+    }
+
+    pub(crate) fn try_post_process(&mut self) -> Option<SemaphorePermit<'a>> {
+        self.download.take();
+        self.slots.post_processing.try_acquire().ok()
+    }
+
+    pub(crate) async fn wait_for_post_process(
+        &self,
+        cancel: &FetchCancelToken,
+    ) -> Option<SemaphorePermit<'a>> {
+        tokio::select! {
+            biased;
+            () = cancel.cancelled() => None,
+            permit = self.slots.post_processing.acquire() => permit.ok(),
+        }
+    }
+}
 
 pub(crate) fn start(app: &AppHandle) {
     let app = app.clone();
@@ -56,20 +150,31 @@ pub(crate) fn start(app: &AppHandle) {
 
 async fn run(app: &AppHandle, state: &AppState) -> CommandResult<()> {
     let global_limiter = state.global_limiter();
+    let slots = QueueSlots {
+        state,
+        download_limit: AtomicUsize::new(0),
+        downloading: AtomicUsize::new(0),
+        continuing: AtomicUsize::new(0),
+        download_available: Notify::new(),
+        post_processing: Semaphore::new(CONCURRENT_POST_PROCESSING),
+    };
     let mut running = FuturesUnordered::new();
     let mut execution_active = false;
 
     let result = async {
         loop {
             let current_settings = state.settings()?;
-            let concurrent_tasks = concurrent_tasks(&current_settings);
+            slots.set_download_limit(concurrent_tasks(&current_settings));
             let mut start_wakeup = state
                 .queue_start_deadline()?
                 .filter(|deadline| *deadline > Instant::now());
-            if running.len() < concurrent_tasks
+            if slots.can_start_new_download()
                 && start_wakeup.is_none()
                 && let Some(task) = state.take_next_startable_task()?
             {
+                let download = slots
+                    .try_download()
+                    .expect("queue worker owns download admission");
                 start_wakeup = state.queue_start_deadline()?;
                 let attempt = AttemptGuard {
                     state,
@@ -105,10 +210,22 @@ async fn run(app: &AppHandle, state: &AppState) -> CommandResult<()> {
                     state,
                     global_limiter.clone(),
                     launch.fetch_config,
-                    (task, attempt),
+                    (
+                        task,
+                        attempt,
+                        TaskSlots {
+                            slots: &slots,
+                            download: Some(download),
+                        },
+                    ),
                     launch.runtime_options,
                     launch.settings,
                 ));
+                if start_wakeup.is_none_or(|deadline| deadline <= Instant::now())
+                    && slots.can_start_new_download()
+                {
+                    continue;
+                }
             }
 
             let scheduled_wakeups = state.scheduled_wakeups()?;
@@ -119,7 +236,7 @@ async fn run(app: &AppHandle, state: &AppState) -> CommandResult<()> {
                 Instant::now() + delay
             });
             if start_wakeup.is_some()
-                && (running.len() >= concurrent_tasks || !state.has_startable_task()?)
+                && (!slots.can_start_new_download() || !state.has_startable_task()?)
             {
                 start_wakeup = None;
             }
@@ -218,11 +335,11 @@ async fn run_download_attempt(
     state: &AppState,
     global_limiter: Arc<BandwidthLimiter>,
     fetch_config: FetchConfig,
-    picked: (DownloadTask, AttemptGuard<'_>),
+    picked: (DownloadTask, AttemptGuard<'_>, TaskSlots<'_>),
     runtime_options: DownloadRuntimeOptions,
     settings: SettingsSnapshot,
 ) -> CommandResult<()> {
-    let (task, _attempt) = picked;
+    let (task, _attempt, mut slots) = picked;
     let cancel_token = state.register_task_cancel_token(&task.id)?;
     // Pause/remove can arrive after pickup, before this future is first polled.
     if !matches!(
@@ -236,6 +353,9 @@ async fn run_download_attempt(
             async {
                 let mut current = task.clone();
                 loop {
+                    if !slots.continue_download(&cancel_token).await {
+                        return Ok(());
+                    }
                     if current.media_selection.deferred.is_some() {
                         let Some(resolved) = cancellable_refresh(
                             &cancel_token,
@@ -303,6 +423,7 @@ async fn run_download_attempt(
                         current,
                         runtime_options.clone(),
                         cancel_token.clone(),
+                        &mut slots,
                     )
                     .await?;
                     current = state.task_snapshot(&task.id)?;

@@ -21,6 +21,7 @@ import {
   queueClearCompleted,
   queueDismissStartupRecovery,
   queueList,
+  queueRevision,
   queueLogs,
   queueOpenDir,
   queueOpenFile,
@@ -65,6 +66,7 @@ interface QueueState {
   startupRecoveryDismissed: boolean
   loading: boolean
   reconciling: boolean
+  reconciledRevision: number | null
   bulkBusy: boolean
   notice: InlineNotice | null
   noticeTimer: number | null
@@ -108,6 +110,7 @@ export const useQueueStore = defineStore('queue', {
     startupRecoveryDismissed: false,
     loading: false,
     reconciling: false,
+    reconciledRevision: null,
     bulkBusy: false,
     notice: null,
     noticeTimer: null,
@@ -115,28 +118,34 @@ export const useQueueStore = defineStore('queue', {
     unlisten: [],
   }),
   getters: {
+    tasksById(state): ReadonlyMap<string, DownloadTask> {
+      return new Map(state.tasks.map((task) => [task.id, task]))
+    },
     filteredTasks(state): DownloadTask[] {
       return state.tasks.filter((task) => filterTaskByWorkflow(task.status, state.activeFilter))
     },
-    selectedTask(state): DownloadTask | null {
-      return state.selectedTaskId ? (state.tasks.find((task) => task.id === state.selectedTaskId) ?? null) : null
+    selectedTask(): DownloadTask | null {
+      return this.selectedTaskId ? (this.tasksById.get(this.selectedTaskId) ?? null) : null
     },
     hasInFlightTasks(state): boolean {
-      return state.tasks.some((task) => task.status === 'downloading' || task.status === 'muxing')
+      return state.tasks.some(({ status }) =>
+        status === 'parsing' || status === 'downloading' || status === 'mux_queued' || status === 'muxing')
     },
   },
   actions: {
     async loadOutputSizes(taskIds: string[]) {
-      const requested = new Set(taskIds)
-      const tasks = this.tasks.filter((task) => requested.has(task.id) && task.status === 'completed'
-        && this.outputSizesByTask[task.id]?.path !== task.output_path && !this.outputSizesLoading.includes(task.id))
+      const tasks = [...new Set(taskIds)].map((id) => this.tasksById.get(id)).filter((task): task is DownloadTask =>
+        Boolean(task && task.status === 'completed'
+        && this.outputSizesByTask[task.id]?.path !== task.output_path && !this.outputSizesLoading.includes(task.id)))
+      if (!tasks.length) return
       this.outputSizesLoading.push(...tasks.map((task) => task.id))
       try {
         for (let offset = 0; offset < tasks.length; offset += 50) {
           const batch = tasks.slice(offset, offset + 50)
           const sizes = await queueOutputSizes(batch.map((task) => task.id))
           for (const task of batch) {
-            if (this.tasks.some((current) => current.id === task.id && current.status === 'completed' && current.output_path === task.output_path)) {
+            const current = this.tasksById.get(task.id)
+            if (current?.status === 'completed' && current.output_path === task.output_path) {
               this.outputSizesByTask[task.id] = { path: task.output_path, bytes: sizes?.[task.id] ?? null }
             }
           }
@@ -154,7 +163,7 @@ export const useQueueStore = defineStore('queue', {
       try {
         this.tasks = this.mergeTaskSnapshots(await queueList())
         this.applyDefaultFilter()
-        this.selectedTaskIds = this.selectedTaskIds.filter((taskId) => this.tasks.some((task) => task.id === taskId))
+        this.selectedTaskIds = this.selectedTaskIds.filter((taskId) => this.tasksById.has(taskId))
         this.ensureSelectedTask(true)
         if (this.selectedTaskId) {
           await this.loadLogs(this.selectedTaskId)
@@ -222,8 +231,11 @@ export const useQueueStore = defineStore('queue', {
       if (this.loading || this.reconciling) return
       this.reconciling = true
       try {
+        const revision = await queueRevision()
+        if (revision === this.reconciledRevision) return
         this.tasks = this.mergeTaskSnapshots(await queueList())
-        this.selectedTaskIds = this.selectedTaskIds.filter((taskId) => this.tasks.some((task) => task.id === taskId))
+        this.reconciledRevision = revision
+        this.selectedTaskIds = this.selectedTaskIds.filter((taskId) => this.tasksById.has(taskId))
         this.applyDefaultFilter()
         this.ensureSelectedTask(true)
       } catch {
@@ -244,11 +256,14 @@ export const useQueueStore = defineStore('queue', {
       void this.loadLogs(taskId)
     },
     mergeTaskSnapshots(incoming: DownloadTask[]): DownloadTask[] {
-      const previous = new Map(this.tasks.map(task => [task.id, task]))
-      return incoming.map(task => {
+      const previous = this.tasksById
+      const merged = incoming.map(task => {
         const existing = previous.get(task.id)
         return existing && JSON.stringify(existing) === JSON.stringify(task) ? existing : task
       })
+      return merged.length === this.tasks.length && merged.every((task, index) => task === this.tasks[index])
+        ? this.tasks
+        : merged
     },
     normalizeTaskUpdate(task: DownloadTask, previous?: DownloadTask): DownloadTask {
       if (task.status !== 'completed' || this.outputSizesByTask[task.id]?.path !== task.output_path) {
@@ -374,7 +389,7 @@ export const useQueueStore = defineStore('queue', {
       }, 0)
     },
     applyProgress(entry: QueueProgressEntry) {
-      const task = this.tasks.find(task => task.id === entry.task_id)
+      const task = this.tasksById.get(entry.task_id)
       if (task?.media_selection?.post && !task.resources.some(resource => resource.id === entry.resource_id)) return
       const existing = this.progressByTask[entry.task_id]
       const resources = {
@@ -620,7 +635,7 @@ export const useQueueStore = defineStore('queue', {
           updates.delete(previous.id)
           // A resumed task can publish a newer state while the command returns.
           if (before && before.get(task.id) !== previous && task.status === 'waiting'
-            && ['parsing', 'downloading', 'muxing', 'completed', 'failed'].includes(previous.status)) return previous
+            && ['parsing', 'downloading', 'mux_queued', 'muxing', 'completed', 'failed'].includes(previous.status)) return previous
           return this.normalizeTaskUpdate(task, previous)
         })
         for (const task of updates.values()) next.push(this.normalizeTaskUpdate(task))

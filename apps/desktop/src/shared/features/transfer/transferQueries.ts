@@ -7,6 +7,8 @@ export interface TransferSortMetrics {
   speed(taskId: string): number;
 }
 
+const titleOrder = new Intl.Collator('zh-Hans-CN', { numeric: true, sensitivity: 'base' });
+
 export const sortTransferTasks = (
   tasks: DownloadTask[],
   mode: TransferSortMode,
@@ -14,28 +16,16 @@ export const sortTransferTasks = (
 ): DownloadTask[] => {
   // The store keeps the backend's insertion order; display newest entries first.
   if (mode === 'queue') return [...tasks].reverse();
+  if (mode === 'name_asc') return [...tasks].sort((left, right) => titleOrder.compare(left.title, right.title));
 
-  const indexed = tasks.map((task, index) => ({ task, index }));
-  indexed.sort((left, right) => {
-    if (mode === 'completed_desc') {
-      return completionTime(right.task) - completionTime(left.task) || right.index - left.index;
-    }
-    if (mode === 'name_asc') {
-      const byTitle = left.task.title.localeCompare(right.task.title, 'zh-Hans-CN', {
-        numeric: true,
-        sensitivity: 'base',
-      });
-      return byTitle || left.index - right.index;
-    }
-    if (mode === 'progress_desc') {
-      return metrics.progress(right.task) - metrics.progress(left.task) || left.index - right.index;
-    }
-    if (mode === 'speed_desc') {
-      return metrics.speed(right.task.id) - metrics.speed(left.task.id) || left.index - right.index;
-    }
-    return issueRank(left.task.status) - issueRank(right.task.status) || left.index - right.index;
-  });
-  return indexed.map((entry) => entry.task);
+  const score = mode === 'completed_desc' ? completionTime
+    : mode === 'progress_desc' ? (task: DownloadTask) => metrics.progress(task)
+      : mode === 'speed_desc' ? (task: DownloadTask) => metrics.speed(task.id)
+        : (task: DownloadTask) => -issueRank(task.status);
+  const ranked = tasks.map((task, index) => ({ task, score: score(task), index }));
+  const tieOrder = mode === 'completed_desc' ? -1 : 1;
+  ranked.sort((left, right) => right.score - left.score || tieOrder * (left.index - right.index));
+  return ranked.map(({ task }) => task);
 };
 
 const completionTime = (task: DownloadTask): number => {
@@ -51,7 +41,7 @@ export const matchesTransferSearch = (task: DownloadTask, query: string, sourceL
 };
 
 export const isPausable = (status: TaskStatus): boolean =>
-  status === 'waiting' || status === 'parsing' || status === 'downloading';
+  status === 'waiting' || status === 'parsing' || status === 'downloading' || status === 'mux_queued';
 
 export const isCancellable = (status: TaskStatus): boolean => isPausable(status) || status === 'paused';
 
@@ -61,6 +51,6 @@ export const isRetryable = (status: TaskStatus): boolean =>
 const issueRank = (status: TaskStatus): number => {
   if (status === 'failed' || status === 'cancelled') return 0;
   if (status === 'paused') return 1;
-  if (status === 'waiting' || status === 'parsing' || status === 'downloading' || status === 'muxing') return 2;
+  if (isPausable(status) || status === 'muxing') return 2;
   return 3;
 };

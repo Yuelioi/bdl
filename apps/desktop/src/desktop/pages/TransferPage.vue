@@ -25,7 +25,7 @@ const {
   queueFilter,
   tabs,
   transferSortOptions,
-  taskViews,
+  taskRows,
   batchItems,
   removal,
   emptyTitle,
@@ -81,9 +81,9 @@ const recoverTask = (taskId: string, action: 'retry' | 'refresh_retry') => {
         </div>
       </div>
 
-      <div v-if="taskViews.length" class="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
+      <div v-if="taskRows.length" class="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
         <TransferTaskTable
-          :views="taskViews"
+          :rows="taskRows"
           :mode="queue.activeFilter === 'completed' ? 'completed' : 'transfer'"
           :selected-task-id="taskDetailOpen ? queue.selectedTaskId : null"
           :selected-task-ids="queue.selectedTaskIds"
@@ -129,6 +129,7 @@ const recoverTask = (taskId: string, action: 'retry' | 'refresh_retry') => {
           :logs-loading="selectedLogsLoading"
           @refresh-logs="refreshSelectedLogs"
           @recover="recoverTask"
+          @open-settings="taskDetailOpen = false"
         />
     </UiDialog>
 

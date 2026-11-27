@@ -4,6 +4,7 @@ import { bilibiliTaskUrl } from '../utils/bilibiliLinks'
 import { classifyFailure, latestFailure } from '../utils/failureDiagnostic'
 import { videoQualityLevels } from '../features/settings/settingsCatalog'
 import { formatDuration } from '../utils/duration'
+import { isPausable } from '../features/transfer/transferQueries'
 
 export type QueueFilter = 'active' | 'failed' | 'completed' | 'all'
 
@@ -133,7 +134,7 @@ export const createTransferTaskView = (
     progressValue: progress,
     progressLabel: `${progress}%`,
     stageProgressLabel:
-      task.status === 'muxing' ? '' : `${stageProgress == null ? progress : stageProgress}%`,
+      task.status === 'muxing' || task.status === 'mux_queued' ? '' : `${stageProgress == null ? progress : stageProgress}%`,
     speedLabel:
       activelyTransferring && transferProgress ? formatSpeedLabel(transferProgress.speedBytesPerSecond) : '--',
     etaLabel: scheduled
@@ -314,12 +315,8 @@ export const createTaskDiagnosticView = (
     summary: statusLabel(task.status),
     detail: '任务正在按队列流程执行。速度、剩余时间和大小会在下载引擎提供数据后显示。',
     impact: trackImpact,
-    recommendedAction:
-      task.status === 'waiting' || task.status === 'parsing' || task.status === 'downloading' ? 'pause' : null,
-    recommendedActionLabel:
-      task.status === 'waiting' || task.status === 'parsing' || task.status === 'downloading'
-        ? actionLabel('pause')
-        : '',
+    recommendedAction: isPausable(task.status) ? 'pause' : null,
+    recommendedActionLabel: isPausable(task.status) ? actionLabel('pause') : '',
     tone: 'normal',
   }
 }
@@ -395,6 +392,7 @@ export const statusLabel = (status: TaskStatus): string => {
     parsing: '正在获取下载地址',
     downloading: '下载中',
     muxing: '合并中',
+    mux_queued: '等待合并',
     completed: '已完成',
     failed: '失败',
     paused: '已暂停',
@@ -419,7 +417,7 @@ export const statusBadge = (
   if (status === 'waiting') {
     return 'queued'
   }
-  if (status === 'downloading' || status === 'parsing' || status === 'muxing') {
+  if (status === 'downloading' || status === 'parsing' || status === 'mux_queued' || status === 'muxing') {
     return 'downloading'
   }
 
@@ -577,7 +575,7 @@ const primaryActionForTask = (
   if (task.status === 'cancelled') {
     return 'retry'
   }
-  if (task.status === 'waiting' || task.status === 'parsing' || task.status === 'downloading') {
+  if (isPausable(task.status)) {
     return 'pause'
   }
 

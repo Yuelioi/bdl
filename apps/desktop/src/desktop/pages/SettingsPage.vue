@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, onActivated, ref, watch, watchPostEffect } from 'vue';
 import SettingsLeaveDialog from '../../shared/features/settings/SettingsLeaveDialog.vue';
 import UiButton from '../../shared/ui/Button.vue';
 import UiDialog from '../../shared/ui/Dialog.vue';
@@ -66,6 +66,16 @@ watch(activeSettingsSection, () => {
   content.value?.scrollTo({ top: 0 });
   if (ui.activeTab === 'settings') sectionHeading.value?.focus({ preventScroll: true });
 }, { flush: 'post' });
+const focusRequestedFfmpeg = () => {
+  if (ui.activeTab !== 'settings' || !ui.settingsFocusFfmpeg) return;
+  const ffmpeg = content.value?.querySelector<HTMLElement>('#settings-ffmpeg');
+  if (!ffmpeg?.isConnected) return;
+  ui.settingsFocusFfmpeg = false;
+  ffmpeg.scrollIntoView({ block: 'start' });
+  ffmpeg.focus({ preventScroll: true });
+};
+watchPostEffect(focusRequestedFfmpeg);
+onActivated(focusRequestedFfmpeg);
 </script>
 <template>
   <section class="page-grid settings-grid">

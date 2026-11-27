@@ -303,12 +303,20 @@ function toggleCard(event: MouseEvent) {
 .media-list-row-compact {
   height: 3rem;
   min-height: 3rem;
-  grid-template-columns: 1.25rem 3.75rem 2rem minmax(0, 1fr) auto;
+  grid-template-columns: 1.25rem 3.75rem minmax(0, 1fr) auto;
   gap: 0.625rem;
   padding: 0.25rem 0.125rem;
 }
 
 .media-list-row-compact:has(.media-actions) {
+  grid-template-columns: 1.25rem 3.75rem minmax(0, 1fr) auto auto;
+}
+
+.media-list-row-compact:has(.media-index) {
+  grid-template-columns: 1.25rem 3.75rem 2rem minmax(0, 1fr) auto;
+}
+
+.media-list-row-compact:has(.media-index):has(.media-actions) {
   grid-template-columns: 1.25rem 3.75rem 2rem minmax(0, 1fr) auto auto;
 }
 

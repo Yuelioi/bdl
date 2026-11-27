@@ -94,7 +94,7 @@ const speedLimitPreset = computed({
     <SettingsOutputDefaults v-if="group === 'saving'" :form="form" />
     <SettingsCard v-if="group === 'tasks'" title="速度与并发">
       <div class="settings-inline-grid settings-download-options">
-        <UiSelect v-model="settingsConcurrentTasks" label="同时下载任务数" :options="concurrentTaskOptions" />
+        <UiSelect v-model="settingsConcurrentTasks" label="同时下载任务数" :options="concurrentTaskOptions" tall-menu />
         <UiSelect v-model="settingsSegmentCount" label="单任务分段数" :options="segmentCountOptions" />
       </div>
       <div class="settings-inline-grid settings-download-options">
@@ -121,7 +121,7 @@ const speedLimitPreset = computed({
           />
         </div>
       </div>
-      <p class="settings-note">运行中的任务共享此带宽上限。</p>
+      <p class="settings-note">下载任务共享带宽上限。合并单独排队，每次处理 1 个。</p>
     </SettingsCard>
     <SettingsCard v-if="group === 'tasks'" title="重试与续传">
       <div class="settings-inline-grid settings-download-options">
@@ -145,7 +145,7 @@ const speedLimitPreset = computed({
       </div>
     </SettingsCard>
     <ParseRulesEditor v-if="group === 'links'" v-model="settings.draft.parse_rules" />
-    <SettingsCard v-if="desktopPaths && group === 'saving'" title="FFmpeg">
+    <SettingsCard v-if="desktopPaths && group === 'saving'" id="settings-ffmpeg" tabindex="-1" title="FFmpeg">
       <div class="directory-row">
         <UiTextField v-model="settingsFfmpegPath" label="FFmpeg 路径" placeholder="留空时使用系统 FFmpeg" />
         <UiButton variant="secondary" :disabled="settings.loading || settings.saving" @click="settings.chooseFfmpegPath"

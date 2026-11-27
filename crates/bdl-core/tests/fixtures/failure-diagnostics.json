@@ -21,32 +21,32 @@
   },
   {
     "message": "请求资源长度失败: HTTP 403 Forbidden",
-    "summary": "源站拒绝访问",
+    "summary": "B 站请求被拒绝",
     "action": "inspect_raw_log"
   },
   {
     "message": "HTTP 401 Unauthorized",
-    "summary": "登录状态失效",
+    "summary": "需要登录 B 站",
     "action": "login_then_retry"
   },
   {
     "message": "[stage=refresh_urls code=login_required] HTTP 401，刷新前原始错误：[stage=download_video code=media_url_expired] HTTP 404",
-    "summary": "登录状态失效",
+    "summary": "需要登录 B 站",
     "action": "login_then_retry"
   },
   {
     "message": "bpi error: API错误 [-101]: 账号未登录",
-    "summary": "登录状态失效",
+    "summary": "需要登录 B 站",
     "action": "login_then_retry"
   },
   {
     "message": "Cookie 已失效",
-    "summary": "登录状态失效",
+    "summary": "需要登录 B 站",
     "action": "login_then_retry"
   },
   {
     "message": "请求资源长度失败: HTTP 429 Too Many Requests",
-    "summary": "请求过于频繁",
+    "summary": "B 站限制了请求频率",
     "action": "inspect_raw_log"
   },
   {

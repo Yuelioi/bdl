@@ -1,4 +1,4 @@
-import { computed, ref, type Ref } from 'vue';
+import { computed, ref } from 'vue';
 
 import type { TaskActionDescriptor, TaskActionKind, TransferTaskView } from '../../stores/transferView';
 
@@ -29,11 +29,11 @@ export const constrainContextMenuPosition = (
 });
 
 export const useTransferContextMenu = (
-  taskViews: Readonly<Ref<TransferTaskView[]>>,
+  taskView: (taskId: string) => TransferTaskView | undefined,
   runTaskAction: (taskId: string, action: Exclude<TaskActionKind, 'none'>) => void,
 ) => {
   const contextMenu = ref<ContextMenuPosition | null>(null);
-  const contextTaskView = computed(() => taskViews.value.find((view) => view.id === contextMenu.value?.taskId) ?? null);
+  const contextTaskView = computed(() => contextMenu.value ? taskView(contextMenu.value.taskId) ?? null : null);
   const contextActions = computed<TaskActionDescriptor[]>(() => {
     const view = contextTaskView.value;
     if (!view) return [];

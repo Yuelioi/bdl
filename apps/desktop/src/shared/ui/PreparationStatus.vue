@@ -36,7 +36,7 @@ onUnmounted(() => preparations.stop())
   <UiDialog v-model="open" title="添加下载任务">
     <UiInlineNotice v-if="preparations.error" tone="danger">
       {{ preparations.error }}
-      <ErrorDetails v-if="preparations.detail" :detail="preparations.detail" />
+      <ErrorDetails v-if="preparations.detail" :detail="preparations.detail" @open-settings="open = false" />
       <UiButton size="compact" variant="ghost" @click="preparations.load()">刷新</UiButton>
     </UiInlineNotice>
     <div class="grid min-w-0 gap-3" :class="{ 'preparation-mobile': mobile }">
@@ -51,7 +51,7 @@ onUnmounted(() => preparations.stop())
           </p>
         </div>
         <p v-if="job.error" class="m-0 break-words text-xs text-(--color-danger)">{{ job.error.message }}</p>
-        <ErrorDetails v-if="job.error" :detail="diagnostic(job)" />
+        <ErrorDetails v-if="job.error" :detail="diagnostic(job)" @open-settings="open = false" />
         <template v-if="job.status === 'awaiting_confirmation'">
           <p class="m-0 text-xs">{{ job.duplicates.length }} 项已在传输记录中</p>
           <ul class="m-0 max-h-40 overflow-auto pl-5 text-xs" aria-label="重复任务">

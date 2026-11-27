@@ -35,7 +35,7 @@ fn http_403_does_not_assume_login_failure() {
         &[log(QueueLogLevel::Error, "fetch error: HTTP 403 Forbidden")],
     );
 
-    assert_eq!(diagnostic.summary, "源站拒绝访问");
+    assert_eq!(diagnostic.summary, "B 站请求被拒绝");
     assert_eq!(
         diagnostic.recommended_action,
         RecommendedAction::InspectRawLog
@@ -144,7 +144,7 @@ fn latest_attempt_does_not_inherit_previous_login_failure() {
     let logs = vec![newest, retry, log(QueueLogLevel::Error, "Cookie 已失效")];
     assert_eq!(
         diagnose_task(&failed_task(ResourceStatus::Failed), &logs).summary,
-        "源站拒绝访问"
+        "B 站请求被拒绝"
     );
     let mut old_error = log(QueueLogLevel::Error, "Cookie 已失效");
     let mut retry = log(QueueLogLevel::Info, "重试任务");

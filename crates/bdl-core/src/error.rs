@@ -68,6 +68,13 @@ pub enum BdlError {
     #[error("解析已停止。\n{context}")]
     ParseCancelled { context: String },
 
+    #[error("解析已暂停，请至少等待 {seconds} 秒后重试。")]
+    ParseRestricted {
+        seconds: u64,
+        #[source]
+        source: Option<Box<BdlError>>,
+    },
+
     #[error("{context}\n原始错误：{source}")]
     Context {
         context: String,

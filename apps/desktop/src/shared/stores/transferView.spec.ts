@@ -45,7 +45,7 @@ describe('failure diagnostics', () => {
 
   it('uses the latest failure rather than combining unrelated attempts', () => {
     const logs = [log('Cookie 已失效'), log('下载请求失败: HTTP 403 Forbidden', '2026-07-10T12:02:00Z')]
-    expect(createTransferTaskView(task, 0, logs).issueLabel).toBe('源站拒绝访问')
+    expect(createTransferTaskView(task, 0, logs).issueLabel).toBe('B 站请求被拒绝')
   })
 
   it('does not diagnose an earlier attempt after a new attempt has started', () => {
@@ -125,6 +125,7 @@ describe('active transfer stages', () => {
     expect(createTransferTaskView(activeTask('video'), 99, [], null, undefined, 99).statusLabel).toBe('下载视频中')
     expect(createTransferTaskView(activeTask('audio'), 85, [], null, undefined, 85).statusLabel).toBe('下载音频中')
     expect(createTransferTaskView(activeTask('video', 'muxing'), 99).statusLabel).toBe('合并中')
+    expect(createTransferTaskView(activeTask('video', 'mux_queued'), 99).statusLabel).toBe('等待合并')
     for (const status of ['waiting', 'parsing', 'downloading', 'paused', 'muxing', 'failed', 'cancelled', 'completed'] as const) {
       const task = activeTask('video', status)
       task.media_selection.video_quality = '120'

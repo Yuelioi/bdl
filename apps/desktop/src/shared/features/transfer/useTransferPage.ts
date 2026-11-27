@@ -13,6 +13,11 @@ import { isAndroidPlatform, isMobilePlatform } from '../../platform/environment'
 import { queueDeletePreview } from '../../api/tauri';
 import { useFileRemoval } from './useFileRemoval';
 
+export interface TransferTaskRow {
+  id: string;
+  view: ComputedRef<ReturnType<typeof createTransferTaskView>>;
+}
+
 export function useTransferPage() {
   const queue = useQueueStore();
   const ui = useUiStore();
@@ -71,27 +76,26 @@ export function useTransferPage() {
       speed: (taskId) => queue.taskTransferProgress(taskId)?.speedBytesPerSecond ?? 0,
     });
   });
-  const rowViews = new Map<string, { task: (typeof queue.tasks)[number]; view: ComputedRef<ReturnType<typeof createTransferTaskView>> }>();
-  const taskViews = computed(() => {
-    const ids = new Set(queue.tasks.map(task => task.id));
-    for (const id of rowViews.keys()) if (!ids.has(id)) rowViews.delete(id);
-    return visibleTasks.value.map((task) => {
-      let row = rowViews.get(task.id);
-      if (!row || row.task !== task) {
-        row = { task, view: computed(() => createTransferTaskView(
-        task,
-        queue.taskProgress(task),
-        queue.logsByTask[task.id] ?? [],
-        queue.taskTransferProgress(task.id),
-        transferCapabilities,
-        queue.taskStageProgress(task),
-        queue.outputSizesByTask[task.id]?.path === task.output_path ? queue.outputSizesByTask[task.id]?.bytes ?? null : null,
-        )) };
-        rowViews.set(task.id, row);
-      }
-      return row.view.value;
-    });
-  });
+  const rowViews = new WeakMap<(typeof queue.tasks)[number], TransferTaskRow>();
+  const taskRows = computed(() => visibleTasks.value.map((task) => {
+    let row = rowViews.get(task);
+    if (!row) {
+      row = {
+        id: task.id,
+        view: computed(() => createTransferTaskView(
+          task,
+          queue.taskProgress(task),
+          queue.logsByTask[task.id] ?? [],
+          queue.taskTransferProgress(task.id),
+          transferCapabilities,
+          queue.taskStageProgress(task),
+          queue.outputSizesByTask[task.id]?.path === task.output_path ? queue.outputSizesByTask[task.id]?.bytes ?? null : null,
+        )),
+      };
+      rowViews.set(task, row);
+    }
+    return row;
+  }));
   const {
     pausableTaskIds,
     cancellableTaskIds,
@@ -201,7 +205,10 @@ export function useTransferPage() {
     closeContextMenu,
     closeContextMenuOnEscape,
     runContextAction,
-  } = useTransferContextMenu(taskViews, handleTaskAction);
+  } = useTransferContextMenu(
+    (id) => taskRows.value.find((row) => row.id === id)?.view.value,
+    handleTaskAction,
+  );
   useTransferPageLifecycle(queue, { closeContextMenu, closeContextMenuOnEscape });
   return {
     queue,
@@ -219,7 +226,7 @@ export function useTransferPage() {
     queueFilter,
     tabs,
     transferSortOptions,
-    taskViews,
+    taskRows,
     batchItems,
     emptyTitle,
     emptyDescription,

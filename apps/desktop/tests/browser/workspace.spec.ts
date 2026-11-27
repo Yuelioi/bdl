@@ -4,6 +4,20 @@ import { readFile } from 'node:fs/promises';
 import type { NormalizedSourceTree } from '../../src/shared/api/dto';
 import type { DownloadTask } from '../../src/shared/api/dto';
 
+const longMediaTitle = [
+  '从街机厅到家用主机回顾经典动作游戏的开发故事',
+  '走访当年制作团队寻找被遗忘的角色设定和关卡草图',
+  '还原从试玩演示到正式发售之间被删掉的剧情与玩法',
+  '对照不同地区版本解释画面配乐操作手感和难度的差别',
+  '逐场拆解隐藏挑战和最终对决怎样引导玩家学习招式',
+  '查阅旧杂志与访谈理清多年流传的传闻最早从何而来',
+  '也看看后来发行的移植版怎样处理老电视画面与音效',
+  '结合原始录屏记录每条路线的触发条件与可重复的技巧',
+  '最后重访已经消失的街机厅收集玩家记忆中的游戏故事',
+  '把零散资料依照时间顺序放回完整的制作与发行年表',
+  '让初次接触作品的观众也能看懂这些变化',
+].join('');
+
 const installTauriMock = async (
   page: Page,
   theme: 'light' | 'dark',
@@ -349,6 +363,7 @@ const installTauriMock = async (
               return { status: 'waiting', message: '等待扫码', account: null };
             }
             if (command === 'queue_list') return [];
+            if (command === 'queue_revision') return 0;
             if (command === 'queue_startup_recovery') {
               return { task_ids: [], auto_recovery_enabled: false };
             }
@@ -389,7 +404,7 @@ test.describe('specific failure diagnostics', () => {
         });
         const task = {
           id: 'diagnostic-fixture',
-          title: '源站拒绝访问测试',
+          title: '403 下载测试',
           source_id: 'video:fixture',
           status: 'failed',
           resources: [],
@@ -439,14 +454,14 @@ test.describe('specific failure diagnostics', () => {
       const row = page
         .getByRole('list', { name: '传输任务', includeHidden: true })
         .getByRole('listitem', { includeHidden: true })
-        .filter({ hasText: '源站拒绝访问测试' });
-      await expect(row).toContainText('源站拒绝访问');
+        .filter({ hasText: '403 下载测试' });
+      await expect(row).toContainText('B 站请求被拒绝');
       await row.getByRole('button', { name: /更多操作/ }).click();
       await expect(page.getByRole(device === 'desktop' ? 'menuitem' : 'button', { name: /设置限速|定时开始/ })).toHaveCount(0);
       await page.getByRole(device === 'desktop' ? 'menuitem' : 'button', { name: '详情和诊断', exact: true }).click();
-      const dialog = page.getByRole('dialog', { name: '源站拒绝访问测试', exact: true });
-      await expect(dialog.getByRole('heading', { name: '任务失败：源站拒绝访问' })).toBeVisible();
-      await expect(dialog).toContainText('单凭 403 无法判断');
+      const dialog = page.getByRole('dialog', { name: '403 下载测试', exact: true });
+      await expect(dialog.getByRole('heading', { name: '任务失败：B 站请求被拒绝' })).toBeVisible();
+      await expect(dialog).toContainText('确认当前账号能播放');
       await dialog.getByRole('tab', { name: /日志/ }).click();
       await dialog.getByRole('button', { name: '复制诊断信息', exact: true }).click();
       const copied = await page.evaluate(
@@ -2626,8 +2641,7 @@ for (const theme of ['light', 'dark'] as const) {
   test(`unified desktop media lists preserve metadata and contextual playback in ${theme}`, async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await installTauriMock(page, theme, true, true);
-    const longTitle =
-      '一个足够长的视频标题：从城市的日常风景到遥远星空，记录每一个值得珍藏的瞬间与故事 · 完整专题纪录片';
+    const longTitle = longMediaTitle;
     await page.addInitScript(
       ({ title }) => {
         const target = window as unknown as {
@@ -2739,7 +2753,7 @@ for (const theme of ['light', 'dark'] as const) {
 test('ten thousand parsed rows stay virtual while selection covers the whole source', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await installTauriMock(page, 'light');
-  await page.addInitScript(() => {
+  await page.addInitScript((title) => {
     const target = window as unknown as {
       __TAURI_INTERNALS__: { invoke: (command: string, args?: unknown) => Promise<unknown> };
     };
@@ -2753,20 +2767,30 @@ test('ten thousand parsed rows stay virtual while selection covers the whole sou
       tree.source.loaded_count = 10000;
       tree.source.total_count = 10000;
       tree.source.has_more = false;
-      tree.groups[0].items = Array.from({ length: 10000 }, (_, index) => ({
-        ...template,
-        id: `item:large:${index}`,
-        title: `万条视频 ${index + 1}`,
-        parts: [{ ...template.parts[0], id: `part:large:${index}`, title: `万条视频 ${index + 1}` }],
-      }));
+      tree.groups[0].items = Array.from({ length: 10000 }, (_, index) => {
+        const itemTitle = index === 0 ? title : `万条视频 ${index + 1}`;
+        return {
+          ...template,
+          id: `item:large:${index}`,
+          title: itemTitle,
+          parts: [{ ...template.parts[0], id: `part:large:${index}`, title: itemTitle }],
+        };
+      });
       return tree;
     };
-  });
+  }, longMediaTitle);
   await page.goto('/');
   await page.getByLabel('Bilibili 链接或 BV / AV').fill('BV1xx411c7mD');
   await page.getByRole('button', { name: '开始解析' }).click();
   const rows = page.locator('.source-media-row');
   await expect(rows.first()).toHaveAttribute('aria-setsize', '10000');
+  const title = rows.first().locator('.media-title');
+  await expect(title).toHaveText(longMediaTitle);
+  await title.focus();
+  const tooltip = page.locator('[data-slot="text"]').filter({ hasText: longMediaTitle });
+  await expect(tooltip).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(tooltip).toBeHidden();
   expect(await rows.count()).toBeLessThan(30);
   await page.getByRole('checkbox', { name: '全选已加载' }).check();
   await expect(page.getByRole('button', { name: '下载所选 (10000)' })).toBeEnabled();
@@ -3965,6 +3989,8 @@ for (const device of ['desktop', 'phone'] as const) {
       await expect(error.getByText('复制失败，请展开错误详情后手动复制。')).toBeVisible();
       await summary.click();
       await expect(error.locator('pre')).not.toBeVisible();
+      await error.getByRole('button', { name: '调整解析节奏' }).click();
+      await expect(page.getByRole('heading', { name: '解析节奏' })).toBeVisible();
     });
   }
 }

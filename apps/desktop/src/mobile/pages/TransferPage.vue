@@ -32,7 +32,7 @@ const {
   queueFilter,
   tabs,
   transferSortOptions,
-  taskViews,
+  taskRows,
   batchItems,
   removal,
   emptyTitle,
@@ -60,10 +60,10 @@ useMobileBack('transfer', () => {
   return true;
 });
 const visibleSelectedCount = computed(() => {
-  const visibleIds = new Set(taskViews.value.map((view) => view.id));
+  const visibleIds = new Set(taskRows.value.map((view) => view.id));
   return queue.selectedTaskIds.filter((id) => visibleIds.has(id)).length;
 });
-const allVisibleSelected = computed(() => taskViews.value.length > 0 && visibleSelectedCount.value === taskViews.value.length);
+const allVisibleSelected = computed(() => taskRows.value.length > 0 && visibleSelectedCount.value === taskRows.value.length);
 const beginManaging = (taskId: string) => {
   select(() => {
     if (!queue.selectedTaskIds.includes(taskId)) queue.toggleTaskSelection(taskId);
@@ -110,8 +110,8 @@ const beginManaging = (taskId: string) => {
         :disabled="queue.loading"
       />
       <MobileTransferList
-        v-if="taskViews.length"
-        :views="taskViews"
+        v-if="taskRows.length"
+        :rows="taskRows"
         :selected-task-ids="queue.selectedTaskIds"
         :managing="managing"
         :loading="queue.loading"
@@ -137,10 +137,10 @@ const beginManaging = (taskId: string) => {
         <UiButton
           variant="ghost"
           class="transfer-select-all"
-          :disabled="queue.loading || !taskViews.length"
+          :disabled="queue.loading || !taskRows.length"
           @click="
             queue.setVisibleTaskSelection(
-              taskViews.map((view) => view.id),
+              taskRows.map((view) => view.id),
               !allVisibleSelected,
             )
           "
@@ -168,6 +168,7 @@ const beginManaging = (taskId: string) => {
         :logs="selectedLogs"
         :logs-loading="selectedLogsLoading"
         @refresh-logs="refreshSelectedLogs"
+        @open-settings="taskDetailOpen = false"
       />
     </UiDialog>
     <MobileSheet v-model="toolsOpen" title="排序与刷新">

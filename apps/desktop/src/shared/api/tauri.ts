@@ -202,6 +202,7 @@ export const mobilePrepareNotifications = () =>
   invokeCommand<NotificationPermissionState>('mobile_prepare_notifications')
 
 export const queueList = () => invokeCommand<DownloadTask[]>('queue_list')
+export const queueRevision = () => invokeCommand<number>('queue_revision')
 
 export const queueStartupRecovery = () => invokeCommand<StartupRecoverySnapshot>('queue_startup_recovery')
 

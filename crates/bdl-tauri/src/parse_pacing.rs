@@ -83,11 +83,10 @@ impl ParsePacer {
                 break state;
             };
             if cooldown == CooldownBehavior::Report {
-                return Err(BdlError::Planning {
-                    message: format!(
-                        "解析已因限流暂停，请约 {} 秒后手动重试。",
-                        (until - now).as_secs().saturating_add(1)
-                    ),
+                let remaining = until - now;
+                return Err(BdlError::ParseRestricted {
+                    seconds: remaining.as_secs() + u64::from(remaining.subsec_nanos() > 0),
+                    source: None,
                 });
             }
             drop(state);
@@ -136,11 +135,11 @@ impl ParsePacer {
                 Ok(value)
             }
             Err(error) if is_rate_limit(&error) => {
-                state.blocked_until = Some(now + Duration::from_secs(60));
-                Err(BdlError::Planning {
-                    message: format!(
-                        "源站限制了请求，已停止解析，至少暂停60秒。已解析结果保留，请稍后手动重试；等待结束不代表限制已解除。{error}"
-                    ),
+                let seconds = 60;
+                state.blocked_until = Some(now + Duration::from_secs(seconds));
+                Err(BdlError::ParseRestricted {
+                    seconds,
+                    source: Some(Box::new(error)),
                 })
             }
             Err(error) => Err(error),
@@ -387,7 +386,10 @@ mod tests {
                 |_| 1,
             )
             .await;
-        assert!(failed.unwrap_err().to_string().contains("暂停60秒"));
+        let failure = crate::commands::CommandError::from(failed.unwrap_err());
+        assert_eq!(failure.code, "source_verification_required");
+        assert!(failure.message.contains("60 秒"));
+        assert!(failure.detail.unwrap().contains("HTTP 412"));
         let blocked = pacer
             .run(
                 rules,
@@ -399,7 +401,9 @@ mod tests {
                 |_| 1,
             )
             .await;
-        assert!(blocked.is_err());
+        let blocked = crate::commands::CommandError::from(blocked.unwrap_err());
+        assert_eq!(blocked.code, "source_access_restricted");
+        assert!(blocked.message.contains("60 秒"));
         let waiting_since = Instant::now();
         let result = pacer
             .run_observed(

@@ -1,4 +1,3 @@
-import { ref } from 'vue';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { TransferTaskView } from '../../stores/transferView';
@@ -23,14 +22,14 @@ describe('transfer context menu', () => {
   });
 
   it('places the primary action before secondary actions', () => {
-    const menu = useTransferContextMenu(ref([view]), vi.fn());
+    const menu = useTransferContextMenu(() => view, vi.fn());
     menu.contextMenu.value = { taskId: view.id, x: 8, y: 8 };
     expect(menu.contextActions.value.map((action) => action.kind)).toEqual(['pause', 'open_dir']);
   });
 
   it('closes before dispatching a selected action', () => {
     const run = vi.fn();
-    const menu = useTransferContextMenu(ref([view]), run);
+    const menu = useTransferContextMenu(() => view, run);
     menu.contextMenu.value = { taskId: view.id, x: 8, y: 8 };
     menu.runContextAction('pause');
     expect(menu.contextMenu.value).toBeNull();

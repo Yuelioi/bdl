@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { FEEDBACK_AUTO_DISMISS_MS } from './feedback'
 import type { SettingsDetailPage, SettingsSectionId } from '../features/settings/settingsSections'
+import { settingsSections } from '../features/settings/settingsCatalog'
 
 export type AppTab = 'parse' | 'library' | 'transfer' | 'settings' | 'about'
 export type MobileSettingsPage = 'overview' | SettingsDetailPage
@@ -32,6 +33,7 @@ export const useUiStore = defineStore('ui', {
     environmentDialogOpen: false,
     settingsNavigationGuard: null as NavigationGuard | null,
     settingsSection: 'settings-download' as SettingsSectionId,
+    settingsFocusFfmpeg: false,
     settingsPresetKind: 'download' as 'download' | 'naming',
   }),
   actions: {
@@ -50,6 +52,20 @@ export const useUiStore = defineStore('ui', {
       this.mobileSettingsPath = [page]
       this.mobileSettingsReturnTab = null
       this.mobilePersonalPage = 'settings'
+    },
+    openSettingsSection(id: SettingsSectionId, focusFfmpeg = false) {
+      const section = settingsSections.find((section) => section.id === id)
+      if (!section) return
+      const leave = () => {
+        const from = this.activeTab
+        this.settingsSection = id
+        this.settingsFocusFfmpeg = focusFfmpeg
+        this.openMobileSettings(section.mobilePage)
+        if (from === 'parse' || from === 'library') this.mobileSettingsReturnTab = from
+        this.activeTab = 'settings'
+      }
+      if (this.activeTab === 'settings' && this.settingsNavigationGuard) this.settingsNavigationGuard(leave)
+      else leave()
     },
     setTab(tab: AppTab) {
       if (tab === this.activeTab) return

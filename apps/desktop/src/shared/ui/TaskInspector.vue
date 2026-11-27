@@ -20,6 +20,7 @@ import UiTabs from './Tabs.vue'
 import { isMobilePlatform } from '../platform/environment'
 import { captureDiagnosticEnvironment } from '../utils/diagnosticEnvironment'
 import { writeClipboardText } from '../utils/clipboard'
+import { classifyFailure, failureGuidance, latestFailure } from '../utils/failureDiagnostic'
 import { audioCodecOptions, audioQualityOptions, codecOptions, videoQualityOptions } from '../features/settings/settingsCatalog'
 
 const { task, progress, logs, logsLoading = false } = defineProps<{
@@ -32,6 +33,7 @@ const { task, progress, logs, logsLoading = false } = defineProps<{
 const emit = defineEmits<{
   refreshLogs: []
   recover: [taskId: string, action: 'retry' | 'refresh_retry']
+  openSettings: []
 }>()
 
 const ui = useUiStore()
@@ -41,7 +43,8 @@ const {
   busy: exportingDiagnostics, folderReady, notice: exportNotice, noticeTone,
   run: exportDiagnostics, reset: resetExport,
 } = useDiagnosticExport(() => task?.id)
-const transferCapabilities = { canOpenOutput: !isMobilePlatform() }
+const mobile = isMobilePlatform()
+const transferCapabilities = { canOpenOutput: !mobile }
 
 const tabs = computed(() => [
   { label: '概览', value: 'overview' },
@@ -53,7 +56,20 @@ const recoveryAction = computed(() =>
   diagnostic.value?.recommendedAction === 'refresh_retry' ? 'refresh_retry' : 'retry',
 )
 const canRecover = computed(() => !logs.length || ['retry', 'refresh_retry'].some(action => action === diagnostic.value?.recommendedAction))
-const needsLogin = computed(() => diagnostic.value?.recommendedActionLabel === '登录后重试')
+const guidance = computed(() => {
+  const failure = latestFailure(logs) ?? ''
+  const rule = classifyFailure(failure)
+  const stage = failure.startsWith('[stage=refresh_urls ') ? 'parse' : 'download'
+  return rule && failureGuidance(rule, stage, mobile)
+})
+const followGuidance = () => {
+  if (!guidance.value) return
+  const { section } = guidance.value
+  if (section) {
+    emit('openSettings')
+    ui.openSettingsSection(section, section === 'settings-download')
+  } else ui.openLoginDialog()
+}
 const recover = () => {
   if (task) emit('recover', task.id, recoveryAction.value)
 }
@@ -198,13 +214,10 @@ const trackTitle = (resource: DownloadResource): string => resourceIntentText(re
       <section v-if="selectedTab === 'overview'" class="tab-panel overview-panel">
         <div v-if="diagnostic.tone === 'danger' || diagnostic.tone === 'warning'" class="diagnosis-block feedback-tone" :class="`tone-${diagnostic.tone}`">
           <h3>{{ diagnostic.summary }}</h3>
-          <p>{{ task.status === 'failed' && !logsLoading && !logs.length && !diagnostic.recommendedAction ? '暂无可用日志。可以先重试任务。' : diagnostic.detail }}</p>
-          <div v-if="task.status === 'failed' && !isMobilePlatform()" class="diagnosis-actions mt-3">
-            <UiButton v-if="needsLogin" size="compact" @click="ui.openLoginDialog()">
-              <UIcon name="i-tabler-user" class="size-4" aria-hidden="true" />
-              打开登录
-            </UiButton>
-            <UiButton v-if="canRecover" size="compact" :variant="needsLogin ? 'secondary' : 'primary'" :disabled="logsLoading" @click="recover">
+          <p>{{ task.status === 'failed' && !logsLoading && !logs.length && !diagnostic.recommendedAction ? '暂无可用日志。可以先重试任务。' : diagnostic.detail }}{{ task.status === 'failed' ? guidance?.tip : '' }}</p>
+          <div v-if="task.status === 'failed' && (guidance || !mobile)" class="diagnosis-actions mt-3">
+            <UiButton v-if="guidance" :class="{ 'mobile-recovery': mobile }" :size="mobile ? 'default' : 'compact'" @click="followGuidance">{{ guidance.label }}</UiButton>
+            <UiButton v-if="canRecover && !mobile" size="compact" :variant="guidance ? 'secondary' : 'primary'" :disabled="logsLoading" @click="recover">
               <UIcon name="i-tabler-refresh" class="size-4" aria-hidden="true" />
               {{ recoveryAction === 'refresh_retry' ? '刷新链接并重试' : '重试任务' }}
             </UiButton>
