@@ -988,10 +988,7 @@ impl AppState {
             .storage
             .lock()
             .map_err(|_| state_poisoned("storage"))?
-            .load_completed_records()?
-            .into_iter()
-            .map(|record| (record.task_id, record.completed_at))
-            .collect();
+            .completed_queue_times()?;
         Ok(tasks
             .into_iter()
             .map(|task| {

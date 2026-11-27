@@ -67,8 +67,8 @@ impl TaskStorage {
             error.with_context(format!("[stage=database_schema] path={}", path.display()))
         })?;
 
-        let mut storage = Self { conn };
-        storage.prune_expired_task_logs()?;
+        let storage = Self { conn };
+        prune_expired_task_logs(&storage.conn)?;
         prune_operation_errors(&storage.conn)?;
         prune_preparation_records(&storage.conn)?;
         Ok(storage)
@@ -469,6 +469,17 @@ impl TaskStorage {
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
+    pub fn completed_queue_times(&self) -> BdlResult<std::collections::HashMap<String, String>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT tasks.id, MAX(history.completed_at)
+             FROM tasks JOIN history ON history.task_id = tasks.id
+             WHERE tasks.status = '\"completed\"'
+             GROUP BY tasks.id",
+        )?;
+        let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
     pub fn save_account_summary(&mut self, account: &AccountSummary) -> BdlResult<()> {
         self.conn.execute(
             r#"
@@ -503,7 +514,8 @@ impl TaskStorage {
     }
 
     pub fn append_task_log(&mut self, entry: &QueueLogEntry) -> BdlResult<()> {
-        self.conn.execute(
+        let tx = self.conn.transaction()?;
+        tx.execute(
             r#"
             INSERT INTO task_logs (task_id, level, message, created_at)
             VALUES (?1, ?2, ?3, ?4)
@@ -515,7 +527,14 @@ impl TaskStorage {
                 entry.created_at.as_str(),
             ],
         )?;
-        self.prune_task_logs(entry.task_id.as_str())?;
+        prune_expired_task_logs(&tx)?;
+        tx.execute(
+            "DELETE FROM task_logs WHERE task_id = ?1 AND id <= (
+                SELECT id FROM task_logs WHERE task_id = ?1 ORDER BY id DESC LIMIT 1 OFFSET ?2
+            )",
+            params![entry.task_id, MAX_TASK_LOGS_PER_TASK as i64],
+        )?;
+        tx.commit()?;
         Ok(())
     }
 
@@ -628,36 +647,15 @@ impl TaskStorage {
             task_ids,
         })
     }
+}
 
-    fn prune_expired_task_logs(&mut self) -> BdlResult<()> {
-        let cutoff = (Utc::now() - Duration::days(TASK_LOG_RETENTION_DAYS)).to_rfc3339();
-        self.conn.execute(
-            "DELETE FROM task_logs WHERE datetime(created_at) < datetime(?1)",
-            [cutoff],
-        )?;
-        Ok(())
-    }
-
-    fn prune_task_logs(&mut self, task_id: &str) -> BdlResult<()> {
-        self.prune_expired_task_logs()?;
-
-        let max_logs = i64::try_from(MAX_TASK_LOGS_PER_TASK).unwrap_or(i64::MAX);
-        self.conn.execute(
-            r#"
-            DELETE FROM task_logs
-            WHERE task_id = ?1
-              AND id NOT IN (
-                SELECT id
-                FROM task_logs
-                WHERE task_id = ?1
-                ORDER BY id DESC
-                LIMIT ?2
-              )
-            "#,
-            params![task_id, max_logs],
-        )?;
-        Ok(())
-    }
+fn prune_expired_task_logs(conn: &Connection) -> BdlResult<()> {
+    let cutoff = (Utc::now() - Duration::days(TASK_LOG_RETENTION_DAYS)).to_rfc3339();
+    conn.execute(
+        "DELETE FROM task_logs WHERE datetime(created_at) < datetime(?1)",
+        [cutoff],
+    )?;
+    Ok(())
 }
 
 fn prune_preparation_records(conn: &Connection) -> BdlResult<()> {
@@ -793,6 +791,13 @@ fn run_migrations(conn: &Connection) -> BdlResult<()> {
             summary TEXT NOT NULL,
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
+
+        CREATE INDEX IF NOT EXISTS tasks_sort_order ON tasks(sort_order);
+        CREATE INDEX IF NOT EXISTS resources_task_order ON resources(task_id, sort_order);
+        CREATE INDEX IF NOT EXISTS segments_resource ON segments(resource_id);
+        CREATE INDEX IF NOT EXISTS task_logs_task_id ON task_logs(task_id, id);
+        CREATE INDEX IF NOT EXISTS task_logs_created_at ON task_logs(datetime(created_at));
+        CREATE INDEX IF NOT EXISTS history_task_id ON history(task_id);
         "#,
     )?;
     add_column_if_missing(
