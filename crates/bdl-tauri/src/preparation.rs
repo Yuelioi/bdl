@@ -22,7 +22,7 @@ use crate::commands::{
 };
 use crate::download_resolution::SelectionPreparation;
 use crate::parse_owned::PreparationContext;
-use crate::state::AppState;
+use crate::state::{AppState, DuplicateTaskEnqueueResult};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -526,33 +526,73 @@ pub(crate) fn commit(
     strategy: bdl_core::naming::DuplicateNamingStrategy,
 ) -> CommandResult<SelectionCreateTasksResult> {
     let outcome = state.enqueue_tasks_with_duplicate_policy(tasks, policy, strategy)?;
-    Ok(SelectionCreateTasksResult {
+    Ok(selection_result(outcome, skipped))
+}
+
+fn selection_result(
+    outcome: DuplicateTaskEnqueueResult,
+    skipped: usize,
+) -> SelectionCreateTasksResult {
+    SelectionCreateTasksResult {
         created: outcome.inserted,
         skipped_existing: skipped + outcome.skipped_existing,
         duplicates: outcome
             .duplicates
             .into_iter()
-            .map(|duplicate| DuplicateTaskMatch {
-                proposed_task_id: duplicate.proposed_task_id,
-                title: duplicate.title,
-                existing_task_id: duplicate.existing_task_id,
-                existing_status: duplicate.existing_status,
-            })
+            .map(duplicate_match)
             .collect(),
         requires_confirmation: outcome.requires_confirmation,
-    })
+    }
 }
 
-fn save_committed_result(state: &AppState, job: &mut PreparationJob) {
-    job.error = None;
-    if let Err(error) = persist(state, job) {
-        let mut error = CommandError::from(error).with_context(&format!(
-            "[stage=preparation_record_after_enqueue] job_id={} created={}",
-            job.id, job.created
-        ));
-        error.message = "准备结果已保留，但记录保存失败，请查看错误详情。".into();
-        job.error = Some(error);
+fn duplicate_match(duplicate: crate::state::DuplicateTaskMatch) -> DuplicateTaskMatch {
+    DuplicateTaskMatch {
+        proposed_task_id: duplicate.proposed_task_id,
+        title: duplicate.title,
+        existing_task_id: duplicate.existing_task_id,
+        existing_status: duplicate.existing_status,
     }
+}
+
+fn commit_prepared_job(
+    state: &AppState,
+    job: &mut PreparationJob,
+    tasks: Vec<DownloadTask>,
+    skipped: usize,
+    policy: DuplicateTaskPolicy,
+    strategy: DuplicateNamingStrategy,
+) -> CommandResult<SelectionCreateTasksResult> {
+    let mut updated = job.clone();
+    let outcome = state.enqueue_prepared_tasks(tasks, policy, strategy, &job.id, |outcome| {
+        updated.created = outcome.inserted.len();
+        updated.skipped_existing = skipped
+            + outcome.skipped_existing
+            + if policy == DuplicateTaskPolicy::Skip {
+                outcome.duplicates.len()
+            } else {
+                0
+            };
+        updated.duplicates = if job.status == PreparationStatus::AwaitingConfirmation {
+            Vec::new()
+        } else {
+            outcome
+                .duplicates
+                .iter()
+                .cloned()
+                .map(duplicate_match)
+                .collect()
+        };
+        updated.processed = updated.total;
+        updated.status = if outcome.requires_confirmation {
+            PreparationStatus::AwaitingConfirmation
+        } else {
+            PreparationStatus::Completed
+        };
+        updated.error = None;
+        Ok((updated.status.name(), serde_json::to_value(&updated)?))
+    })?;
+    *job = updated;
+    Ok(selection_result(outcome, skipped))
 }
 
 fn save_failure(state: &AppState, job: &mut PreparationJob) {
@@ -563,17 +603,6 @@ fn save_failure(state: &AppState, job: &mut PreparationJob) {
             job.id,
             CommandError::from(error).diagnostic_message(),
         )));
-    }
-}
-
-async fn report_record_error(app: &AppHandle, state: &AppState, id: &str) {
-    if let Some(error) = state
-        .preparation_jobs()
-        .into_iter()
-        .find(|job| job.id == id)
-        .and_then(|job| job.error)
-    {
-        crate::commands::report_runtime_error(app, state, "preparation_record", error).await;
     }
 }
 
@@ -680,7 +709,6 @@ pub async fn selection_submit_tasks(
         let result = run(&state, input, token).await;
         if let Ok(Some(outcome)) = &result {
             publish(&app, &state, outcome).await;
-            report_record_error(&app, &state, &id).await;
         }
         if let Err(error) = result {
             let report = {
@@ -767,27 +795,14 @@ pub(crate) async fn run(
         }
         let entry = entries.get_mut(&id).expect("registered preparation");
         state.check_account_revision(input.context.account_revision)?;
-        let result = commit(
+        let result = commit_prepared_job(
             state,
+            &mut entry.job,
             tasks.clone(),
             skipped,
             input.policy,
             input.options.duplicate_naming_strategy,
         )?;
-        entry.job.created = result.created.len();
-        entry.job.skipped_existing = result.skipped_existing
-            + if matches!(input.policy, DuplicateTaskPolicy::Skip) {
-                result.duplicates.len()
-            } else {
-                0
-            };
-        entry.job.duplicates = result.duplicates.clone();
-        entry.job.processed = entry.job.total;
-        entry.job.status = if result.requires_confirmation {
-            PreparationStatus::AwaitingConfirmation
-        } else {
-            PreparationStatus::Completed
-        };
         if result.requires_confirmation {
             entry.plan = Some(PendingPlan {
                 tasks,
@@ -796,7 +811,6 @@ pub(crate) async fn run(
                 account_revision: input.context.account_revision,
             });
         }
-        save_committed_result(state, &mut entry.job);
         result
     };
     Ok(Some(result))
@@ -893,28 +907,18 @@ pub async fn preparation_confirm(
             message: "该任务当前无需确认。".into(),
         })?;
         state.check_account_revision(plan.account_revision)?;
-        let result = commit(
+        let result = commit_prepared_job(
             &state,
+            &mut entry.job,
             plan.tasks.clone(),
             plan.skipped,
             policy,
             plan.strategy,
         )?;
-        entry.job.status = PreparationStatus::Completed;
-        entry.job.created = result.created.len();
-        entry.job.skipped_existing = result.skipped_existing
-            + if matches!(policy, DuplicateTaskPolicy::Skip) {
-                result.duplicates.len()
-            } else {
-                0
-            };
-        entry.job.duplicates.clear();
         entry.plan = None;
-        save_committed_result(&state, &mut entry.job);
         result
     };
     publish(&app, &state, &result).await;
-    report_record_error(&app, &state, &job_id).await;
     Ok(())
 }
 

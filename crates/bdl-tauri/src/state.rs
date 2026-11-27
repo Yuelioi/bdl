@@ -422,9 +422,48 @@ impl AppState {
 
     pub fn enqueue_tasks_with_duplicate_policy(
         &self,
+        tasks: Vec<DownloadTask>,
+        policy: DuplicateTaskPolicy,
+        naming_strategy: DuplicateNamingStrategy,
+    ) -> BdlResult<DuplicateTaskEnqueueResult> {
+        self.enqueue_tasks(tasks, policy, naming_strategy, |queue, _| {
+            self.persist_queue_edit(queue)
+        })
+    }
+
+    pub(crate) fn enqueue_prepared_tasks(
+        &self,
+        tasks: Vec<DownloadTask>,
+        policy: DuplicateTaskPolicy,
+        naming_strategy: DuplicateNamingStrategy,
+        job_id: &str,
+        record: impl FnOnce(&DuplicateTaskEnqueueResult) -> BdlResult<(&'static str, serde_json::Value)>,
+    ) -> BdlResult<DuplicateTaskEnqueueResult> {
+        self.enqueue_tasks(tasks, policy, naming_strategy, |queue, result| {
+            let (status, serialized) = record(result)?;
+            self.storage
+                .lock()
+                .map_err(|_| state_poisoned("storage"))?
+                .apply_queue_preparation(
+                    &queue.current,
+                    &queue.next,
+                    job_id,
+                    status,
+                    &serialized,
+                )?;
+            if *queue.current != queue.next {
+                self.install_queue_edit(queue);
+            }
+            Ok(())
+        })
+    }
+
+    fn enqueue_tasks(
+        &self,
         mut tasks: Vec<DownloadTask>,
         policy: DuplicateTaskPolicy,
         naming_strategy: DuplicateNamingStrategy,
+        persist: impl FnOnce(&mut QueueEdit<'_>, &DuplicateTaskEnqueueResult) -> BdlResult<()>,
     ) -> BdlResult<DuplicateTaskEnqueueResult> {
         let mut queue = self.queue_edit()?;
         if self.file_cleanup_active.load(Ordering::SeqCst) {
@@ -432,19 +471,18 @@ impl AppState {
                 message: "正在清理文件，请稍后创建任务。".into(),
             });
         }
-        let removed_existing_duplicates = dedupe_tasks_by_id(&mut queue);
+        dedupe_tasks_by_id(&mut queue);
         let duplicates = duplicate_task_matches(&tasks, &queue);
 
         if policy == DuplicateTaskPolicy::Ask && !duplicates.is_empty() {
-            if removed_existing_duplicates {
-                self.persist_queue_edit(&mut queue)?;
-            }
-            return Ok(DuplicateTaskEnqueueResult {
+            let outcome = DuplicateTaskEnqueueResult {
                 inserted: Vec::new(),
                 duplicates,
                 requires_confirmation: true,
                 skipped_existing: 0,
-            });
+            };
+            persist(&mut queue, &outcome)?;
+            return Ok(outcome);
         }
 
         match policy {
@@ -483,15 +521,14 @@ impl AppState {
         };
         let skipped_existing = planned_count - tasks.len();
         let inserted = append_new_tasks(&mut queue, tasks);
-        if removed_existing_duplicates || !inserted.is_empty() {
-            self.persist_queue_edit(&mut queue)?;
-        }
-        Ok(DuplicateTaskEnqueueResult {
+        let outcome = DuplicateTaskEnqueueResult {
             inserted,
             duplicates,
             requires_confirmation: false,
             skipped_existing,
-        })
+        };
+        persist(&mut queue, &outcome)?;
+        Ok(outcome)
     }
 
     pub fn try_start_queue_worker(&self) -> bool {
@@ -2712,13 +2749,54 @@ mod tests {
             status: ResourceStatus::Pending,
         }];
 
-        let result = state
-            .enqueue_tasks_with_duplicate_policy(
-                vec![planned],
-                DuplicateTaskPolicy::Create,
-                DuplicateNamingStrategy::AppendSuffix,
+        let original = serde_json::json!({ "id": "job", "status": "preparing" });
+        state
+            .storage
+            .lock()
+            .unwrap()
+            .save_preparation_record("job", "preparing", &original)
+            .unwrap();
+        let db = rusqlite::Connection::open(data_dir.join("tasks.sqlite")).unwrap();
+        db.execute_batch(
+            "CREATE TRIGGER reject_preparation BEFORE UPDATE ON task_preparations
+            BEGIN SELECT RAISE(ABORT, 'preparation write failed'); END;",
+        )
+        .unwrap();
+        let commit =
+            || {
+                state.enqueue_prepared_tasks(
+            vec![planned.clone()],
+            DuplicateTaskPolicy::Create,
+            DuplicateNamingStrategy::AppendSuffix,
+            "job",
+            |outcome| Ok(("completed", serde_json::json!({
+                "id": "job", "status": "completed", "created": outcome.inserted.len()
+            }))),
+        )
+            };
+        assert!(commit().is_err());
+        assert_eq!(state.queue_snapshot().unwrap().len(), 2);
+        let task_count: usize = db
+            .query_row("SELECT COUNT(*) FROM tasks", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(task_count, 2);
+        assert_eq!(
+            state.storage.lock().unwrap().preparation_records().unwrap(),
+            vec![original]
+        );
+        db.execute_batch("DROP TRIGGER reject_preparation;")
+            .unwrap();
+
+        let result = commit().expect("duplicate copy and preparation should be committed together");
+        let status: String = db
+            .query_row(
+                "SELECT status FROM task_preparations WHERE id = 'job'",
+                [],
+                |row| row.get(0),
             )
-            .expect("duplicate copy should be created");
+            .unwrap();
+        assert_eq!(status, "completed");
+        drop(db);
 
         assert_eq!(result.inserted[0].id, "task:source:part:copy:2");
         assert!(result.inserted[0].output_path.ends_with("fixture (1).mp4"));
@@ -2731,6 +2809,7 @@ mod tests {
                 .target_path
                 .ends_with("fixture (1).video.m4s")
         );
+        drop(state);
         let _ = std::fs::remove_dir_all(data_dir);
     }
 

@@ -90,12 +90,22 @@ impl TaskStorage {
         record: &serde_json::Value,
     ) -> BdlResult<()> {
         let tx = self.conn.transaction()?;
+        Self::write_preparation_record(&tx, id, status, record)?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    fn write_preparation_record(
+        tx: &Transaction<'_>,
+        id: &str,
+        status: &str,
+        record: &serde_json::Value,
+    ) -> BdlResult<()> {
         tx.execute(
             "INSERT INTO task_preparations (id, status, record, updated_at) VALUES (?1, ?2, ?3, ?4) ON CONFLICT(id) DO UPDATE SET status=excluded.status, record=excluded.record, updated_at=excluded.updated_at",
             params![id, status, serde_json::to_string(record)?, Utc::now().to_rfc3339()],
         )?;
-        prune_preparation_records(&tx)?;
-        tx.commit()?;
+        prune_preparation_records(tx)?;
         Ok(())
     }
 
@@ -236,6 +246,19 @@ impl TaskStorage {
         self.transact_queue_changes(previous, next, |tx| {
             Self::write_completed_record(tx, completed, &logs)?;
             Ok(())
+        })
+    }
+
+    pub fn apply_queue_preparation(
+        &mut self,
+        previous: &[DownloadTask],
+        next: &[DownloadTask],
+        id: &str,
+        status: &str,
+        record: &serde_json::Value,
+    ) -> BdlResult<()> {
+        self.transact_queue_changes(previous, next, |tx| {
+            Self::write_preparation_record(tx, id, status, record)
         })
     }
 
