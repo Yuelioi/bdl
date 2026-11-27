@@ -7,7 +7,7 @@ use serde::de::DeserializeOwned;
 
 use crate::account::{AccountSummary, redact_sensitive};
 use crate::error::{BdlError, BdlResult, IoResultExt};
-use crate::queue::{DownloadResource, DownloadTask, QueueLogEntry, QueueLogLevel};
+use crate::queue::{DownloadResource, DownloadTask, QueueLogEntry, QueueLogLevel, TaskStatus};
 
 const MAX_COMPLETION_ERROR_SUMMARY_CHARS: usize = 2000;
 const TASK_LOG_RETENTION_DAYS: i64 = 30;
@@ -900,6 +900,13 @@ fn run_migrations(conn: &Connection) -> BdlResult<()> {
         "container TEXT NOT NULL DEFAULT 'unknown'",
     )?;
     add_column_if_missing(conn, "history", "error_summary", "error_summary TEXT")?;
+    conn.execute(
+        "UPDATE tasks SET status = ?1 WHERE status = ?2",
+        params![
+            serialize_json(&TaskStatus::Downloading)?,
+            serialize_json(&TaskStatus::MuxQueued)?,
+        ],
+    )?;
     Ok(())
 }
 
@@ -928,6 +935,12 @@ fn save_task_row_in_tx(
         .as_ref()
         .map(serialize_json)
         .transpose()?;
+    // Waiting for an in-memory merge permit is an interrupted download on disk.
+    // Both current and older startup recovery keep its completed tracks.
+    let persisted_status = match task.status {
+        TaskStatus::MuxQueued => TaskStatus::Downloading,
+        status => status,
+    };
 
     tx.execute(
         r#"
@@ -950,7 +963,7 @@ fn save_task_row_in_tx(
             task.id,
             task.title,
             task.source_id,
-            serialize_json(&task.status)?,
+            serialize_json(&persisted_status)?,
             path_to_string(&task.output_path),
             export_target_json.as_deref(),
             refresh_intent_json.as_deref(),

@@ -840,7 +840,10 @@ fn task_action(app: &AppHandle, args: &Value) -> Result<Value, String> {
     let result = match (args.action, status) {
         (
             TaskAction::Pause,
-            TaskStatus::Waiting | TaskStatus::Parsing | TaskStatus::Downloading,
+            TaskStatus::Waiting
+            | TaskStatus::Parsing
+            | TaskStatus::Downloading
+            | TaskStatus::MuxQueued,
         ) => queue_pause(app.clone(), state, args.task_id),
         (TaskAction::Resume, TaskStatus::Paused) => queue_resume(app.clone(), state, args.task_id),
         (TaskAction::Retry, TaskStatus::Failed) => queue_retry(app.clone(), state, args.task_id),

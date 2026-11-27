@@ -1148,7 +1148,9 @@ mod tests {
     struct Fixture {
         root: PathBuf,
         state: std::sync::Arc<AppState>,
+        _cleanup: FixtureCleanup,
     }
+    struct FixtureCleanup(PathBuf);
     impl Fixture {
         fn new() -> Self {
             Self::with_storage(crate::mobile_storage::MobileStorage::unsupported())
@@ -1170,6 +1172,7 @@ mod tests {
             )
             .unwrap();
             Self {
+                _cleanup: FixtureCleanup(root.clone()),
                 root,
                 state: std::sync::Arc::new(state),
             }
@@ -1207,18 +1210,18 @@ mod tests {
             *queue = tasks;
         }
     }
-    impl Drop for Fixture {
+    impl Drop for FixtureCleanup {
         fn drop(&mut self) {
             // All fixtures, including link destinations, are inside this unique test root.
-            if self.root.parent() == Some(std::env::temp_dir().as_path())
+            if self.0.parent() == Some(std::env::temp_dir().as_path())
                 && self
-                    .root
+                    .0
                     .file_name()
                     .unwrap()
                     .to_string_lossy()
                     .starts_with("bdl-removal-test-")
             {
-                let _ = fs::remove_dir_all(&self.root);
+                let _ = fs::remove_dir_all(&self.0);
             }
         }
     }
@@ -2328,9 +2331,15 @@ mod tests {
             };
             assert!(!deleted.exists());
             assert_durable_ids(&fixture, &["partial"]);
+            let Fixture {
+                root,
+                state,
+                _cleanup,
+            } = fixture;
+            drop(state);
             let restarted = AppState::new_with_platform_backends(
-                fixture.root.join("state"),
-                fixture.root.join("downloads"),
+                root.join("state"),
+                root.join("downloads"),
                 crate::secure_store::SecureStore::in_memory(),
                 crate::mobile_storage::MobileStorage::unsupported(),
                 crate::media_mux::MediaMuxBackend::unsupported(),
@@ -2339,7 +2348,11 @@ mod tests {
             .unwrap();
             assert_eq!(restarted.task_status(&task.id).unwrap(), TaskStatus::Paused);
             assert!(!restarted.has_startable_task().unwrap());
-            drop(restarted);
+            let fixture = Fixture {
+                root,
+                state: std::sync::Arc::new(restarted),
+                _cleanup,
+            };
             drop(handle);
             if full {
                 let preview = fixture

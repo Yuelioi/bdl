@@ -2635,11 +2635,35 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(waiting.status, TaskStatus::MuxQueued);
+        let paused = state
+            .update_task_status("task:refresh", TaskStatus::Paused)
+            .unwrap();
+        assert_eq!(paused.status, TaskStatus::Paused);
+        assert_eq!(paused.resources[0].status, ResourceStatus::Completed);
+        assert!(token.is_cancelled());
+        assert!(
+            state
+                .transition_post_processing(
+                    "task:refresh",
+                    TaskStatus::MuxQueued,
+                    TaskStatus::Muxing,
+                    &token,
+                )
+                .unwrap()
+                .is_none()
+        );
+        state.clear_task_cancel_token("task:refresh").unwrap();
+        state
+            .update_task_status("task:refresh", TaskStatus::Waiting)
+            .unwrap();
+        let resumed = state.take_next_startable_task().unwrap().unwrap();
+        assert_eq!(resumed.status, TaskStatus::Downloading);
+        let token = state.register_task_cancel_token("task:refresh").unwrap();
         let revision = state.queue_revision();
         state
             .transition_post_processing(
                 "task:refresh",
-                TaskStatus::MuxQueued,
+                TaskStatus::Downloading,
                 TaskStatus::Muxing,
                 &token,
             )

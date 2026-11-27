@@ -75,6 +75,30 @@ fn task_storage_reloads_task_with_resources_after_reopen() -> BdlResult<()> {
     let tasks = storage.load_tasks()?;
 
     assert_eq!(tasks, vec![task]);
+    drop(storage);
+
+    let mut queued = tasks.into_iter().next().unwrap();
+    queued.status = TaskStatus::MuxQueued;
+    for resource in &mut queued.resources {
+        resource.status = ResourceStatus::Completed;
+    }
+    TaskStorage::open(&fixture.db_path)?.save_task(&queued)?;
+    let db = rusqlite::Connection::open(&fixture.db_path)?;
+    let disk_status = || {
+        db.query_row("SELECT status FROM tasks", [], |row| {
+            row.get::<_, String>(0)
+        })
+    };
+    assert_eq!(disk_status()?, r#""downloading""#);
+    db.execute("UPDATE tasks SET status = ?1", [r#""mux_queued""#])?;
+    drop(db);
+
+    let restored = TaskStorage::open(&fixture.db_path)?.load_tasks()?;
+    assert_eq!(restored[0].status, TaskStatus::Downloading);
+    assert_eq!(restored[0].resources, queued.resources);
+    let db = rusqlite::Connection::open(&fixture.db_path)?;
+    let migrated: String = db.query_row("SELECT status FROM tasks", [], |row| row.get(0))?;
+    assert_eq!(migrated, r#""downloading""#);
     Ok(())
 }
 
