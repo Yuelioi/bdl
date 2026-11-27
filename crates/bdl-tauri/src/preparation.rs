@@ -465,7 +465,14 @@ pub(crate) async fn materialize_queued_download(
             |_, _| Ok(()),
         )
         .await?;
-    let mut planned = deferred.plan(&prepared.tree)?;
+    let mut reserved = queued
+        .media_selection
+        .post
+        .iter()
+        .flat_map(|post| &post.finished)
+        .flat_map(DownloadTask::file_paths)
+        .collect();
+    let mut planned = deferred.plan_with_reservations(&prepared.tree, &mut reserved)?;
     if let Some(task) = &mut planned {
         set_document_tree_target(task, &deferred.options, deferred.document_tree.as_ref())?;
     }

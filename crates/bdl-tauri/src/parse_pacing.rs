@@ -18,31 +18,30 @@ pub(crate) enum CooldownBehavior {
 
 #[derive(Default)]
 struct PaceState {
-    last_completed: Option<Instant>,
-    next: Option<Instant>,
+    last_page: Option<Instant>,
     blocked_until: Option<Instant>,
-    pages: usize,
-    pages_since_rest: usize,
 }
 
 impl ParsePacer {
     // Retry read-only resolver operations once, never retry a restriction response.
+    // Only follow-up pages supply an interval. A first lookup can still start
+    // the clock when its result reveals a paginated source.
     pub(crate) async fn run_retry<T, F: Future<Output = BdlResult<T>>>(
         &self,
-        rules: ParseRules,
+        page_interval: Option<ParseRules>,
         cooldown: CooldownBehavior,
         mut operation: impl FnMut() -> F,
-        page_count: impl Fn(&T) -> usize,
+        is_page: impl Fn(&T) -> bool,
         phase: impl Fn(Phase),
     ) -> BdlResult<T> {
         let first = self
-            .run_observed(rules, cooldown, operation(), &page_count, &phase)
+            .run_observed(page_interval, cooldown, operation(), &is_page, &phase)
             .await;
         if first.as_ref().is_err_and(is_transient) {
             let until = Instant::now() + Duration::from_secs(2);
             phase(Phase::Waiting(until));
             tokio::time::sleep_until(until).await;
-            self.run_observed(rules, cooldown, operation(), page_count, phase)
+            self.run_observed(page_interval, cooldown, operation(), is_page, phase)
                 .await
         } else {
             first
@@ -53,15 +52,15 @@ impl ParsePacer {
     #[cfg(test)]
     pub(crate) async fn run<T>(
         &self,
-        rules: ParseRules,
+        page_interval: Option<ParseRules>,
         operation: impl Future<Output = BdlResult<T>>,
-        page_count: impl FnOnce(&T) -> usize,
+        is_page: impl FnOnce(&T) -> bool,
     ) -> BdlResult<T> {
         self.run_observed(
-            rules,
+            page_interval,
             CooldownBehavior::Report,
             operation,
-            page_count,
+            is_page,
             |_| {},
         )
         .await
@@ -69,43 +68,37 @@ impl ParsePacer {
 
     pub(crate) async fn run_observed<T>(
         &self,
-        rules: ParseRules,
+        page_interval: Option<ParseRules>,
         cooldown: CooldownBehavior,
         operation: impl Future<Output = BdlResult<T>>,
-        page_count: impl FnOnce(&T) -> usize,
+        is_page: impl FnOnce(&T) -> bool,
         phase: impl Fn(Phase),
     ) -> BdlResult<T> {
         let mut state = loop {
             phase(Phase::Queued);
             let state = self.0.lock().await;
             let now = Instant::now();
-            let Some(until) = state.blocked_until.filter(|until| *until > now) else {
-                break state;
-            };
-            if cooldown == CooldownBehavior::Report {
+            let restricted = state.blocked_until.filter(|until| *until > now);
+            if let Some(until) = restricted
+                && cooldown == CooldownBehavior::Report
+            {
                 let remaining = until - now;
                 return Err(BdlError::ParseRestricted {
                     seconds: remaining.as_secs() + u64::from(remaining.subsec_nanos() > 0),
                     source: None,
                 });
             }
+            let next_page = state
+                .last_page
+                .zip(page_interval)
+                .map(|(last, rules)| last + Duration::from_secs(rules.interval_seconds));
+            let Some(until) = restricted.max(next_page).filter(|until| *until > now) else {
+                break state;
+            };
             drop(state);
             phase(Phase::Waiting(until));
             tokio::time::sleep_until(until).await;
         };
-        // Time spent idle is already a rest, including between manual batches.
-        if rules.rest_seconds > 0
-            && state
-                .last_completed
-                .is_some_and(|last| last.elapsed() >= Duration::from_secs(rules.rest_seconds))
-        {
-            state.pages = 0;
-            state.pages_since_rest = 0;
-        }
-        if let Some(next) = state.next.filter(|next| *next > Instant::now()) {
-            phase(Phase::Waiting(next));
-            tokio::time::sleep_until(next).await;
-        }
         phase(Phase::Running);
         let started = Instant::now();
         // The shared BpiClient bounds each HTTP request. Hydrating a multi-part
@@ -117,20 +110,10 @@ impl ParsePacer {
             "resolver operation completed"
         );
         let now = Instant::now();
-        state.last_completed = Some(now);
-        state.next = None;
         match result {
             Ok(value) => {
-                let pages = page_count(&value);
-                state.pages = state.pages.saturating_add(pages);
-                state.pages_since_rest = state.pages_since_rest.saturating_add(pages);
-                if state.pages_since_rest >= 5 {
-                    state.pages = 0;
-                    state.pages_since_rest = 0;
-                    state.next = Some(now + Duration::from_secs(rules.rest_seconds));
-                } else if state.pages >= rules.pages_per_round {
-                    state.pages = 0;
-                    state.next = Some(now + Duration::from_secs(rules.interval_seconds));
+                if is_page(&value) {
+                    state.last_page = Some(now);
                 }
                 Ok(value)
             }
@@ -194,43 +177,23 @@ mod tests {
     use super::*;
 
     #[tokio::test(start_paused = true)]
-    async fn idle_time_resets_partial_batch_without_adding_another_rest() {
-        let pacer = ParsePacer::default();
-        let rules = ParseRules {
-            pages_per_round: 5,
-            interval_seconds: 1,
-            rest_seconds: 3,
-        };
-        for _ in 0..4 {
-            pacer.run(rules, async { Ok(()) }, |_| 1).await.unwrap();
-        }
-        tokio::time::advance(Duration::from_secs(30)).await;
-        let resumed = Instant::now();
-        for _ in 0..5 {
-            pacer.run(rules, async { Ok(()) }, |_| 1).await.unwrap();
-        }
-        assert_eq!(resumed.elapsed(), Duration::ZERO);
-        pacer.run(rules, async { Ok(()) }, |_| 1).await.unwrap();
-        assert_eq!(resumed.elapsed(), Duration::from_secs(3));
-    }
-
-    #[tokio::test(start_paused = true)]
     async fn elapsed_cooldown_does_not_emit_waiting_or_wait_again() {
         let pacer = ParsePacer::default();
         let rules = ParseRules {
-            pages_per_round: 1,
             interval_seconds: 3,
-            rest_seconds: 3,
         };
-        pacer.run(rules, async { Ok(()) }, |_| 1).await.unwrap();
+        pacer
+            .run(Some(rules), async { Ok(()) }, |_| true)
+            .await
+            .unwrap();
         tokio::time::advance(Duration::from_secs(30)).await;
         let resumed = Instant::now();
         pacer
             .run_observed(
-                rules,
+                Some(rules),
                 CooldownBehavior::Report,
                 async { Ok(()) },
-                |_| 1,
+                |_| true,
                 |phase| {
                     assert!(!matches!(phase, Phase::Waiting(_)));
                 },
@@ -245,21 +208,22 @@ mod tests {
         let pacer = ParsePacer::default();
         let control = crate::parse_control::ParseControl::default();
         let rules = ParseRules {
-            pages_per_round: 1,
             interval_seconds: 10,
-            ..Default::default()
         };
-        pacer.run(rules, async { Ok(()) }, |_| 1).await.unwrap();
+        pacer
+            .run(Some(rules), async { Ok(()) }, |_| true)
+            .await
+            .unwrap();
         let operation = control.begin("source", "test");
         let work = operation.run(pacer.run_observed(
-            rules,
+            Some(rules),
             CooldownBehavior::Report,
             async {
                 panic!("cancelled waiting request must not reach the server");
                 #[allow(unreachable_code)]
                 Ok(())
             },
-            |_| 1,
+            |_| true,
             |phase| operation.phase(phase),
         ));
         let stop = async {
@@ -271,8 +235,13 @@ mod tests {
         let (result, ()) = tokio::join!(work, stop);
         assert!(result.is_err());
         assert_eq!(start.elapsed(), Duration::ZERO);
-        // A stream operation joins the same gate and still observes its remaining wait.
-        pacer.run(rules, async { Ok(()) }, |_| 0).await.unwrap();
+        // Stream hydration may proceed while a subsequent page still owes the wait.
+        pacer.run(None, async { Ok(()) }, |_| false).await.unwrap();
+        assert_eq!(start.elapsed(), Duration::ZERO);
+        pacer
+            .run(Some(rules), async { Ok(()) }, |_| true)
+            .await
+            .unwrap();
         assert_eq!(start.elapsed(), Duration::from_secs(10));
     }
 
@@ -287,13 +256,13 @@ mod tests {
             let attempts = AtomicUsize::new(0);
             let result: BdlResult<()> = pacer
                 .run_retry(
-                    ParseRules::default(),
+                    None,
                     CooldownBehavior::Report,
                     || {
                         attempts.fetch_add(1, Ordering::SeqCst);
                         async { Err(BdlError::Bpi(message.into())) }
                     },
-                    |_| 1,
+                    |_| true,
                     |_| {},
                 )
                 .await;
@@ -307,7 +276,7 @@ mod tests {
         let pacer = ParsePacer::default();
         let result = pacer
             .run(
-                ParseRules::default(),
+                None,
                 async {
                     for _ in 0..31 {
                         tokio::time::sleep(Duration::from_secs(1)).await;
@@ -315,7 +284,7 @@ mod tests {
                     }
                     Ok(31)
                 },
-                |_| 0,
+                |_| false,
             )
             .await;
         assert_eq!(result.unwrap(), 31);
@@ -326,53 +295,39 @@ mod tests {
         let pacer = ParsePacer::default();
         let result: BdlResult<()> = pacer
             .run(
-                ParseRules::default(),
+                None,
                 async {
                     tokio::time::sleep(Duration::from_secs(20)).await;
                     Err(BdlError::Bpi("request timeout".into()))
                 },
-                |_| 0,
+                |_| false,
             )
             .await;
         assert!(result.unwrap_err().to_string().contains("timeout"));
-        assert!(
-            pacer
-                .run(ParseRules::default(), async { Ok(()) }, |_| 0)
-                .await
-                .is_ok()
-        );
+        assert!(pacer.run(None, async { Ok(()) }, |_| false).await.is_ok());
     }
 
     #[tokio::test(start_paused = true)]
-    async fn intervals_and_batch_pause_are_shared() {
+    async fn each_native_page_waits_once_regardless_of_item_count() {
         let pacer = ParsePacer::default();
         let rules = ParseRules {
             interval_seconds: 2,
-            rest_seconds: 2,
-            pages_per_round: 2,
         };
         let start = Instant::now();
-        pacer.run(rules, async { Ok(20) }, |_| 1).await.unwrap();
-        pacer.run(rules, async { Ok(20) }, |_| 1).await.unwrap();
+        pacer.run(None, async { Ok(30) }, |_| true).await.unwrap();
         assert_eq!(start.elapsed(), Duration::ZERO);
-        pacer.run(rules, async { Ok(1) }, |n| *n).await.unwrap();
+        pacer
+            .run(Some(rules), async { Ok(30) }, |_| true)
+            .await
+            .unwrap();
         assert_eq!(start.elapsed(), Duration::from_secs(2));
-    }
-
-    #[tokio::test(start_paused = true)]
-    async fn two_hundred_items_have_predictable_non_stacked_waits() {
-        for (pages_per_round, expected_seconds) in [(3, 5), (5, 3), (1, 11)] {
-            let pacer = ParsePacer::default();
-            let rules = ParseRules {
-                pages_per_round,
-                ..Default::default()
-            };
-            let start = Instant::now();
-            for _ in 0..10 {
-                pacer.run(rules, async { Ok(()) }, |_| 1).await.unwrap();
-            }
-            assert_eq!(start.elapsed(), Duration::from_secs(expected_seconds));
-        }
+        tokio::time::advance(Duration::from_secs(1)).await;
+        pacer.run(None, async { Ok(()) }, |_| false).await.unwrap();
+        pacer
+            .run(Some(rules), async { Ok(1) }, |_| true)
+            .await
+            .unwrap();
+        assert_eq!(start.elapsed(), Duration::from_secs(4));
     }
 
     #[tokio::test(start_paused = true)]
@@ -381,9 +336,9 @@ mod tests {
         let rules = ParseRules::default();
         let failed: BdlResult<()> = pacer
             .run(
-                rules,
+                Some(rules),
                 async { Err(BdlError::Bpi("HTTP 412".into())) },
-                |_| 1,
+                |_| true,
             )
             .await;
         let failure = crate::commands::CommandError::from(failed.unwrap_err());
@@ -392,13 +347,13 @@ mod tests {
         assert!(failure.detail.unwrap().contains("HTTP 412"));
         let blocked = pacer
             .run(
-                rules,
+                Some(rules),
                 async {
                     panic!("blocked work must not run");
                     #[allow(unreachable_code)]
                     Ok(())
                 },
-                |_| 1,
+                |_| true,
             )
             .await;
         let blocked = crate::commands::CommandError::from(blocked.unwrap_err());
@@ -407,10 +362,10 @@ mod tests {
         let waiting_since = Instant::now();
         let result = pacer
             .run_observed(
-                rules,
+                Some(rules),
                 CooldownBehavior::Wait,
                 async { Ok(waiting_since.elapsed()) },
-                |_| 0,
+                |_| false,
                 |_| {},
             )
             .await;

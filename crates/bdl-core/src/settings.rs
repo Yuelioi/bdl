@@ -1,12 +1,16 @@
 use serde::{Deserialize, Serialize};
 
 use crate::error::BdlResult;
-use crate::naming::{DEFAULT_NAMING_TEMPLATE, DuplicateNamingStrategy, validate_template};
+use crate::naming::{
+    DEFAULT_NAMING_TEMPLATE, DuplicateNamingStrategy, FLAT_NAMING_TEMPLATE, LEGACY_NAMING_VERSION,
+    NAMING_VERSION, validate_template,
+};
 use crate::planner::{
     ArchiveAssetSelection, MissingQualityPolicy, StreamPreference, parse_stream_codec,
 };
 
 const MAX_SPEED_LIMIT_BYTES_PER_SECOND: u64 = 10 * 1024 * 1024 * 1024;
+pub const MAX_CONCURRENT_DOWNLOADS: usize = 16;
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -58,30 +62,22 @@ fn legacy_settings_schema_version() -> u16 {
 pub struct ParseRules {
     #[serde(alias = "cooldown_min_seconds")]
     pub interval_seconds: u64,
-    #[serde(alias = "cooldown_max_seconds")]
-    pub rest_seconds: u64,
-    pub pages_per_round: usize,
 }
 
 impl Default for ParseRules {
     fn default() -> Self {
         Self {
             interval_seconds: 1,
-            rest_seconds: 3,
-            pages_per_round: 3,
         }
     }
 }
 
 impl ParseRules {
     pub fn validate(&self) -> BdlResult<()> {
-        if !(1..=120).contains(&self.interval_seconds)
-            || !(self.interval_seconds..=120).contains(&self.rest_seconds)
-            || !(1..=10).contains(&self.pages_per_round)
-        {
+        if !(1..=120).contains(&self.interval_seconds) {
             return Err(crate::error::BdlError::classified(
                 crate::public_error::ErrorCode::SettingsParsePacing,
-                "连续请求页数需为1～10页，等待时间需为1～120秒，长休息不能短于批间等待。",
+                "翻页间隔需为 1～120 秒。",
             ));
         }
         Ok(())
@@ -93,6 +89,12 @@ pub struct NamingPreset {
     pub id: String,
     pub name: String,
     pub template: String,
+    #[serde(default = "current_naming_version")]
+    pub template_version: u8,
+}
+
+fn current_naming_version() -> u8 {
+    NAMING_VERSION
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -113,9 +115,9 @@ pub struct AppSettings {
     pub theme_preference: String,
     pub download_dir: Option<String>,
     pub document_tree_output: Option<DocumentTreeDirectory>,
-    pub parse_batch_size: usize,
     pub parse_rules: ParseRules,
     pub naming_template: String,
+    pub naming_template_version: u8,
     pub naming_presets: Vec<NamingPreset>,
     pub download_presets: Vec<crate::workflow::DownloadPreset>,
     pub selected_download_preset: String,
@@ -152,16 +154,16 @@ pub struct AppSettings {
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
-            settings_schema_version: 2,
+            settings_schema_version: 4,
             clipboard_monitor_enabled: false,
             usage_notice_acknowledged: false,
             auto_check_updates: false,
             theme_preference: "system".to_owned(),
             download_dir: None,
             document_tree_output: None,
-            parse_batch_size: 50,
             parse_rules: ParseRules::default(),
             naming_template: DEFAULT_NAMING_TEMPLATE.to_owned(),
+            naming_template_version: NAMING_VERSION,
             naming_presets: Vec::new(),
             download_presets: Vec::new(),
             selected_download_preset: String::new(),
@@ -237,7 +239,52 @@ impl AppSettings {
             } else {
                 ProxyMode::System
             };
-            self.settings_schema_version = 2;
+        }
+        if self.settings_schema_version < 4 {
+            fn without_extension(template: &str) -> &str {
+                template.strip_suffix(".{ext}").unwrap_or(template)
+            }
+            let active = without_extension(&self.naming_template);
+            self.naming_template_version = LEGACY_NAMING_VERSION;
+            if !self
+                .naming_presets
+                .iter()
+                .any(|preset| without_extension(&preset.template) == active)
+            {
+                let replacement = match active {
+                    "{parent_title}/{entry_name}" if self.settings_schema_version == 3 => {
+                        Some(DEFAULT_NAMING_TEMPLATE)
+                    }
+                    "{flat_name}" if self.settings_schema_version == 3 => {
+                        Some(FLAT_NAMING_TEMPLATE)
+                    }
+                    "{title}/P{part_index} - {part_title}"
+                    | "{title}/{title} - P{part_index} - {part_title}"
+                    | "{collection_title}/{index} - {title}"
+                    | "{series_title}/{episode_index} - {episode_title}"
+                        if self.settings_schema_version < 3 =>
+                    {
+                        Some(DEFAULT_NAMING_TEMPLATE)
+                    }
+                    "{title}" | "{title} - P{part_index} - {part_title}"
+                        if self.settings_schema_version < 3 =>
+                    {
+                        Some(FLAT_NAMING_TEMPLATE)
+                    }
+                    _ => None,
+                };
+                if let Some(template) = replacement {
+                    self.naming_template = template.to_owned();
+                    self.naming_template_version = NAMING_VERSION;
+                }
+            }
+            for preset in &mut self.naming_presets {
+                preset.template_version = LEGACY_NAMING_VERSION;
+            }
+            self.settings_schema_version = 4;
+        }
+        if self.naming_template == DEFAULT_NAMING_TEMPLATE {
+            self.naming_template_version = NAMING_VERSION;
         }
         self.data_dir = self
             .data_dir
@@ -281,14 +328,9 @@ impl AppSettings {
     }
 
     pub fn validate(&self) -> BdlResult<()> {
-        if !matches!(self.parse_batch_size, 20 | 50 | 100 | 200) {
-            return Err(crate::BdlError::classified(
-                crate::public_error::ErrorCode::SettingsParseBatchSize,
-                format!("parse_batch_size={}", self.parse_batch_size),
-            ));
-        }
         self.parse_rules.validate()?;
         validate_template(&self.naming_template)?;
+        crate::naming::validate_naming_version(self.naming_template_version)?;
         validate_naming_presets(&self.naming_presets)?;
         if !self.download_presets.is_empty() {
             crate::workflow::validate_presets(
@@ -363,6 +405,7 @@ fn validate_naming_presets(presets: &[NamingPreset]) -> BdlResult<()> {
             ));
         }
         validate_template(&preset.template)?;
+        crate::naming::validate_naming_version(preset.template_version)?;
     }
     Ok(())
 }
@@ -503,6 +546,7 @@ mod naming_preset_tests {
             id: "favorite".into(),
             name: "收藏".into(),
             template: "{title}.{ext}".into(),
+            template_version: LEGACY_NAMING_VERSION,
         });
         settings.validate().unwrap();
         let restored: AppSettings =
@@ -524,26 +568,10 @@ mod parse_rules_tests {
     #[test]
     fn pagination_rules_default_and_validate() {
         let settings: AppSettings = serde_json::from_str("{}").unwrap();
-        assert_eq!(settings.parse_rules.pages_per_round, 3);
         assert_eq!(settings.parse_rules.interval_seconds, 1);
-        assert_eq!(settings.parse_rules.rest_seconds, 3);
         settings.validate().unwrap();
-        for rules in [
-            ParseRules {
-                pages_per_round: 0,
-                ..Default::default()
-            },
-            ParseRules {
-                interval_seconds: 8,
-                rest_seconds: 3,
-                ..Default::default()
-            },
-            ParseRules {
-                rest_seconds: 121,
-                ..Default::default()
-            },
-        ] {
-            assert!(rules.validate().is_err());
+        for interval_seconds in [0, 121] {
+            assert!(ParseRules { interval_seconds }.validate().is_err());
         }
     }
 }

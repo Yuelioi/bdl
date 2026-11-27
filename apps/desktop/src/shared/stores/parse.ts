@@ -38,8 +38,6 @@ import { NOTICE_CLEAR_DELAY } from './feedback'
 import { buildBatchSelectionBySource, selectedBatchSourceIds, toggleBatchEntrySelection } from './parseBatch'
 import { selectsWholePosts, selectableParts } from '../features/parse/parseResultTree'
 
-const MAX_BATCH_SOURCES = 20
-const PACED_PARSE_POLL_INTERVAL_MS = 100
 
 interface BackgroundParseJob {
   sourceId: string
@@ -63,12 +61,11 @@ interface SourceOutcome {
 }
 
 interface ParseState {
-  createPause: { resumed: Promise<void>; resume: () => void } | null
-  batchTargetBySource: Record<string, number>
   operationsBySource: Record<string, string[]>
   sourceEpochById: Record<string, string>
   preparationBySource: Record<string, { total: number; processed: number; failures: Array<{ itemId: string; title: string; message: string; detail?: string; partIds: string[] }> }>
   createGeneration: number
+  stoppedBatchInput: string | null
   backgroundJob: BackgroundParseJob | null
   input: string
   sources: Record<string, NormalizedSourceTree>
@@ -80,7 +77,6 @@ interface ParseState {
   selectionBySource: Record<string, string[]>
   loadingBySource: Record<string, boolean>
   pacedParsingBySource: Record<string, boolean>
-  pacedParsingWaitingBySource: Record<string, boolean>
   pacedParsingStopRequestedBySource: Record<string, boolean>
   errorDetailsBySource: Record<string, string | null>
   errorsBySource: Record<string, string | null>
@@ -106,6 +102,7 @@ export interface CreateTaskOptions {
   outputExtension?: 'mp4' | 'mkv' | 'm4s' | 'mp3'
   subtitleFormat?: SettingsSnapshot['subtitle_format']
   danmakuFormat?: SettingsSnapshot['danmaku_format']
+  namingVersion?: 1 | 2
   namingTemplate?: string
   duplicateNamingStrategy?: SettingsSnapshot['duplicate_naming_strategy']
   archiveAssets?: SettingsSnapshot['archive_assets']
@@ -157,8 +154,7 @@ export const useParseStore = defineStore('parse', {
     operationsBySource: {},
     sourceEpochById: {},
     createGeneration: 0,
-    createPause: null,
-    batchTargetBySource: {},
+    stoppedBatchInput: null,
     preparationBySource: {},
     backgroundJob: null,
     input: '',
@@ -171,7 +167,6 @@ export const useParseStore = defineStore('parse', {
     selectionBySource: {},
     loadingBySource: {},
     pacedParsingBySource: {},
-    pacedParsingWaitingBySource: {},
     pacedParsingStopRequestedBySource: {},
     errorsBySource: {},
     errorDetailsBySource: {},
@@ -239,17 +234,6 @@ export const useParseStore = defineStore('parse', {
         this.noticeTimer = null
       }
     },
-    pauseCreation() {
-      if (!this.loadingBySource.__create__ || this.createPause) return
-      let resume!: () => void
-      const resumed = new Promise<void>(resolve => { resume = resolve })
-      this.createPause = { resumed, resume }
-      void this.stopPacedParsing('__create__')
-    },
-    resumeCreation() {
-      this.createPause?.resume()
-      this.createPause = null
-    },
     async createSource(input?: string, options: { singleVideo?: boolean; expandVideoCollection?: boolean } = {}): Promise<boolean> {
       const inputs = splitParseInputs(input ?? this.input)
 
@@ -263,19 +247,17 @@ export const useParseStore = defineStore('parse', {
         return false
       }
 
-      if (inputs.length > MAX_BATCH_SOURCES) {
-        this.setNotice(`一次最多解析 ${MAX_BATCH_SOURCES} 个链接`, 'warning')
-        return false
-      }
-
-      this.resumeCreation()
+      const resuming = !options.singleVideo && this.stoppedBatchInput === inputs.join('\n')
+      const previousEntries = resuming ? this.batchEntries : []
+      const previousSelection = new Set(this.selectedBatchEntryIds)
+      this.stoppedBatchInput = null
+      this.pacedParsingStopRequestedBySource.__create__ = false
       const generation = ++this.createGeneration
-      const batch = inputs.length > 1
+      const batch = resuming || inputs.length > 1
       this.loadingBySource.__create__ = true
       try {
         const outcomes: SourceOutcome[] = []
-        while (outcomes.length < inputs.length) {
-          if (this.createPause) await this.createPause.resumed
+        while (outcomes.length < inputs.length && !this.pacedParsingStopRequestedBySource.__create__) {
           if (generation !== this.createGeneration) return false
           const sourceInput = inputs[outcomes.length]
           const operationId = this.beginOperation('__create__')
@@ -288,7 +270,7 @@ export const useParseStore = defineStore('parse', {
             outcomes.push({ input: sourceInput, tree, error: null, detail: '' })
           } catch (error) {
             const cancelled = error != null && typeof error === 'object' && 'code' in error && error.code === 'parse_cancelled'
-            if (!this.createPause || !cancelled) {
+            if (!this.pacedParsingStopRequestedBySource.__create__ || !cancelled) {
               outcomes.push({
                 input: sourceInput,
                 tree: null,
@@ -298,12 +280,15 @@ export const useParseStore = defineStore('parse', {
             }
           } finally { this.endOperation('__create__', operationId) }
         }
-        if (this.createPause) await this.createPause.resumed
         if (generation !== this.createGeneration) {
           return false
         }
         const failures = outcomes.filter((outcome) => !outcome.tree)
         const validOutcomes: Array<(typeof outcomes)[number] & { tree: NormalizedSourceTree }> = []
+        for (const entry of previousEntries) {
+          const tree = this.sources[entry.sourceId]
+          if (tree) validOutcomes.push({ input: entry.input, tree, error: null, detail: '' })
+        }
         for (const outcome of outcomes) {
           if (!outcome.tree) continue
           if ((batch || options.singleVideo) && outcome.tree.source.kind !== 'video') {
@@ -314,6 +299,7 @@ export const useParseStore = defineStore('parse', {
         }
         const trees = uniqueSourceTrees(validOutcomes.map((outcome) => outcome.tree))
         if (trees.length === 0) {
+          if (this.pacedParsingStopRequestedBySource.__create__ && failures.length === 0) return false
           this.setNotice(failures[0]?.error ?? '解析失败', 'danger', undefined, failures.map((failure) => failure.detail).filter(Boolean).join('\n\n'))
           return false
         }
@@ -325,11 +311,11 @@ export const useParseStore = defineStore('parse', {
           if (generation !== this.createGeneration) return false
         }
 
-        if (this.createPause) await this.createPause.resumed
         if (generation !== this.createGeneration) return false
         for (const tree of trees) {
           const sourceId = tree.source.id
-          delete this.batchTargetBySource[sourceId]
+          this.loadingBySource[sourceId] = false
+          this.pacedParsingBySource[sourceId] = false
           this.sources[sourceId] = tree
           this.sourceEpochById[sourceId] = crypto.randomUUID()
           this.errorsBySource[sourceId] = null
@@ -358,9 +344,11 @@ export const useParseStore = defineStore('parse', {
                 : []
             })
           : []
-        this.selectedBatchEntryIds = this.batchEntries.map((entry) => entry.id)
+        const unselectedInputs = new Set(previousEntries.filter(entry => !previousSelection.has(entry.id)).map(entry => entry.input))
+        this.selectedBatchEntryIds = this.batchEntries.filter(entry => !unselectedInputs.has(entry.input)).map(entry => entry.id)
         this.syncBatchSelection()
-        if (!options.singleVideo) this.input = failures.map((failure) => failure.input).join('\n')
+        if (!options.singleVideo) this.input = [...failures.map((failure) => failure.input), ...inputs.slice(outcomes.length)].join('\n')
+        if (batch && this.pacedParsingStopRequestedBySource.__create__ && this.input) this.stoppedBatchInput = this.input
         if (failures.length > 0) {
           this.setNotice(`已解析 ${validOutcomes.length} 个链接，${failures.length} 个失败已保留`, 'warning', undefined, failures.map((failure) => failure.detail).filter(Boolean).join('\n\n'))
         } else {
@@ -369,24 +357,6 @@ export const useParseStore = defineStore('parse', {
         return true
       } finally {
         if (generation === this.createGeneration) this.loadingBySource.__create__ = false
-      }
-    },
-    async loadMore(sourceId: string) {
-      if (!this.sources[sourceId] || this.loadingBySource[sourceId]) return
-      const generation = this.createGeneration
-      const epoch = this.sourceEpochById[sourceId]
-      const operationId = this.beginOperation(sourceId)
-      const snapshot = cloneTree(this.sources[sourceId])
-      this.pacedParsingStopRequestedBySource[sourceId] = false
-      this.loadingBySource[sourceId] = true
-      try {
-        const tree = await parseLoadMore({ source_id: sourceId, snapshot, operation_id: operationId })
-        if (this.ownsSource(sourceId, generation, epoch)) this.upsertSource(tree)
-      } catch (error) {
-        if (this.ownsSource(sourceId, generation, epoch) && !this.pacedParsingStopRequestedBySource[sourceId]) this.recordSourceFailure(sourceId, error)
-      } finally {
-        this.endOperation(sourceId, operationId)
-        if (this.ownsSource(sourceId, generation, epoch)) this.loadingBySource[sourceId] = false
       }
     },
     async loadPage(sourceId: string, pageNumber: number): Promise<string[] | null> {
@@ -410,67 +380,29 @@ export const useParseStore = defineStore('parse', {
         if (this.ownsSource(sourceId, generation, epoch)) this.loadingBySource[sourceId] = false
       }
     },
-    async loadConfiguredBatch(sourceId: string, mode: 'first' | 'next' | 'all' = 'next') {
-      const source = this.sources[sourceId]
-      if (!source?.source.has_more || this.loadingBySource[sourceId] || this.pacedParsingBySource[sourceId]) return
-      const settings = useSettingsStore()
-      await settings.ensureLoaded()
-      if (this.sources[sourceId] !== source || this.loadingBySource[sourceId] || this.pacedParsingBySource[sourceId]) return
-      if (!settings.loaded) {
-        this.setNotice(settings.error ?? '无法读取解析设置', 'danger')
-        return
-      }
-      const batch = settings.saved.parse_batch_size
-      if (mode === 'all') return this.parseAllPaced(sourceId, batch)
-      const loaded = source.source.loaded_count
-      const pending = this.batchTargetBySource[sourceId]
-      const target = pending > loaded ? pending : (mode === 'first' ? batch : loaded + batch)
-      if (target <= loaded) return
-      const generation = this.createGeneration
-      const epoch = this.sourceEpochById[sourceId]
-      this.batchTargetBySource[sourceId] = target
-      await this.loadChunk(sourceId, target - loaded)
-      if (!this.ownsSource(sourceId, generation, epoch)) return
-      const current = this.sources[sourceId].source
-      if (!this.pacedParsingStopRequestedBySource[sourceId] || !current.has_more || current.loaded_count >= target) {
-        delete this.batchTargetBySource[sourceId]
-      }
-    },
-    async loadChunk(sourceId: string, chunkSize: number): Promise<boolean> {
+    async loadNextPage(sourceId: string): Promise<boolean> {
       const current = this.sources[sourceId]
       if (!current?.source.has_more || this.loadingBySource[sourceId]) return false
-      const generation = this.createGeneration
       const epoch = this.sourceEpochById[sourceId]
-      const owns = () => this.ownsSource(sourceId, generation, epoch)
-      const loadedBefore = current.source.loaded_count
-      const pageNumber = (tree: NormalizedSourceTree) => tree.groups.find(group => group.page)?.page?.page_number
-      const startingPage = pageNumber(current)
-      const limit = loadedBefore + Math.max(1, Math.floor(chunkSize))
-      if (!this.pacedParsingBySource[sourceId]) this.pacedParsingStopRequestedBySource[sourceId] = false
+      const operationId = this.beginOperation(sourceId)
       this.loadingBySource[sourceId] = true
       this.errorsBySource[sourceId] = null
       this.errorDetailsBySource[sourceId] = null
       try {
-        while (owns() && this.sources[sourceId]?.source.has_more && this.sources[sourceId].source.loaded_count < limit) {
-          if (this.pacedParsingStopRequestedBySource[sourceId]) break
-          const before = this.sources[sourceId].source.loaded_count
-          const pageBefore = pageNumber(this.sources[sourceId])
-          const operationId = this.beginOperation(sourceId)
-          let tree: NormalizedSourceTree
-          try { tree = await parseLoadMore({ source_id: sourceId, snapshot: cloneTree(this.sources[sourceId]), operation_id: operationId }) }
-          finally { this.endOperation(sourceId, operationId) }
-          if (!owns()) break
-          this.upsertSource(tree)
-          if (tree.source.loaded_count <= before && pageNumber(tree) === pageBefore) break
-          if (chunkSize === 1) break
+        const tree = await parseLoadMore({ source_id: sourceId, snapshot: cloneTree(current), operation_id: operationId })
+        if (this.sourceEpochById[sourceId] !== epoch) return false
+        const pageNumber = (source: NormalizedSourceTree) => source.groups.find(group => group.page)?.page?.page_number
+        if (tree.source.has_more && tree.source.loaded_count <= current.source.loaded_count && pageNumber(tree) === pageNumber(current)) {
+          throw new Error('来源未返回下一页，已保留当前解析结果。')
         }
-        return owns() && (this.sources[sourceId].source.loaded_count > loadedBefore
-          || pageNumber(this.sources[sourceId]) !== startingPage)
+        this.upsertSource(tree)
+        return true
       } catch (error) {
-        if (owns() && !this.pacedParsingStopRequestedBySource[sourceId]) this.recordSourceFailure(sourceId, error)
+        if (this.sourceEpochById[sourceId] === epoch && !this.pacedParsingStopRequestedBySource[sourceId]) this.recordSourceFailure(sourceId, error)
         return false
       } finally {
-        if (owns()) this.loadingBySource[sourceId] = false
+        this.endOperation(sourceId, operationId)
+        if (this.sourceEpochById[sourceId] === epoch) this.loadingBySource[sourceId] = false
       }
     },
     async prepareLoadedVideos(sourceId: string, mode: 'selected' | 'next' | 'all' | 'retry', batchSize = 50) {
@@ -556,7 +488,7 @@ export const useParseStore = defineStore('parse', {
           downloadDir: defaults.download_dir ?? 'downloads', archiveMode: defaults.archive_mode,
           mediaMode: defaults.media_mode,
           downloadPresetId: defaults.selected_download_preset,
-          outputExtension: defaults.media_mode === 'audio_only' ? defaults.audio_output_format : defaults.output_extension, namingTemplate: defaults.naming_template,
+          outputExtension: defaults.media_mode === 'audio_only' ? defaults.audio_output_format : defaults.output_extension, namingTemplate: defaults.naming_template, namingVersion: defaults.naming_template_version,
           subtitleFormat: defaults.subtitle_format, danmakuFormat: defaults.danmaku_format,
           duplicateNamingStrategy: defaults.duplicate_naming_strategy, archiveAssets: defaults.archive_assets,
           retainRawStreams: defaults.retain_raw_streams, embedCover: defaults.embed_cover,
@@ -638,7 +570,7 @@ export const useParseStore = defineStore('parse', {
             if (result.blocked) throw result.blocked
           }
           if (retryFailed || stopped() || !this.sources[sourceId]?.source.has_more) break
-          const progressed = await this.loadChunk(sourceId, 1)
+          const progressed = await this.loadNextPage(sourceId)
           if (!progressed && !stopped()) throw Object.assign(new Error(this.errorsBySource[sourceId] ?? '没有加载到更多内容，已停止添加'), { detail: this.errorDetailsBySource[sourceId] })
         }
         const remaining = retryFailed && this.sources[sourceId] && (this.sources[sourceId].source.has_more || collectPartIds(this.sources[sourceId]).some((id) => !done.has(id)))
@@ -657,46 +589,23 @@ export const useParseStore = defineStore('parse', {
         this.loadingBySource[sourceId] = false
       }
     },
-    async parseAllPaced(sourceId: string, chunkSize = 50, delayMs = 0): Promise<PacedParsingResult> {
-      const source = this.sources[sourceId]
-      if (!source?.source.has_more) return 'completed'
-      if (this.pacedParsingBySource[sourceId]) return 'stopped'
-      const generation = this.createGeneration
+    async parseAllPages(sourceId: string): Promise<PacedParsingResult> {
+      if (!this.sources[sourceId]?.source.has_more) return 'completed'
+      if (this.pacedParsingBySource[sourceId] || this.loadingBySource[sourceId]) return 'stopped'
       const epoch = this.sourceEpochById[sourceId]
-      const owns = () => this.ownsSource(sourceId, generation, epoch)
-
       this.pacedParsingBySource[sourceId] = true
-      this.pacedParsingWaitingBySource[sourceId] = false
       this.pacedParsingStopRequestedBySource[sourceId] = false
       try {
-        while (owns() && this.sources[sourceId]?.source.has_more) {
-          if (this.pacedParsingStopRequestedBySource[sourceId]) {
-            return 'stopped'
-          }
-
-          const progressed = await this.loadChunk(sourceId, chunkSize)
-          if (!owns()) return 'stopped'
-          if (!progressed) {
-            return this.pacedParsingStopRequestedBySource[sourceId] ? 'stopped' : this.sources[sourceId]?.source.has_more ? 'failed' : 'completed'
-          }
-          if (!this.sources[sourceId]?.source.has_more) break
-
-          this.pacedParsingWaitingBySource[sourceId] = true
-          const shouldContinue = await waitForPacedParsing(delayMs, () =>
-            !owns() || Boolean(this.pacedParsingStopRequestedBySource[sourceId]),
-          )
-          this.pacedParsingWaitingBySource[sourceId] = false
-          if (!shouldContinue) {
-            return 'stopped'
-          }
+        while (this.sources[sourceId]?.source.has_more) {
+          const loaded = await this.loadNextPage(sourceId)
+          if (this.sourceEpochById[sourceId] !== epoch || this.pacedParsingStopRequestedBySource[sourceId]) return 'stopped'
+          if (!loaded) return 'failed'
         }
-
-        return owns() ? 'completed' : 'stopped'
+        return 'completed'
       } finally {
-        if (owns()) {
-        this.pacedParsingBySource[sourceId] = false
-        this.pacedParsingWaitingBySource[sourceId] = false
-        this.pacedParsingStopRequestedBySource[sourceId] = false
+        if (this.sourceEpochById[sourceId] === epoch) {
+          this.pacedParsingBySource[sourceId] = false
+          this.pacedParsingStopRequestedBySource[sourceId] = false
         }
       }
     },
@@ -709,8 +618,7 @@ export const useParseStore = defineStore('parse', {
     async clearWorkspace(reason: ParseCancelReason = 'workspace_cleared') {
       if (this.backgroundJob?.status === 'running') { this.setNotice('还有内容正在添加，请先停止添加。', 'warning'); return }
       this.createGeneration++
-      this.resumeCreation()
-      this.batchTargetBySource = {}
+      this.stoppedBatchInput = null
       const stopping = Object.keys(this.operationsBySource).map(id => this.stopPacedParsing(id, reason))
       this.input = ''
       this.clearNotice()
@@ -727,7 +635,6 @@ export const useParseStore = defineStore('parse', {
       this.selectionBySource = {}
       this.loadingBySource = {}
       this.pacedParsingBySource = {}
-      this.pacedParsingWaitingBySource = {}
       this.pacedParsingStopRequestedBySource = {}
       this.errorsBySource = {}
       this.errorDetailsBySource = {}
@@ -739,7 +646,6 @@ export const useParseStore = defineStore('parse', {
       await this.stopPacedParsing(sourceId, 'workspace_cleared')
       if (this.sourceEpochById[sourceId] !== epoch) return
       if (this.backgroundJob?.sourceId === sourceId) this.backgroundJob = null
-      delete this.batchTargetBySource[sourceId]
       delete this.sources[sourceId]
       delete this.sourceEpochById[sourceId]
       delete this.preparationBySource[sourceId]
@@ -747,7 +653,6 @@ export const useParseStore = defineStore('parse', {
       delete this.errorsBySource[sourceId]
       delete this.errorDetailsBySource[sourceId]
       delete this.pacedParsingBySource[sourceId]
-      delete this.pacedParsingWaitingBySource[sourceId]
       delete this.pacedParsingStopRequestedBySource[sourceId]
       this.sourceOrder = this.sourceOrder.filter(id => id !== sourceId)
       this.batchEntries = this.batchEntries.filter(entry => entry.sourceId !== sourceId)
@@ -1049,6 +954,7 @@ const taskRequest = (
     part_ids: partIds,
     output_dir: downloadDir || undefined,
     document_tree_output: documentTreeOutput ?? undefined,
+    naming_template_version: options.namingVersion ?? saved.naming_template_version ?? 2,
     naming_template: options.namingTemplate ?? saved.naming_template,
     duplicate_naming_strategy: options.duplicateNamingStrategy ?? saved.duplicate_naming_strategy,
     ...(options.downloadPresetId
@@ -1079,16 +985,6 @@ export const collectPartIds = (tree: NormalizedSourceTree): string[] =>
   tree.groups.flatMap((group) => group.items.flatMap((item) => selectableParts(item, tree.source.kind).map((part) => part.id)))
 
 const uniquePartIds = (partIds: string[]): string[] => Array.from(new Set(partIds))
-
-const waitForPacedParsing = async (delayMs: number, stopRequested: () => boolean): Promise<boolean> => {
-  const deadline = Date.now() + Math.max(0, delayMs)
-  while (Date.now() < deadline) {
-    if (stopRequested()) return false
-    const waitMs = Math.min(PACED_PARSE_POLL_INTERVAL_MS, deadline - Date.now())
-    await new Promise<void>((resolve) => window.setTimeout(resolve, waitMs))
-  }
-  return !stopRequested()
-}
 
 const uniqueSourceTrees = (trees: NormalizedSourceTree[]): NormalizedSourceTree[] => {
   const seen = new Set<string>()

@@ -49,7 +49,7 @@ const parseSource = async () => {
     }
     submittedInput.value = input;
     activeStage.value = 'content';
-    if (!parse.isBatch && source?.source.has_more) await parse.loadConfiguredBatch(source.source.id, 'first');
+    if (!parse.pacedParsingStopRequestedBySource.__create__ && !parse.isBatch && source?.source.has_more) await parse.parseAllPages(source.source.id);
   }
 };
 const openCollection = async () => {
@@ -62,6 +62,8 @@ const openCollection = async () => {
   if (parse.activeSource?.source.id === source.id) {
     parse.selectPartIds(source.id, selection, 'replace');
     parse.setNotice('这个视频没有可查看的所属合集。', 'info');
+  } else if (parse.activeSource?.source.has_more && !parse.pacedParsingStopRequestedBySource.__create__) {
+    await parse.parseAllPages(parse.activeSource.source.id);
   }
 };
 useMobileBack('parse', () => {
@@ -102,10 +104,8 @@ useMobileBack('parse', () => {
         v-model:input="parse.input"
         v-model:single-input="singleInput"
         :busy="createLoading"
-        :paused="Boolean(parse.createPause)"
-        :pausing="Boolean(parse.createPause && parse.operationsBySource.__create__?.length)"
-        @pause="parse.pauseCreation()"
-        @resume="parse.resumeCreation()"
+        :stopping="Boolean(parse.pacedParsingStopRequestedBySource.__create__)"
+        @stop="parse.stopPacedParsing('__create__')"
         mobile
         @submit="parseSource"
         @paste="pasteInput"

@@ -59,7 +59,7 @@ NFO 支持 `{part_index:02}`、`:03`、`:04`（也适用于 `index`）补齐序�
 
 日期支持 `%Y-%m-%d`、`%Y.%m.%d`、`%Y%m%d`，例如 `{publish_date:%Y.%m.%d}` 输出 `2026.10.18`。这只影响模板里的文字；NFO 的正式发布日期保持 `YYYY-MM-DD`，供媒体库识别。
 
-NFO 和文件命名的变量集合不完全相同，应使用各自菜单。文件命名同样支持 `{quality_label}` 和上述日期格式；原 `{quality}` 保留数字编号，已有命名不会被悄悄更改。
+文件命名使用自己的变量菜单。用 `{group}/{parent}/{title}` 按合集小节和父级建目录，`{parent}/{title}` 只保留父级，`{title}` 直接保存。缺少的层级自动跳过。`{index}` 是当前条目在父级中的序号。高级变量包括 `{owner_name}`、`{owner_mid}`、`{bvid}`、`{aid}`、`{cid}`、`{quality_label}`、`{quality}`、`{codec}`、`{date}` 和 `{publish_date}`。日期支持上述三种格式。已有自定义文件命名模板沿用原有含义。
 
 ## 媒体库兼容范围
 

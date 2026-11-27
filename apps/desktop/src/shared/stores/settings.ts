@@ -18,7 +18,8 @@ import { NOTICE_CLEAR_DELAY } from './feedback'
 import { fillMissingDefaults } from '../utils/settingsDefaults'
 import { builtinDownloadPresets, cloneDownloadPresets, migrateDownloadPresets, downloadPresetsError } from '../utils/downloadWorkflow'
 
-export const defaultNamingTemplate = '{title}/P{part_index} - {part_title}'
+export const defaultNamingTemplate = '{group}/{parent}/{title}'
+const flatNamingTemplate = '{title}'
 export const embeddingContainerError = (
   settings: Pick<SettingsSnapshot, 'output_extension' | 'embed_cover' | 'embed_subtitles'>,
 ): string | null =>
@@ -35,50 +36,43 @@ export const selectedArchiveAssets = (
 }
 
 export const namingTemplatePresets = [
-  { label: '分P视频', value: defaultNamingTemplate },
-  { label: '单文件', value: '{title}' },
-  { label: '合集/列表', value: '{collection_title}/{index} - {title}' },
-  { label: '番剧/课程', value: '{series_title}/{episode_index} - {episode_title}' },
+  { id: 'builtin-grouped', label: '按分组和父级建目录', value: defaultNamingTemplate },
+  { id: 'builtin-parent', label: '按父级建目录', value: '{parent}/{title}' },
+  { id: 'builtin-flat', label: '直接保存', value: flatNamingTemplate },
 ]
 
-export const builtinNamingPresets = (): NamingPreset[] => [
-  ...namingTemplatePresets.map((preset, index) => ({ id: `builtin-${index}`, name: preset.label, template: preset.value })),
-  { id: 'direct', name: '直接保存到下载目录', template: '{title} - P{part_index} - {part_title}' },
-]
+export const builtinNamingPresets = (): NamingPreset[] =>
+  namingTemplatePresets.map((preset) => ({ id: preset.id, name: preset.label, template: preset.value, template_version: 2 }))
+
+const withoutNamingExtension = (value: string) => value.replace(/\.\{ext\}$/, '')
+export const sameNamingTemplate = (left: string, right: string): boolean =>
+  withoutNamingExtension(left) === withoutNamingExtension(right)
 
 export const namingVariables = [
-  { name: 'title', desc: '视频或条目标题' },
-  { name: 'part_title', desc: '分P标题' },
-  { name: 'part_index', desc: '分P序号' },
+  { name: 'group', desc: '合集中的小节名' },
+  { name: 'parent', desc: '所属作品或列表的名称' },
+  { name: 'title', desc: '当前视频或条目的标题' },
+  { name: 'index', desc: '条目在父级中的序号，从 1 开始' },
   { name: 'bvid', desc: 'BV号' },
   { name: 'aid', desc: 'AV号' },
   { name: 'cid', desc: 'CID' },
   { name: 'owner_name', desc: 'UP主名称' },
   { name: 'owner_mid', desc: 'UP主MID' },
-  { name: 'series_title', desc: '番剧/课程/系列名' },
-  { name: 'episode_index', desc: '集序号' },
-  { name: 'episode_title', desc: '集标题' },
-  { name: 'collection_title', desc: '合集名' },
-  { name: 'index', desc: '列表序号' },
   { name: 'quality', desc: '清晰度编号（如 80）' },
   { name: 'quality_label', desc: '清晰度名称（如 1080P）' },
-  { name: 'date:%Y.%m.%d', desc: '下载日期（点分）' },
-  { name: 'publish_date:%Y.%m.%d', desc: '发布日期（点分）' },
-  { name: 'date:%Y%m%d', desc: '下载日期（紧凑）' },
-  { name: 'publish_date:%Y%m%d', desc: '发布日期（紧凑）' },
   { name: 'codec', desc: '编码' },
-  { name: 'date', desc: '下载日期（任务创建日）' },
-  { name: 'publish_date', desc: '发布时间（B站发布日期）' },
+  { name: 'date', desc: '下载日期，可用 {date:%Y%m%d} 等格式' },
+  { name: 'publish_date', desc: '发布日期，可用 {publish_date:%Y.%m.%d} 等格式' },
 ]
 
 const defaultSettings = (): SettingsSnapshot => ({
-  settings_schema_version: 2,
+  settings_schema_version: 4,
+  naming_template_version: 2,
   clipboard_monitor_enabled: false,
   usage_notice_acknowledged: false,
   auto_check_updates: false,
   theme_preference: 'system',
-  parse_batch_size: 50,
-  parse_rules: { pages_per_round: 3, interval_seconds: 1, rest_seconds: 3 },
+  parse_rules: { interval_seconds: 1 },
   download_dir: null,
   document_tree_output: null,
   naming_template: defaultNamingTemplate,
@@ -135,9 +129,10 @@ const logLevels = new Set<SettingsSnapshot['log_level']>(['debug', 'info', 'warn
 const concurrentTaskCounts = new Set(concurrentTaskOptions.map(option => Number(option.value)))
 const retryCounts = new Set([0, 1, 3, 5])
 const segmentCounts = new Set([1, 2, 4, 8])
-// `season_index` was advertised before the source model had a reliable season ordinal.
-// Extensions are automatic now. Accept both legacy variables without offering them in the menu.
-const namingVariableNames = new Set([...namingVariables.map((variable) => variable.name), 'season_index', 'ext'])
+// Previously saved templates can still contain the older field names.
+const namingVariableNames = new Set([...namingVariables.map((v) => v.name), 'ext',
+  'parent_title', 'entry_name', 'flat_name', 'part_title', 'part_index', 'series_title',
+  'episode_title', 'episode_index', 'season_index', 'collection_title'])
 
 interface SettingsState {
   saved: SettingsSnapshot
@@ -159,7 +154,7 @@ interface EnvironmentCheckOverrides {
   ffmpegPath?: string | null
 }
 
-type AppPreferences = Pick<SettingsSnapshot, 'clipboard_monitor_enabled' | 'usage_notice_acknowledged' | 'auto_check_updates' | 'theme_preference' | 'selected_download_preset' | 'download_presets' | 'naming_template'>
+type AppPreferences = Pick<SettingsSnapshot, 'clipboard_monitor_enabled' | 'usage_notice_acknowledged' | 'auto_check_updates' | 'theme_preference' | 'selected_download_preset' | 'download_presets' | 'naming_template' | 'naming_template_version'>
 type DownloadPreferences = Pick<SettingsSnapshot, 'media_mode' | 'audio_output_format' | 'subtitle_format' | 'danmaku_format' | 'archive_mode' | 'archive_assets' | 'embed_cover' | 'embed_subtitles' | 'output_extension' | 'retain_raw_streams'>
 const settingsWrites = new WeakMap<object, Promise<unknown>>()
 const enqueueSettingsWrite = <T>(store: object, write: () => Promise<T>): Promise<T> => {
@@ -204,7 +199,7 @@ export const useSettingsStore = defineStore('settings', {
       return JSON.stringify(state.saved) !== JSON.stringify(state.draft)
     },
     namingPreview(state): string {
-      return previewTemplate(state.draft.naming_template, state.draft.output_extension)
+      return previewTemplate(state.draft.naming_template, state.draft.output_extension, state.draft.naming_template_version)
     },
     namingTemplateError(state): string | null {
       return validateNamingTemplate(state.draft.naming_template)
@@ -340,12 +335,14 @@ export const useSettingsStore = defineStore('settings', {
         if (!creating && !this.saved.naming_presets.some((item) => item.id === preset.id)) return false
         const previous = this.saved.naming_presets.find((item) => item.id === preset.id)
         const items = creating ? [...this.saved.naming_presets, { ...preset }] : this.saved.naming_presets.map((item) => item.id === preset.id ? { ...preset } : item)
-        const namingTemplate = !creating && previous?.template === this.saved.naming_template ? preset.template : this.saved.naming_template
+        const wasSelected = (snapshot: SettingsSnapshot) => !creating && previous?.template === snapshot.naming_template &&
+          (previous?.template_version ?? 2) === snapshot.naming_template_version
+        const selection = { naming_template: preset.template, naming_template_version: preset.template_version ?? 2 }
         try {
-          const updated = normalizeSettings(await settingsUpdate({ ...cloneSettings(this.saved), naming_presets: items, naming_template: namingTemplate }))
+          const updated = normalizeSettings(await settingsUpdate({ ...cloneSettings(this.saved), naming_presets: items, ...(wasSelected(this.saved) ? selection : {}) }))
           this.saved = cloneSettings(updated)
           this.draft.naming_presets = creating ? [...this.draft.naming_presets, { ...preset }] : this.draft.naming_presets.map((item) => item.id === preset.id ? { ...preset } : item)
-          if (!creating && previous?.template === this.draft.naming_template) this.draft.naming_template = preset.template
+          if (wasSelected(this.draft)) Object.assign(this.draft, selection)
           return true
         } catch (error) {
           useUiStore().pushToast(`预设保存失败：${errorMessage(error)}`, 'warning')
@@ -588,7 +585,7 @@ export const useSettingsStore = defineStore('settings', {
         this.setNotice('命名预设最多保存 32 个。', 'warning')
         return false
       }
-      const preset: NamingPreset = { id: existing?.id ?? crypto.randomUUID(), name: trimmed, template: this.draft.naming_template }
+      const preset: NamingPreset = { id: existing?.id ?? crypto.randomUUID(), name: trimmed, template: this.draft.naming_template, template_version: this.draft.naming_template_version ?? 2 }
       this.draft.naming_presets = existing
         ? this.draft.naming_presets.map((item) => item.id === existing.id ? preset : item)
         : [...this.draft.naming_presets, preset]
@@ -739,8 +736,9 @@ const normalizeSettings = (saved: SettingsSnapshot): SettingsSnapshot => {
   const settings = fillMissingDefaults(defaultSettings(), saved)
   return {
     ...settings,
+    settings_schema_version: Math.max(4, settings.settings_schema_version),
     ...migrateDownloadPresets(saved.download_presets?.length ? settings : { ...settings, download_presets: [], selected_download_preset: '' }),
-    parse_rules: { pages_per_round: settings.parse_rules?.pages_per_round ?? 3, interval_seconds: settings.parse_rules?.interval_seconds ?? 1, rest_seconds: settings.parse_rules?.rest_seconds ?? 3 },
+    parse_rules: { interval_seconds: settings.parse_rules?.interval_seconds ?? 1 },
     download_dir: settings.download_dir?.trim() || null,
     document_tree_output: settings.document_tree_output
       ? {
@@ -748,8 +746,8 @@ const normalizeSettings = (saved: SettingsSnapshot): SettingsSnapshot => {
           display_name: settings.document_tree_output.display_name,
         }
       : null,
-    naming_template: normalizeNamingTemplate(settings.naming_template),
-    naming_presets: (settings.naming_presets ?? []).map((preset) => ({ ...preset })),
+    ...normalizeNamingTemplate(settings, saved.settings_schema_version ?? 1),
+    naming_presets: (settings.naming_presets ?? []).map((preset) => ({ ...preset, template_version: (saved.settings_schema_version ?? 1) < 4 ? 1 : preset.template_version ?? 2 })),
     quality: videoQualities.has(settings.quality) ? settings.quality : 'best',
     archive_mode: archiveModes.has(settings.archive_mode) ? settings.archive_mode : 'fast',
     archive_assets: normalizeArchiveAssets(settings.archive_assets),
@@ -774,7 +772,8 @@ const normalizeSettings = (saved: SettingsSnapshot): SettingsSnapshot => {
     proxy_url: settings.proxy_url?.trim() || null,
     log_level: logLevels.has(settings.log_level) ? settings.log_level : 'info',
     data_dir: settings.data_dir?.trim() || null,
-    concurrent_tasks: concurrentTaskCounts.has(settings.concurrent_tasks) ? settings.concurrent_tasks : 1,
+    concurrent_tasks: Number.isInteger(settings.concurrent_tasks) && settings.concurrent_tasks >= 1 && settings.concurrent_tasks <= 16
+      ? settings.concurrent_tasks : 1,
     retry_count: retryCounts.has(settings.retry_count) ? settings.retry_count : 3,
     segment_count: segmentCounts.has(settings.segment_count) ? settings.segment_count : 4,
     global_speed_limit_bytes_per_second:
@@ -805,13 +804,21 @@ const normalizeArchiveAssets = (
   nfo: value?.nfo !== false,
 })
 
-const normalizeNamingTemplate = (template: string | null | undefined): string => {
-  const trimmed = template?.trim()
-  if (!trimmed) {
-    return defaultNamingTemplate
+const normalizeNamingTemplate = (settings: SettingsSnapshot, schema: number): Pick<SettingsSnapshot, 'naming_template' | 'naming_template_version'> => {
+  const template = settings.naming_template
+  if (!template?.trim() || template === defaultNamingTemplate) return { naming_template: defaultNamingTemplate, naming_template_version: 2 }
+  if (schema >= 4) return { naming_template: template, naming_template_version: settings.naming_template_version ?? 2 }
+  if (!settings.naming_presets?.some((p) => sameNamingTemplate(p.template, template))) {
+    const legacy = withoutNamingExtension(template)
+    const grouped = schema === 3 ? ['{parent_title}/{entry_name}'] : [
+      '{title}/P{part_index} - {part_title}', '{title}/{title} - P{part_index} - {part_title}',
+      '{collection_title}/{index} - {title}', '{series_title}/{episode_index} - {episode_title}',
+    ]
+    const flat = schema === 3 ? ['{flat_name}'] : ['{title}', '{title} - P{part_index} - {part_title}']
+    if (grouped.includes(legacy)) return { naming_template: defaultNamingTemplate, naming_template_version: 2 }
+    if (flat.includes(legacy)) return { naming_template: flatNamingTemplate, naming_template_version: 2 }
   }
-
-  return trimmed
+  return { naming_template: template, naming_template_version: 1 }
 }
 
 export const validateNamingTemplate = (template: string): string | null => {
@@ -838,7 +845,7 @@ export const validateNamingTemplate = (template: string): string | null => {
     if (!name) {
       return '命名模板存在空变量。'
     }
-    if (!namingVariableNames.has(name) && !/^(date|publish_date):%Y-%m-%d$/.test(name)) {
+    if (!namingVariableNames.has(name) && !/^(date|publish_date):(%Y-%m-%d|%Y\.%m\.%d|%Y%m%d)$/.test(name)) {
       return `命名模板存在未知变量 {${name}}。`
     }
 
@@ -848,7 +855,7 @@ export const validateNamingTemplate = (template: string): string | null => {
   return null
 }
 
-export const previewTemplate = (template: string, ext: string): string => {
+export const previewTemplate = (template: string, ext: string, version: 1 | 2 = 2): string => {
   const now = new Date()
   const localDate = [
     now.getFullYear(),
@@ -856,7 +863,12 @@ export const previewTemplate = (template: string, ext: string): string => {
     String(now.getDate()).padStart(2, '0'),
   ].join('-')
   const values: Record<string, string> = {
-    title: '示例视频',
+    parent_title: '示例视频',
+    entry_name: 'P1 - 开场',
+    flat_name: '示例视频 - P1 - 开场',
+    group: '国产',
+    parent: '山村旧事',
+    title: version === 1 ? '示例视频' : '幕后花絮',
     part_title: '开场',
     part_index: '1',
     bvid: 'BV1xx411c7mD',
@@ -891,8 +903,9 @@ export const previewTemplate = (template: string, ext: string): string => {
     },
   )
   const extension = ext.trim().replace(/^\.+|\.+$/g, '')
-  const path = rendered.split(/[/\\]/).map((component) => component
-    .trim().replace(/^\.+|\.+$/g, '') || 'untitled').join('/')
+  const segments = rendered.split(/[/\\]/)
+  const path = (version === 2 ? segments.filter((segment) => segment.trim()) : segments)
+    .map((component) => component.trim().replace(/^\.+|\.+$/g, '') || 'untitled').join('/') || 'untitled'
   return extension && !path.toLowerCase().endsWith(`.${extension.toLowerCase()}`)
     ? `${path}.${extension}`
     : path

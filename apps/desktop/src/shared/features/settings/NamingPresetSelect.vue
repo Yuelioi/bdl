@@ -7,6 +7,7 @@ import PresetSelectActions from './PresetSelectActions.vue';
 import { useUiStore } from '../../stores/ui';
 import NamingPresetDialog from './NamingPresetDialog.vue';
 
+const version = defineModel<1 | 2>('version', { default: 2 });
 const model = defineModel<string>({ required: true });
 const { extension = 'mp4', disabled = false } = defineProps<{ extension?: string; disabled?: boolean }>();
 const settings = useSettingsStore();
@@ -25,6 +26,7 @@ const usePreset = async (preset: NamingPreset) => {
   <NamingTemplatePicker
     ref="picker"
     v-model="model"
+    v-model:version="version"
     :presets="settings.saved.naming_presets"
     :extension="extension"
     :disabled="disabled"

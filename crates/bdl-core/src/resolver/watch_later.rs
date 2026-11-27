@@ -29,6 +29,8 @@ fn normalize(data: ToViewListData) -> NormalizedSourceTree {
         .map(|v| {
             let key = format!("watch_later:{}", v.aid);
             NormalizedItem {
+                episode_number: None,
+                collection: None,
                 id: ItemId(format!("item:{key}")),
                 title: v.title.clone(),
                 owner_name: Some(v.owner.name),

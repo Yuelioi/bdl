@@ -136,7 +136,10 @@ fn plan_selected_parts_creates_one_task_for_one_selected_part() {
     assert_eq!(tasks[0].id, "task:source:BV1:part:BV1:100");
     assert_eq!(tasks[0].source_id, "source:BV1");
     assert_eq!(tasks[0].status, TaskStatus::Waiting);
-    assert!(tasks[0].output_path.ends_with("Fixture Video/P1 - P1.mp4"));
+    assert_eq!(
+        tasks[0].output_path,
+        options.output_dir.join("Fixture Video.mp4")
+    );
     let refresh_intent = tasks[0]
         .refresh_intent
         .as_ref()
@@ -511,11 +514,7 @@ fn plan_selected_parts_complete_archive_uses_asset_urls_and_formats() {
         cover.current_urls,
         vec!["https://example.invalid/cover.jpg?token=fixture".to_owned()]
     );
-    assert!(
-        cover
-            .target_path
-            .ends_with("Fixture Video/P1 - P1.cover.jpg")
-    );
+    assert!(cover.target_path.ends_with("Fixture Video.cover.jpg"));
 
     let subtitle = resource_by_intent(&tasks[0], DownloadResourceIntent::Subtitle);
     assert_eq!(
@@ -525,7 +524,7 @@ fn plan_selected_parts_complete_archive_uses_asset_urls_and_formats() {
     assert!(
         subtitle
             .target_path
-            .ends_with("Fixture Video/P1 - P1.subtitle.json")
+            .ends_with("Fixture Video.subtitle.json")
     );
     assert!(
         subtitle
@@ -539,11 +538,7 @@ fn plan_selected_parts_complete_archive_uses_asset_urls_and_formats() {
         danmaku.current_urls,
         vec!["https://example.invalid/danmaku.xml".to_owned()]
     );
-    assert!(
-        danmaku
-            .target_path
-            .ends_with("Fixture Video/P1 - P1.danmaku.xml")
-    );
+    assert!(danmaku.target_path.ends_with("Fixture Video.danmaku.xml"));
 }
 
 #[test]
@@ -677,16 +672,12 @@ fn plan_selected_parts_adds_suffix_for_duplicate_output_paths() {
     )
     .expect("duplicate selection should still plan unique paths");
 
-    assert!(tasks[0].output_path.ends_with("Fixture Video/P1 - P1.mp4"));
-    assert!(
-        tasks[1]
-            .output_path
-            .ends_with("Fixture Video/P1 - P1 (1).mp4")
-    );
+    assert!(tasks[0].output_path.ends_with("Fixture Video.mp4"));
+    assert!(tasks[1].output_path.ends_with("Fixture Video (1).mp4"));
     assert!(
         tasks[1].resources[0]
             .target_path
-            .ends_with("Fixture Video/P1 - P1 (1).video.m4s")
+            .ends_with("Fixture Video (1).video.m4s")
     );
 }
 
@@ -694,7 +685,7 @@ fn plan_selected_parts_adds_suffix_for_duplicate_output_paths() {
 fn plan_selected_parts_can_overwrite_existing_files_without_batch_path_collisions() {
     let tree = fixture_tree(true);
     let output_dir = unique_temp_dir();
-    let existing_output = output_dir.join("Fixture Video").join("P1 - P1.mp4");
+    let existing_output = output_dir.join("Fixture Video.mp4");
     fs::create_dir_all(existing_output.parent().expect("output should have parent"))
         .expect("test output dir should be created");
     fs::write(&existing_output, b"existing").expect("existing output should be written");
@@ -714,7 +705,7 @@ fn plan_selected_parts_can_overwrite_existing_files_without_batch_path_collision
     assert_eq!(tasks[0].output_path, existing_output);
     assert_eq!(
         tasks[1].output_path,
-        output_dir.join("Fixture Video").join("P1 - P1 (1).mp4")
+        output_dir.join("Fixture Video (1).mp4")
     );
 
     let _ = fs::remove_dir_all(output_dir);
@@ -724,7 +715,7 @@ fn plan_selected_parts_can_overwrite_existing_files_without_batch_path_collision
 fn plan_selected_parts_skips_an_existing_final_output_by_default() {
     let tree = fixture_tree(true);
     let output_dir = unique_temp_dir();
-    let existing_output = output_dir.join("Fixture Video").join("P1 - P1.mp4");
+    let existing_output = output_dir.join("Fixture Video.mp4");
     fs::create_dir_all(existing_output.parent().expect("output should have parent"))
         .expect("test output dir should be created");
     fs::write(&existing_output, b"complete output").expect("existing output should be written");
@@ -734,6 +725,28 @@ fn plan_selected_parts_skips_an_existing_final_output_by_default() {
         .expect("existing output should be handled without an error");
 
     assert!(tasks.is_empty());
+    let options = DownloadOptions::new(output_dir.clone());
+    let queued = bdl_core::planner::plan_queue_selection(
+        &tree,
+        &[PartId("part:BV1:100".into())],
+        &Default::default(),
+        &options,
+        None,
+        0,
+    )
+    .unwrap();
+    let deferred = queued[0].media_selection.deferred.as_ref().unwrap();
+    assert!(deferred.plan(&tree).unwrap().is_none());
+    let mut siblings = bdl_core::naming::ReservedPaths::new();
+    siblings.insert(existing_output.clone());
+    let unrelated = output_dir.join("Fixture Video (1).mp4");
+    fs::write(&unrelated, b"other download").unwrap();
+    let next = deferred
+        .plan_with_reservations(&tree, &mut siblings)
+        .unwrap()
+        .unwrap();
+    assert_eq!(next.output_path, output_dir.join("Fixture Video (2).mp4"));
+    assert_eq!(fs::read(&unrelated).unwrap(), b"other download");
     assert_eq!(
         fs::read(&existing_output).expect("existing output remains"),
         b"complete output"
@@ -909,6 +922,8 @@ fn fixture_tree(include_audio: bool) -> NormalizedSourceTree {
             kind: "video".to_owned(),
             title: "Fixture Video".to_owned(),
             items: vec![NormalizedItem {
+                episode_number: None,
+                collection: None,
                 nfo_metadata: Default::default(),
                 id: ItemId("item:BV1".to_owned()),
                 title: "Fixture Video".to_owned(),

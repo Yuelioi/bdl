@@ -11,7 +11,7 @@ use std::time::Duration;
 use bdl_core::account::AccountLibraryFolderKind;
 use bdl_core::model::NormalizedSourceTree;
 use bdl_core::queue::{DownloadTask, DuplicateTaskPolicy, TaskStatus};
-use bdl_core::settings::{ParseRules, validate_speed_limit};
+use bdl_core::settings::{MAX_CONCURRENT_DOWNLOADS, validate_speed_limit};
 use bdl_core::{BdlError, BdlResult};
 use bdl_tauri::commands::{
     SelectionCreateTasksRequest, queue_pause, queue_resume, queue_retry, selection_create_tasks,
@@ -414,7 +414,7 @@ fn tools() -> Value {
         },
         {
             "name": "bdl_settings_get",
-            "description": "Read BDL's total download limit in decimal MB/s, concurrent tasks, parse speed and default download preset ID.",
+            "description": "Read BDL's total download limit in decimal MB/s, concurrent tasks, page interval in seconds and default download preset ID.",
             "inputSchema": { "type": "object", "additionalProperties": false },
             "annotations": { "readOnlyHint": true }
         },
@@ -425,8 +425,8 @@ fn tools() -> Value {
                 "type": "object", "additionalProperties": false, "minProperties": 1,
                 "properties": {
                     "download_limit_mb_s": { "type": "number", "minimum": 0, "description": "Total download bandwidth in decimal MB/s. Set zero for unlimited." },
-                    "concurrent_tasks": { "type": "integer", "minimum": 1, "maximum": 5 },
-                    "parse_speed": { "type": "string", "enum": ["slow", "standard", "fast"] },
+                    "concurrent_tasks": { "type": "integer", "minimum": 1, "maximum": MAX_CONCURRENT_DOWNLOADS },
+                    "parse_interval_seconds": { "type": "integer", "minimum": 1, "maximum": 120 },
                     "default_preset_id": { "type": "string", "minLength": 1, "description": "Use an existing ID from bdl_presets." }
                 }
             },
@@ -648,51 +648,22 @@ fn presets(app: &AppHandle) -> Result<Value, String> {
     Ok(json!({ "default_preset_id": settings.selected_download_preset, "presets": presets }))
 }
 
-#[derive(Clone, Copy, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-enum ParseSpeed {
-    Slow,
-    Standard,
-    Fast,
-}
-
-impl ParseSpeed {
-    fn rules(self) -> ParseRules {
-        match self {
-            Self::Slow => ParseRules {
-                pages_per_round: 1,
-                interval_seconds: 3,
-                rest_seconds: 8,
-            },
-            Self::Standard => ParseRules::default(),
-            Self::Fast => ParseRules {
-                pages_per_round: 4,
-                ..ParseRules::default()
-            },
-        }
-    }
-}
-
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct SettingsPatch {
     download_limit_mb_s: Option<f64>,
     concurrent_tasks: Option<usize>,
-    parse_speed: Option<ParseSpeed>,
+    parse_interval_seconds: Option<u64>,
     default_preset_id: Option<String>,
 }
 
 const BYTES_PER_MB: f64 = 1_000_000.0;
 
 fn settings_summary(settings: &SettingsSnapshot) -> Value {
-    let speed = [ParseSpeed::Slow, ParseSpeed::Standard, ParseSpeed::Fast]
-        .into_iter()
-        .find(|speed| speed.rules() == settings.parse_rules);
     json!({
         "download_limit_mb_s": settings.global_speed_limit_bytes_per_second.unwrap_or_default() as f64 / BYTES_PER_MB,
         "concurrent_tasks": settings.concurrent_tasks,
-        "parse_speed": speed.map_or(json!("custom"), |speed| json!(speed)),
-        "parse_rules": settings.parse_rules,
+        "parse_interval_seconds": settings.parse_rules.interval_seconds,
         "default_preset_id": settings.selected_download_preset
     })
 }
@@ -715,13 +686,14 @@ impl SettingsPatch {
             settings.global_speed_limit_bytes_per_second = limit;
         }
         if let Some(count) = self.concurrent_tasks {
-            if !(1..=5).contains(&count) {
-                return Err(invalid_setting("并发任务数需为 1～5。"));
+            if !(1..=MAX_CONCURRENT_DOWNLOADS).contains(&count) {
+                return Err(invalid_setting("并发任务数需为 1～16。"));
             }
             settings.concurrent_tasks = count;
         }
-        if let Some(speed) = self.parse_speed {
-            settings.parse_rules = speed.rules();
+        if let Some(interval) = self.parse_interval_seconds {
+            settings.parse_rules.interval_seconds = interval;
+            settings.parse_rules.validate()?;
         }
         if let Some(id) = self.default_preset_id {
             if !settings
@@ -753,7 +725,7 @@ fn update_settings(app: &AppHandle, args: &Value) -> Result<Value, String> {
     let patch = SettingsPatch::deserialize(args).map_err(|error| error.to_string())?;
     if patch.download_limit_mb_s.is_none()
         && patch.concurrent_tasks.is_none()
-        && patch.parse_speed.is_none()
+        && patch.parse_interval_seconds.is_none()
         && patch.default_preset_id.is_none()
     {
         return Err("请指定至少一项要修改的设置。".into());

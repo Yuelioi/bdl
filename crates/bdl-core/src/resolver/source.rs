@@ -5,7 +5,7 @@ use bpi_rs::BpiClient;
 
 use crate::error::{BdlError, BdlResult};
 use crate::ids::ItemId;
-use crate::input::{ClassifiedInput, classify_input};
+use crate::input::{ClassifiedInput, classify_input, is_short_link_host};
 use crate::model::{NormalizedItem, NormalizedSourceTree, SourceKind};
 use crate::resolver::Resolver;
 use crate::resolver::bangumi::BangumiResolver;
@@ -350,7 +350,7 @@ impl SourceResolver {
             {
                 return Ok(classified);
             }
-            if !matches!(url.host_str(), Some("b23.tv" | "www.b23.tv")) {
+            if !url.host_str().is_some_and(is_short_link_host) {
                 return Err(source_error(
                     "short link did not resolve to a supported source",
                 ));
@@ -403,17 +403,13 @@ fn validate_redirect_target(url: &url::Url) -> BdlResult<()> {
         || !url.username().is_empty()
         || url.password().is_some()
         || url.port_or_known_default() != Some(443)
-        || !matches!(
-            url.host_str(),
-            Some(
-                "b23.tv"
-                    | "www.b23.tv"
-                    | "bilibili.com"
-                    | "www.bilibili.com"
-                    | "m.bilibili.com"
-                    | "space.bilibili.com"
-            )
-        )
+        || !url.host_str().is_some_and(|host| {
+            is_short_link_host(host)
+                || matches!(
+                    host,
+                    "bilibili.com" | "www.bilibili.com" | "m.bilibili.com" | "space.bilibili.com"
+                )
+        })
     {
         return Err(source_error(
             "short link redirected outside supported Bilibili HTTPS hosts",
@@ -506,6 +502,8 @@ fn merge_item_parts(
     item.publish_date = item.publish_date.take().or(loaded.publish_date);
     item.cover_url = item.cover_url.take().or(loaded.cover_url);
     let index = item.nfo_metadata.index;
+    item.episode_number = item.episode_number.or(loaded.episode_number);
+    crate::model::VideoCollection::enrich(&mut item.collection, loaded.collection.as_ref());
     item.nfo_metadata = loaded.nfo_metadata;
     item.nfo_metadata.index = index;
     item.parts = loaded.parts;
@@ -523,6 +521,7 @@ mod tests {
         for target in [
             "https://www.bilibili.com/video/BV1ZA411g7Sb",
             "https://b23.tv/abc",
+            "https://bili2233.cn/abc",
             "https://space.bilibili.com/123",
         ] {
             validate_redirect_target(&url::Url::parse(target).unwrap()).unwrap();
@@ -530,6 +529,7 @@ mod tests {
         for target in [
             "http://www.bilibili.com/video/x",
             "https://www.bilibili.com.evil.example/x",
+            "https://bili2233.cn.example/x",
             "https://user:secret@b23.tv/abc",
             "https://b23.tv:444/abc",
             "https://127.0.0.1/x",
@@ -601,6 +601,7 @@ mod tests {
         let mut options =
             DownloadOptions::new(std::env::temp_dir().join(uuid::Uuid::new_v4().to_string()));
         options.naming_template = "{index}-P{part_index}.{ext}".into();
+        options.naming_template_version = 1;
         let tasks = plan_selected_parts(&source, &ids, &options).unwrap();
         assert_eq!(tasks.len(), 2);
         assert!(tasks[0].output_path.ends_with("2-P1.mp4"));

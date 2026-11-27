@@ -47,6 +47,7 @@ watch(open, (value) => {
     id: creating.value ? crypto.randomUUID() : props.preset!.id,
     name: creating.value ? name : props.preset!.name,
     template: props.template,
+    template_version: props.preset?.template_version ?? 2,
   };
   saveError.value = '';
 });
@@ -94,7 +95,7 @@ const save = async () => {
       :disabled="saving"
     />
     <p class="m-0 text-xs leading-5 wrap-anywhere text-(--color-muted)">
-      文件名预览：<code>{{ previewTemplate(edited.template, extension) }}</code>
+      文件名预览：<code>{{ previewTemplate(edited.template, extension, edited.template_version) }}</code>
     </p>
     <UiInlineNotice v-if="saveError" tone="danger">{{ saveError }}</UiInlineNotice>
     <template #footer>

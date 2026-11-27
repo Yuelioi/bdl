@@ -13,11 +13,8 @@ export function useSourceParsing(source: Readonly<Ref<NormalizedSourceTree | nul
   const activeError = computed(() => (sourceId.value ? parse.errorsBySource[sourceId.value] : null));
   const activeErrorDetail = computed(() => (sourceId.value ? parse.errorDetailsBySource[sourceId.value] : null));
 
-  const loadMore = async () => {
-    if (sourceId.value && hasMore.value) await parse.loadConfiguredBatch(sourceId.value);
-  };
   const parseAll = async () => {
-    if (sourceId.value && hasMore.value) await parse.loadConfiguredBatch(sourceId.value, 'all');
+    if (sourceId.value && hasMore.value) await parse.parseAllPages(sourceId.value);
   };
   const stopParsing = () => {
     if (sourceId.value) parse.stopPacedParsing(sourceId.value);
@@ -32,7 +29,6 @@ export function useSourceParsing(source: Readonly<Ref<NormalizedSourceTree | nul
     activeLoading,
     activeError,
     activeErrorDetail,
-    loadMore,
     parseAll,
     stopParsing,
   };

@@ -28,7 +28,7 @@ export const failureGuidance = (rule: FailureRule, stage: 'parse' | 'download', 
   }
   if (['source_rate_limited', 'source_verification_required', 'source_access_restricted'].includes(rule.code)) {
     return stage === 'parse'
-      ? { label: '调整解析节奏', section: 'settings-links', tip: '下次批量解析时，可将解析预设改为「慢速」。' } as const
+      ? { label: '调整解析节奏', section: 'settings-links', tip: '下次解析时可延长翻页间隔。' } as const
       : { label: '调整下载设置', section: 'settings-tasks', tip: '下次可减少同时下载任务数和单任务分段数，延长任务间隔。下载总限速只控制带宽。' } as const
   }
 }

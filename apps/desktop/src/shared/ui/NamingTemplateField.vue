@@ -114,13 +114,13 @@ const insertVariable = async (name: string) => {
     </div>
     <div
       v-if="
-        quickVariables && variables.some((variable) => ['title', 'part_index', 'part_title'].includes(variable.name))
+        quickVariables && variables.some((variable) => ['group', 'parent', 'title', 'part_index', 'part_title'].includes(variable.name))
       "
       class="naming-quick-variables"
     >
       <UButton
         v-for="variable in variables.filter((variable) =>
-          ['title', 'part_index', 'part_title'].includes(variable.name),
+          ['group', 'parent', 'title', 'part_index', 'part_title'].includes(variable.name),
         )"
         :key="variable.name"
         variant="soft"

@@ -125,7 +125,7 @@ fn classify_url(raw_url: &str, url: &Url) -> Option<ClassifiedInput> {
     }
 
     let host = url.host_str()?.to_ascii_lowercase();
-    if is_b23_host(&host) {
+    if is_short_link_host(&host) || host.ends_with(".b23.tv") {
         return Some(ClassifiedInput::ShortUrl(raw_url.to_string()));
     }
 
@@ -366,8 +366,8 @@ fn query_param_eq(url: &Url, key: &str, expected_value: &str) -> bool {
         .any(|(name, value)| name == key && value.eq_ignore_ascii_case(expected_value))
 }
 
-fn is_b23_host(host: &str) -> bool {
-    host == "b23.tv" || host.ends_with(".b23.tv")
+pub(crate) fn is_short_link_host(host: &str) -> bool {
+    matches!(host, "b23.tv" | "www.b23.tv" | "bili2233.cn")
 }
 
 fn is_bilibili_host(host: &str) -> bool {

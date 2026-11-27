@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import type { NamingPreset } from '../api/dto';
-import { builtinNamingPresets, previewTemplate } from '../stores/settings';
+import { builtinNamingPresets, previewTemplate, sameNamingTemplate } from '../stores/settings';
 import UiSelect from './Select.vue';
 
 const model = defineModel<string>({ required: true });
+const version = defineModel<1 | 2>('version', { default: 2 });
 const props = withDefaults(
   defineProps<{
     presets: NamingPreset[];
@@ -14,20 +15,25 @@ const props = withDefaults(
   { extension: 'mp4', disabled: false },
 );
 const selectedId = ref('');
-const choices = computed(() => [
-  ...builtinNamingPresets().map((preset) => ({ label: preset.name, value: preset.id, template: preset.template })),
-  ...props.presets.map((preset) => ({ label: preset.name, value: preset.id, template: preset.template })),
-]);
-const matchesTemplate = (template: string) => template === model.value || `${template}.{ext}` === model.value;
+const choices = computed(() => [...builtinNamingPresets(), ...props.presets].map((preset) => ({
+  label: preset.name,
+  value: preset.id,
+  template: preset.template,
+  version: preset.template_version ?? (2 as const),
+})));
+const matchesTemplate = (item: { template: string; version: number }) => item.version === version.value && sameNamingTemplate(item.template, model.value);
 const selected = computed({
   get: () =>
-    choices.value.find((item) => item.value === selectedId.value && matchesTemplate(item.template))?.value ??
-    choices.value.find((item) => matchesTemplate(item.template))?.value ??
+    choices.value.find((item) => item.value === selectedId.value && matchesTemplate(item))?.value ??
+    choices.value.find((item) => matchesTemplate(item))?.value ??
     'current',
   set: (value: string) => {
     selectedId.value = value;
     const preset = choices.value.find((item) => item.value === value);
-    if (preset) model.value = preset.template;
+    if (preset) {
+      model.value = preset.template;
+      version.value = preset.version;
+    }
   },
 });
 const options = computed(() => [
@@ -49,7 +55,7 @@ defineExpose({
       <slot name="actions" />
     </div>
     <p class="m-0 text-xs leading-5 wrap-anywhere text-(--color-muted)">
-      文件名预览：<code>{{ previewTemplate(model, extension) }}</code>
+      文件名预览：<code>{{ previewTemplate(model, extension, version) }}</code>
     </p>
   </div>
 </template>

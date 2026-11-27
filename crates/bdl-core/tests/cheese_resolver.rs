@@ -150,6 +150,16 @@ async fn cheese_resolver_fetches_streams_for_episode_input_only() -> Result<(), 
     assert!(first_part.streams.is_empty());
     assert_eq!(focused_part.id.0, "part:cheese:123:456:9002");
     assert_eq!(focused_part.streams.len(), 2);
+    let options = bdl_core::planner::DownloadOptions::new("downloads".into());
+    let tasks = bdl_core::planner::plan_selected_parts(
+        &tree,
+        std::slice::from_ref(&focused_part.id),
+        &options,
+    )?;
+    assert_eq!(
+        tasks[0].output_path,
+        options.output_dir.join("fixture course/P2 - basics.mp4")
+    );
     assert!(
         focused_part
             .streams

@@ -1,4 +1,4 @@
-//! Pure parse-session rules for source paging and initial workspace expansion.
+//! Pure parse-session rules for source paging.
 //!
 //! Network resolution stays in [`crate::state::AppState`]. This module owns the
 //! deterministic rules that turn resolver pages into one stable source tree.
@@ -20,19 +20,6 @@ pub(crate) fn should_continue_loading(
     limit: Option<usize>,
 ) -> bool {
     has_more && limit.is_none_or(|limit| loaded_count < limit.max(1))
-}
-
-pub(crate) fn should_expand_initial_source(kind: SourceKind, has_more: bool) -> bool {
-    // Large library containers become interactive after their first page.
-    // Loading every page is reserved for explicit "download all" actions.
-    has_more
-        && !matches!(
-            kind,
-            SourceKind::Uploader
-                | SourceKind::Favorite
-                | SourceKind::Collection
-                | SourceKind::Series
-        )
 }
 
 pub(crate) fn uploader_mid(tree: &NormalizedSourceTree) -> BdlResult<u64> {
@@ -373,6 +360,13 @@ pub(crate) fn hydrate_placeholder_part(
         }
 
         hydrated_item.id = existing_item.id.clone();
+        bdl_core::model::VideoCollection::enrich(
+            &mut existing_item.collection,
+            hydrated_item.collection.as_ref(),
+        );
+        hydrated_item
+            .collection
+            .clone_from(&existing_item.collection);
         merge_missing_item_metadata(&mut hydrated_item, existing_item);
         *existing_item = hydrated_item;
         return Ok(hydrated_part_ids);
@@ -516,6 +510,8 @@ fn hydrated_item_for_target(
 }
 
 fn merge_missing_item_metadata(target: &mut NormalizedItem, fallback: &NormalizedItem) {
+    target.episode_number = target.episode_number.or(fallback.episode_number);
+    bdl_core::model::VideoCollection::enrich(&mut target.collection, fallback.collection.as_ref());
     if target.nfo_metadata.index == 0 {
         target.nfo_metadata.index = fallback.nfo_metadata.index;
     }
@@ -628,6 +624,8 @@ mod tests {
     #[test]
     fn hydration_keeps_list_publish_date_when_video_detail_lacks_it() {
         let mut target = NormalizedItem {
+            episode_number: None,
+            collection: None,
             nfo_metadata: Default::default(),
             id: ItemId("item:target".to_owned()),
             title: "target".to_owned(),
@@ -639,6 +637,8 @@ mod tests {
             parts: Vec::new(),
         };
         let fallback = NormalizedItem {
+            episode_number: None,
+            collection: None,
             nfo_metadata: Default::default(),
             id: ItemId("item:fallback".to_owned()),
             title: "fallback".to_owned(),

@@ -261,6 +261,8 @@ fn map_video_item(media_id: u64, video: ResolvedFavoriteVideo, index: usize) -> 
     let video_key = format!("favorite:{media_id}:{}", video.bvid);
 
     NormalizedItem {
+        episode_number: None,
+        collection: None,
         nfo_metadata: crate::nfo::NfoMetadata {
             index,
             ..Default::default()

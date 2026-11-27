@@ -169,10 +169,16 @@ describe('settings defaults', () => {
       parse_rules: { interval_seconds: 2 }, media_preferences: { video: [] },
     }
     store.apply(partial as unknown as Parameters<typeof store.apply>[0])
-    expect(store.saved).toMatchObject(partial)
-    expect(store.saved.parse_rules.rest_seconds).toBe(3)
+    expect(store.saved).toMatchObject({ ...partial, naming_template: '{group}/{parent}/{title}', naming_template_version: 2 })
+    expect(store.saved.parse_rules).toEqual({ interval_seconds: 2 })
     expect(store.saved.archive_assets.subtitles).toBe(true)
     expect(store.saved.media_preferences.audio).toEqual([])
+    const personal = { id: 'mine', name: '我的命名', template: partial.naming_template }
+    store.apply({ ...store.saved, naming_template: personal.template, settings_schema_version: 2, naming_presets: [personal] })
+    expect(store.saved.naming_template).toBe(personal.template)
+    expect(store.saved.naming_presets).toEqual([{ ...personal, template_version: 1 }])
+    store.apply({ ...store.saved, settings_schema_version: 2, naming_template: '{title}.{ext}' })
+    expect(store.saved.naming_template).toBe('{title}')
   })
 
   it('defaults name collisions to skipping an existing final output', () => {
@@ -225,6 +231,9 @@ describe('naming template persistence', () => {
 
   it('omits extension variables from presets and the variable menu while accepting old templates', () => {
     expect(namingVariables.some((variable) => variable.name === 'ext')).toBe(false)
+    expect(namingTemplatePresets.map((preset) => previewTemplate(preset.value, 'mkv'))).toEqual([
+      '国产/山村旧事/幕后花絮.mkv', '山村旧事/幕后花絮.mkv', '幕后花絮.mkv',
+    ])
     for (const preset of namingTemplatePresets) {
       expect(preset.value).not.toContain('{ext}')
       expect(previewTemplate(preset.value, 'mkv')).toMatch(/\.mkv$/)
@@ -242,7 +251,7 @@ describe('naming template persistence', () => {
     ['我的视频. ', 'mp4', '我的视频.mp4'],
     ['{ ext }/我的视频', 'mp4', 'mp4/我的视频.mp4'],
   ])('previews the actual output extension for %s', (template, extension, expected) => {
-    expect(previewTemplate(template, extension)).toBe(expected)
+    expect(previewTemplate(template, extension, 1)).toBe(expected)
   })
 })
 
@@ -289,7 +298,7 @@ describe('naming presets', () => {
     expect(store.saved.naming_presets).toEqual([])
     store.draft.naming_template = '{title}/{part_title}.{ext}'
     store.saveNamingPreset('收藏')
-    expect(store.draft.naming_presets).toEqual([{ id, name: '收藏', template: '{title}/{part_title}.{ext}' }])
+    expect(store.draft.naming_presets).toEqual([{ id, name: '收藏', template: '{title}/{part_title}.{ext}', template_version: 2 }])
     store.apply(store.draft)
     store.draft.naming_presets[0].name = '修改'
     expect(store.saved.naming_presets[0].name).toBe('收藏')

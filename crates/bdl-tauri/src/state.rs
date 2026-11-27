@@ -46,7 +46,7 @@ use crate::mobile_storage::MobileStorage;
 use crate::parse_session::{PartHydrationRequest, find_part};
 use crate::parse_session::{
     append_source_page, cheese_season_id, collection_ids, favorite_media_id, next_page_request,
-    series_ids, should_expand_initial_source, uploader_mid,
+    series_ids, uploader_mid,
 };
 #[cfg(test)]
 use crate::parse_session::{
@@ -283,7 +283,7 @@ impl AppState {
         let tree = self
             .parse_pacer
             .run_retry(
-                self.settings()?.parse_rules,
+                None,
                 crate::parse_pacing::CooldownBehavior::Report,
                 || {
                     let classified = classified.clone();
@@ -374,16 +374,7 @@ impl AppState {
                         Ok(tree)
                     }
                 },
-                |tree| {
-                    usize::from(matches!(
-                        tree.source.kind,
-                        SourceKind::Favorite
-                            | SourceKind::Uploader
-                            | SourceKind::Collection
-                            | SourceKind::Series
-                            | SourceKind::Cheese
-                    ))
-                },
+                |tree| tree.groups.iter().any(|group| group.page.is_some()),
                 |_| {},
             )
             .await?;
@@ -410,19 +401,13 @@ impl AppState {
         fetch_streams: bool,
         expand_video_collection: bool,
     ) -> BdlResult<NormalizedSourceTree> {
-        let tree = self
+        self
             .parse_source_with_options(input, fetch_streams, expand_video_collection)
             .await
             .map_err(|error| error.with_context(format!(
                 "[stage=parse_source] request_id={} input={} fetch_streams={fetch_streams} expand_video_collection={expand_video_collection}",
                 uuid::Uuid::new_v4(), bdl_core::account::redact_sensitive(input)
-            )))?;
-        if should_expand_initial_source(tree.source.kind, tree.source.has_more) {
-            self.load_all(tree, None, &uuid::Uuid::new_v4().to_string())
-                .await
-        } else {
-            Ok(tree)
-        }
+            )))
     }
 
     pub fn enqueue_tasks_with_duplicate_policy(
@@ -1860,7 +1845,7 @@ impl AppState {
         ));
         let next = operation
             .run(self.parse_pacer.run_retry(
-                self.settings()?.parse_rules,
+                Some(self.settings()?.parse_rules),
                 crate::parse_pacing::CooldownBehavior::Report,
                 || {
                     let mut next = tree.clone();
@@ -1869,7 +1854,7 @@ impl AppState {
                         Ok(next)
                     }
                 },
-                |_| 1,
+                |_| true,
                 |phase| operation.phase(phase),
             ))
             .await?;
@@ -1940,10 +1925,10 @@ impl AppState {
         let resolution = DownloadResolution::for_url_refresh();
         self.parse_pacer
             .run_retry(
-                self.settings()?.parse_rules,
+                None,
                 cooldown,
                 || resolution.resolve_source(client.clone(), input.clone(), target_cid),
-                |_| 0,
+                |_| false,
                 |_| {},
             )
             .await
@@ -2430,8 +2415,7 @@ mod tests {
         append_new_tasks, append_source_page, dedupe_tasks_by_id, hydrate_placeholder_part,
         load_account_snapshot, merge_browsed_page, next_page_request, normalize_selected_part_ids,
         prepare_startup_recovery, remap_selected_part_ids, select_startup_data_dir,
-        select_task_stream, should_continue_loading, should_expand_initial_source,
-        task_media_refresh_ids,
+        select_task_stream, should_continue_loading, task_media_refresh_ids,
     };
     use crate::secure_store::SecureStore;
     use chrono::Utc;
@@ -3113,18 +3097,6 @@ mod tests {
         assert!(!should_continue_loading(false, 150, None));
         assert!(should_continue_loading(true, 99, Some(100)));
         assert!(!should_continue_loading(true, 100, Some(100)));
-    }
-
-    #[test]
-    fn workspace_parse_keeps_large_uploader_sources_paged() {
-        assert!(!should_expand_initial_source(SourceKind::Uploader, true));
-    }
-
-    #[test]
-    fn workspace_parse_keeps_container_sources_paged() {
-        assert!(!should_expand_initial_source(SourceKind::Favorite, true));
-        assert!(!should_expand_initial_source(SourceKind::Collection, true));
-        assert!(!should_expand_initial_source(SourceKind::Series, true));
     }
 
     #[test]
@@ -4182,6 +4154,8 @@ mod tests {
                 kind: "uploader_videos".to_owned(),
                 title: "fixture owner 的投稿".to_owned(),
                 items: vec![NormalizedItem {
+                    episode_number: None,
+                    collection: None,
                     nfo_metadata: Default::default(),
                     id: ItemId("item:uploader:1001:BV1xx411c7mD".to_owned()),
                     title: "fixture upload".to_owned(),
@@ -4228,6 +4202,8 @@ mod tests {
                 kind: label.to_owned(),
                 title: "fixture source".to_owned(),
                 items: vec![NormalizedItem {
+                    episode_number: None,
+                    collection: None,
                     nfo_metadata: Default::default(),
                     id: ItemId(format!("item:{label}:123:456")),
                     title: "fixture episode".to_owned(),
@@ -4268,6 +4244,8 @@ mod tests {
                 kind: "uploader_videos".to_owned(),
                 title: "fixture owner 的投稿".to_owned(),
                 items: vec![NormalizedItem {
+                    episode_number: None,
+                    collection: None,
                     nfo_metadata: Default::default(),
                     id: ItemId("item:uploader:1001:BV1yy411c7mD".to_owned()),
                     title: "fixture upload page 2".to_owned(),
@@ -4314,6 +4292,8 @@ mod tests {
                 kind: "video".to_owned(),
                 title: "fixture upload".to_owned(),
                 items: vec![NormalizedItem {
+                    episode_number: None,
+                    collection: None,
                     nfo_metadata: Default::default(),
                     id: ItemId("item:BV1xx411c7mD".to_owned()),
                     title: "fixture upload".to_owned(),

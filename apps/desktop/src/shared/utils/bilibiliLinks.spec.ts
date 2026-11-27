@@ -12,7 +12,7 @@ import {
 
 describe('Bilibili page links', () => {
   it('accepts only video identities and short links in single-video mode', () => {
-    for (const input of ['BV1xx411c7mD', 'av170001', 'https://www.bilibili.com/video/BV1xx411c7mD/?p=2', 'https://b23.tv/abc']) {
+    for (const input of ['BV1xx411c7mD', 'av170001', 'https://www.bilibili.com/video/BV1xx411c7mD/?p=2', 'https://b23.tv/abc', 'https://bili2233.cn/abc']) {
       expect(isSingleVideoInput(input)).toBe(true)
     }
     for (const input of ['https://space.bilibili.com/42/favlist?fid=7', 'https://space.bilibili.com/42/lists/7?type=season', 'https://www.bilibili.com/bangumi/play/ss1', 'BV1xx411c7mD BV1xx411c7mE', 'https://example.com/video/BV1xx411c7mD']) {
@@ -23,11 +23,12 @@ describe('Bilibili page links', () => {
     expect(
       extractBilibiliInputs(
         '【视频标题】 https://www.bilibili.com/video/BV1xx411c7mD/?spm_id_from=333.1007 复制打开\n' +
-          '另一个标题\nhttps://b23.tv/abc123。\nBV1xx411c7mD\nav170001',
+          '另一个标题\nhttps://b23.tv/abc123。\n【游戏分享-哔哩哔哩】 https://bili2233.cn/abc123\nBV1xx411c7mD\nav170001',
       ),
     ).toEqual([
       'https://www.bilibili.com/video/BV1xx411c7mD/?spm_id_from=333.1007',
       'https://b23.tv/abc123',
+      'https://bili2233.cn/abc123',
       'BV1xx411c7mD',
       'av170001',
     ])

@@ -191,6 +191,8 @@ fn map_video_item(source_mid: u64, video: ResolvedUploaderVideo, index: usize) -
     let video_key = format!("uploader:{source_mid}:{}", video.bvid);
 
     NormalizedItem {
+        episode_number: None,
+        collection: None,
         nfo_metadata: crate::nfo::NfoMetadata {
             index,
             ..Default::default()

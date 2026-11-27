@@ -54,7 +54,9 @@ const {
           item: 'bdl-select-item font-medium',
         }"
         class="ui-select w-full"
-      />
+      >
+        <template v-if="$slots.value" #default><slot name="value" /></template>
+      </USelect>
     </template>
   </UiFormField>
 </template>

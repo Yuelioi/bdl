@@ -86,6 +86,7 @@ export interface SelectionCreateTasksRequest {
   output_extension?: string
   subtitle_format?: SettingsSnapshot['subtitle_format']
   danmaku_format?: SettingsSnapshot['danmaku_format']
+  naming_template_version?: 1 | 2
   naming_template?: string
   duplicate_naming_strategy?: SettingsSnapshot['duplicate_naming_strategy']
   archive_assets?: SettingsSnapshot['archive_assets']

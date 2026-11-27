@@ -57,6 +57,7 @@ const effectiveOutputExtension = computed(() =>
 const outputPreview = computed(() => (selectedPreset.value ? workflowOutputs(selectedPreset.value.workflow) : []));
 const defaultsRevision = ref(0);
 const namingTemplate = ref('');
+const namingVersion = ref<1 | 2>(2);
 const duplicateNamingStrategy = ref<SettingsSnapshot['duplicate_naming_strategy']>('skip_existing');
 const namingError = computed(() => validateNamingTemplate(namingTemplate.value));
 const downloadPresetOpen = ref(false);
@@ -134,14 +135,17 @@ watch(
   },
 );
 watch(
-  () => settings.saved.naming_template,
-  (value, previous) => {
-    if (downloadDialogOpen.value && namingTemplate.value === previous) namingTemplate.value = value;
+  () => [settings.saved.naming_template, settings.saved.naming_template_version ?? 2] as const,
+  ([template, version], [previous, previousVersion]) => {
+    if (downloadDialogOpen.value && namingTemplate.value === previous && namingVersion.value === previousVersion) {
+      namingTemplate.value = template;
+      namingVersion.value = version;
+    }
   },
 );
-watch(namingTemplate, (template) => {
-  if (downloadDialogOpen.value && template !== settings.saved.naming_template && !validateNamingTemplate(template))
-    void settings.saveAppPreferences({ naming_template: template });
+watch([namingTemplate, namingVersion], ([template, version]) => {
+  if (downloadDialogOpen.value && (template !== settings.saved.naming_template || version !== settings.saved.naming_template_version) && !validateNamingTemplate(template))
+    void settings.saveAppPreferences({ naming_template: template, naming_template_version: version });
 });
 const presetError = computed(() => {
   const flow = selectedPreset.value?.workflow;
@@ -206,6 +210,7 @@ const restoreDefaults = () => {
   rememberDocumentTreeOutput.value = false;
   downloadPresetId.value = defaults.selected_download_preset || defaults.download_presets[0]?.id || '';
   namingTemplate.value = defaults.naming_template;
+  namingVersion.value = defaults.naming_template_version ?? 2;
   duplicateNamingStrategy.value = defaults.duplicate_naming_strategy;
 };
 
@@ -274,6 +279,7 @@ const submitTasks = async () => {
     documentTreeOutput: isMobilePlatform() ? documentTreeOutput.value : null,
     downloadPresetId: downloadPresetId.value,
     namingTemplate: namingTemplate.value,
+    namingVersion: namingVersion.value,
     duplicateNamingStrategy: duplicateNamingStrategy.value,
     duplicatePolicy: 'ask',
   };
@@ -491,6 +497,7 @@ defineExpose({ openDialog, openAllDialog, downloadSaved });
             @manage="downloadDialogOpen = false"
             :key="defaultsRevision"
             v-model="namingTemplate"
+            v-model:version="namingVersion"
             :disabled="activeLoading || submitting"
             :extension="effectiveOutputExtension"
           />

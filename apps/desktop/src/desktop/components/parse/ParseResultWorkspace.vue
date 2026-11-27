@@ -27,7 +27,7 @@ const {
   activeErrorDetail,
   hasMore,
   toggleAllResults,
-  loadMore,
+  parseAll,
   stopParsing,
   toggleNode,
 } = useParseResultWorkspace();
@@ -51,7 +51,7 @@ const showLoadToolbar = computed(() => hasMore.value || activeLoading.value);
           :loading="sourceRequestLoading"
           :parsing-all="pacedParsing"
           :stopping="pacedStopping"
-          @parse-batch="loadMore"
+          @parse-all="parseAll"
           @stop="stopParsing"
         />
       </div>

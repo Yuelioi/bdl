@@ -417,6 +417,7 @@ pub struct SelectionCreateTasksRequest {
     pub subtitle_format: Option<bdl_core::subtitles::SubtitleFormat>,
     pub danmaku_format: Option<bdl_core::danmaku::DanmakuFormat>,
     pub naming_template: Option<String>,
+    pub naming_template_version: Option<u8>,
     pub duplicate_naming_strategy: Option<bdl_core::naming::DuplicateNamingStrategy>,
     pub archive_assets: Option<bdl_core::planner::ArchiveAssetSelection>,
     pub retain_raw_streams: Option<bool>,
@@ -929,6 +930,14 @@ pub(crate) fn download_options_from_request(
     )?;
 
     let mut options = DownloadOptions::new(output_dir).with_archive_mode(archive_mode);
+    options.naming_template_version = if request.naming_template.is_some() {
+        request
+            .naming_template_version
+            .unwrap_or(bdl_core::naming::LEGACY_NAMING_VERSION)
+    } else {
+        settings.naming_template_version
+    };
+    bdl_core::naming::validate_naming_version(options.naming_template_version)?;
     if let Some(id) = &request.download_preset_id {
         let workflow = &settings
             .download_presets
@@ -3141,7 +3150,9 @@ fn queue_log_level_rank(level: QueueLogLevel) -> u8 {
 }
 
 pub(crate) fn concurrent_tasks(settings: &SettingsSnapshot) -> usize {
-    settings.concurrent_tasks.clamp(1, 10)
+    settings
+        .concurrent_tasks
+        .clamp(1, bdl_core::settings::MAX_CONCURRENT_DOWNLOADS)
 }
 
 fn retry_count(settings: &SettingsSnapshot) -> usize {
@@ -3203,7 +3214,7 @@ mod tests {
             serde_json::from_value(serde_json::json!({
                 "source_id": "test", "part_ids": [], "download_preset_id": "subtitles",
                 "media_mode": "audio_video", "quality": "120", "embed_cover": true,
-                "output_extension": "mkv", "naming_template": "{title}.{ext}",
+                "output_extension": "mkv", "naming_template": "{title}.{ext}", "naming_template_version": 2,
                 "duplicate_naming_strategy": "append_suffix"
             }))
             .unwrap();
@@ -3214,6 +3225,7 @@ mod tests {
         );
         assert_eq!(options.output_extension, "srt");
         assert_eq!(options.naming_template, "{title}.{ext}");
+        assert_eq!(options.naming_template_version, 2);
         assert!(!options.processing.unwrap().embed_cover);
         assert_eq!(options.workflow.as_ref().unwrap().quality, "80");
         assert_eq!(options.media_preferences, settings.media_preferences);
@@ -3317,12 +3329,17 @@ mod tests {
         );
         assert!(options.archive_assets.cover);
         assert!(!options.archive_assets.subtitles);
+        assert_eq!(options.naming_template_version, 1);
         assert_ne!(options.naming_template, settings.naming_template);
         let defaults: super::SelectionCreateTasksRequest =
             serde_json::from_value(serde_json::json!({"source_id": "test", "part_ids": []}))
                 .unwrap();
         let inherited = super::download_options_from_request(&defaults, &settings, None).unwrap();
         assert_eq!(inherited.naming_template, settings.naming_template);
+        assert_eq!(
+            inherited.naming_template_version,
+            settings.naming_template_version
+        );
         assert_eq!(
             inherited.duplicate_naming_strategy,
             settings.duplicate_naming_strategy

@@ -23,7 +23,7 @@ const disabled = computed(() => settings.loading || settings.saving);
         :disabled="disabled"
       />
       <UiButton
-        variant="ghost"
+        variant="secondary"
         aria-label="管理下载预设"
         :disabled="disabled"
         @click="ui.openPresetSettings('download')"
@@ -32,13 +32,14 @@ const disabled = computed(() => settings.loading || settings.saving);
     </div>
     <NamingTemplatePicker
       v-model="settingsNamingTemplate"
+      v-model:version="settings.draft.naming_template_version"
       :presets="settings.saved.naming_presets"
       :extension="settings.draft.output_extension"
       :disabled="disabled"
     >
       <template #actions>
         <UiButton
-          variant="ghost"
+          variant="secondary"
           aria-label="管理命名预设"
           :disabled="disabled"
           @click="ui.openPresetSettings('naming')"

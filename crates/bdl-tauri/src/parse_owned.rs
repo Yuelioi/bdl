@@ -3,7 +3,6 @@ use std::sync::Arc;
 use bdl_core::ids::PartId;
 use bdl_core::model::NormalizedSourceTree;
 use bdl_core::planner::DownloadOptions;
-use bdl_core::settings::ParseRules;
 use bdl_core::{BdlError, BdlResult};
 
 use crate::download_resolution::{DownloadResolution, ResolvedDownload, SelectionPreparation};
@@ -17,7 +16,6 @@ use crate::state::{AppState, PreparedSelection};
 pub(crate) struct PreparationContext {
     pub operation_id: String,
     pub account_revision: u64,
-    pub rules: ParseRules,
     pub cooldown: CooldownBehavior,
     pub client: Arc<bpi_rs::BpiClient>,
 }
@@ -30,7 +28,6 @@ impl AppState {
         Ok(PreparationContext {
             operation_id,
             account_revision: self.account_revision(),
-            rules: self.settings()?.parse_rules,
             cooldown: CooldownBehavior::Report,
             client: self.shared_resolver_client()?,
         })
@@ -67,10 +64,10 @@ impl AppState {
         ));
         let page = operation
             .run(self.parse_pacer.run_retry(
-                self.settings()?.parse_rules,
+                Some(self.settings()?.parse_rules),
                 CooldownBehavior::Report,
                 || self.resolve_source_page(&tree, request),
-                |_| 1,
+                |_| true,
                 |phase| operation.phase(phase),
             ))
             .await?;
@@ -125,7 +122,7 @@ impl AppState {
             operation.target(format!("source_id={} part_id={} target_cid={:?} item={}/{} selected_parts={} resolution={resolution:?}", tree.source.id.0, request.part_id.0, request.target_cid, index + 1, total, part_ids.len()));
             let resolved = operation
                 .run(self.parse_pacer.run_retry(
-                    context.rules,
+                    None,
                     context.cooldown,
                     || {
                         resolution.resolve_part(
@@ -134,7 +131,7 @@ impl AppState {
                             find_part(&tree, &request.part_id),
                         )
                     },
-                    |_| 0,
+                    |_| false,
                     |phase| operation.phase(phase),
                 ))
                 .await?;

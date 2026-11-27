@@ -4,13 +4,16 @@ const SHARE_URL_PATTERN = /https?:\/\/[^\s<>"'`]+/gi
 const INPUT_ID_PATTERN = /BV[0-9A-Za-z]{10}|[aA][vV]\d+/g
 const TRAILING_SHARE_PUNCTUATION = /[,.;!?)\]}，。；！？、）】》」』]+$/u
 
+const isShortLinkHost = (host: string): boolean =>
+  host === 'b23.tv' || host === 'www.b23.tv' || host === 'bili2233.cn'
+
 const isBilibiliHost = (host: string): boolean => {
   const normalized = host.toLowerCase()
   return (
     normalized === 'bilibili.com' ||
     normalized.endsWith('.bilibili.com') ||
-    normalized === 'b23.tv' ||
-    normalized.endsWith('.b23.tv')
+    normalized.endsWith('.b23.tv') ||
+    isShortLinkHost(normalized)
   )
 }
 
@@ -54,7 +57,7 @@ export const isSingleVideoInput = (input: string): boolean => {
   try {
     const url = new URL(value)
     if (!['http:', 'https:'].includes(url.protocol)) return false
-    if (['b23.tv', 'www.b23.tv'].includes(url.hostname)) return url.pathname.length > 1
+    if (isShortLinkHost(url.hostname)) return url.pathname.length > 1
     return ['bilibili.com', 'www.bilibili.com', 'm.bilibili.com'].includes(url.hostname)
       && (/^\/video\/(BV[0-9A-Za-z]{10}|av\d+)\/?$/i.test(url.pathname)
         || (/^\/(list\/)?watchlater\/?$/.test(url.pathname) && /^BV[0-9A-Za-z]{10}$/i.test(url.searchParams.get('bvid') ?? '')))

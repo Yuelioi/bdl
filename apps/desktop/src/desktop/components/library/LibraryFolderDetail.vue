@@ -42,7 +42,6 @@ const {
   toggleCurrentPageSelection,
   clearSelection,
   downloadSelected,
-  loadMore,
   parseAll,
   stopParsing,
   goToPage,
@@ -77,14 +76,12 @@ const rows = computed(() =>
           :total="totalCount"
         />
         <SourceParseControls
-          library
           :source-id="sourceId ?? undefined"
           v-if="hasMore || pacedParsing"
           :has-more="hasMore"
           :loading="sourceRequestLoading"
           :parsing-all="pacedParsing"
           :stopping="pacedStopping"
-          @parse-batch="loadMore"
           @parse-all="parseAll"
           @stop="stopParsing"
         />

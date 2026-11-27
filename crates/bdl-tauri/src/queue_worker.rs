@@ -580,7 +580,6 @@ async fn cancellable_refresh<T>(
 mod tests {
     use super::*;
     use crate::parse_pacing::ParsePacer;
-    use bdl_core::settings::ParseRules;
     use futures::FutureExt;
 
     #[test]
@@ -614,12 +613,14 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn refresh_cooldown_does_not_block_sibling_and_can_be_cancelled() {
         let pacer = ParsePacer::default();
-        let rules = ParseRules {
-            pages_per_round: 1,
-            interval_seconds: 10,
-            rest_seconds: 10,
-        };
-        pacer.run(rules, async { Ok(()) }, |_| 1).await.unwrap();
+        let restricted = pacer
+            .run(
+                None,
+                async { Err::<(), _>(bdl_core::BdlError::Bpi("HTTP 429".into())) },
+                |_| false,
+            )
+            .await;
+        assert!(restricted.is_err());
         let token = FetchCancelToken::new();
         let mut running = FuturesUnordered::new();
         let started = Instant::now();
@@ -627,14 +628,16 @@ mod tests {
             async {
                 cancellable_refresh(
                     &token,
-                    pacer.run(
-                        rules,
+                    pacer.run_observed(
+                        None,
+                        crate::parse_pacing::CooldownBehavior::Wait,
                         async {
                             panic!("cancelled refresh must not send a request");
                             #[allow(unreachable_code)]
                             Ok(())
                         },
-                        |_| 0,
+                        |_| false,
+                        |_| {},
                     ),
                 )
                 .await
@@ -655,8 +658,17 @@ mod tests {
         assert_eq!(running.next().await, Some(None));
         assert_eq!(started.elapsed(), Duration::from_secs(1));
         // Cancellation drops the resolver future and releases the shared gate.
-        pacer.run(rules, async { Ok(()) }, |_| 0).await.unwrap();
-        assert_eq!(started.elapsed(), Duration::from_secs(10));
+        pacer
+            .run_observed(
+                None,
+                crate::parse_pacing::CooldownBehavior::Wait,
+                async { Ok(()) },
+                |_| false,
+                |_| {},
+            )
+            .await
+            .unwrap();
+        assert_eq!(started.elapsed(), Duration::from_secs(60));
     }
 
     #[tokio::test]

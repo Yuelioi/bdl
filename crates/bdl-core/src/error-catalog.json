@@ -881,24 +881,14 @@
       "zh-CN": "请使用唯一标识和不重复的名称，名称不超过 40 个字符。"
     }
   },
-  "bdl.settings.parse_batch_size": {
-    "message": {
-      "en": "Invalid number of items per parse.",
-      "zh-CN": "单次解析数量无效。"
-    },
-    "advice": {
-      "en": "In Links and parsing, choose 20, 50, 100, or 200 items per parse.",
-      "zh-CN": "请在「链接与解析」中选择 20、50、100 或 200 条。"
-    }
-  },
   "bdl.settings.parse_pacing": {
     "message": {
       "en": "Invalid parsing pace.",
       "zh-CN": "解析节奏设置超出允许范围。"
     },
     "advice": {
-      "en": "Request 1–10 consecutive pages and set waits to 1–120 seconds. The long break must be at least the batch delay.",
-      "zh-CN": "连续请求设为 1～10 页，等待设为 1～120 秒，长休息应不少于批间等待。"
+      "en": "Set the interval between pages to 1–120 seconds.",
+      "zh-CN": "请将翻页间隔设为 1～120 秒。"
     }
   },
   "bdl.settings.proxy_invalid": {

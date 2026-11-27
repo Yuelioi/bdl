@@ -443,6 +443,8 @@ fn map_episode_item(
     let item_key = format!("{source_key}:{}", episode.ep_id);
 
     NormalizedItem {
+        episode_number: None,
+        collection: None,
         nfo_metadata: Default::default(),
         id: ItemId(format!("item:{item_key}")),
         title: episode.title.clone(),

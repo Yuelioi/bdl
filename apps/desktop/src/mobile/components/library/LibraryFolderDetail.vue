@@ -13,7 +13,7 @@ import UiCheckbox from '../../../shared/ui/Checkbox.vue';
 import UiEmptyState from '../../../shared/ui/EmptyState.vue';
 import UiInlineNotice from '../../../shared/ui/InlineNotice.vue';
 
-import MobileSourceMenu from '../MobileSourceMenu.vue';
+import SourceParseControls from '../../../shared/features/parse/SourceParseControls.vue';
 import MobileDownloadScope from '../MobileDownloadScope.vue';
 
 import { useLibraryFolderDetail } from '../../../shared/features/library/useLibraryFolderDetail';
@@ -35,6 +35,7 @@ const {
   pageItems,
   selectedCount,
   sourceRequestLoading,
+  sourceId,
   pacedParsing,
 
   pacedStopping,
@@ -48,7 +49,6 @@ const {
   toggleCurrentPageSelection,
   clearSelection,
   downloadSelected,
-  loadMore,
   parseAll,
   stopParsing,
   goToPage,
@@ -152,13 +152,13 @@ const visibleItems = computed(() => {
           label="集合内容分页"
           @update:page="goToPage"
         />
-        <MobileSourceMenu
+        <SourceParseControls
+          :source-id="sourceId ?? undefined"
           :has-more="hasMore"
-          :busy="sourceRequestLoading"
-          :parsing="pacedParsing"
+          :loading="sourceRequestLoading"
+          :parsing-all="pacedParsing"
           :stopping="pacedStopping"
-          @load="loadMore"
-          @all="parseAll"
+          @parse-all="parseAll"
           @stop="stopParsing"
         />
       </div>

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import type { NamingPreset } from '../../api/dto';
-import { builtinNamingPresets, previewTemplate, useSettingsStore } from '../../stores/settings';
+import { builtinNamingPresets, previewTemplate, sameNamingTemplate, useSettingsStore } from '../../stores/settings';
 import { workflowOutputs } from '../../utils/downloadWorkflow';
 import UiButton from '../../ui/Button.vue';
 import UiIconButton from '../../ui/IconButton.vue';
@@ -33,7 +33,7 @@ const atLimit = computed(
 const activeNamingId = computed(
   () =>
     [...builtins, ...settings.saved.naming_presets].find(
-      (p) => p.template === settings.saved.naming_template || `${p.template}.{ext}` === settings.saved.naming_template,
+      (p) => (p.template_version ?? 2) === settings.saved.naming_template_version && sameNamingTemplate(p.template, settings.saved.naming_template),
     )?.id,
 );
 const rows = computed(() => {
@@ -42,18 +42,20 @@ const rows = computed(() => {
       ? settings.saved.download_presets.map((p) => ({
           id: p.id,
           name: p.name,
+          number: undefined,
           summary: workflowOutputs(p.workflow).join(' · '),
           builtin: false,
           active: p.id === settings.saved.selected_download_preset,
         }))
       : [
-          ...settings.saved.naming_presets.map((p) => ({ ...p, builtin: false })),
-          ...builtins.map((p) => ({ ...p, builtin: true })),
+          ...settings.saved.naming_presets.map((p) => ({ ...p, builtin: false, number: undefined })),
+          ...builtins.map((p, index) => ({ ...p, builtin: true, number: index + 1 })),
         ].map((p) => ({
           id: p.id,
           name: p.name,
-          summary: previewTemplate(p.template, settings.saved.output_extension),
+          summary: previewTemplate(p.template, settings.saved.output_extension, p.template_version),
           builtin: p.builtin,
+          number: p.number,
           active: p.id === activeNamingId.value,
         }));
   const needle = query.value.trim().toLocaleLowerCase();
@@ -80,7 +82,7 @@ const useDefault = async (id: string) => {
   try {
     const preset = [...settings.saved.naming_presets, ...builtins].find((p) => p.id === id);
     const saved = await settings.saveAppPreferences(
-      activeKind.value === 'download' ? { selected_download_preset: id } : { naming_template: preset!.template },
+      activeKind.value === 'download' ? { selected_download_preset: id } : { naming_template: preset!.template, naming_template_version: preset!.template_version ?? 2 },
     );
     if (!saved) error.value = '设置默认失败，请重试';
   } finally {
@@ -123,56 +125,55 @@ const remove = async (id: string) => {
     <UiInlineNotice v-if="error" tone="danger">{{ error }}</UiInlineNotice>
     <ul class="preset-manager-list" :aria-label="activeKind === 'download' ? '下载预设列表' : '命名预设列表'">
       <li v-for="row in rows" :key="row.id" role="listitem" :aria-label="row.name" class="preset-manager-row">
-        <div class="preset-manager-copy">
-          <div class="preset-manager-name" :class="{ 'preset-manager-name-active': row.active }">
-            <strong>{{ row.name }}</strong
-            ><span v-if="row.active" class="preset-current">默认</span
-            ><span v-if="row.builtin" class="preset-builtin">内置</span>
-          </div>
-          <p>{{ row.summary }}</p>
+        <div class="preset-manager-name" :class="{ 'preset-manager-name-active': row.active }">
+          <strong :title="row.name"><template v-if="row.number">{{ row.number }}. </template>{{ row.name }}</strong>
+          <span v-if="row.active" class="preset-current">默认</span>
+          <span v-if="row.builtin" class="preset-builtin">内置</span>
         </div>
         <div class="preset-manager-actions">
           <UiButton
             v-if="!row.active"
-            class="preset-action-default"
             size="compact"
             :aria-label="`设为默认 ${row.name}`"
-            variant="ghost"
+            variant="secondary"
             :disabled="Boolean(deleting)"
             @click="useDefault(row.id)"
             >设为默认</UiButton
           >
           <UiIconButton
             v-if="!row.builtin"
-            class="preset-action-edit"
             icon="pencil"
             :label="`编辑预设 ${row.name}`"
-            variant="ghost"
             :disabled="Boolean(deleting)"
             @click="begin('edit', row.id)"
           />
           <UiIconButton
-            class="preset-action-copy"
             icon="copy"
             :label="`复制预设 ${row.name}`"
-            variant="ghost"
             :disabled="Boolean(deleting) || atLimit"
             @click="begin('copy', row.id)"
           />
           <UiIconButton
             v-if="!row.builtin"
-            class="preset-action-delete"
             icon="trash"
             :label="`删除预设 ${row.name}`"
-            variant="ghost"
             :disabled="Boolean(deleting) || (activeKind === 'download' && settings.saved.download_presets.length <= 1)"
             @click="remove(row.id)"
           />
         </div>
+        <p class="preset-manager-summary">{{ row.summary }}</p>
       </li>
       <li v-if="!rows.length" class="preset-manager-empty">没有找到匹配的预设</li>
     </ul>
-    <p v-if="activeKind === 'naming'" class="preset-manager-note">内置命名方式可以复制后修改。</p>
+    <section v-if="activeKind === 'naming'" class="naming-guide" aria-label="目录怎么生成？">
+      <h3>目录怎么生成？</h3>
+      <ol>
+        <li><strong>分组</strong><p>UP 主在合集中设置的小节，例如「国产」。</p></li>
+        <li><strong>父级</strong><p>分 P 取投稿标题，番剧取剧名，课堂取课程名。合集、系列、收藏夹取各自的名称，UP 主空间和稍后再看取列表名。</p></li>
+        <li><strong>标题</strong><p>当前视频或条目的名称，例如「幕后花絮」。</p></li>
+      </ol>
+      <p class="naming-guide-footer">缺少的层级自动跳过。</p>
+    </section>
     <p v-else-if="settings.saved.download_presets.length === 1" class="preset-manager-note">至少保留一个下载预设。</p>
   </section>
   <DownloadPresetDialog v-model="downloadEditorOpen" :mode="mode" :preset-id="editingId" :apply-on-save="false" />
@@ -221,7 +222,7 @@ const remove = async (id: string) => {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: var(--space-8);
+  gap: var(--space-4) var(--space-8);
   padding-block: var(--space-12);
   border-bottom: 1px solid var(--color-border);
 }
@@ -239,12 +240,6 @@ const remove = async (id: string) => {
   padding-block: var(--space-12);
 }
 
-.preset-manager-copy {
-  min-width: 0;
-  display: grid;
-  gap: var(--space-4);
-}
-
 .preset-manager-name {
   display: flex;
   min-width: 0;
@@ -254,7 +249,9 @@ const remove = async (id: string) => {
 
 .preset-manager-name strong {
   min-width: 0;
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: var(--font-13);
   font-weight: 500;
 }
@@ -264,7 +261,8 @@ const remove = async (id: string) => {
   font-weight: 600;
 }
 
-.preset-manager-copy p {
+.preset-manager-summary {
+  grid-column: 1 / -1;
   margin: 0;
   color: var(--color-muted);
   font-size: var(--font-12);
@@ -286,25 +284,9 @@ const remove = async (id: string) => {
 }
 
 .preset-manager-actions {
-  display: grid;
-  grid-template-columns: 5rem repeat(3, var(--height-button));
+  display: flex;
+  align-items: center;
   gap: var(--space-4);
-}
-
-.preset-action-default {
-  grid-column: 1;
-}
-
-.preset-action-edit {
-  grid-column: 2;
-}
-
-.preset-action-copy {
-  grid-column: 3;
-}
-
-.preset-action-delete {
-  grid-column: 4;
 }
 
 .preset-manager-empty {
@@ -320,15 +302,43 @@ const remove = async (id: string) => {
   font-size: var(--font-12);
 }
 
-@media (width <= 600px) {
-  .preset-manager-row {
-    grid-template-columns: minmax(0, 1fr);
-    gap: var(--space-4);
-  }
-
-  .preset-manager-actions {
-    justify-self: end;
-    gap: 0;
-  }
+.naming-guide {
+  padding: var(--space-16);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-8);
+  background: var(--color-inset);
+  font-size: var(--font-13);
+  line-height: 1.6;
 }
+
+.naming-guide h3, .naming-guide p {
+  margin: 0;
+}
+
+.naming-guide h3 {
+  font-size: var(--font-14);
+  font-weight: 600;
+}
+
+.naming-guide ol {
+  display: grid;
+  gap: var(--space-8);
+  margin-block: var(--space-12);
+  padding-inline-start: 1.5em;
+  list-style: decimal;
+}
+
+.naming-guide li::marker, .naming-guide strong {
+  font-weight: 600;
+}
+
+.naming-guide p {
+  color: var(--color-muted);
+}
+
+.naming-guide-footer {
+  border-top: 1px solid var(--color-border);
+  padding-top: var(--space-8);
+}
+
 </style>

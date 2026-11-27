@@ -52,6 +52,10 @@ fn extracts_supported_inputs_from_share_text() {
         classify_input("分享：《测试标题》 https://b23.tv/abc123。").unwrap(),
         ClassifiedInput::ShortUrl("https://b23.tv/abc123".into())
     );
+    assert_eq!(
+        classify_input("【游戏分享-哔哩哔哩】 https://bili2233.cn/abc123").unwrap(),
+        ClassifiedInput::ShortUrl("https://bili2233.cn/abc123".into())
+    );
 
     assert_eq!(
         classify_input("测试标题\nBV1xx411c7mD").unwrap(),

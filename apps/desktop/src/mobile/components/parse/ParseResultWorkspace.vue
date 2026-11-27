@@ -34,7 +34,7 @@ const {
   allRowsSelected,
   canCreateTasks,
   toggleAllResults,
-  loadMore,
+  parseAll,
   stopParsing,
   toggleNode,
 } = useParseResultWorkspace();
@@ -69,7 +69,7 @@ useMobileBack('parse', () => {
         :loading="sourceRequestLoading"
         :parsing-all="pacedParsing"
         :stopping="pacedStopping"
-        @parse-batch="loadMore"
+        @parse-all="parseAll"
         @stop="stopParsing"
       />
     </div>

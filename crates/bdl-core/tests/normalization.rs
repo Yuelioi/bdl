@@ -24,6 +24,8 @@ fn normalized_source_tree_serializes_stable_shape() {
             kind: "video".into(),
             title: "Example".into(),
             items: vec![NormalizedItem {
+                episode_number: None,
+                collection: None,
                 nfo_metadata: Default::default(),
                 id: ItemId::from("item_1"),
                 title: "Example".into(),

@@ -74,7 +74,7 @@ fn settings_partial_config_preserves_choices_through_save_and_reload() {
         "usage_notice_acknowledged": true,
         "auto_check_updates": true,
         "theme_preference": "dark",
-        "naming_template": "{title}.{ext}",
+        "naming_template": "{title} ({bvid}).{ext}",
         "quality": "80", "codec": "hevc", "audio_quality": "30280",
         "media_mode": "audio_only", "audio_output_format": "mp3",
         "subtitle_format": "ass", "danmaku_format": "html",
@@ -86,14 +86,16 @@ fn settings_partial_config_preserves_choices_through_save_and_reload() {
         "media_preferences": { "video": [] },
         "future_unknown_option": true
     });
-    let settings: AppSettings = serde_json::from_value(saved.clone()).unwrap();
+    let mut previous_config = saved.clone();
+    previous_config["parse_batch_size"] = serde_json::json!(50);
+    previous_config["parse_rules"]["pages_per_round"] = serde_json::json!(3);
+    previous_config["parse_rules"]["rest_seconds"] = serde_json::json!(8);
+    let settings: AppSettings = serde_json::from_value(previous_config).unwrap();
     let settings = settings.normalized();
     settings.validate().unwrap();
-    assert_eq!(settings.parse_batch_size, 50);
-    let mut settings = settings;
-    settings.parse_batch_size = 100;
-    settings.validate().unwrap();
     let complete = serde_json::to_value(&settings).unwrap();
+    assert!(complete.get("parse_batch_size").is_none());
+    assert_eq!(complete["parse_rules"], saved["parse_rules"]);
     for (key, value) in saved.as_object().unwrap() {
         if key == "future_unknown_option" {
             continue;
@@ -107,14 +109,9 @@ fn settings_partial_config_preserves_choices_through_save_and_reload() {
         }
     }
     assert!(settings.archive_assets.subtitles);
-    assert_eq!(
-        settings.parse_rules.rest_seconds,
-        AppSettings::default().parse_rules.rest_seconds
-    );
+    assert_eq!(settings.parse_rules.interval_seconds, 2);
     let reloaded: AppSettings = serde_json::from_value(complete).unwrap();
     assert_eq!(reloaded.normalized(), settings);
-    settings.parse_batch_size = 51;
-    assert!(settings.validate().is_err());
 }
 
 #[test]
@@ -138,6 +135,47 @@ fn settings_normalization_preserves_custom_naming_template() {
     };
 
     assert_eq!(settings.normalized().naming_template, "{title}.{ext}");
+    for (old, current) in [
+        (
+            "{title}/P{part_index} - {part_title}.{ext}",
+            "{group}/{parent}/{title}",
+        ),
+        (
+            "{title}/{title} - P{part_index} - {part_title}.{ext}",
+            "{group}/{parent}/{title}",
+        ),
+        (
+            "{collection_title}/{index} - {title}",
+            "{group}/{parent}/{title}",
+        ),
+        (
+            "{series_title}/{episode_index} - {episode_title}",
+            "{group}/{parent}/{title}",
+        ),
+        ("{title}", "{title}"),
+        ("{title} - P{part_index} - {part_title}", "{title}"),
+    ] {
+        let mut old_settings = AppSettings {
+            settings_schema_version: 2,
+            naming_template: old.into(),
+            ..AppSettings::default()
+        };
+        let upgraded = old_settings.clone().normalized();
+        assert_eq!(upgraded.naming_template, current);
+        assert_eq!(upgraded.naming_template_version, 2);
+        old_settings
+            .naming_presets
+            .push(bdl_core::settings::NamingPreset {
+                id: "personal".into(),
+                name: "个人规则".into(),
+                template: old.into(),
+                template_version: 1,
+            });
+        let preserved = old_settings.normalized();
+        assert_eq!(preserved.naming_template, old);
+        assert_eq!(preserved.naming_template_version, 1);
+        assert_eq!(preserved.naming_presets[0].template_version, 1);
+    }
 }
 
 #[test]
@@ -186,7 +224,8 @@ fn settings_normalization_preserves_explicit_single_segment_without_version() {
             .expect("legacy settings should deserialize");
     let migrated = legacy.normalized();
 
-    assert_eq!(migrated.settings_schema_version, 2);
+    assert_eq!(migrated.settings_schema_version, 4);
+    assert_eq!(migrated.naming_template, "{title}");
     assert_eq!(migrated.segment_count, 1);
 
     let explicit_single_segment = AppSettings {

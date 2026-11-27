@@ -182,6 +182,8 @@ pub struct DownloadOptions {
     pub media_mode: DownloadMediaMode,
     pub output_extension: String,
     pub naming_template: String,
+    #[serde(default = "crate::naming::legacy_naming_version")]
+    pub naming_template_version: u8,
     pub duplicate_naming_strategy: DuplicateNamingStrategy,
     pub video_quality: StreamPreference,
     pub audio_quality: StreamPreference,
@@ -226,11 +228,19 @@ impl DeferredDownload {
     }
 
     pub fn plan(&self, tree: &NormalizedSourceTree) -> BdlResult<Option<DownloadTask>> {
+        self.plan_with_reservations(tree, &mut ReservedPaths::new())
+    }
+
+    pub fn plan_with_reservations(
+        &self,
+        tree: &NormalizedSourceTree,
+        reserved: &mut ReservedPaths,
+    ) -> BdlResult<Option<DownloadTask>> {
         let mut selected = required_part(tree, &self.part_id)?;
         selected.item_index = self.item_index;
         selected.part_index = self.part_index;
         selected.part_count = self.part_count;
-        plan_part(tree, selected, &self.options, &mut ReservedPaths::new())
+        plan_part(tree, selected, &self.options, reserved)
     }
 
     pub fn post_parts(&self, tree: &NormalizedSourceTree) -> Vec<DeferredDownload> {
@@ -364,6 +374,7 @@ impl DownloadOptions {
             media_mode: DownloadMediaMode::default(),
             output_extension: "mp4".to_owned(),
             naming_template: DEFAULT_NAMING_TEMPLATE.to_owned(),
+            naming_template_version: crate::naming::NAMING_VERSION,
             duplicate_naming_strategy: DuplicateNamingStrategy::default(),
             video_quality: StreamPreference::default(),
             audio_quality: StreamPreference::default(),
@@ -603,10 +614,17 @@ fn plan_part(
         && selected.part_index > 0
         && !options.naming_template.split('{').skip(1).any(|segment| {
             segment.split_once('}').is_some_and(|(name, _)| {
-                matches!(
-                    name.trim(),
-                    "part_index" | "part_title" | "episode_title" | "cid"
-                )
+                (options.naming_template_version == crate::naming::NAMING_VERSION
+                    && matches!(name.trim(), "title" | "index"))
+                    || matches!(
+                        name.trim(),
+                        "part_index"
+                            | "part_title"
+                            | "episode_title"
+                            | "cid"
+                            | "entry_name"
+                            | "flat_name"
+                    )
             })
         });
     let Some(output_path) = output_path_for(
@@ -1367,7 +1385,50 @@ fn output_path_for(
         .map(stream_quality_label)
         .unwrap_or_else(|| "none".into());
     let codec_label = video.map(stream_codec_label).unwrap_or("none");
+    let collection = item.collection.as_ref();
+    let (parent, single_title, entry_index) = match tree.source.kind {
+        SourceKind::Bangumi | SourceKind::Cheese => {
+            let episode = part
+                .title
+                .strip_prefix(&tree.source.title)
+                .and_then(|rest| rest.strip_prefix(" · "))
+                .unwrap_or(&part.title);
+            (
+                tree.source.title.as_str(),
+                episode,
+                item.episode_number.unwrap_or(selected.item_index + 1),
+            )
+        }
+        _ if selected.part_count > 1 => (
+            item.title.as_str(),
+            part.title.as_str(),
+            selected.part_index + 1,
+        ),
+        SourceKind::Video | SourceKind::Unknown => (
+            collection.map_or("", |c| c.title.as_str()),
+            item.title.as_str(),
+            collection.and_then(|c| c.index).unwrap_or(1),
+        ),
+        _ => (
+            tree.source.title.as_str(),
+            item.title.as_str(),
+            if item.nfo_metadata.index > 0 {
+                item.nfo_metadata.index
+            } else {
+                selected.item_index + 1
+            },
+        ),
+    };
     let context = NamingContext {
+        version: options.naming_template_version,
+        group: collection
+            .and_then(|c| c.section.as_deref())
+            .unwrap_or_default(),
+        parent,
+        single_title,
+        entry_index,
+        source_kind: Some(tree.source.kind),
+        part_count: selected.part_count,
         title: &item.title,
         part_title: &part.title,
         part_index: selected.part_index + 1,

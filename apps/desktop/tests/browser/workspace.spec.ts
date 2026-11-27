@@ -760,7 +760,6 @@ test.describe('adaptive Android workspace', () => {
         const invoke = target.__TAURI_INTERNALS__.invoke;
         target.__TAURI_INTERNALS__.invoke = async (command, args) => {
           const result = await invoke(command, args);
-          if (command === 'settings_get') return { ...(result as object), parse_batch_size: 20 };
           if (command === 'parse_create_source') {
             const tree = result as NormalizedSourceTree;
             tree.source.title = '【免费开源】Rust 开发的新一代哔哩哔哩下载器 | 4k+批量（请勿滥用）';
@@ -778,6 +777,8 @@ test.describe('adaptive Android workspace', () => {
                 },
             );
             tree.source.loaded_count = 40;
+            tree.source.total_count = 40;
+            tree.source.has_more = false;
           }
           return result;
         };
@@ -829,7 +830,7 @@ test.describe('adaptive Android workspace', () => {
       await rangeDialog.getByRole('button', { name: '完成', exact: true }).click();
       for (const viewport of [{ width: 390, height: 844 }, { width: 568, height: 356 }]) {
         await page.setViewportSize(viewport);
-        await expect(page.locator('.result-source-row').getByRole('button', { name: '解析', exact: true })).toBeVisible();
+        await expect(page.locator('.result-source-row')).toContainText('40 / 40');
         await expect(page.getByRole('button', { name: '加载选项', exact: true })).toHaveCount(0);
       }
       await results.getByRole('listitem').first().locator('.mobile-result-content').click();
@@ -1181,7 +1182,7 @@ test.describe('populated Android interactions', () => {
     await page.getByRole('button', { name: '进入 默认收藏夹' }).click();
     await expect(page.locator('.library-source-summary')).toContainText('356 个视频');
     await expect(page.getByRole('tablist')).toHaveCount(0);
-    await expect(page.locator('.source-parse-controls')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: '继续解析', exact: true })).toHaveCount(1);
     await expect(page.getByRole('combobox')).toHaveCount(0);
     const pagination = page.getByRole('navigation', { name: '集合内容分页' });
     await expect(pagination.getByRole('button', { name: '上一页' })).toBeDisabled();
@@ -1190,10 +1191,7 @@ test.describe('populated Android interactions', () => {
     for (const width of [390, 320]) {
       await page.setViewportSize({ width, height: 844 });
     }
-    await page.getByRole('button', { name: '加载选项', exact: true }).click();
-    await expect(page.getByRole('dialog', { name: '加载选项' })).toBeVisible();
-    await expect(page.getByRole('button', { name: '提前加载一批', exact: true })).toBeVisible();
-    await page.keyboard.press('Escape');
+    await expect(page.getByRole('button', { name: '继续解析', exact: true })).toBeEnabled();
     await nav.getByRole('button', { name: /传输/ }).click();
     await expect(page.getByRole('list', { name: '传输任务' })).toBeVisible();
     await expect(page.getByRole('table', { name: '传输任务' })).toHaveCount(0);
@@ -1428,9 +1426,9 @@ test('parse source can be submitted with Ctrl+Enter', async ({ page }) => {
     };
   });
   await input.press('Control+Enter');
-  await page.getByRole('button', { name: '暂停解析', exact: true }).click();
+  await page.getByRole('button', { name: '停止解析', exact: true }).click();
   await expect(input).toHaveValue('BV1xx411c7mD');
-  await page.getByRole('button', { name: '继续解析', exact: true }).click();
+  await page.getByRole('button', { name: '开始解析', exact: true }).click();
   await expect(page.locator('.source-media-row')).toBeVisible();
 });
 
@@ -1658,7 +1656,7 @@ test('desktop parse separates the input from results and keeps the draft and sel
   await expect(page.getByText('测试视频', { exact: true })).toHaveCount(0);
 });
 
-test('mobile parsing can pause during cooldown and keep the first page', async ({ page }) => {
+test('mobile parsing can stop during cooldown and keep the first page', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.addInitScript(() => Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Linux; Android 12) Mobile' }));
   await installTauriMock(page, 'light');
@@ -1686,47 +1684,43 @@ test('mobile parsing can pause during cooldown and keep the first page', async (
   const toolbar = page.locator('.result-source-row');
   await page.getByRole('button', { name: '开始解析' }).click();
   await expect(toolbar).toContainText('休息 3 秒后继续');
-  await toolbar.getByRole('button', { name: '暂停解析', exact: true }).click();
+  await toolbar.getByRole('button', { name: '停止解析', exact: true }).click();
   await expect(toolbar.getByRole('button', { name: '继续解析', exact: true })).toBeVisible({ timeout: 1000 });
   await expect(toolbar).toContainText('9 / 401');
   await expect(page.getByText('解析已停止', { exact: true })).toHaveCount(0);
 });
 
-test('parse loads one configured batch per click and can stop mid-batch', async ({ page }) => {
-  const toolbar = page.getByRole('group', { name: '解析进度与操作' });
-  await installTauriMock(page, 'light');
-  await page.goto('/');
-  await page.getByLabel('链接或 BV / AV').fill('favorite:fixture');
-  await page.getByRole('button', { name: '开始解析' }).click();
-  const next = toolbar.getByRole('button', { name: '解析', exact: true });
-  await expect(next).toBeVisible();
-  await expect(toolbar).toContainText('69 / 401');
-  await expect(toolbar.getByRole('button')).toHaveCount(1);
-  await expect(toolbar.getByRole('combobox')).toHaveCount(0);
-  await next.click();
-  await expect(next).toBeVisible();
-  await expect(toolbar).toContainText('129 / 401');
-  await page.evaluate(() => {
+const holdNextParsePage = async (page: Page, loaded: number) => {
+  await page.evaluate((loaded) => {
     type PageRequest = { request?: { snapshot?: NormalizedSourceTree } };
     const runtime = (window as unknown as { __TAURI_INTERNALS__: { invoke: (cmd: string, args?: PageRequest) => Promise<unknown> } }).__TAURI_INTERNALS__;
     const invoke = runtime.invoke;
-    let interrupted = false;
+    let held = false;
     let cancel: (() => void) | undefined;
     runtime.invoke = async (cmd, args) => {
-      if (cmd === 'parse_load_more' && args?.request?.snapshot?.source.loaded_count === 149 && !interrupted) {
-        interrupted = true;
+      if (cmd === 'parse_load_more' && args?.request?.snapshot?.source.loaded_count === loaded && !held) {
+        held = true;
         return new Promise((_resolve, reject) => { cancel = () => reject({ code: 'parse_cancelled', message: '解析已停止' }); });
       }
-      if (cmd === 'parse_cancel') { cancel?.(); return; }
+      if (cmd === 'parse_cancel' && cancel) { cancel(); cancel = undefined; return; }
       return invoke(cmd, args);
     };
-  });
-  await next.click();
+  }, loaded);
+};
+
+test('parse reads to the final page and can stop and continue at a page boundary', async ({ page }) => {
+  const toolbar = page.getByRole('group', { name: '解析进度与操作' });
+  await installTauriMock(page, 'light');
+  await page.goto('/');
+  await holdNextParsePage(page, 149);
+  await page.getByLabel('链接或 BV / AV').fill('favorite:fixture');
+  await page.getByRole('button', { name: '开始解析' }).click();
   await expect(toolbar).toContainText('149 / 401');
-  await toolbar.getByRole('button', { name: '暂停解析', exact: true }).click();
+  await toolbar.getByRole('button', { name: '停止解析', exact: true }).click();
+  await expect(toolbar).toContainText('149 / 401');
   await toolbar.getByRole('button', { name: '继续解析', exact: true }).click();
-  await expect(next).toBeVisible();
-  await expect(toolbar).toContainText('189 / 401');
+  await expect(page.getByText(/已加载 401 \/ 401 项/)).toBeVisible();
+  await expect(toolbar.getByRole('button')).toHaveCount(0);
 });
 
 const confirmDesktopBackgroundDownload = async (page: Page) => {
@@ -1771,8 +1765,12 @@ for (const theme of ['light', 'dark'] as const) {
         };
       });
       await page.goto('/');
+      await holdNextParsePage(page, 29);
       await page.getByLabel('链接或 BV / AV').fill('favorite:fixture');
       await page.getByRole('button', { name: '开始解析' }).click();
+      await expect(page.getByText(/已加载 29 \/ 401 项/)).toBeVisible();
+      await page.getByRole('button', { name: '停止解析', exact: true }).click();
+      await expect(page.getByRole('button', { name: '继续解析', exact: true })).toBeEnabled();
       if (platform === 'mobile') {
         await page.getByRole('button', { name: '下载全部', exact: true }).click();
         const dialog = page.getByRole('dialog', { name: '下载全部', exact: true });
@@ -1813,9 +1811,12 @@ for (const theme of ['light', 'dark'] as const) {
 test('background parsing downloads progressively and remains visible on another page', async ({ page }) => {
   await installTauriMock(page, 'light');
   await page.goto('/');
+  await holdNextParsePage(page, 29);
   await page.getByLabel('链接或 BV / AV').fill('favorite:fixture');
   await page.getByRole('button', { name: '开始解析' }).click();
-  await expect(page.locator('.source-function-toolbar').getByRole('button', { name: '解析', exact: true })).toBeVisible();
+  await expect(page.locator('.source-function-toolbar')).toContainText('29 / 401');
+  await page.getByRole('button', { name: '停止解析', exact: true }).click();
+  await expect(page.getByRole('button', { name: '继续解析', exact: true })).toBeVisible();
   const beforeDownload = await page.evaluate(() => (window as unknown as { __BDL_TEST_INVOKES__: string[] }).__BDL_TEST_INVOKES__.length);
   await confirmDesktopBackgroundDownload(page);
   await page.getByRole('button', { name: '设置 偏好与维护' }).click();
@@ -2336,7 +2337,7 @@ test('saved naming presets are reusable while unsaved defaults stay in settings'
   await page.getByRole('button', { name: '新增预设', exact: true }).click();
   const namingEditor = page.getByRole('dialog', { name: '新增命名预设', exact: true });
   await namingEditor.getByRole('textbox', { name: '命名模板', exact: true }).fill('{owner_name}/{title}');
-  await expect(namingEditor.getByText('文件名预览：')).toContainText('示例UP/示例视频.mp4');
+  await expect(namingEditor.getByText('文件名预览：')).toContainText('示例UP/幕后花絮.mp4');
   await page.getByRole('button', { name: '插入魔法变量', exact: true }).click();
   await expect(page.locator('[data-variable="ext"]')).toHaveCount(0);
   await page.keyboard.press('Escape');
@@ -2346,7 +2347,7 @@ test('saved naming presets are reusable while unsaved defaults stay in settings'
   await selectSettingsSection(page, '下载与保存');
   await expect(page.getByRole('button', { name: '保存', exact: true })).toBeDisabled();
   await page.getByRole('combobox', { name: '命名预设', exact: true }).click();
-  await page.getByRole('option', { name: '单文件', exact: true }).click();
+  await page.getByRole('option', { name: '直接保存', exact: true }).click();
   await page.getByRole('button', { name: '解析 添加与选择' }).click();
   await page.getByRole('dialog', { name: '设置尚未保存' }).getByRole('button', { name: '放弃更改' }).click();
   await page.getByLabel('链接或 BV / AV').fill('BV1xx411c7mD');
@@ -2355,7 +2356,7 @@ test('saved naming presets are reusable while unsaved defaults stay in settings'
   await page.getByRole('button', { name: '调整下载设置' }).click();
   const dialog = page.getByRole('dialog', { name: '下载设置' });
   await expect(dialog.getByRole('combobox', { name: '命名预设', exact: true })).toContainText('按 UP 收藏');
-  await expect(dialog.getByText('文件名预览：')).toContainText('示例UP/示例视频.mp4');
+  await expect(dialog.getByText('文件名预览：')).toContainText('示例UP/幕后花絮.mp4');
 });
 
 test('download archive settings inherit defaults and override processing per task', async ({ page }) => {
@@ -2571,7 +2572,7 @@ for (const theme of ['light', 'dark'] as const) {
   });
 }
 
-test('pagination presets save rules and allow custom cooldown', async ({ page }) => {
+test('pagination interval saves the selected number of seconds', async ({ page }) => {
   await installTauriMock(page, 'light');
   await page.addInitScript(() => {
     const target = window as unknown as {
@@ -2590,42 +2591,15 @@ test('pagination presets save rules and allow custom cooldown', async ({ page })
   await page.goto('/');
   await page.getByRole('button', { name: '设置 偏好与维护' }).click();
   await page.getByRole('button', { name: '链接与解析', exact: true }).click();
-  await expect(page.getByRole('combobox', { name: '解析预设', exact: true })).toContainText('标准');
-  await expect(page.getByText(/解析 200 条预计等待 5 秒/)).toBeVisible();
-  await page.getByRole('button', { name: '解析节奏说明', exact: true }).click();
-  const parseHelp = page.getByRole('region', { name: '解析节奏参数', exact: true });
-  await expect(parseHelp).toBeVisible();
-  await page.keyboard.press('Escape');
-  await expect(parseHelp).not.toBeVisible();
-  await page.getByRole('combobox', { name: '解析预设', exact: true }).click();
-  await page.getByRole('option', { name: '慢速', exact: true }).click();
-  await expect(page.getByRole('combobox', { name: '连续请求页数', exact: true })).toContainText('1 页');
-  await expect(page.getByRole('combobox', { name: '批间等待', exact: true })).toContainText('3 秒');
-  await expect(page.getByRole('combobox', { name: '每100条休息', exact: true })).toContainText('8 秒');
-  await page.getByRole('combobox', { name: '解析预设', exact: true }).click();
-  await page.getByRole('option', { name: '快速', exact: true }).click();
-  await expect(page.getByRole('combobox', { name: '连续请求页数', exact: true })).toContainText('4 页');
-  const batch = page.getByRole('combobox', { name: '单次解析目标', exact: true });
-  await expect(batch).toContainText('50 条');
-  await batch.click();
-  await page.getByRole('option', { name: '100 条', exact: true }).click();
-  await page.getByRole('combobox', { name: '每100条休息', exact: true }).click();
-  await page.getByRole('option', { name: '10 秒', exact: true }).click();
-  await expect(page.getByRole('combobox', { name: '解析预设', exact: true })).toContainText('自定义');
+  const interval = page.getByRole('combobox', { name: '翻页间隔', exact: true });
+  await expect(interval).toContainText('1 秒');
+  await interval.click();
+  await page.getByRole('option', { name: '120 秒', exact: true }).click();
   await page.getByRole('button', { name: '保存', exact: true }).click();
   await expect(page.getByRole('button', { name: '保存', exact: true })).toBeDisabled();
   expect(await page.evaluate(() => (window as unknown as { __RULES__: unknown }).__RULES__)).toEqual({
-    pages_per_round: 4,
-    interval_seconds: 1,
-    rest_seconds: 10,
+    interval_seconds: 120,
   });
-  await page.locator('aside.side-nav').getByRole('button', { name: /解析/ }).click();
-  await page.getByLabel('链接或 BV / AV').fill('favorite:fixture');
-  await page.getByRole('button', { name: '开始解析' }).click();
-  const toolbar = page.getByRole('group', { name: '解析进度与操作' });
-  await expect(toolbar).toContainText('109 / 401');
-  await toolbar.getByRole('button', { name: '解析', exact: true }).click();
-  await expect(toolbar).toContainText('209 / 401');
 });
 
 for (const scenario of ['confirmed', 'first-run', 'save-failure'] as const) {
@@ -3886,15 +3860,7 @@ for (const device of ['desktop', 'android'] as const) {
       const rows = page.locator(device === 'desktop' ? '.media-list-row' : '.mobile-result');
       await expect(rows.first()).toBeVisible();
       await expect(page.locator('h2').filter({ hasText: '视频所属合集' })).toBeVisible();
-      if (device === 'desktop') {
-        await expect(page.getByRole('button', { name: '继续解析', exact: true })).toBeVisible();
-        await expect(page.getByRole('combobox', { name: '每批解析数量' })).toHaveCount(0);
-        await expect(page.getByRole('button', { name: '解析全部', exact: true })).toBeVisible();
-      } else {
-        await page.getByRole('button', { name: '加载选项', exact: true }).click();
-        await expect(page.getByRole('button', { name: '提前加载全部视频', exact: true })).toBeVisible();
-        await page.keyboard.press('Escape');
-      }
+      await expect(page.getByRole('button', { name: '继续解析', exact: true })).toBeEnabled();
       await page.getByRole('button', { name: '返回内容库', exact: true }).click();
       await expect(cards).toHaveCount(20);
       await cards.nth(1).click();

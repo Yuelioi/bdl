@@ -136,8 +136,12 @@ pub fn merge_collection_page(
                         && incoming.kind == "collection_section"
                         && merged.groups[g].kind != "collection_section" =>
                 {
-                    let hydrated = merged.groups[g].items.remove(i);
+                    let mut hydrated = merged.groups[g].items.remove(i);
+                    hydrated.collection = item.collection;
                     merged.groups[destination].items.push(hydrated);
+                }
+                Some((g, i)) if g == destination && incoming.kind == "collection_section" => {
+                    merged.groups[g].items[i].collection = item.collection;
                 }
                 Some(_) => {}
                 None => merged.groups[destination].items.push(item),

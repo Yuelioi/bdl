@@ -17,7 +17,7 @@ const emit = defineEmits<{ create: []; manage: [] }>();
     <UiButton variant="secondary" :disabled="disabled || createDisabled" @click="emit('create')">新增预设</UiButton>
     <UiButton
       class="preset-manage"
-      variant="ghost"
+      variant="secondary"
       :aria-label="manageLabel"
       :disabled="disabled"
       @click="emit('manage')"

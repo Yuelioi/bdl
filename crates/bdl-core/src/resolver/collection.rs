@@ -63,6 +63,7 @@ pub struct ResolvedCollectionPage {
 /// Optional presentation metadata; paging still belongs to the whole collection.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
 pub struct CollectionSection {
+    #[serde(default)]
     pub id: u64,
     #[serde(default)]
     pub title: String,
@@ -72,6 +73,7 @@ pub struct CollectionSection {
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
 pub struct CollectionSectionEpisode {
+    #[serde(default)]
     pub aid: u64,
 }
 
@@ -505,11 +507,18 @@ fn collection_tree_from_page(
         .into_iter()
         .enumerate()
         .map(|(offset, video)| {
-            map_archive_item(
+            let mut item = map_archive_item(
                 &source_key,
                 video,
                 super::paged::page_item_index(page.request, offset),
-            )
+            );
+            item.collection = Some(crate::model::VideoCollection {
+                season_id: page.season_id,
+                title: title.clone(),
+                section: None,
+                index: Some(item.nfo_metadata.index),
+            });
+            item
         })
         .collect::<Vec<_>>();
 
@@ -552,7 +561,7 @@ fn collection_groups(
         .iter()
         .filter(|section| section.id > 0 && seen.insert(section.id))
         .collect();
-    if sections.len() < 2 {
+    if sections.is_empty() {
         return vec![NormalizedGroup {
             id: GroupId(format!("group:{source_key}")),
             kind: "collection".into(),
@@ -578,13 +587,16 @@ fn collection_groups(
         }
     }
     let mut unassigned = vec![];
-    for item in items {
+    for mut item in items {
         if let Some(index) = item
             .parts
             .first()
             .and_then(|part| part.aid)
             .and_then(|aid| membership.get(&aid))
         {
+            if let Some(collection) = &mut item.collection {
+                collection.section = non_empty(sections[*index].title.trim().to_owned());
+            }
             groups[*index].items.push(item);
         } else {
             unassigned.push(item);
@@ -651,6 +663,8 @@ fn map_archive_item(source_key: &str, video: ResolvedArchiveVideo, index: usize)
     let video_key = format!("{source_key}:{}", video.bvid);
 
     NormalizedItem {
+        episode_number: None,
+        collection: None,
         nfo_metadata: crate::nfo::NfoMetadata {
             index,
             ..Default::default()
@@ -863,6 +877,37 @@ mod section_tests {
         let tree = fixture(1, &[1, 2], false);
         assert_eq!(tree.groups.len(), 1);
         assert_eq!(tree.source.loaded_count, 2);
+        let group = &tree.groups[0];
+        let single = collection_groups(
+            "fixture",
+            "合集",
+            group.items.clone(),
+            &[CollectionSection {
+                id: 8,
+                title: "唯一小节".into(),
+                episodes: vec![CollectionSectionEpisode { aid: 2 }],
+            }],
+            group.page.clone().unwrap(),
+        );
+        assert_eq!(single[0].items[0].parts[0].aid, Some(2));
+        assert_eq!(
+            single[0].items[0]
+                .collection
+                .as_ref()
+                .unwrap()
+                .section
+                .as_deref(),
+            Some("唯一小节")
+        );
+        assert_eq!(single[1].title, "其他视频");
+        assert!(
+            single[1].items[0]
+                .collection
+                .as_ref()
+                .unwrap()
+                .section
+                .is_none()
+        );
     }
     #[test]
     fn all_sections_merge_across_pages_without_duplicate_or_lost_hydrated_items() {

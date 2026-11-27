@@ -35,6 +35,8 @@ export interface PageState {
 
 export interface NormalizedItem {
   id: string;
+  collection?: { season_id: number; title: string; section: string | null; index: number | null } | null;
+  episode_number?: number | null;
   nfo_metadata?: { index: number };
   title: string;
   owner_name: string | null;
@@ -303,11 +305,11 @@ export interface SettingsSnapshot {
   usage_notice_acknowledged: boolean;
   auto_check_updates: boolean;
   theme_preference: 'system' | 'light' | 'dark';
-  parse_batch_size: number;
   parse_rules: ParseRules;
   download_dir: string | null;
   document_tree_output: DocumentTreeDirectory | null;
   naming_template: string;
+  naming_template_version?: 1 | 2;
   naming_presets: NamingPreset[];
   quality: string;
   archive_mode: ArchiveMode;
@@ -340,6 +342,7 @@ export interface SettingsSnapshot {
 }
 
 export interface NamingPreset {
+  template_version?: 1 | 2;
   id: string;
   name: string;
   template: string;
@@ -529,8 +532,6 @@ export interface QrLoginPollResponse {
 
 export interface ParseRules {
   interval_seconds: number;
-  rest_seconds: number;
-  pages_per_round: number;
 }
 
 export type LibraryCategory = AccountLibraryFolderKind | 'watch_later';

@@ -50,6 +50,7 @@ impl VideoInputId {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedVideo {
+    pub collection: Option<crate::model::VideoCollection>,
     pub nfo_metadata: crate::nfo::NfoMetadata,
     pub aid: u64,
     pub bvid: String,
@@ -258,6 +259,8 @@ where
         }
 
         let item = NormalizedItem {
+            episode_number: None,
+            collection: video.collection.clone(),
             nfo_metadata: video.nfo_metadata.clone(),
             id: ItemId(format!("item:{canonical_key}")),
             title: video.title.clone(),
@@ -436,6 +439,10 @@ impl VideoViewResponse {
             .map(|owner| owner.mid)
             .filter(|mid| *mid > 0);
         let video = ResolvedVideo {
+            collection: data
+                .ugc_season
+                .as_ref()
+                .map(|season| season.membership(data.aid)),
             nfo_metadata: crate::nfo::NfoMetadata {
                 description: data.desc,
                 genre: data.tname,
@@ -513,6 +520,33 @@ struct VideoViewPage {
 struct VideoCollectionHintSeason {
     id: u64,
     mid: u64,
+    #[serde(default)]
+    title: String,
+    #[serde(default)]
+    sections: Vec<super::collection::CollectionSection>,
+}
+
+impl VideoCollectionHintSeason {
+    fn membership(&self, aid: u64) -> crate::model::VideoCollection {
+        let position = self
+            .sections
+            .iter()
+            .flat_map(|section| {
+                section
+                    .episodes
+                    .iter()
+                    .map(move |episode| (section, episode.aid))
+            })
+            .enumerate()
+            .find(|(_, (_, episode_aid))| *episode_aid == aid && aid > 0);
+        crate::model::VideoCollection {
+            season_id: self.id,
+            title: self.title.trim().to_owned(),
+            section: position
+                .and_then(|(_, (section, _))| non_empty(section.title.trim().to_owned())),
+            index: position.map(|(index, _)| index + 1),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -887,7 +921,8 @@ mod tests {
                     "ugc_season": {
                         "id": 8122710,
                         "mid": 592988861,
-                        "title": "云端镜像"
+                        "title": "云端镜像",
+                        "sections": [{"id": 21, "title": "前言", "episodes": [{"aid": 8}]}, {"id": 22, "title": "正篇", "episodes": [{"aid": 1}]}]
                     }
                 }
             }"#,
@@ -907,6 +942,10 @@ mod tests {
         assert_eq!(snapshot.video.pages[0].duration_seconds, Some(120));
         assert_eq!(snapshot.video.nfo_metadata.description, "视频简介");
         assert_eq!(snapshot.video.nfo_metadata.genre, "知识");
+        let collection = snapshot.video.collection.unwrap();
+        assert_eq!(collection.title, "云端镜像");
+        assert_eq!(collection.section.as_deref(), Some("正篇"));
+        assert_eq!(collection.index, Some(2));
     }
 
     #[test]

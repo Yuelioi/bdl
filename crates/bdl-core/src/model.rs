@@ -63,7 +63,41 @@ pub struct PageState {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VideoCollection {
+    pub season_id: u64,
+    pub title: String,
+    pub section: Option<String>,
+    pub index: Option<usize>,
+}
+
+impl VideoCollection {
+    pub fn enrich(target: &mut Option<Self>, details: Option<&Self>) {
+        let Some(details) = details else {
+            return;
+        };
+        if let Some(existing) = target {
+            if existing.season_id == details.season_id {
+                if existing.section.is_none() {
+                    existing.section.clone_from(&details.section);
+                }
+                if existing.title.is_empty() {
+                    existing.title.clone_from(&details.title);
+                }
+                existing.index = existing.index.or(details.index);
+            }
+        } else {
+            *target = Some(details.clone());
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NormalizedItem {
+    /// Number supplied by the episode API, which may differ from its offset in the loaded page.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub episode_number: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub collection: Option<VideoCollection>,
     #[serde(default)]
     pub nfo_metadata: crate::nfo::NfoMetadata,
     pub id: ItemId,

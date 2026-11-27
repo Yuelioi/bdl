@@ -98,6 +98,7 @@ impl VideoApi for CountingVideoApi {
             .expect("calls should lock")
             .push(("view", 0));
         Ok(ResolvedVideo {
+            collection: None,
             nfo_metadata: Default::default(),
             aid: 170001,
             bvid: "BV1xx411c7mD".to_owned(),
@@ -280,6 +281,7 @@ async fn video_resolver_maps_dash_streams_when_requested() -> Result<(), BdlErro
     let id = tree.groups[0].items[0].parts[0].id.clone();
     let mut options = bdl_core::planner::DownloadOptions::new("downloads".into());
     options.naming_template = "{index}-{title}.{ext}".to_owned();
+    options.naming_template_version = 1;
     let prepared = bdl_core::planner::plan_queue_selection(
         &tree,
         std::slice::from_ref(&id),
@@ -323,12 +325,37 @@ async fn video_resolver_maps_dash_streams_when_requested() -> Result<(), BdlErro
     assert_eq!(later.output_path, prepared[0].output_path);
 
     let mut tree = tree;
+    tree.groups[0].items[0].collection = Some(bdl_core::model::VideoCollection {
+        season_id: 1,
+        title: "合集".into(),
+        section: Some("第一章".into()),
+        index: Some(4),
+    });
     let ids = tree.groups[0].items[0]
         .parts
         .iter()
         .map(|part| part.id.clone())
         .collect::<Vec<_>>();
     let options = bdl_core::planner::DownloadOptions::new("downloads".into());
+    let mut single = tree.clone();
+    single.groups[0].items[0].parts.truncate(1);
+    for (kind, parent) in [
+        (SourceKind::Video, "合集"),
+        (SourceKind::Favorite, "收藏夹"),
+        (SourceKind::Series, "系列"),
+    ] {
+        single.source.kind = kind;
+        single.source.title = parent.into();
+        let tasks = bdl_core::planner::plan_selected_parts(&single, &ids[..1], &options)?;
+        assert_eq!(
+            tasks[0].output_path,
+            options
+                .output_dir
+                .join("第一章")
+                .join(parent)
+                .join("fixture video.mp4")
+        );
+    }
     for kind in [
         SourceKind::Uploader,
         SourceKind::WatchLater,
@@ -336,6 +363,7 @@ async fn video_resolver_maps_dash_streams_when_requested() -> Result<(), BdlErro
         SourceKind::Collection,
     ] {
         tree.source.kind = kind;
+        tree.source.title = "source list".into();
         let queue = bdl_core::planner::plan_queue_selection(
             &tree,
             &ids,
@@ -345,7 +373,7 @@ async fn video_resolver_maps_dash_streams_when_requested() -> Result<(), BdlErro
             0,
         )?;
         assert!(queue.iter().all(|task| task.resources.is_empty()));
-        let plans = if matches!(kind, SourceKind::Uploader | SourceKind::WatchLater) {
+        let mut plans = if matches!(kind, SourceKind::Uploader | SourceKind::WatchLater) {
             assert_eq!(queue.len(), 1);
             queue[0]
                 .media_selection
@@ -360,33 +388,34 @@ async fn video_resolver_maps_dash_streams_when_requested() -> Result<(), BdlErro
                 .map(|task| *task.media_selection.deferred.unwrap())
                 .collect()
         };
-        let names = plans
-            .iter()
-            .map(|plan| {
+        for (template, version, expected) in [
+            (
+                bdl_core::naming::DEFAULT_NAMING_TEMPLATE,
+                2,
+                [
+                    "第一章/fixture video/P1.mp4",
+                    "第一章/fixture video/Ending.mp4",
+                ],
+            ),
+            (
+                bdl_core::naming::FLAT_NAMING_TEMPLATE,
+                2,
+                ["P1.mp4", "Ending.mp4"],
+            ),
+            (
+                "{parent}/{index} - {title}",
+                2,
+                ["fixture video/1 - P1.mp4", "fixture video/2 - Ending.mp4"],
+            ),
+            ("{title}", 1, ["fixture video.mp4", "2 - fixture video.mp4"]),
+        ] {
+            for (plan, relative) in plans.iter_mut().zip(expected) {
+                plan.options.naming_template = template.into();
+                plan.options.naming_template_version = version;
                 let task = plan.plan(&tree)?.unwrap();
-                Ok(task
-                    .output_path
-                    .file_name()
-                    .unwrap()
-                    .to_string_lossy()
-                    .into_owned())
-            })
-            .collect::<Result<Vec<_>, BdlError>>()?;
-        assert_eq!(names, ["P1 - P1.mp4", "P2 - Ending.mp4"]);
-        let plain_names = plans
-            .into_iter()
-            .map(|mut plan| {
-                plan.options.naming_template = "{title}".into();
-                let task = plan.plan(&tree)?.unwrap();
-                Ok(task
-                    .output_path
-                    .file_name()
-                    .unwrap()
-                    .to_string_lossy()
-                    .into_owned())
-            })
-            .collect::<Result<Vec<_>, BdlError>>()?;
-        assert_eq!(plain_names, ["fixture video.mp4", "2 - fixture video.mp4"]);
+                assert_eq!(task.output_path, options.output_dir.join(relative));
+            }
+        }
     }
     Ok(())
 }
@@ -512,6 +541,7 @@ async fn live_video_resolver_resolves_bv_when_enabled() -> Result<(), BdlError> 
 fn fake_api() -> FakeVideoApi {
     FakeVideoApi {
         video: ResolvedVideo {
+            collection: None,
             nfo_metadata: Default::default(),
             aid: 170001,
             bvid: "BV1xx411c7mD".to_owned(),

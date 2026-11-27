@@ -15,7 +15,7 @@
 | `bdl_queue` | 分页浏览「传输」中的任务，可按下载、暂停、失败或完成等状态筛选。 |
 | `bdl_task_status` | 按任务 ID 查询当前状态。若主成品已完成且仍在原位置，同时返回本机文件路径。 |
 | `bdl_task_action` | 按任务 ID 暂停等待或下载中的任务、继续已暂停的任务，或重试失败的任务。 |
-| `bdl_settings_get` | 查看下载总限速、并发任务数、解析速度和默认预设 ID。 |
+| `bdl_settings_get` | 查看下载总限速、并发任务数、翻页间隔和默认预设 ID。 |
 | `bdl_settings_update` | 按字段保存上述四项设置，一次可以更新其中一项或多项。 |
 
 配置中的令牌允许客户端访问上述内容库、管理下载和修改这四项设置。多个分页的下载按页提交，确保页码与选中的分 P 对应。
@@ -26,4 +26,4 @@
 { "download_limit_mb_s": 10, "concurrent_tasks": 2 }
 ```
 
-`download_limit_mb_s` 设为 `0` 表示不限速。`parse_speed` 接受 `slow`、`standard` 或 `fast`。修改 `default_preset_id` 时，使用 `bdl_presets` 返回的 ID。省略的字段保留原值，改动保存后立即生效。
+`download_limit_mb_s` 设为 `0` 表示不限速。`parse_interval_seconds` 设置翻页间隔，范围为 1～120 秒。修改 `default_preset_id` 时，使用 `bdl_presets` 返回的 ID。省略的字段保留原值，改动保存后立即生效。

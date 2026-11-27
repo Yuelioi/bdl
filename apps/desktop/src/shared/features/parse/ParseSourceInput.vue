@@ -6,18 +6,12 @@ import { extractBilibiliInputs } from '../../utils/bilibiliLinks';
 const mode = defineModel<'single' | 'batch'>('mode', { required: true });
 const input = defineModel<string>('input', { required: true });
 const singleInput = defineModel<string>('singleInput', { required: true });
-const props = defineProps<{ busy: boolean; paused: boolean; pausing: boolean; mobile?: boolean }>();
-const emit = defineEmits<{ submit: []; pause: []; resume: []; paste: []; singlePaste: [event: ClipboardEvent] }>();
-const primaryLabel = computed(() => {
-  if (props.pausing) return '正在暂停…';
-  if (props.paused) return '继续解析';
-  return props.busy ? '暂停解析' : '解析';
-});
+const props = defineProps<{ busy: boolean; stopping: boolean; mobile?: boolean }>();
+const emit = defineEmits<{ submit: []; stop: []; paste: []; singlePaste: [event: ClipboardEvent] }>();
+const primaryLabel = computed(() => props.stopping && props.busy ? '正在停止…' : props.busy ? '停止解析' : '解析');
 const submit = () => {
-  if (props.pausing) return;
-  if (props.paused) emit('resume');
-  else if (props.busy) emit('pause');
-  else emit('submit');
+  if (!props.busy) emit('submit');
+  else if (!props.stopping) emit('stop');
 };
 const modeOptions = [
   { label: '视频及所属合集', value: 'batch' },
@@ -133,7 +127,7 @@ const paste = (event: ClipboardEvent) => {
     <UiButton
       class="source-submit"
       type="submit"
-      :disabled="pausing"
+      :disabled="busy && stopping"
       :aria-label="busy ? primaryLabel : '开始解析'"
     >
       {{ primaryLabel }}

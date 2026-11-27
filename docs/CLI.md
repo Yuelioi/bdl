@@ -25,7 +25,7 @@ bdl parse "https://space.bilibili.com/123/favlist?fid=456" --json
 bdl parse "https://space.bilibili.com/49746395/lists/162475?type=season" --all --state .bdl/list-parse.json --json
 ```
 
-支持 BV/AV、普通视频、收藏夹、UP 主、合集、系列、番剧和课程的输入分发。支持 `b23.tv` 短链接：最多跟随 5 次跳转，仅允许指定 B 站 HTTPS 域名，不携带 Cookie；跳转请求同样计入 HTTP 预算。验证页面或非允许目标立即停止。
+支持 BV/AV、普通视频、收藏夹、UP 主、合集、系列、番剧和课程的输入分发。可直接粘贴含 `b23.tv` 或 `bili2233.cn` 短链的分享文本。短链最多跟随 5 次跳转，仅允许指定 B 站 HTTPS 域名，不携带 Cookie。跳转请求同样计入 HTTP 预算。验证页面或非允许目标立即停止。
 
 默认只解析首批元信息；显式 `--all --state <文件>` 才会继续加载元信息页，支持收藏夹、UP 主、合集、系列及课程，全量模式仍受解析操作预算约束。JSON 返回核心的 `NormalizedSourceTree`，通过 `source.loaded_count`、`total_count` 和 `has_more` 判断加载范围。翻页会去重；服务端连续返回无新增内容但仍声称有下一页时，命令报错停止。
 

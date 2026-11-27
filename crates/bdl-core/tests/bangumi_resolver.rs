@@ -186,6 +186,14 @@ async fn bangumi_resolver_fetches_streams_for_episode_input_only() -> Result<(),
         assert_eq!(part.title, task_title);
 
         let mut options = DownloadOptions::new("downloads".into());
+        let grouped = plan_selected_parts(&movie_tree, std::slice::from_ref(&part.id), &options)?;
+        assert_eq!(
+            grouped[0].output_path,
+            options
+                .output_dir
+                .join(movie_title)
+                .join(format!("{episode_title}.mp4"))
+        );
         options.naming_template = "{part_title}".to_owned();
         let tasks = plan_selected_parts(&movie_tree, std::slice::from_ref(&part.id), &options)?;
         assert_eq!(tasks[0].title, task_title);

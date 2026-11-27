@@ -3,8 +3,8 @@ use std::path::PathBuf;
 
 use bdl_core::error::BdlError;
 use bdl_core::naming::{
-    DEFAULT_NAMING_TEMPLATE, NamingContext, render_output_path, sanitize_path_component,
-    unique_path, validate_template,
+    DEFAULT_NAMING_TEMPLATE, FLAT_NAMING_TEMPLATE, NamingContext, render_output_path,
+    sanitize_path_component, unique_path, validate_template,
 };
 
 #[test]
@@ -60,16 +60,56 @@ fn render_output_path_replaces_known_variables() -> Result<(), BdlError> {
 #[test]
 fn default_template_does_not_repeat_title_in_file_name() -> Result<(), BdlError> {
     let context = NamingContext {
-        title: "Fixture",
-        part_title: "Opening",
-        part_index: 2,
+        version: bdl_core::naming::NAMING_VERSION,
+        group: "上篇/下篇",
+        parent: "画画课",
+        single_title: "水彩练习",
+        entry_index: 3,
+        title: "旧稿件标题",
+        index: Some(12),
         ext: "mp4",
         ..NamingContext::default()
     };
-
-    let path = render_output_path(DEFAULT_NAMING_TEMPLATE, &context)?;
-
-    assert_eq!(path, PathBuf::from("Fixture").join("P2 - Opening.mp4"));
+    for (group, parent, expected) in [
+        ("上篇/下篇", "画画课", "上篇_下篇/画画课/水彩练习.mp4"),
+        ("", "画画课", "画画课/水彩练习.mp4"),
+        ("上篇", "", "上篇/水彩练习.mp4"),
+        ("", "", "水彩练习.mp4"),
+    ] {
+        assert_eq!(
+            render_output_path(
+                DEFAULT_NAMING_TEMPLATE,
+                &NamingContext {
+                    group,
+                    parent,
+                    ..context
+                }
+            )?,
+            PathBuf::from(expected)
+        );
+    }
+    assert_eq!(
+        render_output_path(bdl_core::naming::PARENT_NAMING_TEMPLATE, &context)?,
+        PathBuf::from("画画课/水彩练习.mp4")
+    );
+    assert_eq!(
+        render_output_path(FLAT_NAMING_TEMPLATE, &context)?,
+        PathBuf::from("水彩练习.mp4")
+    );
+    assert_eq!(
+        render_output_path("{index} - {title}", &context)?,
+        PathBuf::from("3 - 水彩练习.mp4")
+    );
+    assert_eq!(
+        render_output_path(
+            "{index} - {title}",
+            &NamingContext {
+                version: 1,
+                ..context
+            }
+        )?,
+        PathBuf::from("12 - 旧稿件标题.mp4")
+    );
     Ok(())
 }
 
