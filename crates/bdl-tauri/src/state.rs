@@ -1115,7 +1115,7 @@ impl AppState {
             advance_post(&mut queue[index], false);
         }
         let task = queue[index].clone();
-        self.persist_queue_edit(&mut queue)?;
+        self.persist_download_result(&mut queue, &task)?;
         Ok(Some(task))
     }
 
@@ -1168,7 +1168,7 @@ impl AppState {
         }
         advance_post(task, true);
         let task = task.clone();
-        self.persist_queue_edit(&mut queue)?;
+        self.persist_download_result(&mut queue, &task)?;
         Ok(Some(task))
     }
 
@@ -1281,16 +1281,6 @@ impl AppState {
             .lock()
             .map_err(|_| state_poisoned("storage"))?
             .clear_finished_task_logs()
-    }
-
-    pub fn record_completed_task(&self, task: &DownloadTask) -> BdlResult<()> {
-        let logs = self.task_logs(&task.id, 1000)?;
-        self.storage
-            .lock()
-            .map_err(|_| state_poisoned("storage"))?
-            .save_completed_record(task, &logs)?;
-        self.queue_revision.fetch_add(1, Ordering::Release);
-        Ok(())
     }
 
     pub fn settings(&self) -> BdlResult<SettingsSnapshot> {
@@ -1694,9 +1684,29 @@ impl AppState {
             return Ok(());
         }
         self.persist_queue(&queue.current, &queue.next)?;
+        self.install_queue_edit(queue);
+        Ok(())
+    }
+
+    fn persist_download_result(
+        &self,
+        queue: &mut QueueEdit<'_>,
+        task: &DownloadTask,
+    ) -> BdlResult<()> {
+        if task.status != TaskStatus::Completed {
+            return self.persist_queue_edit(queue);
+        }
+        self.storage
+            .lock()
+            .map_err(|_| state_poisoned("storage"))?
+            .apply_queue_completion(&queue.current, &queue.next, task)?;
+        self.install_queue_edit(queue);
+        Ok(())
+    }
+
+    fn install_queue_edit(&self, queue: &mut QueueEdit<'_>) {
         queue.current.clone_from(&queue.next);
         self.queue_revision.fetch_add(1, Ordering::Release);
-        Ok(())
     }
 
     fn persist_task_update(
@@ -3637,16 +3647,44 @@ mod tests {
         let dir =
             std::env::temp_dir().join(format!("bdl-completion-times-{}", uuid::Uuid::new_v4()));
         let mut done = task_with_id("done");
-        done.status = TaskStatus::Completed;
+        done.status = TaskStatus::Muxing;
         let active = task_with_id("active");
-        let state = test_state_with_tasks(&dir, vec![done.clone(), active.clone()]);
-        state.record_completed_task(&done).unwrap();
-        state.record_completed_task(&active).unwrap();
+        let state = test_state_with_tasks(&dir, vec![done, active.clone()]);
+        let db = rusqlite::Connection::open(dir.join("tasks.sqlite")).unwrap();
+        db.execute_batch(
+            "CREATE TRIGGER reject_history BEFORE INSERT ON history
+            BEGIN SELECT RAISE(ABORT, 'history write failed'); END;",
+        )
+        .unwrap();
+        let token = state.register_task_cancel_token("done").unwrap();
+        assert!(state.complete_download_part("done", &token).is_err());
+        assert_eq!(state.task_status("done").unwrap(), TaskStatus::Muxing);
+        let on_disk: String = db
+            .query_row("SELECT status FROM tasks WHERE id = 'done'", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(
+            serde_json::from_str::<TaskStatus>(&on_disk).unwrap(),
+            TaskStatus::Muxing
+        );
+        db.execute_batch("DROP TRIGGER reject_history;").unwrap();
+        drop(db);
+        let done = state
+            .complete_download_part("done", &token)
+            .unwrap()
+            .unwrap();
         let history = state
             .storage
             .lock()
             .unwrap()
             .load_completed_records()
+            .unwrap();
+        state
+            .storage
+            .lock()
+            .unwrap()
+            .save_completed_record(&active, &[])
             .unwrap();
         let expected = &history
             .iter()

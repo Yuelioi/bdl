@@ -223,6 +223,28 @@ impl TaskStorage {
         previous: &[DownloadTask],
         next: &[DownloadTask],
     ) -> BdlResult<()> {
+        self.transact_queue_changes(previous, next, |_| Ok(()))
+    }
+
+    pub fn apply_queue_completion(
+        &mut self,
+        previous: &[DownloadTask],
+        next: &[DownloadTask],
+        completed: &DownloadTask,
+    ) -> BdlResult<()> {
+        let logs = self.load_task_logs(&completed.id, MAX_TASK_LOGS_PER_TASK)?;
+        self.transact_queue_changes(previous, next, |tx| {
+            Self::write_completed_record(tx, completed, &logs)?;
+            Ok(())
+        })
+    }
+
+    fn transact_queue_changes(
+        &mut self,
+        previous: &[DownloadTask],
+        next: &[DownloadTask],
+        finish: impl FnOnce(&Transaction<'_>) -> BdlResult<()>,
+    ) -> BdlResult<()> {
         let old: std::collections::HashMap<_, _> = previous
             .iter()
             .enumerate()
@@ -319,6 +341,7 @@ impl TaskStorage {
                 save_task_in_tx(&tx, task, order)?;
             }
         }
+        finish(&tx)?;
         tx.commit()?;
         Ok(())
     }
@@ -384,8 +407,16 @@ impl TaskStorage {
         task: &DownloadTask,
         logs: &[QueueLogEntry],
     ) -> BdlResult<CompletedRecord> {
+        Self::write_completed_record(&self.conn, task, logs)
+    }
+
+    fn write_completed_record(
+        conn: &Connection,
+        task: &DownloadTask,
+        logs: &[QueueLogEntry],
+    ) -> BdlResult<CompletedRecord> {
         let record = completed_record_from_task(task, logs, Utc::now().to_rfc3339());
-        self.conn.execute(
+        conn.execute(
             r#"
             INSERT INTO history (
                 id,

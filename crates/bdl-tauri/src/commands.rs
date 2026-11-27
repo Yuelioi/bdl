@@ -2589,17 +2589,6 @@ pub(crate) fn publish_download_result(
         return Ok(());
     }
     emit_queue_log(app, state, &task.id, QueueLogLevel::Info, message)?;
-    if let Err(error) = state.record_completed_task(task) {
-        tracing::warn!("failed to save completed task record: {error}");
-        let _ = emit_queue_log(
-            app,
-            state,
-            &task.id,
-            QueueLogLevel::Warning,
-            &format!("完成记录保存失败：{error}"),
-        );
-    }
-
     Ok(())
 }
 
