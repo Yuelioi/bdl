@@ -29,26 +29,24 @@ onMounted(() => { void update.loadSources(); });
 
       <UiInlineNotice v-if="update.error" tone="danger">{{ update.error }}</UiInlineNotice>
       <UiInlineNotice v-if="update.warning" tone="info">{{ update.warning }}</UiInlineNotice>
-      <div v-if="update.hasUpdate" class="rounded-lg border border-(--color-accent) bg-(--color-accent-soft) p-4">
-        <div class="flex flex-wrap items-start justify-between gap-4">
-          <div class="grid min-w-0 flex-1 gap-1">
-            <strong>发现新版本 v{{ update.availableVersion }}</strong>
-            <p v-if="update.notes" class="m-0 whitespace-pre-line break-words text-sm text-(--color-muted)">{{ update.notes }}</p>
-          </div>
+      <div v-if="update.hasUpdate" class="min-w-0 rounded-lg border border-(--color-accent) bg-(--color-accent-soft) p-4">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <strong class="min-w-0 wrap-anywhere">发现新版本 v{{ update.availableVersion }}</strong>
           <UiButton :disabled="update.installing" @click="update.install">
             {{ update.installing ? `更新中 ${update.progress}%` : update.source === 'quark' ? '打开夸克网盘' : update.manualDownloadUrl ? '浏览器下载' : update.android ? '下载 APK' : '下载并安装' }}
           </UiButton>
         </div>
+        <p v-if="update.notes" class="mt-2 mb-0 whitespace-pre-line wrap-anywhere text-sm text-(--color-muted)">{{ update.notes }}</p>
       </div>
       <p v-if="update.android && update.hasUpdate" class="m-0 text-xs leading-5 text-(--color-muted)">
         在浏览器下载 APK 后，打开安装包完成更新。
       </p>
       <UiInlineNotice v-if="!update.hasUpdate && update.checked && !update.checking && !update.error" tone="info">
-        当前来源暂无更新。
+        当前已是最新版本。
       </UiInlineNotice>
     </SettingsCard>
     <SettingsCard title="更新偏好">
-      <UFormField label="更新来源">
+      <UFormField label="下载来源">
         <USelect :model-value="update.source" :items="update.sourceOptions" class="w-full" :loading="update.loadingSources" :disabled="update.loadingSources || update.checking || update.installing" @update:model-value="(value: string) => update.setSource(value as typeof update.source)" />
       </UFormField>
       <UiInlineNotice v-if="update.sourcesError" tone="danger">
@@ -69,13 +67,9 @@ onMounted(() => { void update.loadSources(); });
         <UiInlineNotice v-if="update.quarkError" tone="danger">{{ update.quarkError }}</UiInlineNotice>
       </div>
       <div class="settings-update-heading update-preference-row">
-        <div>
-          <h4>自动检测</h4>
-          <p>启动时检查新版本，下载和安装由你确认。</p>
-        </div>
-        <USwitch :model-value="update.autoCheck" aria-label="自动检测更新" @update:model-value="update.setAutoCheck" />
+        <label for="settings-check-updates">启动时检测更新</label>
+        <USwitch id="settings-check-updates" :model-value="update.autoCheck" @update:model-value="update.setAutoCheck" />
       </div>
-      <p class="settings-note">更新偏好自动保存。</p>
     </SettingsCard>
 
     <p v-if="!update.android" class="m-0 text-xs leading-5 text-(--color-muted)">
@@ -103,19 +97,7 @@ onMounted(() => { void update.loadSources(); });
   font-weight: 600;
 }
 
-.settings-update-heading h4,
-.settings-update-heading p {
-  margin: 0;
-}
-
-.settings-update-heading h4 {
+.update-preference-row label {
   font-size: var(--font-13);
-}
-
-.settings-update-heading p {
-  margin-top: var(--space-4);
-  color: var(--color-muted);
-  font-size: var(--font-12);
-  line-height: 1.5;
 }
 </style>

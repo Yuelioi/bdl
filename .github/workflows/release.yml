@@ -339,3 +339,57 @@ jobs:
               make_latest: 'true',
             });
             core.info(`Published ${published.data.tag_name} as the latest release.`);
+
+  verify-distribution:
+    name: Verify public downloads and remind software site maintainer
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      issues: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Read published release metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api "repos/$GITHUB_REPOSITORY/releases/tags/$GITHUB_REF_NAME" > "$RUNNER_TEMP/bdl-release.json"
+
+      - name: Verify GitHub, GHFast and GH-Proxy downloads
+        run: |
+          python3 scripts/verify-release-channels.py "$GITHUB_REF_NAME" \
+            --repository "$GITHUB_REPOSITORY" --release-json "$RUNNER_TEMP/bdl-release.json"
+
+      - name: Remind repository owner to update the software site
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const tag = process.env.GITHUB_REF_NAME;
+            const marker = `<!-- bdl-software-site-sync:${tag} -->`;
+            for await (const page of github.paginate.iterator(github.rest.issues.listForRepo, {
+              ...context.repo, state: 'all', per_page: 100,
+            })) {
+              const existing = page.data.find(issue =>
+                !issue.pull_request && issue.user?.login === 'github-actions[bot]' && issue.body?.includes(marker));
+              if (existing) {
+                core.notice(`Software site reminder already exists: ${existing.html_url}`);
+                return;
+              }
+            }
+            const repoUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}`;
+            const { data: issue } = await github.rest.issues.create({
+              ...context.repo,
+              title: `更新软件站至 BDL ${tag}`,
+              assignees: [context.repo.owner],
+              body: [
+                marker,
+                `[BDL ${tag}](${repoUrl}/releases/tag/${tag}) 已发布。GitHub、GHFast 和 GH-Proxy 的版本清单及五个主包已通过 SHA-256 校验。`,
+                '请更新[月离软件站的 BDL 页面](https://apps.yuelili.com/software/bdl)，核对五个平台的版本和下载来源后关闭此 Issue。',
+                `[查看本次检查](${repoUrl}/actions/runs/${context.runId})`,
+              ].join('\n\n'),
+            });
+            core.notice(`Software site reminder created: ${issue.html_url}`);

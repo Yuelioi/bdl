@@ -4,7 +4,23 @@ use std::time::Duration;
 use url::Url;
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
-const MANIFEST: &str = "https://github.com/Yuelioi/bdl/releases/latest/download/latest.json";
+fn manifest_url(version: &str) -> CommandResult<Url> {
+    let parts: Vec<_> = version.split('.').collect();
+    if parts.len() != 3
+        || !parts
+            .iter()
+            .all(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()))
+    {
+        return Err(CommandError::coded(
+            ErrorCode::UpdateInvalidUrl,
+            "更新版本号无效。",
+        ));
+    }
+    Url::parse(&format!(
+        "https://github.com/Yuelioi/bdl/releases/download/v{version}/latest.json"
+    ))
+    .map_err(|e| CommandError::coded(ErrorCode::UpdateInvalidUrl, e))
+}
 
 // The URL template is transport configuration; the embedded updater public key
 // remains the authority for installation, including with a user-supplied mirror.
@@ -147,15 +163,16 @@ pub async fn update_distribution(
 pub async fn update_check(
     webview: tauri::Webview,
     state: tauri::State<'_, bdl_tauri::state::AppState>,
+    version: String,
     template: Option<String>,
 ) -> CommandResult<Option<serde_json::Value>> {
     use tauri::Manager;
     use tauri_plugin_updater::UpdaterExt;
     let settings = state.settings()?;
+    let manifest = manifest_url(&version)?;
     let endpoint = match template.as_deref() {
-        Some(template) => mirrored(template.trim(), MANIFEST)?,
-        None => Url::parse(MANIFEST)
-            .map_err(|e| CommandError::coded(ErrorCode::UpdateCheckFailed, e))?,
+        Some(template) => mirrored(template.trim(), manifest.as_str())?,
+        None => manifest,
     };
     let mut builder = webview
         .updater_builder()
@@ -213,8 +230,13 @@ mod tests {
     use super::*;
     #[test]
     fn mirror_templates_cover_manifest_and_asset() {
+        assert_eq!(
+            manifest_url("1.0.0").unwrap().as_str(),
+            "https://github.com/Yuelioi/bdl/releases/download/v1.0.0/latest.json"
+        );
+        assert!(manifest_url("../latest").is_err());
         for original in [
-            MANIFEST,
+            "https://github.com/Yuelioi/bdl/releases/download/v1.0.0/latest.json",
             "https://github.com/Yuelioi/bdl/releases/download/v1.0.0/BDL.tar.gz",
         ] {
             assert_eq!(
@@ -231,7 +253,13 @@ mod tests {
                 )
             );
         }
-        assert!(mirrored("http://mirror.test", MANIFEST).is_err());
+        assert!(
+            mirrored(
+                "http://mirror.test",
+                manifest_url("1.0.0").unwrap().as_str()
+            )
+            .is_err()
+        );
         // The same transport that builds a download URL must be accepted by
         // the native update opener, without expanding generic link permissions.
         let official = "https://github.com/Yuelioi/bdl/releases/download/v1.0.0/BDL.exe";

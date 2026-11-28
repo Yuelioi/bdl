@@ -3149,24 +3149,6 @@ for (const theme of ['light', 'dark'] as const) {
       Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (Linux; Android 12) Mobile' }),
     );
     await installTauriMock(page, theme);
-    await page.route('https://api.github.com/repos/Yuelioi/bdl/releases/latest', (route) =>
-      route.fulfill({
-        json: {
-          tag_name: 'v0.8.3',
-          draft: false,
-          prerelease: false,
-          body: '手机端更新与速度显示\nhttps://github.com/Yuelioi/bdl/' + 'long-path-'.repeat(32),
-          assets: [
-            {
-              name: 'BDL-v0.8.3-android-arm64.apk',
-              size: 100,
-              browser_download_url:
-                'https://github.com/Yuelioi/bdl/releases/download/v0.8.3/BDL-v0.8.3-android-arm64.apk',
-            },
-          ],
-        },
-      }),
-    );
     await page.addInitScript(() => {
       const target = window as unknown as {
         __TAURI_INTERNALS__: {
@@ -3201,6 +3183,11 @@ for (const theme of ['light', 'dark'] as const) {
         ],
       };
       target.__TAURI_INTERNALS__.invoke = async (command, args) => {
+        if (command === 'update_distribution') return {
+          release: { version: '0.8.3', fileName: 'BDL-v0.8.3-android-arm64.apk' },
+          releaseNotes: '手机端更新与速度显示\n[安装指引](https://github.com/Yuelioi/bdl/' + 'a'.repeat(128) + ')',
+          sources: [{kind: 'github', delivery: {url: 'https://github.com/Yuelioi/bdl/releases/download/v0.8.3/BDL-v0.8.3-android-arm64.apk'}}],
+        };
         if (command === 'plugin:app|version') return '0.8.2';
         if (command === 'plugin:event|listen') {
           listeners.set(args?.event as string, args?.handler as number);
@@ -3223,10 +3210,12 @@ for (const theme of ['light', 'dark'] as const) {
       .getByRole('button', { name: /应用更新/ })
       .or(page.getByRole('tab', { name: '更新', exact: true }))
       .click();
-    await expect(page.getByRole('switch', { name: '自动检测更新' })).not.toBeChecked();
+    await expect(page.getByRole('switch', { name: '启动时检测更新' })).not.toBeChecked();
     await page.getByRole('button', { name: '检测更新', exact: true }).click();
     await expect(page.getByText('发现新版本 v0.8.3')).toBeVisible();
-    await page.getByRole('button', { name: '下载 APK' }).click();
+    const download = page.getByRole('button', { name: '下载 APK' });
+    await expect(download).toBeInViewport({ ratio: 1 });
+    await download.click();
     await expect
       .poll(() => page.evaluate(() => (window as unknown as { __APK_URL__?: string }).__APK_URL__))
       .toBe('https://github.com/Yuelioi/bdl/releases/download/v0.8.3/BDL-v0.8.3-android-arm64.apk');
@@ -3287,9 +3276,9 @@ test('desktop update notice remains separate from Android APK guidance', async (
     };
     const invoke = target.__TAURI_INTERNALS__.invoke;
     target.__TAURI_INTERNALS__.invoke = async (command, args) =>
-      command === 'update_check'
-        ? { rid: 99, currentVersion: '0.8.2', version: '0.8.3', body: '桌面更新' }
-        : invoke(command, args);
+      command === 'update_distribution'
+        ? { release: { version: '0.8.3', fileName: 'BDL.exe' }, releaseNotes: '桌面更新', sources: [{ kind: 'github', delivery: { url: 'https://github.com/Yuelioi/bdl/releases/download/v0.8.3/BDL.exe' }}] }
+        : command === 'plugin:app|version' ? '0.8.2' : invoke(command, args);
   });
   await page.goto('/');
   await page.getByRole('button', { name: '设置 偏好与维护' }).click();
@@ -3318,6 +3307,7 @@ for (const [width, theme] of [
       );
     await installTauriMock(page, theme);
     await page.addInitScript(() => {
+      const file = navigator.userAgent.includes('Android') ? 'BDL-v99.0.0-android-arm64.apk' : 'BDL.exe';
       const target = window as unknown as {
         __TAURI_INTERNALS__: { invoke: (command: string, args?: unknown) => Promise<unknown> };
         __UPDATE_TEMPLATE__?: string;
@@ -3329,7 +3319,7 @@ for (const [width, theme] of [
         if (command === 'desktop_read_clipboard_text' || command === 'mobile_read_clipboard_text') return '';
         if (command === 'update_distribution')
           return {
-            release: { version: '99.0.0', fileName: 'BDL.exe' },
+            release: { version: '99.0.0', fileName: file },
             releaseNotes: '多来源更新测试',
             sources: [
               {
@@ -3339,16 +3329,16 @@ for (const [width, theme] of [
                 delivery: {
                   mode: 'file',
                   authenticationRequired: false,
-                  url: 'https://github.com/Yuelioi/bdl/releases/download/v99.0.0/BDL.exe',
+                  url: 'https://github.com/Yuelioi/bdl/releases/download/v99.0.0/' + file,
                 },
               },
               {
                 id: 'proxy', kind: 'external_link', label: 'GitHub 加速 · GH-Proxy',
-                delivery: { mode: 'file', authenticationRequired: false, url: 'https://gh-proxy.com/https://github.com/Yuelioi/bdl/releases/download/v99.0.0/BDL.exe' },
+                delivery: { mode: 'file', authenticationRequired: false, url: 'https://gh-proxy.com/https://github.com/Yuelioi/bdl/releases/download/v99.0.0/' + file },
               },
               {
                 id: 'fast', kind: 'external_link', label: 'GitHub 加速 · GHFast',
-                delivery: { mode: 'file', authenticationRequired: false, url: 'https://ghfast.top/github.com/Yuelioi/bdl/releases/download/v99.0.0/BDL.exe' },
+                delivery: { mode: 'file', authenticationRequired: false, url: 'https://ghfast.top/github.com/Yuelioi/bdl/releases/download/v99.0.0/' + file },
               },
               {
                 id: 'quark',
@@ -3387,19 +3377,20 @@ for (const [width, theme] of [
       .getByRole('button', { name: /应用更新/ })
       .or(page.getByRole('tab', { name: '更新', exact: true }))
       .click();
-    await page.getByRole('combobox', { name: '更新来源' }).click();
+    await page.getByRole('combobox', { name: '下载来源' }).click();
     await page.getByRole('option', { name: 'GitHub 加速 · GHFast' }).click();
     await page.getByRole('button', { name: '检测更新', exact: true }).click();
     await expect(page.getByText('发现新版本 v99.0.0')).toBeVisible();
     if (width === 390) {
       await page.getByRole('button', { name: '下载 APK' }).click();
       await expect.poll(() => page.evaluate(() => (window as unknown as { __UPDATE_URL__: string }).__UPDATE_URL__))
-        .toBe('https://ghfast.top/github.com/Yuelioi/bdl/releases/download/v99.0.0/BDL.exe');
+        .toBe('https://ghfast.top/github.com/Yuelioi/bdl/releases/download/v99.0.0/BDL-v99.0.0-android-arm64.apk');
     } else {
+      await page.getByRole('button', {name: '下载并安装'}).click();
       await expect.poll(() => page.evaluate(() => (window as unknown as { __UPDATE_TEMPLATE__: string }).__UPDATE_TEMPLATE__))
         .toBe('https://ghfast.top/{path}');
     }
-    await page.getByRole('combobox', { name: '更新来源' }).click();
+    await page.getByRole('combobox', { name: '下载来源' }).click();
     await page.getByRole('option', { name: '自定义加速', exact: true }).click();
     await page.getByRole('button', { name: '检测更新', exact: true }).click();
     await expect(page.getByText(/请填写自定义加速地址/)).toBeVisible();
@@ -3407,11 +3398,13 @@ for (const [width, theme] of [
     await page.getByRole('button', { name: '检测更新', exact: true }).click();
     await expect(page.getByText('发现新版本 v99.0.0')).toBeVisible();
     await expect(page.getByRole('button', { name: width === 390 ? '下载 APK' : '下载并安装' })).toBeVisible();
-    if (width !== 390)
+    if (width !== 390) {
+      await page.getByRole('button', {name: '下载并安装'}).click();
       await expect
         .poll(() => page.evaluate(() => (window as unknown as { __UPDATE_TEMPLATE__: string }).__UPDATE_TEMPLATE__))
         .toBe('https://mirror.example/{url}');
-    await page.getByRole('combobox', { name: '更新来源' }).focus();
+    }
+    await page.getByRole('combobox', { name: '下载来源' }).focus();
     await page.keyboard.press('Enter');
     await page.getByRole('option', { name: '夸克手动下载' }).click();
     await expect(page.getByText('发现新版本 v99.0.0')).toHaveCount(0);

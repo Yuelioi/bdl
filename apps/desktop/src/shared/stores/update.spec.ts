@@ -3,8 +3,6 @@ vi.mock('../api/updateSources', async (original) => ({ ...await original<object>
 import { useSettingsStore } from './settings'
 import { settingsUpdate } from '../api/tauri'
 vi.mock('../api/tauri', () => ({ settingsUpdate: vi.fn() }))
-import { checkAndroidUpdate } from '../api/androidUpdate'
-vi.mock('../api/androidUpdate', () => ({ checkAndroidUpdate: vi.fn() }))
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -19,7 +17,7 @@ import { useUpdateStore } from './update'
 describe('update preferences', () => {
   beforeEach(() => {
     localStorage.clear()
-    vi.mocked(distributionUpdate).mockReset().mockRejectedValue(new Error("site offline"))
+    vi.mocked(distributionUpdate).mockReset().mockResolvedValue(site)
     vi.mocked(checkUpdate).mockReset()
     setActivePinia(createPinia())
     const settings = useSettingsStore()
@@ -27,7 +25,6 @@ describe('update preferences', () => {
     vi.mocked(settingsUpdate).mockImplementation(async (value) => value)
     check.mockReset().mockResolvedValue(null)
     relaunch.mockReset()
-    vi.mocked(checkAndroidUpdate).mockReset().mockResolvedValue(null)
     vi.mocked(openUpdateDownload).mockReset().mockResolvedValue(undefined)
   })
 
@@ -53,26 +50,27 @@ describe('update preferences', () => {
   it('persists and immediately enables automatic checks', async () => {
     const update = useUpdateStore()
     await update.setAutoCheck(true)
-    await vi.waitFor(() => expect(check).toHaveBeenCalledOnce())
-    expect(check).toHaveBeenCalledWith(undefined)
+    await vi.waitFor(() => expect(update.checked).toBe(true))
+    expect(distributionUpdate).toHaveBeenCalledOnce()
+    expect(check).not.toHaveBeenCalled()
     expect(useSettingsStore().saved.auto_check_updates).toBe(true)
   })
 
   it('checks Android releases and opens the APK without calling desktop installation', async () => {
     const url = 'https://github.com/Yuelioi/bdl/releases/download/v1.2.4/BDL-v1.2.4-android-arm64.apk'
-    vi.mocked(checkAndroidUpdate).mockResolvedValue({ version: '1.2.4', notes: '修复', downloadUrl: url })
+    vi.mocked(distributionUpdate).mockResolvedValue({ ...site, release: {version:'1.2.4', fileName:'BDL-v1.2.4-android-arm64.apk'}, sources: [{ ...site.sources[0]!, delivery: {...site.sources[0]!.delivery, url} }] })
     const update = useUpdateStore()
     await update.initialize(false, true)
     expect(update.supported).toBe(true)
-    expect(checkAndroidUpdate).not.toHaveBeenCalled()
+    expect(distributionUpdate).not.toHaveBeenCalled()
     await update.checkForUpdate()
-    expect(checkAndroidUpdate).toHaveBeenCalledWith('1.2.3')
+    expect(distributionUpdate).toHaveBeenCalledOnce()
     expect(update.hasUpdate).toBe(true)
     await update.install()
     expect(openUpdateDownload).toHaveBeenCalledWith(url, undefined)
     expect(check).not.toHaveBeenCalled()
     expect(relaunch).not.toHaveBeenCalled()
-    vi.mocked(checkAndroidUpdate).mockResolvedValue(null)
+    vi.mocked(distributionUpdate).mockResolvedValue({ ...site, release:{...site.release, version:'1.2.3'} })
     await update.checkForUpdate()
     expect(update.hasUpdate).toBe(false)
   })
@@ -81,12 +79,12 @@ describe('update preferences', () => {
     useSettingsStore().saved.auto_check_updates = true
     const update = useUpdateStore()
     await update.initialize(false, true)
-    await vi.waitFor(() => expect(checkAndroidUpdate).toHaveBeenCalledOnce())
+    await vi.waitFor(() => expect(distributionUpdate).toHaveBeenCalledOnce())
     expect(check).not.toHaveBeenCalled()
   })
 
   it('keeps silent startup failures out of the interface', async () => {
-    check.mockRejectedValue(new Error('offline'))
+    vi.mocked(distributionUpdate).mockRejectedValue(new Error('offline'))
     useSettingsStore().saved.auto_check_updates = true
     const update = useUpdateStore()
     await update.initialize()
@@ -98,6 +96,7 @@ describe('update preferences', () => {
     class PrivateUpdate {
       #installed = false
 
+      close = vi.fn()
       version = '1.2.4'
       body = 'hotfix'
 
@@ -133,7 +132,9 @@ describe('update preferences', () => {
     expect(mirrors.map(option => option.value)).toEqual(['official:https://mirror.test/{url}', 'official:https://fast.test/{path}'])
     update.setSource(mirrors[0]!.value)
     await update.checkForUpdate()
-    expect(checkUpdate).toHaveBeenCalledWith('https://mirror.test/{url}')
+    expect(checkUpdate).not.toHaveBeenCalled()
+    await update.install()
+    expect(checkUpdate).toHaveBeenCalledWith('1.2.4', 'https://mirror.test/{url}')
     await update.install()
     expect(openUpdateDownload).toHaveBeenCalledWith(
       site.sources[1]!.delivery.url,
@@ -141,6 +142,7 @@ describe('update preferences', () => {
     )
     update.setSource(mirrors[1]!.value)
     await update.checkForUpdate()
+    await update.install()
     await update.install()
     expect(openUpdateDownload).toHaveBeenLastCalledWith(site.sources[3]!.delivery.url, {
       template: 'https://fast.test/{path}', officialUrl: site.sources[0]!.delivery.url,
@@ -156,7 +158,8 @@ describe('update preferences', () => {
     expect(update.hasUpdate).toBe(false)
     update.setSource('mirror', 'https://custom.test/{url}')
     await update.checkForUpdate()
-    expect(checkUpdate).toHaveBeenLastCalledWith('https://custom.test/{url}')
+    await update.install()
+    expect(checkUpdate).toHaveBeenLastCalledWith('1.2.4', 'https://custom.test/{url}')
     const restored = useUpdateStore(createPinia())
     await restored.initialize()
     expect(restored.source).toBe('mirror')
@@ -180,9 +183,10 @@ describe('update preferences', () => {
     check.mockRejectedValue(new Error('offline'))
     const update = useUpdateStore()
     await update.checkForUpdate()
+    await update.install()
     expect(update.warning).toContain('手动安装')
     expect(update.manualDownloadUrl).toContain('github.com')
-    expect(update.update).toBeNull()
+    expect(relaunch).not.toHaveBeenCalled()
   })
   it('opens Quark without checking or requiring a newer version, on desktop and Android', async () => {
     vi.mocked(distributionUpdate).mockResolvedValue(site)
@@ -201,6 +205,7 @@ describe('update preferences', () => {
   })
   it('reports unavailable Quark sources and allows retry after failure', async () => {
     const update = useUpdateStore()
+    vi.mocked(distributionUpdate).mockRejectedValue(new Error('site offline'))
     await update.openQuark()
     expect(update.quarkError).toBe('site offline')
     expect(update.openingQuark).toBe(false)
@@ -215,8 +220,8 @@ describe('update preferences', () => {
   })
   it('does not report latest after a silent failure or retain stale update', async () => {
     const update = useUpdateStore()
-    update.androidDownloadUrl = 'https://old.test/apk'
-    check.mockRejectedValue(new Error('offline'))
+    update.availableVersion = '1.2.4'
+    vi.mocked(distributionUpdate).mockRejectedValue(new Error('offline'))
     await update.checkForUpdate(true)
     expect(update.checked).toBe(false)
     expect(update.hasUpdate).toBe(false)

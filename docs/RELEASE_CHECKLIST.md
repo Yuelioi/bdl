@@ -25,6 +25,15 @@
 - [ ] 安装包与诊断输出不包含开发路径、Cookie、令牌或签名 URL。
 - [ ] 自动更新仍为最后阶段能力；启用前必须单独审核签名、回滚与渠道策略。
 
+## Windows 部署与软件站同步
+
+收到 BDL 部署请求时，等本次 GitHub 正式 Release 公开，在 Windows 发布机运行 `python scripts/sync-software-site.py --tag vX.Y.Z --apply`。将 `vX.Y.Z` 换成本次部署标签。脚本核对标签与 GitHub 最新正式版一致，完成后报告软件站和夸克的同步结果。
+
+- [ ] GitHub Release 公开后，确认 Release 工作流中的 `Verify public downloads and remind software site maintainer` 通过。该步骤从 GitHub、GHFast、GH-Proxy 分别读取该标签的 `latest.json` 和 Windows x64 安装包、两种架构的 macOS DMG、Linux x64 AppImage、Android ARM64 APK，逐个核对完整大小与 GitHub 公布的 SHA-256。
+- [ ] 检查失败时查看对应线路和文件。镜像同步后可重跑失败的作业，或本地只读复查 `python scripts/verify-release-channels.py vX.Y.Z`。
+- [ ] 只读预检可省略 `--apply`。发布使用本机专用发布器及夸克官方 Skill，并读回客户端实际使用的五个公开下载配置。已同步的版本会直接结束。
+- [ ] 三条线路均通过后，工作流为仓库所有者创建该版本的软件站更新 Issue。重跑会沿用已有 Issue，包括已关闭的提醒。维护者完成软件站发布后，核对五个槽位的 `stable` 版本、文件和下载来源，再关闭 Issue。
+
 ## macOS distribution
 
 - [ ] Apple Silicon 和 Intel DMG 都已从干净系统安装并启动。
